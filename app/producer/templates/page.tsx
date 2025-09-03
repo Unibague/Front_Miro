@@ -14,6 +14,7 @@ import {
   Tooltip,
   Text,
   Badge,
+  Select,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -144,6 +145,8 @@ const ProducerTemplatesPage = () => {
   );
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
+  const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
+  const [selectedDependency, setSelectedDependency] = useState<string>('');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   // const fetchPublishedTemplates = async () => {
@@ -161,19 +164,23 @@ const ProducerTemplatesPage = () => {
   //   fetchPublishedTemplates();
   // }, []);
   
-  const fetchTemplates = async (page?: number, search?: string) => {
+  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string) => {
     try {
+      const params: any = {
+        email: session?.user?.email,
+        page,
+        limit: 20,
+        search,
+        periodId: selectedPeriodId,
+      };
+      
+      if (filterByDependency) {
+        params.filterByDependency = filterByDependency;
+      }
+      
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/available`,
-        {
-          params: {
-            email: session?.user?.email,
-            page,
-            limit: 20,
-            search,
-            periodId: selectedPeriodId,
-          },
-        }
+        { params }
       );
       if (response.data) {
         setTemplates(response.data.templates || []);
@@ -186,6 +193,39 @@ const ProducerTemplatesPage = () => {
     }
   };
 
+  const fetchUserDependencies = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`
+      );
+      const userData = response.data.find((user: any) => user.email === session?.user?.email);
+      if (userData) {
+        const depsResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`
+        );
+        
+        // Separar dependencia principal de las adicionales
+        const mainDep = depsResponse.data.find((dep: any) => dep.dep_code === userData.dep_code);
+        const additionalDeps = depsResponse.data
+          .filter((dep: any) => (userData.additional_dependencies || []).includes(dep.dep_code))
+          .map((dep: any) => ({
+            value: dep.dep_code,
+            label: `${dep.dep_code} - ${dep.name}`
+          }));
+        
+        // Poner la dependencia principal primero
+        const availableDeps = [
+          { value: mainDep.dep_code, label: `${mainDep.dep_code} - ${mainDep.name}` },
+          ...additionalDeps
+        ];
+        
+        setUserDependencies(availableDeps);
+      }
+    } catch (error) {
+      console.error('Error fetching user dependencies:', error);
+    }
+  };
+
   useEffect(() => {
     console.log("Template con categoría:", PublishedTemplatesPage);  // Verifica que category esté poblado correctamente
   }, [PublishedTemplatesPage]);
@@ -194,37 +234,42 @@ const ProducerTemplatesPage = () => {
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
     if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
+      fetchUserDependencies();
     }
-  }, [page, search, session, selectedPeriodId]);  
+  }, [page, search, session, selectedPeriodId, selectedDependency]);  
 
   const refreshTemplates = () => {
     if (session?.user?.email) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
     }
+  };
+
+  const getCurrentDependencyTitle = () => {
+    if (!selectedDependency) {
+      // Mostrar la dependencia principal (siempre la primera en la lista)
+      const mainDependency = userDependencies[0];
+      return mainDependency ? mainDependency.label.split(' - ')[1] : 'Cargando...';
+    }
+    const dependency = userDependencies.find(dep => dep.value === selectedDependency);
+    return dependency ? dependency.label.split(' - ')[1] : selectedDependency;
   };
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
     }
   }, [page, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search);
+        fetchTemplates(page, search, selectedDependency);
       }
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [search]);
-
-  useEffect(() => {
-    if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search);
-    }
-  }, [page, search, session, selectedPeriodId]);
 
   useEffect(() => {
     if (templates.length === 0) {
@@ -644,6 +689,9 @@ if (field.multiple) {
       <Title ta="center" mb={"md"}>
         Plantillas Pendientes
       </Title>
+      <Title order={3} ta="center" mb={"md"} c="blue">
+        {getCurrentDependencyTitle()}
+      </Title>
       <Text ta="center" mt="sm" mb="md">
     Tienes <strong>{pendingCount}</strong> plantilla
     {pendingCount === 1 ? "" : "s"} pendiente
@@ -658,12 +706,23 @@ if (field.multiple) {
       <>No hay fecha de vencimiento próxima.</>
     )}
   </Text>
-      <TextInput
-        placeholder="Buscar plantillas  "
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar plantillas"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por dependencia"
+          data={userDependencies}
+          value={selectedDependency}
+          onChange={(value) => setSelectedDependency(value || '')}
+          clearable
+          searchable
+          style={{ minWidth: 300 }}
+        />
+      </Group>
       <Table striped withTableBorder mt="md">
         <Table.Thead>
           <Table.Tr>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge } from "@mantine/core";
-import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown } from "@tabler/icons-react";
+import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from 'next/navigation';
 import { showNotification } from "@mantine/notifications";
@@ -24,6 +24,18 @@ interface MemberOption {
   label: string;
 }
 
+interface UserWithDependencies {
+  email: string;
+  full_name: string;
+  dep_code: string;
+  additional_dependencies: string[];
+}
+
+interface DependencyOption {
+  value: string;
+  label: string;
+}
+
 const AdminDependenciesPage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [opened, setOpened] = useState(false);
@@ -38,6 +50,11 @@ const AdminDependenciesPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [permissionsModalOpened, setPermissionsModalOpened] = useState(false);
+  const [usersWithDependencies, setUsersWithDependencies] = useState<UserWithDependencies[]>([]);
+  const [availableDependencies, setAvailableDependencies] = useState<DependencyOption[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserWithDependencies | null>(null);
+  const [selectedAdditionalDeps, setSelectedAdditionalDeps] = useState<string[]>([]);
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
 
@@ -164,6 +181,64 @@ const AdminDependenciesPage = () => {
     setMembers([]);
   };
 
+  const handlePermissionsModal = async () => {
+    try {
+      const [usersResponse, depsResponse] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+      ]);
+      
+      const usersData = await usersResponse.json();
+      const depsData = await depsResponse.json();
+      
+      setUsersWithDependencies(usersData);
+      setAvailableDependencies(depsData.map((dep: any) => ({
+        value: dep.dep_code,
+        label: `${dep.dep_code} - ${dep.name}`
+      })));
+      setPermissionsModalOpened(true);
+    } catch (error) {
+      showNotification({
+        title: "Error",
+        message: "Error al cargar datos de permisos",
+        color: "red",
+      });
+    }
+  };
+
+  const handleUserSelect = (user: UserWithDependencies) => {
+    setSelectedUser(user);
+    setSelectedAdditionalDeps(user.additional_dependencies || []);
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users/${selectedUser.email}/dependencies`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additional_dependencies: selectedAdditionalDeps })
+      });
+      
+      showNotification({
+        title: "Actualizado",
+        message: "Permisos actualizados exitosamente",
+        color: "teal",
+      });
+      
+      setPermissionsModalOpened(false);
+      setSelectedUser(null);
+      setSelectedAdditionalDeps([]);
+    } catch (error) {
+      showNotification({
+        title: "Error",
+        message: "Error al actualizar permisos",
+        color: "red",
+      });
+    }
+  };
+
   //filter dependencies
 
   const filteredDependencies = sortedDependencies.filter(
@@ -210,6 +285,14 @@ const AdminDependenciesPage = () => {
           onChange={(event) => setSearch(event.currentTarget.value)}
           className={styles.searchInput}
         />
+        <Button
+          variant="outline"
+          color="blue"
+          leftSection={<IconUsers size={16} />}
+          onClick={handlePermissionsModal}
+        >
+          Permisos a más dependencias
+        </Button>
         <Button
           variant="light"
           onClick={handleSyncDependencies}
@@ -324,6 +407,49 @@ const AdminDependenciesPage = () => {
             Cancelar
           </Button>
         </Group>
+      </Modal>
+      
+      <Modal
+        opened={permissionsModalOpened}
+        onClose={() => setPermissionsModalOpened(false)}
+        title="Permisos a más dependencias"
+        size="lg"
+      >
+        <Group mb="md">
+          <Select
+            label="Seleccionar usuario"
+            placeholder="Buscar usuario..."
+            data={usersWithDependencies.map(user => ({
+              value: user.email,
+              label: `${user.full_name} (${user.email}) - ${user.dep_code}`
+            }))}
+            searchable
+            onChange={(email) => {
+              const user = usersWithDependencies.find(u => u.email === email);
+              if (user) handleUserSelect(user);
+            }}
+          />
+        </Group>
+        
+        {selectedUser && (
+          <>
+            <Text size="sm" mb="xs">Dependencia principal: {selectedUser.dep_code}</Text>
+            <MultiSelect
+              label="Dependencias adicionales"
+              placeholder="Seleccionar dependencias..."
+              data={availableDependencies}
+              value={selectedAdditionalDeps}
+              onChange={setSelectedAdditionalDeps}
+              searchable
+            />
+            <Group mt="md">
+              <Button onClick={handleSavePermissions}>Guardar</Button>
+              <Button variant="outline" onClick={() => setPermissionsModalOpened(false)}>
+                Cancelar
+              </Button>
+            </Group>
+          </>
+        )}
       </Modal>
     </Container>
   );

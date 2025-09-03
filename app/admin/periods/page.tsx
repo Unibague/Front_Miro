@@ -75,14 +75,14 @@ const AdminPeriodsPage = () => {
   const handleEdit = (period: Period) => {
     setSelectedPeriod(period);
     setName(period.name);
-    setStartDate(new Date(period.start_date));
-    setEndDate(new Date(period.end_date));
-    setProductorStartDate(new Date(period.producer_start_date));
-    setProductorEndDate(new Date(period.producer_end_date));
-    setProducerReportStartDate(new Date(period.producer_report_start_date));
-    setProducerReportEndDate(new Date(period.producer_report_end_date));
-    setResponsibleStartDate(new Date(period.responsible_start_date));
-    setResponsibleEndDate(new Date(period.responsible_end_date));
+    setStartDate(period.start_date && !isNaN(new Date(period.start_date).getTime()) ? new Date(period.start_date) : null);
+    setEndDate(period.end_date && !isNaN(new Date(period.end_date).getTime()) ? new Date(period.end_date) : null);
+    setProductorStartDate(period.producer_start_date && !isNaN(new Date(period.producer_start_date).getTime()) ? new Date(period.producer_start_date) : null);
+    setProductorEndDate(period.producer_end_date && !isNaN(new Date(period.producer_end_date).getTime()) ? new Date(period.producer_end_date) : null);
+    setProducerReportStartDate(period.producer_report_start_date && !isNaN(new Date(period.producer_report_start_date).getTime()) ? new Date(period.producer_report_start_date) : null);
+    setProducerReportEndDate(period.producer_report_end_date && !isNaN(new Date(period.producer_report_end_date).getTime()) ? new Date(period.producer_report_end_date) : null);
+    setResponsibleStartDate(period.responsible_start_date && !isNaN(new Date(period.responsible_start_date).getTime()) ? new Date(period.responsible_start_date) : null);
+    setResponsibleEndDate(period.responsible_end_date && !isNaN(new Date(period.responsible_end_date).getTime()) ? new Date(period.responsible_end_date) : null);
     setIsActive(period.is_active);
     setOpened(true);
   };
