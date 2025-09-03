@@ -28,6 +28,7 @@ import {
 } from "@mantine/core";
 import {
   IconArrowLeft,
+  IconArrowRight,
   IconBrandGoogleDrive,
   IconFileDescription,
   IconTrash
@@ -250,7 +251,7 @@ const AdminPubReportsPage = () => {
   const handleDeletePubReport = async (reportId: string) => {
     try {
       const response = await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/pReports/delete/${reportId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/${reportId}`,
         {
           params: {
             email: session?.user?.email,
@@ -383,7 +384,7 @@ const AdminPubReportsPage = () => {
         onChange={(event) => setSearch(event.currentTarget.value)}
         mb="md"
       />
-      <Group>
+      <Group justify="space-between">
         <Button
           onClick={() => router.push("admin/reports/producers")}
           variant="outline"
@@ -391,6 +392,15 @@ const AdminPubReportsPage = () => {
         >
           Ir a Configuración de Informes
         </Button>
+
+        <Button
+          onClick={() => router.push("/reports/update")}
+          variant="outline"
+          leftSection={<IconArrowRight size={16} />}
+        >
+          Cambiar fechas de entrega
+        </Button>
+
       </Group>
       <Table striped withTableBorder mt="md">
       <Table.Thead>

@@ -13,6 +13,7 @@ import {
   Tooltip,
   Button,
   Group,
+  Badge,
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
 import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow } from "@tabler/icons-react";
@@ -34,6 +35,7 @@ interface Dependency {
   dep_code: string,
   name: string,
   responsible: string
+  visualizers: string[]
 }
 
 interface ResumeData {
@@ -141,34 +143,72 @@ const UploadedTemplatePage = () => {
     window.history.pushState(null, "", `?${params.toString()}`);
   }, [resume]);
 
-  const renderCellContent = (value: any) => {
-    if (typeof value === "boolean") {
-      return value ? (
-        <IconCheck color="green" size={25} />
-      ) : (
-        <IconX color="red" size={25} />
-      );
-    } else if (typeof value === "string" && dayjs(value).isValid()) {
-      return dateToGMT(value, "YYYY/MM/DD");
-    }
-    return value;
-  };
+const isValidDateString = (value: string) => {
+  return (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value) || // ISO completo
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ||                          // YYYY-MM-DD
+    /^\d{4}\/\d{2}\/\d{2}$/.test(value)                           // YYYY/MM/DD
+  );
+};
 
+const renderCellContent = (value: any) => {
+  if (typeof value === "boolean") {
+    return value ? (
+      <IconCheck color="green" size={25} />
+    ) : (
+      <IconX color="red" size={25} />
+    );
+  }
+
+  if (
+    typeof value === "string" &&
+    isValidDateString(value) &&
+    isNaN(Number(value)) &&
+    dayjs(value).isValid()
+  ) {
+    return dateToGMT(value, "YYYY/MM/DD");
+  }
+
+  if (typeof value === "object" && value !== null) {
+    // Si tiene un campo .text, mostramos solo ese
+    if (typeof value.text === "string") {
+      return value.text;
+    }
+
+    // Si es objeto con número Mongo
+    const mongoNumeric = value?.$numberInt || value?.$numberDouble;
+    if (mongoNumeric !== undefined) return mongoNumeric;
+
+    // Por defecto: mostramos objeto como string
+    return JSON.stringify(value);
+  }
+
+  return value ?? "";
+};
   const resumeRows = dependencies.map((dependency) => {
     const hasSentData = resumeData?.some(data => data.dependency===dependency.dep_code)
     return (
       <Table.Tr key={dependency.dep_code} c={!hasSentData ? "red" : undefined}>
+        <Table.Td>{dependency.name}</Table.Td>
         <Table.Td>
-          {dependency.name}
+          {dependency.visualizers.length > 0 ? (
+            <Group gap={5}>
+              {dependency.visualizers.slice(0, 1).map((v, index) => (
+                <Text key={index}> {v} </Text>
+              ))}
+              {dependency.visualizers.length > 1 && (
+                <Badge variant="outline">
+                  +{dependency.visualizers.length - 1} más
+                </Badge>
+              )}
+            </Group>
+          ) : (
+            <Text> No definido </Text>
+          )}
         </Table.Td>
-        <Table.Td>
-          {dependency.responsible ?? "No tiene un responsable asignado"}
-        </Table.Td>
-        <Table.Td>
-          {hasSentData ? "✓ Enviado" : "✗ No enviado"}
-        </Table.Td>
+        <Table.Td>{hasSentData ? "✓ Enviado" : "✗ No enviado"}</Table.Td>
       </Table.Tr>
-    )
+    );
   })
 
   return (
@@ -220,7 +260,7 @@ const UploadedTemplatePage = () => {
               Dependencia
             </Table.Th>
             <Table.Th>
-              Responsable
+              Líder(es)
             </Table.Th>
             <Table.Th>
               Estado de envío

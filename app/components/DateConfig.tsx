@@ -20,8 +20,12 @@ const DateConfig = () => {
 };
 
 const dateToGMT = (date: Date | string | number, formatDate: string = "MMM D, YYYY") => {
-  // Ensure `date` is a Date object
   const validDate = new Date(date);
+
+  if (isNaN(validDate.getTime())) {
+    console.warn("Fecha inválida en dateToGMT:", date);
+    return ""; // o "Fecha inválida", o null
+  }
 
   return format(new Date(validDate.getTime() + 5 * 60 * 60 * 1000), formatDate);
 };

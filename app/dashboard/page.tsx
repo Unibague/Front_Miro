@@ -1,13 +1,17 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { Modal, Button, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme} from "@mantine/core";
+import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme} from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2,IconMail   } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
+import { usePeriod } from "@/app/context/PeriodContext";
+import dayjs from "dayjs";
+import "dayjs/locale/es";
+import { useParams } from "next/navigation";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
@@ -20,6 +24,140 @@ const DashboardPage = () => {
   const [notificationShown, setNotificationShown] = useState(false);
   const [isResponsible, setIsResponsible] = useState(false);
   const colorScheme = useColorScheme();
+  const [pendingReports, setPendingReports] = useState<number>(0);
+  const [pendingTemplates, setPendingTemplates] = useState<number>(0);
+  const [nextReportDeadline, setNextReportDeadline] = useState<string | null>(null);
+  const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
+  const { selectedPeriodId } = usePeriod();
+  const [isVisualizer, setIsVisualizer] = useState(false);
+  const userEmail = session?.user?.email ?? "";
+
+  const params = useParams();
+const { id } = params ?? {};
+
+  const fetchPendingItems = async (role: string) => {
+    if (session?.user?.email && selectedPeriodId) {
+        try {
+            // Si es Administrador, no hacer nada
+            if (role === "Administrador") {
+                setPendingReports(0);
+                setPendingTemplates(0);
+                setNextReportDeadline(null);
+                setNextTemplateDeadline(null);
+                return;
+            }
+
+            let reportsResponse;
+
+            if (role === "Responsable") {
+                // Obtener reportes para el responsable con todos los datos
+                reportsResponse = await axios.get(
+                    `${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible`,
+                    { params: { email: session.user.email, periodId: selectedPeriodId, limit: 10000 } }
+                );
+            } else {
+                // Obtener reportes para el productor con todos los datos
+                reportsResponse = await axios.get(
+                    `${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/producer`,
+                    { params: { email: session.user.email, periodId: selectedPeriodId, limit: 10000 } }
+                );
+            }
+
+                        console.log(reportsResponse.data, 'Producer reports ');
+
+            // // Se obtiene el total de reportes publicados
+            // const totalReports = reportsResponse.data.publishedReports.length;
+
+            // Se filtran los reportes pendientes
+            const pendingReportsData = reportsResponse.data.pendingReports 
+
+            // Se establece el número de reportes pendientes
+            setPendingReports(pendingReportsData.length);
+            setNextReportDeadline(
+                pendingReportsData.length > 0 ? dayjs(pendingReportsData[0].deadline).format("DD/MM/YYYY") : null
+            );
+
+            if (role !== "Responsable") {
+                // Obtener plantillas disponibles solo si el usuario no es "Responsable"
+                const templatesResponse = await axios.get(
+                    `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/available`,
+                    { params: { email: session.user.email, periodId: selectedPeriodId, limit: 10000 } }
+                );
+
+                // Se obtiene el total de plantillas
+                const totalTemplates = templatesResponse.data.templates.length;
+
+                // Se establece el número total de plantillas pendientes
+                setPendingTemplates(totalTemplates);
+                setNextTemplateDeadline(
+                    totalTemplates > 0 ? dayjs(templatesResponse.data.templates[0].deadline).format("DD/MM/YYYY") : null
+                );
+            } else {
+                setPendingTemplates(0);
+                setNextTemplateDeadline(null);
+            }
+        } catch (error) {
+            console.error("Error obteniendo reportes y plantillas pendientes:", error);
+        }
+    }
+};
+
+
+const fetchVisualizers = async () => {
+  if (!session?.user?.email) return; // Evita errores si el usuario no está autenticado
+
+  try {
+    const response = await axios.get(
+      `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
+    );
+
+    console.log("🔍 Respuesta del backend corregida:", response.data.dependencies); // 👀 DEBUG
+
+    // Verificar si el usuario está en la lista de visualizadores
+    const isUserVisualizer = response.data.dependencies.some((dep: any) =>
+      Array.isArray(dep.visualizers) && dep.visualizers.includes(session?.user?.email)
+    );
+
+    setIsVisualizer(isUserVisualizer);
+    console.log("✅ El usuario es visualizador:", isUserVisualizer); // 👀 DEBUG
+  } catch (error) {
+    console.error("❌ Error fetching visualizers:", error);
+  }
+};
+
+
+useEffect(() => {
+  if (status === "authenticated") {
+    fetchVisualizers();
+  }
+}, [session, status]);
+
+
+
+
+
+useEffect(() => {
+    if (status === "authenticated" && selectedPeriodId) {
+        fetchPendingItems(userRole);
+    }
+}, [session, status, userRole, selectedPeriodId]);
+
+
+  useEffect(() => {
+    if (status === "authenticated" && selectedPeriodId) {
+      fetchPendingItems(userRole);
+    }
+  }, [session, status, userRole, selectedPeriodId]);
+
+  useEffect(() => {
+    if (userRole) {
+      setPendingReports(0);
+      setPendingTemplates(0);
+      setNextReportDeadline(null);
+      setNextTemplateDeadline(null);
+    }
+  }, [userRole]);
+  
 
   useEffect(() => {
     const fetchUserRoles = async () => {
@@ -73,9 +211,68 @@ const DashboardPage = () => {
       }
     };
 
+    const checkIfUserIsVisualizerOfDependency = async () => {
+      if (session?.user?.email) {
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`,
+            { params: { search: session.user.email } }
+          );
+          const userDependencies = response.data.dependencies.filter(
+            (dependency: any) => dependency.visualizers.includes(session?.user?.email)
+          );
+          setIsVisualizer(userDependencies.length > 0);
+        } catch (error) {
+          console.error("Error checking user responsibilities:", error);
+        }
+      }
+    };
+
     checkIfUserIsResponsible();
+    checkIfUserIsVisualizerOfDependency();
   }, [session]);
 
+  const renderMessage = () => {
+    if (pendingReports === 0 && pendingTemplates === 0) return null; // No renderizar nada si no hay pendientes
+  
+    return (
+      <Center mt="md">
+        <Badge
+          color="red"
+          size="lg"
+          variant="light"
+          style={{
+            padding: "10px 15px", // Reduce el padding para ajustarse al texto
+            textAlign: "center", // Asegura que el texto esté alineado al centro
+            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none", // Mantiene el tamaño adecuado
+            maxWidth: "max-content", // Ajusta el ancho al contenido
+            whiteSpace: "pre-wrap", // Permite saltos de línea si el contenido es muy largo
+            margin: "20px auto", // Centra el badge y da margen con otros elementos
+            justifyContent: "center", // Centra el contenido horizontalmente
+            alignItems: "center", // Centra el contenido verticalmente
+            lineHeight: "normal", // Asegura que la altura de línea no sea excesiva
+            height: "auto", // Permite que el `Badge` se adapte al contenido
+          }}
+        >
+          {pendingReports > 0 && (
+            <>
+              Tienes <strong>{pendingReports}</strong> reportes pendientes.{" "}
+              {nextReportDeadline && `Fecha de vencimiento más próxima: ${nextReportDeadline}.`}
+              <br />
+              <br />
+            </>
+          )}
+          {pendingTemplates > 0 && userRole !== "Responsable" && (
+            <>
+              Tienes <strong>{pendingTemplates}</strong> plantillas pendientes.{" "}
+              {nextTemplateDeadline && `Fecha de vencimiento más próxima: ${nextTemplateDeadline}.`}
+            </>
+          )}
+        </Badge>
+      </Center>
+    );
+  };
+  
   const handleRoleSelect = async (role: string) => {
     if (!session?.user?.email) return;
 
@@ -212,6 +409,41 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
+
+
+<Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-gestion-reports">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+               <Center style={{ position: "relative" }}>
+                <IconChartBarPopular size={80}/>
+              </Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Configurar Informes de Gestión</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Crea, edita y asigna los informes de gestión.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
+                Ir a Configuración de Informes de gestión
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-gestion-uploaded-reports">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center>
+                <IconReportSearch size={80}/>
+              </Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Administrar Informes de Gestión</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Adminsitra el proceso de cargue de los informes de gestión.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/uploaded')}>
+                Ir a administración de Informes 
+              </Button>
+            </Card>
+          </Grid.Col>,
+
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-periods">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconCalendarMonth size={80}/></Center>
@@ -310,6 +542,27 @@ const DashboardPage = () => {
                 </Button>
               </Card>
             </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-reminders">
+  <Card shadow="sm" padding="lg" radius="md" withBorder>
+    <Center><IconMail   size={80}/></Center>
+    <Group mt="md" mb="xs">
+      <Text ta={"center"} w={500}>Recordatorios por correo</Text>
+    </Group>
+    <Text ta={"center"} size="sm" color="dimmed">
+      Ajusta cuándo se deben enviar recordatorios por email para plantillas e informes pendientes.
+    </Text>
+    <Button
+      variant="light"
+      fullWidth
+      mt="md"
+      radius="md"
+      onClick={() => router.push('/admin/reminders')}
+    >
+      Ir a Recordatorios
+    </Button>
+  </Card>
+</Grid.Col>,
+
         );
         break;
       case "Responsable":
@@ -448,7 +701,100 @@ const DashboardPage = () => {
           </Card>
         </Grid.Col>,
         );
-        break;
+        if (isVisualizer) {
+
+          cards.push(
+            <Grid.Col
+            span={{ base: 12, md: 5, lg: 4 }}
+            key="administer-dependency"
+          >
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center>
+                <IconUserStar size={80} />
+              </Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>
+                  Administrar Mi Dependencia
+                </Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Selecciona qué miembros de tu equipo tendrán acceso a Miró
+              </Text>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push("/dependency")}
+              >
+                Ir a Gestión de Dependencia
+              </Button>
+            </Card>
+          </Grid.Col>,
+
+            <Grid.Col
+              span={{ base: 12, md: 5, lg: 4 }}
+              key="view-child-dependency-templates"
+            >
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center>
+                  <IconHierarchy2 size={80} />
+                </Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>
+                    Visualizar plantillas de dependencias hijo
+                  </Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Observa el progreso de carga de las plantillas de tus
+                  dependencias hijo
+                </Text>
+                <Button
+                  variant="light"
+                  fullWidth
+                  mt="md"
+                  radius="md"
+                  onClick={() =>
+                    router.push("/dependency/children-dependencies/templates")
+                  }
+                >
+                  Ir a visualizador
+                </Button>
+              </Card>
+            </Grid.Col>,
+            <Grid.Col
+              span={{ base: 12, md: 5, lg: 4 }}
+              key="view-child-dependency-reports"
+            >
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center>
+                  <IconClipboardData size={80} />
+                </Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>
+                    Visualizar reportes de dependencias hijo
+                  </Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Observa los reportes generados por las dependencias hijo y su
+                  estado de cumplimiento.
+                </Text>
+                <Button
+                  variant="light"
+                  fullWidth
+                  mt="md"
+                  radius="md"
+                  onClick={() =>
+                    router.push("/dependency/children-dependencies/reports")
+                  }
+                >
+                  Ir a visualizador de reportes
+                </Button>
+              </Card>
+            </Grid.Col>
+          );
+        }
+  break;
       case "Usuario":
       default:
         cards.push(
@@ -459,25 +805,24 @@ const DashboardPage = () => {
         break;
     }
 
-    if (isResponsible) {
-      cards.push(
-        <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="administer-dependency">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconUserStar size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Administrar Mi Dependencia</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Selecciona qué miembros de tu equipo tendrán acceso a Miró
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/dependency')}>
-              Ir a Gestión de Dependencia
-            </Button>
-          </Card>
-        </Grid.Col>
-      );
-    }
-
+    // if (isResponsible) {
+    //   cards.push(
+    //     <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="administer-dependency">
+    //       <Card shadow="sm" padding="lg" radius="md" withBorder>
+    //         <Center><IconUserStar size={80}/></Center>
+    //         <Group mt="md" mb="xs">
+    //           <Text ta={"center"} w={500}>Administrar Mi Dependencia</Text>
+    //         </Group>
+    //         <Text ta={"center"} size="sm" color="dimmed">
+    //           Selecciona qué miembros de tu equipo tendrán acceso a Miró
+    //         </Text>
+    //         <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/dependency')}>
+    //           Ir a Gestión de Dependencia
+    //         </Button>
+    //       </Card>
+    //     </Grid.Col>
+    //   );
+    // }
     return cards;
   };
 
@@ -487,6 +832,7 @@ const DashboardPage = () => {
         <Center>
           <Title mt="md" mb="md">Inicio</Title>
         </Center>
+        {renderMessage()}
         <Grid justify="center" align="center">
           {renderCards()}
         </Grid>

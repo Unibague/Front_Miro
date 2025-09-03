@@ -219,6 +219,15 @@ const CreateTemplatePage = () => {
     } catch (error) {
       console.error("Error guardando plantilla:", error);
 
+      if (axios.isAxiosError(error) && error.response?.data?.error) {
+        showNotification({
+          title: "Error",
+          message: error.response.data.error,
+          color: "red",
+        });
+        return;
+      }
+
       if (
         axios.isAxiosError(error) &&
         error.response &&

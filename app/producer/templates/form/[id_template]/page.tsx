@@ -67,6 +67,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [loading, setLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
+  const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
+  const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
 
   const fetchTemplate = async () => {
     try {
@@ -173,8 +175,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
     rows.forEach((row, rowIndex) => {
       template?.fields.forEach((field) => {
-        if (field.required && (row[field.name] === null || row[field.name] === undefined)) {
-          if (!newErrors[field.name]) {
+        if (field.required && (row[field.name] === null || row[field.name] === undefined)) {          if (!newErrors[field.name]) {
             newErrors[field.name] = [];
           }
           newErrors[field.name][rowIndex] = "Este campo es obligatorio.";
@@ -186,10 +187,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleValidatorOpen = async (validatorId: string) => {
+  const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
       setValidatorData(response.data.validator);
+      setActiveRowIndex(rowIndex);
+      setActiveFieldName(fieldName);
       setValidatorModalOpen(true);
     } catch (error) {
       showNotification({
@@ -274,97 +277,110 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
   const renderInputField = (field: Field, row: Record<string, any>, rowIndex: number) => {
     const fieldError = errors[field.name]?.[rowIndex];
+  
+    const wrapWithTooltip = (input: React.ReactNode) => {
+      return field.comment ? (
+        <Tooltip
+          label={field.comment}
+          multiline
+          withArrow
+          style={{ maxWidth: 300 }}
+        >
+          {input}
+        </Tooltip>
+      ) : input;
+    };
+  
     const commonProps = {
-      value: row[field.name] || "",
-      onChange: (e: React.ChangeEvent<HTMLInputElement> | number) => handleInputChange(rowIndex, field.name, typeof e === "number" ? e : e.currentTarget.value),
       required: field.required,
       placeholder: field.comment,
-      style: { width: "100%" },
-      error: Boolean(fieldError),
+      style: { minWidth: "280px", width: "100%" },
+      error: fieldError || undefined, // este es el truco
     };
-
+  
     if (field.multiple && field.validate_with) {
-      return (
+      return wrapWithTooltip(
         <MultiSelect
-          value={(row[field.name]?.toString().split(",") || [])}
+          value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
           data={multiSelectOptions[field.name] || []}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}
-          error={fieldError ? fieldError : undefined}
+          error={fieldError || undefined}
         />
       );
     }
-
+  
     switch (field.datatype) {
       case "Entero":
       case "Decimal":
       case "Porcentaje":
-        const formattedValue = field.datatype === "Porcentaje" ? (row[field.name] ? `${row[field.name]}%` : "") : row[field.name];
-
-        return (
+        return wrapWithTooltip(
           <NumberInput
-            {...commonProps}
-            value={formattedValue}
-            min={0}
-            step={field.datatype === "Porcentaje" ? 1 : 1}
-            hideControls
-            onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-            error={fieldError ? fieldError : undefined}
-          />
+          {...commonProps}
+          value={typeof row[field.name] === 'number' ? row[field.name] : ""}
+          min={0}
+          step={1}
+          hideControls
+          onChange={(value) => handleInputChange(rowIndex, field.name, value)}
+        />
+
         );
+  
       case "Texto Largo":
-        return (
+        return wrapWithTooltip(
           <Textarea
             {...commonProps}
-            resize="vertical"
+            autosize
+            minRows={2}
+            maxRows={6}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
-            error={fieldError ? fieldError : undefined}
           />
         );
+  
       case "Texto Corto":
       case "Link":
-        return (
+        return wrapWithTooltip(
           <TextInput
             {...commonProps}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
-            error={fieldError ? fieldError : undefined}
           />
         );
+  
       case "True/False":
-        return (
+        return wrapWithTooltip(
           <Switch
-            {...commonProps}
             checked={row[field.name] === true}
             onChange={(event) => handleInputChange(rowIndex, field.name, event.currentTarget.checked)}
-            error={fieldError ? fieldError : undefined}
           />
         );
+  
       case "Fecha":
-        return (
+        return wrapWithTooltip(
           <DateInput
             {...commonProps}
             value={row[field.name] ? new Date(row[field.name]) : null}
             locale="es"
             valueFormat="DD/MM/YYYY"
             onChange={(date) => handleInputChange(rowIndex, field.name, date)}
-            error={fieldError ? fieldError : undefined}
           />
         );
+  
       default:
-        return (
+        return wrapWithTooltip(
           <TextInput
             {...commonProps}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
-            error={fieldError ? fieldError : undefined}
           />
         );
     }
   };
+  
+  
 
   if (!template) {
     return <Text ta="center" c="dimmed">Cargando Información...</Text>;
@@ -373,12 +389,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   return (
     <Container size="xl">
       <Title ta="center" mb="md">{`Completar Plantilla: ${publishedTemplateName}`}</Title>
-      <Tooltip
-        label="Desplázate horizontalmente para ver todas las columnas"
-        position="bottom"
-        withArrow
-        transitionProps={{ transition: "slide-up", duration: 300 }}
-      >
         <ScrollArea viewportRef={scrollAreaRef}>
           <ScrollArea type="always" offsetScrollbars>
             <Table mb={"xs"} withTableBorder withColumnBorders withRowBorders>
@@ -389,9 +399,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                       <Group>
                         {field.name} {field.required && <Text span color="red">*</Text>}
                         {field.validate_with && (
-                          <ActionIcon
+                            <ActionIcon
                             size={"lg"}
-                            onClick={() => handleValidatorOpen(field.validate_with?.id!)}
+                            onClick={() => handleValidatorOpen(field.validate_with?.id!, 0, field.name)}
                             title="Ver valores aceptados"
                             disabled={!validatorExists[field.name]}
                           >
@@ -432,7 +442,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             </Table>
           </ScrollArea>
         </ScrollArea>
-      </Tooltip>
       <Group justify="center" mt={rem(50)}>
         <Button 
           color={"red"}
@@ -459,11 +468,20 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             Enviar
           </Button>
         </Group>
+        
       </Group>
       <ValidatorModal
         opened={validatorModalOpen}
         onClose={() => setValidatorModalOpen(false)}
         validatorId={validatorData?._id || ""}
+        onCopy={(value: string) => {
+          if (activeRowIndex !== null && activeFieldName !== null) {
+            const updatedRows = [...rows];
+            updatedRows[activeRowIndex][activeFieldName] = value;
+            setRows(updatedRows);
+          }
+          setValidatorModalOpen(false);
+        }}
       />
     </Container>
   );

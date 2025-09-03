@@ -159,7 +159,7 @@ const HomePage = () => {
             <Text>Ibagué - Tolima - Colombia</Text>
           </Center>
           <Center>
-            <Text>Teléfono: +57 (608) 270 88 88</Text>
+            <Text>Teléfono: +57 (608) 279 52 25</Text>
           </Center>
         </Paper>
       </div>

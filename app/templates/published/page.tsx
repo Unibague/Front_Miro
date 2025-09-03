@@ -20,7 +20,7 @@ import {
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
-import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash } from "@tabler/icons-react";
+import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -174,8 +174,15 @@ const PublishedTemplatesPage = () => {
       );
 
       const data = response.data.data;
-      console.log("Data: ", data);
       const { template } = publishedTemplate;
+
+      // Campos de tipo fecha para formatear correctamente
+const dateFields = new Set(
+  template.fields
+    .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
+    .map(f => f.name)
+);
+
       console.log("Template: ", template);
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
@@ -220,8 +227,23 @@ const PublishedTemplatesPage = () => {
 
       // Add the data to the worksheet starting from the second row
       data.forEach((row: any) => {
-        worksheet.addRow(Object.values(row));
-        console.log("Row: ", row);
+        const formattedRow = Object.entries(row).map(([key, value]) => {
+          if (value && dateFields.has(key)) {
+            if (
+              typeof value === 'string' ||
+              typeof value === 'number' ||
+              value instanceof Date
+            ) {
+              const date = new Date(value);
+              if (!isNaN(date.getTime())) {
+                return date.toISOString().slice(0, 10); // YYYY-MM-DD
+              }
+            }
+          }
+          return value;
+        });
+
+        worksheet.addRow(formattedRow);
       });
 
       // Crear una hoja por cada validador en el array
@@ -406,9 +428,12 @@ const PublishedTemplatesPage = () => {
         onChange={(event) => setSearch(event.currentTarget.value)}
         mb="md"
       />
-      <Group>
+      <Group justify="space-between">
         {
           userRole === "Administrador" && ( 
+
+            <>
+
             <Button
               onClick={() =>
                 router.push("/admin/templates/")
@@ -418,6 +443,18 @@ const PublishedTemplatesPage = () => {
             >
               Ir a Configuración de Plantillas
             </Button>
+
+            <Button
+              onClick={() =>
+                router.push("/templates/published/update")
+              }
+              variant="outline"
+              leftSection={<IconArrowRight size={16} />}
+            >
+              Cambiar fechas de entrega plantillas
+            </Button>
+
+            </>
           )
         }
       </Group>

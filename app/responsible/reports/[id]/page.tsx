@@ -104,9 +104,15 @@ const ResponsibleReportPage = () => {
   const [openedReportForm, setOpenedReportForm] = useState(false);
   const [openedHistoryReport, setOpenedHistoryReport] = useState(false);
   const [availableDimensions, setAvailableDimensions] = useState<Dimension[]>([]);
+  const [selectedDimension, setSelectedDimension] = useState<string | null>(null);
   const toggle = () => setOpened((prev) => !prev);
   const [saving, setSaving] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
+
+  const now = dateNow();
+  const isReportEditable = publishedReport &&
+    new Date(publishedReport.period.responsible_start_date) <= now &&
+    new Date(publishedReport.period.responsible_end_date) >= now;
 
   const clearSelect = () => {
     setSelectedHistoryReport(null);
@@ -125,6 +131,34 @@ const ResponsibleReportPage = () => {
         }
       )
       if (response.data) {
+
+          console.log(response.data);
+
+          
+if (response.data.report.dimensions.length === 1) {
+  setSelectedDimension(response.data.report.dimensions[0]._id);
+
+}
+
+          if(response.data.report.dimensions.length > 1) {
+          setAvailableDimensions(response.data.report.dimensions);
+
+
+          {availableDimensions.length > 1 && (
+  <Select
+    label="Selecciona una dimensión"
+    placeholder="Selecciona una opción"
+    data={availableDimensions.map((d) => ({
+      value: d._id,
+      label: d.name,
+    }))}
+    value={selectedDimension}
+    onChange={setSelectedDimension}
+    mb="md"
+    required
+  />
+)}
+        }
         setSendsHistory(response.data.filled_reports);
         setPublishedReport(response.data);
       }
@@ -150,6 +184,7 @@ const ResponsibleReportPage = () => {
       formData.append("email", session?.user?.email ?? "");
       formData.append("dimension", dimension ?? "");
       formData.append("publishedReportId", publishedReport?._id ?? "");
+      formData.append("dimension", selectedDimension ?? "");
       formData.append("filledDraft", JSON.stringify(publishedReport?.filled_reports[0] ?? ""));
       if (reportFile) {
         formData.append("reportFile", reportFile);
@@ -237,6 +272,16 @@ const ResponsibleReportPage = () => {
       }
     }
 
+    if (!selectedDimension) {
+  showNotification({
+    title: "Falta seleccionar dimensión",
+    message: "Por favor selecciona una dimensión antes de continuar",
+    color: "red",
+  });
+  return;
+}
+
+
     try {
       setSending(true)
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible/sendReport`, {
@@ -289,6 +334,23 @@ const ResponsibleReportPage = () => {
       <Container size={'xl'} ml={'md'} fluid>
         <DateConfig />
         <Title ta={'center'} mb={'md'}>{publishedReport?.report.name}</Title>
+
+
+{publishedReport && !isReportEditable && (
+          <Text
+            c="red"
+            size="md"
+            ta="center"
+            mt="xs"
+            mb="md"
+            
+          >
+            <IconBulb color="#ff0000ff" size={20} style={{ marginBottom: "-4px", marginRight: "4px" }} />
+            Este informe solo estará disponible para cargar a partir del{" "}
+            {dateToGMT(publishedReport.period.responsible_start_date, "DD/MM/YYYY")}
+          </Text>
+        )}
+
           <Group mb="md">
           <Button
             variant="outline"
@@ -406,7 +468,7 @@ const ResponsibleReportPage = () => {
               variant="outline"
               leftSection={<IconEdit />}
               mt={25}
-              disabled={sendsHistory.some(
+              disabled={ !isReportEditable ||  sendsHistory.some(
               (report) => report.status === "Aprobado" || report.status === "En Revisión"
               ) || (new Date(publishedReport?.deadline || "") < dateNow())}
             >
@@ -438,7 +500,7 @@ const ResponsibleReportPage = () => {
                 leftSection={<IconCloudUpload/>}
                 mb={'md'}
                 variant="outline"
-                disabled={canSend || publishedReport?.filled_reports[0]?.status === "Rechazado" ||
+                disabled={!isReportEditable || canSend || publishedReport?.filled_reports[0]?.status === "Rechazado" ||
                   sendsHistory.some((report) => report.status === "Aprobado" 
                   || report.status === "En Revisión")
                 }
@@ -452,7 +514,7 @@ const ResponsibleReportPage = () => {
               label={ (new Date(publishedReport?.deadline || "") < dateNow()) 
                 ? "El plazo para enviar el informe ha vencido"
                 : publishedReport?.filled_reports[0]?.status !== "En Borrador" 
-                ? "Este informe ya fue enviado" : "Primero debes guardar el borrador"}
+                ? "Primero debes guardar el borrador" : "Este informe ya fue enviado"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
               disabled={canSend && (new Date(publishedReport?.deadline || "") >= dateNow())}
             >

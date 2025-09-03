@@ -33,6 +33,8 @@ interface Period {
   name: string;
   responsible_start_date: Date;
   responsible_end_date: Date;
+  producer_report_start_date: Date;
+  producer_report_end_date: Date;
 }
 
 interface AttachmentFile extends File {
@@ -104,6 +106,13 @@ const ResponsibleReportPage = () => {
   const clearSelect = () => {
     setSelectedHistoryReport(null);
   };
+
+  const isWithinProducerDateWindow = (): boolean => {
+  const now = dateNow();
+  const start = new Date(publishedReport?.period?.producer_report_start_date ?? "");
+  const end = new Date(publishedReport?.period?.producer_report_end_date ?? "");
+  return now >= start && now <= end;
+};
 
   const fetchReport = async () => {
     try {
@@ -279,6 +288,22 @@ const ResponsibleReportPage = () => {
       <Container size={'xl'} ml={'md'} fluid>
         <DateConfig/>
         <Title ta={'center'} mb={'md'}>{publishedReport?.report.name}</Title>
+
+        {publishedReport && !isWithinProducerDateWindow() && (
+          <Text
+            c="red"
+            size="md"
+            ta="center"
+            mt="xs"
+            mb="md"
+            
+          >
+            <IconBulb color="#ff0000ff" size={20} style={{ marginBottom: "-4px", marginRight: "4px" }} />
+            Este informe solo estará disponible para cargar a partir del{" "}
+            {dateToGMT(publishedReport.period.producer_report_start_date, "DD/MM/YYYY")}
+          </Text>
+        )}
+
           <Group mb="md">
           <Button
             variant="outline"
@@ -375,8 +400,8 @@ const ResponsibleReportPage = () => {
               "El plazo para enviar el informe ha expirado" :
               "No puedes modificar el informe si ya fue aprobado o está en revisión"}
             transitionProps={{ transition: "fade-up", duration: 300 }}
-            disabled={!sendsHistory.some((report) => report.status === "Aprobado" 
-              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow())}
+            disabled={!isWithinProducerDateWindow() || !sendsHistory.some((report) => report.status === "Aprobado" 
+              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow()) } 
           >
             <Button
               onClick={() => {
@@ -398,7 +423,7 @@ const ResponsibleReportPage = () => {
               mt={25}
               disabled={sendsHistory.some(
                 (report) => report.status === "Aprobado" || report.status === "En Revisión"
-              ) || (new Date(publishedReport?.deadline || "") < dateNow())}
+              ) || (new Date(publishedReport?.deadline || "") < dateNow()) || !isWithinProducerDateWindow()}
             >
               {sendsHistory[0]?.status === "En Borrador"
                 ? "Modificar borrador"
@@ -439,7 +464,7 @@ const ResponsibleReportPage = () => {
               </Button>
             </Tooltip>
             <Tooltip
-              label={publishedReport?.filled_reports[0]?.status !== "En Borrador" ? "Este informe ya fue enviado" : "Primero debes guardar el borrador"}
+              label={publishedReport?.filled_reports[0]?.status !== "En Borrador" ? "Primero debes guardar el borrador" : "Este informe ya fue enviado"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
               disabled={canSend}
             >
@@ -525,7 +550,7 @@ const ResponsibleReportPage = () => {
                 >
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th maw={rem(5)}/>
+                      <Table.Th maw={rem(100)}>Eliminar</Table.Th>
                       <Table.Th maw={rem(400)}>Archivo</Table.Th>
                       <Table.Th miw={rem(700)}>Descripción</Table.Th>
                     </Table.Tr>
@@ -549,7 +574,7 @@ const ResponsibleReportPage = () => {
                                 || !publishedReport?.filled_reports[0]?.status}
                             >
                               <IconX 
-                                size={16}
+                                size={30}
                                 color="red"
                               />
                             </Button>
@@ -596,7 +621,7 @@ const ResponsibleReportPage = () => {
                       <Table.Tr key={index}>
                         <Table.Td w={1}>
                           <Center>
-                            <IconX size={16} color="red" onClick={() => {
+                            <IconX size={30} color="red" onClick={() => {
                               const newAttachments = [...attachments];
                               newAttachments.splice(index, 1);
                               setAttachments(newAttachments);
@@ -729,6 +754,7 @@ const ResponsibleReportPage = () => {
               >
                 <Table.Thead>
                   <Table.Tr>
+                    <Table.Th maw={rem(100)}>Eliminar</Table.Th>
                     <Table.Th maw={rem(400)}>Archivo</Table.Th>
                     <Table.Th miw={rem(700)}>Descripción</Table.Th>
                   </Table.Tr>

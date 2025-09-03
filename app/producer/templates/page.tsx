@@ -13,6 +13,7 @@ import {
   Group,
   Tooltip,
   Text,
+  Badge,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -40,6 +41,9 @@ import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
+import dayjs from "dayjs";
+import "dayjs/locale/es";
+import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
 
 const DropzoneButton = dynamic(
   () =>
@@ -49,17 +53,28 @@ const DropzoneButton = dynamic(
   { ssr: false }
 );
 
+interface Category {
+  name: string;
+}
+
 interface Field {
   name: string;
   datatype: string;
   required: boolean;
   validate_with?: string;
   comment?: string;
+  multiple:boolean;
 }
 
 interface Dimension {
   _id: string;
   name: string;
+}
+
+interface Category{
+  _id: string,
+  name:string,
+  templateSequence: number
 }
 
 interface Template {
@@ -70,6 +85,7 @@ interface Template {
   file_description: string;
   fields: Field[];
   active: boolean;
+  category: Category
 }
 
 interface FilledFieldData {
@@ -106,7 +122,10 @@ interface PublishedTemplate {
   updatedAt: string;
   loaded_data: ProducerData[];
   validators: Validator[];
-  deadline: Date;
+  deadline: string | Date;
+  isPending: boolean;
+  category_name?: string;
+      sequence: number;
 }
 
 const ProducerTemplatesPage = () => {
@@ -118,6 +137,8 @@ const ProducerTemplatesPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [producerEndDate, setProducerEndDate] = useState<Date | undefined>();
+  const [nextDeadline, setNextDeadline] = useState<Date | null>(null);
+  const [pendingCount, setPendingCount] = useState<number>(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null
   );
@@ -125,6 +146,21 @@ const ProducerTemplatesPage = () => {
     useDisclosure(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
+  // const fetchPublishedTemplates = async () => {
+  //   try {
+  //     const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories/published-templates`);
+  //     if (response.data) {
+  //       setTemplates(response.data.publishedTemplates); // Suponiendo que el JSON contiene la lista en "publishedTemplates"
+  //     }
+  //   } catch (error) {
+  //     console.error("Error al obtener los templates publicados:", error);
+  //   }
+  // };
+  
+  // useEffect(() => {
+  //   fetchPublishedTemplates();
+  // }, []);
+  
   const fetchTemplates = async (page?: number, search?: string) => {
     try {
       const response = await axios.get(
@@ -133,7 +169,7 @@ const ProducerTemplatesPage = () => {
           params: {
             email: session?.user?.email,
             page,
-            limit: 10,
+            limit: 20,
             search,
             periodId: selectedPeriodId,
           },
@@ -142,12 +178,18 @@ const ProducerTemplatesPage = () => {
       if (response.data) {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
-        setProducerEndDate(new Date(response.data.templates[0].deadline));
+        setPendingCount(response.data.templates.length || 0);
       }
     } catch (error) {
       setTemplates([]);
+      setPendingCount(0);
     }
   };
+
+  useEffect(() => {
+    console.log("Template con categoría:", PublishedTemplatesPage);  // Verifica que category esté poblado correctamente
+  }, [PublishedTemplatesPage]);
+  
 
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
@@ -177,6 +219,30 @@ const ProducerTemplatesPage = () => {
 
     return () => clearTimeout(delayDebounceFn);
   }, [search]);
+
+  useEffect(() => {
+    if (session?.user?.email && selectedPeriodId) {
+      fetchTemplates(page, search);
+    }
+  }, [page, search, session, selectedPeriodId]);
+
+  useEffect(() => {
+    if (templates.length === 0) {
+      setNextDeadline(null);
+      return;
+    }
+
+    const deadlines = templates
+      .map((t) => new Date(t.deadline))
+      .filter((date) => !isNaN(date.getTime()));
+
+    if (deadlines.length > 0) {
+      setNextDeadline(new Date(Math.min(...deadlines.map((date) => date.getTime()))));
+    } else {
+      setNextDeadline(null);
+    }
+  }, [templates]);
+  
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     const { template, validators } = publishedTemplate;
@@ -239,13 +305,23 @@ const ProducerTemplatesPage = () => {
       for (let i = 2; i <= maxRows; i++) {
         const row = worksheet.getRow(i);
         const cell = row.getCell(colNumber);
+
+        // 💡 Forzar formato de texto si el tipo es Texto Corto o Texto Largo
+if (field.multiple || field.datatype === "Texto Corto" || field.datatype === "Texto Largo") {
+  cell.numFmt = "@";
+}
+
+  // ⛔️ Omitir validaciones si es campo múltiple
+if (field.multiple) {
+  continue; // skip validations
+}
     
         switch (field.datatype) {
           case 'Entero':
             cell.dataValidation = {
               type: 'whole',
-              operator: 'between',
-              formulae: [1, 9999999999999999999999999999999],
+              operator: 'greaterThanOrEqual',
+              formulae: [0],
               showErrorMessage: true,
               errorTitle: 'Valor no válido',
               error: 'Por favor, introduce un número entero.'
@@ -379,6 +455,33 @@ const ProducerTemplatesPage = () => {
     saveAs(blob, `${template.file_name}.xlsx`);
   };
 
+  const categoryColors = [
+    'blue', 
+    'cyan', 
+    'grape', 
+    'indigo', 
+    'violet', 
+    'teal', 
+    'green'
+  ];
+  
+  const getCategoryColor = (categoryName: any) => {
+    if (!categoryName || categoryName === 'Sin categoría') return 'gray';
+    
+    // Simple hash function to generate consistent colors
+    const hashCode = (str: any) => {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return Math.abs(hash);
+    };
+  
+    // Use the hash to select a color from the predefined palette
+    return categoryColors[hashCode(categoryName) % categoryColors.length];
+  };
+
   const handleUploadClick = (publishedTemplate: PublishedTemplate) => {
     if(handleDisableUpload(publishedTemplate)) {
       showNotification({
@@ -421,11 +524,36 @@ const ProducerTemplatesPage = () => {
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
+    //console.log("Published Template:", publishedTemplate); // Agregar el log aquí para inspeccionar los datos
     const uploadDisable = handleDisableUpload(publishedTemplate);
     return (
       <Table.Tr key={publishedTemplate._id}>
+<Table.Td>
+  <Badge 
+    size="lg"
+    variant="light" 
+    color={getCategoryColor(publishedTemplate.template.category.name)}
+    fullWidth
+    rightSection={
+      publishedTemplate.template.category.templateSequence ? (
+        <Text size="lg" fw={700}>
+          #{publishedTemplate.template.category.templateSequence}
+        </Text>
+      ) : null
+    }
+  >
+     {publishedTemplate.template.category.name || 'Sin categoría'}
+  </Badge>
+</Table.Td>
+
         <Table.Td>{publishedTemplate.period.name}</Table.Td>
         <Table.Td>{publishedTemplate.name}</Table.Td>
+        <Table.Td>
+  <Text ta="justify">
+    {publishedTemplate.template.file_description}
+  </Text>
+</Table.Td>
+
         <Table.Td>{publishedTemplate.template.dimensions.map(dim => dim.name).join(', ')}</Table.Td>
         <Table.Td fw={700}>
           {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
@@ -516,6 +644,20 @@ const ProducerTemplatesPage = () => {
       <Title ta="center" mb={"md"}>
         Plantillas Pendientes
       </Title>
+      <Text ta="center" mt="sm" mb="md">
+    Tienes <strong>{pendingCount}</strong> plantilla
+    {pendingCount === 1 ? "" : "s"} pendiente
+    {pendingCount === 1 ? "" : "s"}.
+    <br />
+    {nextDeadline ? (
+      <>
+        La fecha de vencimiento es el{" "}
+        <strong>{dayjs(nextDeadline).format("DD/MM/YYYY")}</strong>.
+      </>
+    ) : (
+      <>No hay fecha de vencimiento próxima.</>
+    )}
+  </Text>
       <TextInput
         placeholder="Buscar plantillas  "
         value={search}
@@ -525,6 +667,25 @@ const ProducerTemplatesPage = () => {
       <Table striped withTableBorder mt="md">
         <Table.Thead>
           <Table.Tr>
+          <Table.Th
+  onClick={() => handleSort("template.category.name")}
+  style={{ cursor: "pointer" }}
+>
+  <Center inline>
+    Categoría/Secuencia
+    {sortConfig.key === "template.category.name" ? (
+      sortConfig.direction === "asc" ? (
+        <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
+      ) : (
+        <IconArrowBigDownFilled size={16} style={{ marginLeft: "5px" }} />
+      )
+    ) : (
+      <IconArrowsTransferDown size={16} style={{ marginLeft: "5px" }} />
+    )}
+  </Center>
+</Table.Th>
+
+
           <Table.Th onClick={() => handleSort("period.name")} style={{ cursor: "pointer" }}>
               <Center inline>
                 Periodo
@@ -543,6 +704,20 @@ const ProducerTemplatesPage = () => {
               <Center inline>
                 Nombre
                 {sortConfig.key === "name" ? (
+                  sortConfig.direction === "asc" ? (
+                    <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
+                  ) : (
+                    <IconArrowBigDownFilled size={16} style={{ marginLeft: "5px" }} />
+                  )
+                ) : (
+                  <IconArrowsTransferDown size={16} style={{ marginLeft: "5px" }} />
+                )}
+              </Center>
+            </Table.Th>
+            <Table.Th onClick={() => handleSort("template.dimension.file_description")} style={{ cursor: "pointer" }}>
+            <Center inline>
+                Descripción
+                {sortConfig.key === "template.dimension.file_description" ? (
                   sortConfig.direction === "asc" ? (
                     <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
                   ) : (
@@ -585,7 +760,7 @@ const ProducerTemplatesPage = () => {
             rows
           ) : (
             <Table.Tr>
-              <Table.Td colSpan={6}>
+              <Table.Td colSpan={7}>
                 <Center>
                   <p>No hay registros para este período.</p>
                 </Center>

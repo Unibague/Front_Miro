@@ -91,6 +91,16 @@ const ReportCreatePage = () => {
       });
       router.back();
     } catch (error) {
+
+      if (axios.isAxiosError(error) && error.response?.data?.error) {
+    showNotification({
+      title: "Error",
+      message: error.response.data.error,
+      color: "red",
+    });
+    return;
+  }
+
       console.error("Error creating report:", error);
       showNotification({
         title: "Error",

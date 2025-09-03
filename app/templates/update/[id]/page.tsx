@@ -74,6 +74,7 @@ const UpdateTemplatePage = () => {
         try {
           const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`);
           if (response.data) {
+            
             setName(response.data.name);
             setFileName(response.data.file_name);
             setFileDescription(response.data.file_description);
@@ -196,37 +197,55 @@ const UpdateTemplatePage = () => {
     };
 
     try {
-      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`, templateData);
-      showNotification({
-        title: "Actualizado",
-        message: "Plantilla actualizada exitosamente",
-        color: "teal",
-      });
-      router.back();
-    } catch (error: any) {
-      console.error("Error guardando plantilla:", error);
+      const response = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`, templateData);
 
-      if(error.response.data.message) {
-        showNotification({
-          title: "Error",
-          message: 'La plantilla se encuentra publicada y ya han hecho cargue de información, no se puede modificar',
-          color: "red",
-        });
-      }
-      if (axios.isAxiosError(error) && error.response && error.response.data.mensaje) {
-        showNotification({
-          title: "Error",
-          message: error.response.data.mensaje,
-          color: "red",
-        });
-      } else {
-        showNotification({
-          title: "Error",
-          message: "Hubo un error al guardar la plantilla",
-          color: "red",
-        });
-      }
-    }
+if (response.data.warning) {
+  showNotification({
+    title: "Actualizado con advertencia",
+    message: `${response.data.warning} (${response.data.blockedProducers?.length ?? 0}) productores no fueron eliminados.`,
+    color: "yellow",
+  });
+} else {
+  showNotification({
+    title: "Actualizado",
+    message: "Plantilla actualizada exitosamente",
+    color: "teal",
+  });
+}
+
+router.back();
+
+} catch (error: any) {
+  console.error("Error guardando plantilla:", error);
+
+  // 💡 Detecta error específico del backend por caracteres inválidos
+  if (axios.isAxiosError(error) && error.response?.data?.error) {
+    showNotification({
+      title: "Error al guardar plantilla:",
+      message: error.response.data.error,
+      color: "red",
+    });
+    return;
+  }
+
+  // 🟡 Caso de advertencia por productores no eliminables
+  if (error.response?.data?.message) {
+    showNotification({
+      title: "Error",
+      message: 'La plantilla se encuentra publicada y ya han hecho cargue de información, no se puede modificar',
+      color: "red",
+    });
+    return;
+  }
+
+  // 🔴 Error genérico (último recurso)
+  showNotification({
+    title: "Error",
+    message: "Hubo un error al guardar la plantilla",
+    color: "red",
+  });
+}      
+    
   };
 
   const onDragEnd = (result: DropResult) => {
@@ -307,6 +326,8 @@ const UpdateTemplatePage = () => {
         onChange={(event) => setActive(event.currentTarget.checked)}
         mb="md"
       />
+              <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
+
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="fields">
           {(provided) => (

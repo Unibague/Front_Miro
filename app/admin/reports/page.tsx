@@ -113,6 +113,7 @@ const AdminReportsPage = () => {
   const router = useRouter();
   const [customDeadline, setCustomDeadline] = useState(false);
   const [deadline, setDeadline] = useState<Date | null>(null);
+  const [loadingPublishOptions, setLoadingPublishOptions] = useState(false);
   const { sortedItems: sortedReports, handleSort, sortConfig } = useSort<Report>(reports, { key: null, direction: "asc" });
 
   const fetchReports = async (page: number, search: string) => {
@@ -134,6 +135,7 @@ const AdminReportsPage = () => {
   };
 
   const fetchPublishOptions = async () => {
+    setLoadingPublishOptions(true);
     try {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pReports/feed`,
@@ -142,11 +144,14 @@ const AdminReportsPage = () => {
       if (response.data) {
         setDimensions(response.data.dimensions);
         setPeriods(response.data.periods);
+        console.log('Periods loaded:', response.data.periods);
       }
     } catch (error) {
       console.error("Error fetching publish options:", error);
       setDimensions([]);
       setPeriods([]);
+    } finally {
+      setLoadingPublishOptions(false);
     }
   };
 
@@ -301,10 +306,11 @@ const AdminReportsPage = () => {
           >
             <Button
               variant="outline"
-              onClick={() => {
-                fetchPublishOptions();
-                setPublishing(true);
+              loading={loadingPublishOptions}
+              onClick={async () => {
                 setSelectedReport(report);
+                await fetchPublishOptions();
+                setPublishing(true);
               }}
             >
               <IconUser size={16} />
@@ -403,23 +409,29 @@ const AdminReportsPage = () => {
         onClose={handlePublishModalClose}
         title="Asignar Informe a Dimension(es)"
       >
-        <Select
-          data={periods.map((period) => ({
-            value: period._id,
-            label: period.name,
-          }))}
-          value={selectedPeriod}
-          onChange={(value) => {
-            setSelectedPeriod(value || null)
-            const selectedPeriod = periods.find((period) => period._id === value);
-            console.log(selectedPeriod);
-            setDeadline(selectedPeriod ? new Date(selectedPeriod.responsible_end_date) : null);
-          }}
-          searchable
-          placeholder="Selecciona el periodo"
-          label="Periodo"
-          required
-        />
+        {periods.length > 0 ? (
+          <Select
+            data={periods.map((period) => ({
+              value: period._id,
+              label: period.name,
+            }))}
+            value={selectedPeriod}
+            onChange={(value) => {
+              setSelectedPeriod(value || null)
+              const selectedPeriod = periods.find((period) => period._id === value);
+              console.log(selectedPeriod);
+              setDeadline(selectedPeriod ? new Date(selectedPeriod.responsible_end_date) : null);
+            }}
+            searchable
+            placeholder="Selecciona el periodo"
+            label="Periodo"
+            required
+          />
+        ) : (
+          <Text c="dimmed" ta="center" mt="md">
+            No hay períodos activos disponibles para asignar informes en este momento. (Fecha inicio y fin responsable)
+          </Text>
+        )}
         {
           selectedPeriod &&
           <>
@@ -446,7 +458,12 @@ const AdminReportsPage = () => {
           />
         }
         <Group mt="md" grow>
-          <Button onClick={() => selectedReport && handleSubmitPublish(selectedReport._id)}>Asignar</Button>
+          <Button 
+            onClick={() => selectedReport && handleSubmitPublish(selectedReport._id)}
+            disabled={periods.length === 0 || !selectedPeriod}
+          >
+            Asignar
+          </Button>
           <Button variant="outline" onClick={handlePublishModalClose}>
             Cancelar
           </Button>

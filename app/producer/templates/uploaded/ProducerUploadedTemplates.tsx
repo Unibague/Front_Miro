@@ -218,18 +218,52 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
       column.width = 20;
     });
 
-    const filledData = publishedTemplate.loaded_data.find(
-      (data: any) => data.send_by?.email === session?.user?.email
-    );
+// Obtener el dep_code del usuario actual desde la API
+const userResp = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`);
+const depCode = userResp.data.dep_code;
+
+// Buscar en loaded_data el bloque correcto
+const filledData: any = publishedTemplate.loaded_data.find(
+  (entry) => entry.dependency === depCode
+);
+
+if (!filledData) {
+  showNotification({
+    title: "Sin datos cargados",
+    message: "No se encontraron datos cargados para tu dependencia.",
+    color: "yellow",
+  });
+  return;
+}
 
     if (filledData) {
-      const numRows = filledData.filled_data[0]?.values?.length;
+      const firstFilled = filledData?.filled_data.find((fd: any) => Array.isArray(fd.values) && fd.values.length > 0);
+const numRows = firstFilled ? firstFilled.values.length : 0;
       for (let i = 0; i < numRows; i++) {
         const rowValues = template.fields.map((field) => {
           const fieldData = filledData.filled_data.find(
             (data: FilledFieldData) => data.field_name === field.name
           );
-          return fieldData ? fieldData.values[i] : null;
+
+    let value = (fieldData?.values && fieldData.values[i] !== undefined)
+      ? fieldData.values[i]
+      : null;
+
+          if (
+            value &&
+            (field.datatype === "Fecha" || field.datatype === "Fecha Inicial / Fecha Final")
+          ) {
+            try {
+              const date = new Date(value);
+              if (!isNaN(date.getTime())) {
+                value = date.toISOString().slice(0, 10); // YYYY-MM-DD
+              }
+            } catch {
+              // Si falla el parseo, deja el valor tal cual
+            }
+          }
+
+          return value;
         });
         worksheet.addRow(rowValues);
       }
@@ -437,9 +471,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
         <Table.Td>
           {dateToGMT(publishedTemplate.period.producer_end_date)}
         </Table.Td>
-        <Table.Td>
-          {truncateString(publishedTemplate.loaded_data[0].send_by.full_name)}
-        </Table.Td>
+    
         <Table.Td>
           {dateToGMT(publishedTemplate.loaded_data[0].loaded_date)}
         </Table.Td>
@@ -595,7 +627,6 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
                 )}
               </Center>
             </Table.Th>
-            <Table.Th>Cargado por</Table.Th>
             <Table.Th onClick={() => handleSort("loaded_data[0].loaded_date")} style={{ cursor: "pointer" }}>
               <Center inline>
                 Fecha de Cargue

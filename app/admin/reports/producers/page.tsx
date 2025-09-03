@@ -20,6 +20,7 @@ interface Report {
     email: string;
     full_name: string;
   };
+  published: boolean,
 }
 
 interface Period {
@@ -59,16 +60,20 @@ const ProducerReportPage = () => {
 
   const [opened, setOpened] = useState(false);
 
+
+
+  
   const fetchReports = async () => {
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/producerReports/`, {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/producerReports/all`, {
         params: {
           email: session?.user?.email,
           page: page,
           search: search,
+          periodId: selectedPeriod
         },
       });
-      setReports(response.data.reports);
+      setReports(response.data);
     } catch (error) {
       console.error("Error fetching reports:", error);
       showNotification({
@@ -110,9 +115,9 @@ const ProducerReportPage = () => {
       });
       setOpened(false);
       setSelectedReport(null);
-      setSelectedPeriod(null);
       setDeadline(null);
       setCustomDeadline(false);
+      await fetchReports();
     } catch (error) {
       console.error("Error publishing report:", error);
       showNotification({
@@ -129,11 +134,26 @@ const ProducerReportPage = () => {
     }, 200);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search]);
+  }, [search, selectedPeriod]);
 
   useEffect(() => {
     fetchPeriods();
   }, [selectedReport]);
+
+  useEffect(() => {
+  const fetchActivePeriod = async () => {
+    try {
+      const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/active`);
+      console.log(data);
+      if (data.length > 0) {
+        setSelectedPeriod(data[0]._id); // Aquí lo estableces como valor por defecto
+      }
+    } catch (error) {
+      console.error("Error fetching active period:", error);
+    }
+  };
+  fetchActivePeriod();
+}, []);
 
   const rows = reports?.map((report: Report) => (
     <Table.Tr key={report._id}>
@@ -177,40 +197,53 @@ const ProducerReportPage = () => {
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
-            <Tooltip
-              label="Borrar informe"
-              position="top"
-              withArrow
-              transitionProps={{ transition: 'fade-up', duration: 300 }}
-            >
-              <Button
-                color="red"
-                variant="outline"
-              >
-                <IconTrash size={16} />
-              </Button>
-            </Tooltip>
+<Tooltip label="Borrar informe">
+  <Button
+    color="red"
+    variant="outline"
+    onClick={async () => {
+      if (!window.confirm("¿Estás seguro de eliminar este informe? Esta acción no se puede deshacer.")) return;
+
+      try {
+        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/producerReports/${report._id}`);
+        showNotification({
+          title: "Eliminado",
+          message: "Informe eliminado correctamente.",
+          color: "green"
+        });
+        fetchReports();
+      } catch (error: any) {
+  const msg = error.response?.data?.message || "Error inesperado.";
+  showNotification({
+    title: "Error",
+    message: msg,
+    color: "red"
+  });
+}
+    }}
+  >
+    <IconTrash size={16} />
+  </Button>
+</Tooltip>
           </Group>
         </Center>
       </Table.Td>
       <Table.Td>
         <Center>
-          <Tooltip
-            label="Asignar informe a periodo"
-            position="top"
-            withArrow
-            transitionProps={{ transition: 'fade-up', duration: 300 }}
-          >
-            <Button
-              onClick={() => {
-                setSelectedReport(report);
-                setOpened(true);
-              }}
-              variant="outline"
-            >
-              <IconUser size={16} />
-            </Button>
-          </Tooltip>
+          <Tooltip label={report.published ? "Ya asignado en este periodo" : "Asignar informe a periodo"}>
+  <span>
+    <Button
+      onClick={() => {
+        setSelectedReport(report);
+        setOpened(true);
+      }}
+      disabled={report.published}
+      variant="outline"
+    >
+      <IconUser size={16} />
+    </Button>
+  </span>
+</Tooltip>
         </Center>
       </Table.Td>
     </Table.Tr>
@@ -284,7 +317,6 @@ const ProducerReportPage = () => {
         onClose={() => {
           setOpened(false)
           setSelectedReport(null);
-          setSelectedPeriod(null);
           setDeadline(null);
           setCustomDeadline(false);
         }}
@@ -333,7 +365,6 @@ const ProducerReportPage = () => {
             onClick={() => {
               setOpened(false)
               setSelectedReport(null);
-              setSelectedPeriod(null);
               setDeadline(null);
               setCustomDeadline(false);
             }}

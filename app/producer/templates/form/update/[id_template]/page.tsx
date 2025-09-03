@@ -77,7 +77,9 @@ const ProducerTemplateUpdatePage = ({
   const [loading, setLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
-
+  const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
+  const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
+  
   useEffect(() => {
     if (id_template) {
       fetchTemplateAndData();
@@ -163,26 +165,32 @@ const ProducerTemplateUpdatePage = ({
     }
   };
 
-  const transformData = (data: any[]): Record<string, any>[] => {
-    const rowCount = data[0]?.values?.length || 0;
-    const transformedRows: Record<string, any>[] = Array.from({ length: rowCount }, () => ({}));
-    
-    data.forEach((fieldData) => {
-      const isMultiple = template?.fields.find(f => f.name === fieldData.field_name)?.multiple;
+const transformData = (data: any[]): Record<string, any>[] => {
+  const rowCount = data[0]?.values?.length || 0;
+  const transformedRows: Record<string, any>[] = Array.from({ length: rowCount }, () => ({}));
 
-      fieldData.values.forEach((value: any, index: number) => {
-        if (isMultiple) {
-          transformedRows[index][fieldData.field_name] = Array.isArray(value) 
-          ? value.map(v => v.toString())
-          : value?.toString().split(",");
+  data.forEach((fieldData) => {
+    const isMultiple = template?.fields.find(f => f.name === fieldData.field_name)?.multiple;
+
+    fieldData.values.forEach((value: any, index: number) => {
+      if (isMultiple) {
+        if (Array.isArray(value)) {
+          transformedRows[index][fieldData.field_name] = value.map(v => v.toString());
+        } else if (typeof value === "number") {
+          transformedRows[index][fieldData.field_name] = [value.toString()];
+        } else if (typeof value === "string") {
+          transformedRows[index][fieldData.field_name] = value.split(",").map(v => v.trim());
         } else {
-          transformedRows[index][fieldData.field_name] = value;
+          transformedRows[index][fieldData.field_name] = [];
         }
-      });
+      } else {
+        transformedRows[index][fieldData.field_name] = value;
+      }
     });
-  
-    return transformedRows;
-  };
+  });
+
+  return transformedRows;
+};
 
   const validateFields = () => {
     const newErrors: Record<string, string[]> = {};
@@ -414,6 +422,11 @@ const ProducerTemplateUpdatePage = ({
       <Title ta="center" mb="md">
         {`Editar Plantilla: ${publishedTemplateName}`}
       </Title>
+      {rows.length === 0 && (
+  <Text ta="center" color="red" size="sm" mb="md">
+    Plantilla reportada en cero
+  </Text>
+)}
       <Tooltip
         label="Desplázate horizontalmente para ver todas las columnas"
         position="bottom"
@@ -502,10 +515,19 @@ const ProducerTemplateUpdatePage = ({
         </Group>
       </Group>
       <ValidatorModal
-        opened={validatorModalOpen}
-        onClose={() => setValidatorModalOpen(false)}
-        validatorId={validatorData?._id || ""}
-      />
+  opened={validatorModalOpen}
+  onClose={() => setValidatorModalOpen(false)}
+  validatorId={validatorData?._id || ""}
+  onCopy={(value: string) => {
+    if (activeRowIndex !== null && activeFieldName !== null) {
+      const updatedRows = [...rows];
+      updatedRows[activeRowIndex][activeFieldName] = value;
+      setRows(updatedRows);
+    }
+    setValidatorModalOpen(false);
+  }}
+/>
+
     </Container>
   );
 };

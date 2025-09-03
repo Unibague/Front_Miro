@@ -119,6 +119,16 @@ const ProducerReportCreatePage = () => {
       router.back();
     } catch (error) {
       console.error("Error creating report:", error);
+
+    if (axios.isAxiosError(error) && error.response?.data?.error) {
+    showNotification({
+      title: "Error",
+      message: error.response.data.error,
+      color: "red",
+    });
+    return;
+  }
+
       showNotification({
         title: "Error",
         message: "Hubo un error al crear el informe",

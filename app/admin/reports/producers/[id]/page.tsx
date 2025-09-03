@@ -161,6 +161,17 @@ const ProducerReportCreatePage = () => {
       });
       router.back();
     } catch (error) {
+
+      if (axios.isAxiosError(error) && error.response?.data?.error) {
+    showNotification({
+      title: "Error",
+      message: error.response.data.error,
+      color: "red",
+    });
+    return;
+  }
+
+
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         showNotification({
           title: "Error",

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from "react";
 import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Select, Tooltip, Text, Checkbox } from "@mantine/core";
-import axios from "axios";
+import axios,{ AxiosError } from "axios";
 import { showNotification } from "@mantine/notifications";
 import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
@@ -145,12 +145,13 @@ const AdminTemplatesPage = () => {
         color: "teal",
       });
       fetchTemplates(page, search);
-    } catch (error: any) {
-      showNotification({
-        title: "Error",
-        message: error.response?.data?.mensaje || "Hubo un error al eliminar la plantilla",
-        color: "red",
-      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+    const mensaje = error.response?.data?.mensaje || "Hubo un error al eliminar la plantilla";
+    showNotification({ title: "Error borrando plantilla", message: mensaje, color: "red" });
+  } else {
+    showNotification({ title: "Error borrando plantilla", message: "Error inesperado", color: "red" });
+  }
     }
   };
 
@@ -480,6 +481,13 @@ const AdminTemplatesPage = () => {
         >
           Crear Nueva Plantilla
         </Button>
+        <Button
+    onClick={() => router.push('/templates/categories')}  
+    leftSection={<IconArrowsTransferDown size={16} />}
+  >
+    Categorizar Plantillas
+  </Button>
+
         <Button 
           ml={"auto"} 
           onClick={() => router.push('/templates/published')}

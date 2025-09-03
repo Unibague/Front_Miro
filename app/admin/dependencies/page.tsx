@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text } from "@mantine/core";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge } from "@mantine/core";
 import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from 'next/navigation';
@@ -16,6 +16,7 @@ interface Dependency {
   members: string[];
   responsible: string;
   dep_father: string;
+  visualizers: string[]
 }
 
 interface MemberOption {
@@ -106,6 +107,10 @@ const AdminDependenciesPage = () => {
     }
   };
 
+  const handleShowTemplates = (dependency: Dependency) => {
+    router.push(`/admin/dependencies/templates/${dependency._id}`);
+  }
+
   const handleEdit = (dependency: Dependency) => {
     router.push(`/admin/dependencies/update/${dependency._id}`);
   };
@@ -159,15 +164,34 @@ const AdminDependenciesPage = () => {
     setMembers([]);
   };
 
-  const rows = sortedDependencies.map((dependency) => (
+  //filter dependencies
+
+  const filteredDependencies = sortedDependencies.filter(
+    (dependency) => dependency.members && dependency.members.length > 0
+  );
+
+ const rows = filteredDependencies.map((dependency) => (
     <Table.Tr key={dependency._id}>
       <Table.Td>{dependency.dep_code}</Table.Td>
       <Table.Td>{dependency.name}</Table.Td>
-      <Table.Td>{dependency.responsible}</Table.Td>
+      <Table.Td>
+        {dependency.visualizers.length > 0 ? <Group gap={5}>
+    {dependency.visualizers.slice(0, 1).map((v, index) => (
+      <Text key={index} > {v} </Text>
+    ))}
+    {dependency.visualizers.length > 1 && (
+      <Badge variant="outline">+{dependency.visualizers.length - 1} más</Badge>
+    )}
+  </Group> : <Text> No definido </Text> }
+  
+</Table.Td>
       {/* <Table.Td>{dependency.dep_father}</Table.Td> */}
       <Table.Td>
         <Center>
           <Group gap={5}>
+            <Button variant="outline" color="orange" onClick={() => handleShowTemplates(dependency)}>
+               Plantillas
+            </Button>
             <Button variant="outline" onClick={() => handleEdit(dependency)}>
               <IconEdit size={16} />
             </Button>
@@ -193,7 +217,7 @@ const AdminDependenciesPage = () => {
           loading={isLoading}
           leftSection={<IconRefresh/>}
         >
-          Sincronizar Dependencias
+          Sincronizar las Dependencias
         </Button>
       </Group>
       <Table striped withTableBorder mt="md">
@@ -229,7 +253,7 @@ const AdminDependenciesPage = () => {
             </Table.Th>
             <Table.Th onClick={() => handleSort("responsible")} style={{ cursor: "pointer" }}>
               <Center inline>
-                Responsable
+                Líder(es)
                 {sortConfig.key === "responsible" ? (
                   sortConfig.direction === "asc" ? (
                     <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />

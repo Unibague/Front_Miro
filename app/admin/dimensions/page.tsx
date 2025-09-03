@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, Text, List } from "@mantine/core";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, Text, List, Badge } from "@mantine/core";
 import { IconSettings, IconEdit, IconTrash, IconEye, IconBulb, IconCirclePlus, IconDeviceFloppy, IconCancel, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown } from "@tabler/icons-react";
 import { useRouter } from 'next/navigation';
 import axios from "axios";
@@ -27,6 +27,7 @@ interface Dependency {
   dep_code: string;
   name: string;
   responsible: string;
+  visualizers: string[]
 }
 
 const AdminDimensionsPage = () => {
@@ -182,7 +183,19 @@ const AdminDimensionsPage = () => {
     <Table.Tr key={dimension._id}>
       <Table.Td>{dimension.name}</Table.Td>
       <Table.Td>{dimension.responsible?.name ?? "Sin dependencia asignada"}</Table.Td>
-      <Table.Td>{dimension.responsible?.responsible ?? "Sin responsable asignado"}</Table.Td>
+      <Table.Td>
+        
+ {dimension.responsible.visualizers?.length > 0 ? <Group gap={5}>
+    {dimension.responsible.visualizers?.slice(0, 1).map((v, index) => (
+      <Text key={index} > {v} </Text>
+    ))}
+    {dimension.responsible.visualizers?.length > 1 && (
+      <Badge variant="outline">+{dimension.responsible.visualizers?.length - 1} más </Badge>
+    )}
+  </Group> : <Text> No definido </Text> }
+
+
+      </Table.Td>
       <Table.Td>
         <Center>
           <Group gap={5}>
@@ -248,7 +261,7 @@ const AdminDimensionsPage = () => {
                 )}
               </Center>
             </Table.Th>
-            <Table.Th>Responsable de dependencia</Table.Th>
+            <Table.Th>Líder(es) de dependencia</Table.Th>
             <Table.Th><Center>Acciones</Center></Table.Th>
           </Table.Tr>
         </Table.Thead>
