@@ -137,7 +137,8 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
         }
       );
       if (response.data && response.data.templates && response.data.templates.length > 0) {
-        const deadline = response.data.templates[0]?.period?.deadline;
+        const template = response.data.templates[0];
+        const deadline = template?.period?.producer_end_date || template?.period?.deadline;
         if (deadline) {
           const dateObj = new Date(deadline);
           setProducerEndDate(!isNaN(dateObj.getTime()) ? dateObj : undefined);
