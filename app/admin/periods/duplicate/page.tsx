@@ -132,8 +132,7 @@ const DuplicatePeriodPage = () => {
       showNotification({
         title: "Error",
         message: "Selecciona un periodo a duplicar y un periodo objetivo",
-        color: "red",
-        timeout: 4000
+        color: "red"
       });
       return;
     }
@@ -422,7 +421,6 @@ const DuplicatePeriodPage = () => {
                 title: "Error",
                 message: "El periodo a clonar y el periodo objetivo no pueden ser iguales",
                 color: "red",
-                timeout: 4000
               });
             } else {
               setTargetPeriod(availablePeriods.find(period => period._id === value) || null)

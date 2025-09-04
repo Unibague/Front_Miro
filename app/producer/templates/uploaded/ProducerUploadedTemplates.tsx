@@ -709,7 +709,7 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
           />
         )}
         {selectedTemplateId && !producerEndDate && (
-          <Text>Cargando información de fecha...</Text>
+          <div>Cargando información de fecha...</div>
         )}
       </Modal>
     </Container>
