@@ -43,13 +43,18 @@ const AdminDimensionsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [selectedDependencyFilter, setSelectedDependencyFilter] = useState<string | null>(null);
   const router = useRouter();
   const { sortedItems: sortedDimensions, handleSort, sortConfig } = useSort<Dimension>(dimensions, { key: null, direction: "asc" });
 
-  const fetchDimensions = async (page: number, search: string) => {
+  const fetchDimensions = async (page: number, search: string, dependencyFilter?: string) => {
     try {
+      const params: any = { page, limit: 10, search, email: session?.user?.email };
+      if (dependencyFilter) {
+        params.dependencyId = dependencyFilter;
+      }
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/all`, {
-        params: { page, limit: 10, search },
+        params,
       });
       if (response.data) {
         const dimensions = response.data.dimensions || [];
@@ -65,25 +70,29 @@ const AdminDimensionsPage = () => {
   const fetchDependencies = async () => {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${session?.user?.email}`)
+      console.log('Dependencies loaded:', response.data);
       setAllDependencies(response.data);
-      setTotalPages(response.data.pages);
     } catch (error) {
       console.error("Error fetching dependencies:", error);
     }
   };
 
   useEffect(() => {
-    fetchDimensions(page, search);
-    fetchDependencies();
-  }, [page]);
+    if (session?.user?.email) {
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
+      fetchDependencies();
+    }
+  }, [page, selectedDependencyFilter, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchDimensions(page, search);
+      if (session?.user?.email) {
+        fetchDimensions(page, search, selectedDependencyFilter || undefined);
+      }
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search]);
+  }, [search, session]);
 
   const handleCreateOrEdit = async () => {
     if (!name || !responsible) {
@@ -118,7 +127,7 @@ const AdminDimensionsPage = () => {
       }
 
       handleModalClose();
-      fetchDimensions(page, search);
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
     } catch (error) {
       console.error("Error creando o actualizando ámbito:", error);
 
@@ -147,7 +156,7 @@ const AdminDimensionsPage = () => {
         message: "Ámbito eliminado exitosamente",
         color: "teal",
       });
-      fetchDimensions(page, search);
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
       setConfirmDeleteModalOpened(false);
     } catch (error) {
       console.error("Error eliminando ámbito:", error);
@@ -213,12 +222,25 @@ const AdminDimensionsPage = () => {
 
   return (
     <Container size="xl">
-      <TextInput
-        placeholder="Buscar en todas los ámbitos"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar en todas los ámbitos"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por ámbito"
+          data={[
+            { value: '', label: 'Todos mis ámbitos' },
+            ...allDependencies.map(dep => ({ value: dep._id, label: dep.name }))
+          ]}
+          value={selectedDependencyFilter}
+          onChange={setSelectedDependencyFilter}
+          clearable
+          style={{ minWidth: 250 }}
+        />
+      </Group>
       <Group>
         <Button
           onClick={() => {

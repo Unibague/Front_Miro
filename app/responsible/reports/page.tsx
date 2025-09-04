@@ -8,6 +8,8 @@ import {
   Button,
   Center,
   Container,
+  Group,
+  Select,
   Table,
   Text,
   TextInput,
@@ -101,6 +103,8 @@ const ResponsibleReportsPage = () => {
   const { data: session } = useSession();
 
   const [search, setSearch] = useState("");
+  const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<string | null>(null);
+  const [userDimensions, setUserDimensions] = useState<Dimension[]>([]);
   const [pendingReports, setPendingReports] = useState<PublishedReport[]>([]);
   const [deliveredReports, setDeliveredReports] = useState<PublishedReport[]>([]);
   const [pendingReportsCount, setPendingReportsCount] = useState<number>(0);
@@ -137,6 +141,14 @@ const ResponsibleReportsPage = () => {
 
   const fetchReports = async () => {
     try {
+      const params: any = {
+        search,
+        email: session?.user?.email,
+        periodId: selectedPeriodId,
+      };
+      if (selectedDimensionFilter) {
+        params.dimensionId = selectedDimensionFilter;
+      }
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible`, {
         params: {
           search,
@@ -146,9 +158,21 @@ const ResponsibleReportsPage = () => {
       });
 
       if (response.data) {
-        setPendingReports(response.data.pendingReports || []);
-        setDeliveredReports(response.data.deliveredReports || []);
-        setPendingReportsCount(response.data.pendingReports?.length || 0);
+        let filteredPending = response.data.pendingReports || [];
+        let filteredDelivered = response.data.deliveredReports || [];
+        
+        if (selectedDimensionFilter) {
+          filteredPending = filteredPending.filter((report: PublishedReport) => 
+            report.report.dimensions?.some(dim => dim._id === selectedDimensionFilter)
+          );
+          filteredDelivered = filteredDelivered.filter((report: PublishedReport) => 
+            report.report.dimensions?.some(dim => dim._id === selectedDimensionFilter)
+          );
+        }
+        
+        setPendingReports(filteredPending);
+        setDeliveredReports(filteredDelivered);
+        setPendingReportsCount(filteredPending.length);
 
         const sorted = response.data.pendingReports?.sort((a: PublishedReport, b: PublishedReport) =>
           dayjs(a.deadline).isBefore(dayjs(b.deadline)) ? -1 : 1
@@ -163,6 +187,26 @@ const ResponsibleReportsPage = () => {
     }
   };
 
+  const fetchUserDimensions = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/dimensions/responsible`,
+        { params: { email: session?.user?.email } }
+      );
+      console.log('User dimensions loaded:', response.data);
+      setUserDimensions(response.data || []);
+    } catch (error) {
+      console.error("Error fetching user dimensions:", error);
+      setUserDimensions([]);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      fetchUserDimensions();
+    }
+  }, [session?.user?.email]);
+
   useEffect(() => {
     if (session?.user?.email) {
       const delayDebounceFn = setTimeout(() => {
@@ -170,7 +214,7 @@ const ResponsibleReportsPage = () => {
       }, 500);
       return () => clearTimeout(delayDebounceFn);
     }
-  }, [search, session?.user?.email, selectedPeriodId]);
+  }, [search, session?.user?.email, selectedPeriodId, selectedDimensionFilter]);
 
   const renderReportRows = (reports: PublishedReport[]) =>
     reports.map((pRep) => (
@@ -241,12 +285,25 @@ label={validPeriod[pRep.period._id] === false ? "Plazo terminado para acceder a 
         )}
       </Text>
 
-      <TextInput
-        placeholder="Buscar en los informes publicados"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar en los informes publicados"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por ámbito"
+          data={[
+            { value: '', label: 'Todos mis ámbitos' },
+            ...userDimensions.map(dim => ({ value: dim._id, label: dim.name }))
+          ]}
+          value={selectedDimensionFilter}
+          onChange={setSelectedDimensionFilter}
+          clearable
+          style={{ minWidth: 250 }}
+        />
+      </Group>
 
       {/* Tabla de pendientes */}
       <Title order={4} mt="md" mb="sm">
@@ -287,6 +344,22 @@ label={validPeriod[pRep.period._id] === false ? "Plazo terminado para acceder a 
         Entregados
       </Title>
       <Table striped withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Periodo</Table.Th>
+            <Table.Th>Fecha Límite</Table.Th>
+            <Table.Th>Nombre</Table.Th>
+            <Table.Th>
+              <Center>Estado</Center>
+            </Table.Th>
+            <Table.Th>
+              <Center>Fecha de Estado</Center>
+            </Table.Th>
+            <Table.Th>
+              <Center>Ver</Center>
+            </Table.Th>
+          </Table.Tr>
+        </Table.Thead>
         <Table.Tbody>
           {deliveredReports.length > 0 ? (
             renderReportRows(deliveredReports)
