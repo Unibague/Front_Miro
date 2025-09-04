@@ -49,15 +49,19 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
   }, [validatorId]);
 
   const handleCopy = (value: string) => {
+    console.log('handleCopy ejecutado con valor:', value);
     navigator.clipboard.writeText(value);
   
     if (onCopy) {
+      console.log('Llamando a onCopy con valor:', value);
       onCopy(value); 
+    } else {
+      console.log('onCopy no está definido');
     }
   
     showNotification({
       title: "Valor copiado",
-      message: `"${value}" ha sido copiado al portapapeles`,
+      message: `"${value}" ha sido copiado al portapapeles y agregado al campo`,
       color: "teal",
     });
   };
