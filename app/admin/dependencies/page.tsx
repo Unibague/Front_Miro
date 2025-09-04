@@ -265,7 +265,7 @@ const AdminDependenciesPage = () => {
         <Center>
           <Group gap={5}>
             <Button variant="outline" color="orange" onClick={() => handleShowTemplates(dependency)}>
-               Plantillas
+               PlantillaAs
             </Button>
             <Button variant="outline" onClick={() => handleEdit(dependency)}>
               <IconEdit size={16} />
