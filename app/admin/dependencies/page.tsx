@@ -389,7 +389,7 @@ const AdminDependenciesPage = () => {
                 )}
               </Center>
             </Table.Th>
-            {/* <Table.Th>Dependencia Padre</Table.T> */}
+            {/* <Table.Th>Dependencia Padre</Table.Th> */}
             <Table.Th><Center>Acciones</Center></Table.Th>
           </Table.Tr>
         </Table.Thead>
