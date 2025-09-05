@@ -534,7 +534,7 @@ const AdminDependenciesPage = () => {
                       ))}
                     </Group>
                   ) : (
-                    <Text size="sm" c="dimmed">Sin dependencias adicionales</Text>
+                    <Text size="sm" c="dimmed">Sin Dependencias Adicionales</Text>
                   )}
                 </Table.Td>
               </Table.Tr>
