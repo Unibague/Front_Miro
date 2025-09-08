@@ -57,6 +57,7 @@ const AdminDependenciesPage = () => {
   const [selectedAdditionalDeps, setSelectedAdditionalDeps] = useState<string[]>([]);
   const [userStatusModalOpened, setUserStatusModalOpened] = useState(false);
   const [allUsersStatus, setAllUsersStatus] = useState<UserWithDependencies[]>([]);
+  const [userFilterSearch, setUserFilterSearch] = useState("");
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
 
@@ -504,11 +505,20 @@ const AdminDependenciesPage = () => {
       
       <Modal
         opened={userStatusModalOpened}
-        onClose={() => setUserStatusModalOpened(false)}
+        onClose={() => {
+          setUserStatusModalOpened(false);
+          setUserFilterSearch("");
+        }}
         title="Estado de usuarios"
         size="95%"
         centered
       >
+        <TextInput
+          placeholder="Buscar usuarios por nombre..."
+          value={userFilterSearch}
+          onChange={(event) => setUserFilterSearch(event.currentTarget.value)}
+          mb="md"
+        />
         <Table striped withTableBorder>
           <Table.Thead>
             <Table.Tr>
@@ -519,7 +529,11 @@ const AdminDependenciesPage = () => {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {allUsersStatus.map((user) => (
+            {allUsersStatus
+              .filter((user) => 
+                user.full_name.toLowerCase().includes(userFilterSearch.toLowerCase())
+              )
+              .map((user) => (
               <Table.Tr key={user.email}>
                 <Table.Td>{user.full_name}</Table.Td>
                 <Table.Td>{user.email}</Table.Td>
