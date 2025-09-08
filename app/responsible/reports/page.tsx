@@ -149,17 +149,22 @@ const ResponsibleReportsPage = () => {
       if (selectedDimensionFilter) {
         params.dimensionId = selectedDimensionFilter;
       }
+      console.log('🔍 Frontend - Llamando a /pReports/responsible con:', params);
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible`, {
         params: {
           search,
           email: session?.user?.email,
           periodId: selectedPeriodId,
+          _t: Date.now(),
         },
       });
 
+      console.log('📊 Frontend - Respuesta completa:', response.data);
       if (response.data) {
         let filteredPending = response.data.pendingReports || [];
         let filteredDelivered = response.data.deliveredReports || [];
+        console.log('📋 Frontend - Reportes pendientes:', filteredPending.length);
+        console.log('✅ Frontend - Reportes entregados:', filteredDelivered.length);
         
         if (selectedDimensionFilter) {
           filteredPending = filteredPending.filter((report: PublishedReport) => 
@@ -189,14 +194,15 @@ const ResponsibleReportsPage = () => {
 
   const fetchUserDimensions = async () => {
     try {
+      console.log('🎯 Frontend - Buscando dimensiones para:', session?.user?.email);
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/dimensions/responsible`,
-        { params: { email: session?.user?.email } }
+        { params: { email: session?.user?.email, _t: Date.now() } }
       );
-      console.log('User dimensions loaded:', response.data);
+      console.log('🎯 Frontend - Dimensiones encontradas:', response.data);
       setUserDimensions(response.data || []);
     } catch (error) {
-      console.error("Error fetching user dimensions:", error);
+      console.error("❌ Error fetching user dimensions:", error);
       setUserDimensions([]);
     }
   };

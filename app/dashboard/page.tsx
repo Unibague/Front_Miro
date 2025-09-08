@@ -202,7 +202,7 @@ useEffect(() => {
             { params: { search: session.user.email } }
           );
           const userDependencies = response.data.dependencies.filter(
-            (dependency: any) => dependency.responsible === session.user?.email
+            (dependency: any) => dependency.visualizers?.includes(session.user?.email)
           );
           setIsResponsible(userDependencies.length > 0);
         } catch (error) {

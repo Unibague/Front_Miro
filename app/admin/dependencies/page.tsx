@@ -375,10 +375,10 @@ const AdminDependenciesPage = () => {
                 )}
               </Center>
             </Table.Th>
-            <Table.Th onClick={() => handleSort("responsible")} style={{ cursor: "pointer" }}>
+            <Table.Th onClick={() => handleSort("visualizers")} style={{ cursor: "pointer" }}>
               <Center inline>
                 Líder(es)
-                {sortConfig.key === "responsible" ? (
+                {sortConfig.key === "visualizers" ? (
                   sortConfig.direction === "asc" ? (
                     <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
                   ) : (
