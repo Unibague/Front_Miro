@@ -315,7 +315,7 @@ const AdminTemplatesPage = () => {
       }
       
       const validatorSheet = workbook.addWorksheet(sanitizedName);
-      // Agregar encabezados basados en las claves del primer objeto de "values"
+      // Agregarr encabezados basados en las claves del primer objeto de "values"
       const header = Object.keys(validator.values[0]);
       const validatorHeaderRow = validatorSheet.addRow(header);
   
