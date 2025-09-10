@@ -265,6 +265,7 @@ const AdminDimensionsPage = () => {
             console.log('Dependency filter changed:', value);
             setSelectedDependencyFilter(value || null);
           }}
+          searchable
           clearable
           style={{ minWidth: 250 }}
         />
