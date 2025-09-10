@@ -219,12 +219,12 @@ const AdminDimensionsPage = () => {
       <Table.Td>{dimension.responsible?.name ?? "Sin dependencia asignada"}</Table.Td>
       <Table.Td>
         
- {dimension.responsible.visualizers?.length > 0 ? <Group gap={5}>
-    {dimension.responsible.visualizers?.slice(0, 1).map((v, index) => (
+ {dimension.responsible.visualizers && dimension.responsible.visualizers.length > 0 ? <Group gap={5}>
+    {dimension.responsible.visualizers.slice(0, 1).map((v, index) => (
       <Text key={index} > {v} </Text>
     ))}
-    {dimension.responsible.visualizers?.length > 1 && (
-      <Badge variant="outline">+{dimension.responsible.visualizers?.length - 1} más </Badge>
+    {dimension.responsible.visualizers.length > 1 && (
+      <Badge variant="outline">+{dimension.responsible.visualizers.length - 1} más </Badge>
     )}
   </Group> : <Text> No definido </Text> }
 
