@@ -27,7 +27,7 @@ interface Dependency {
   dep_code: string;
   name: string;
   responsible: string;
-  visualizers: string[]
+  visualizers?: string[]
 }
 
 const AdminDimensionsPage = () => {
@@ -53,7 +53,7 @@ const AdminDimensionsPage = () => {
       if (dependencyFilter) {
         const selectedDep = allDependencies.find(dep => dep._id === dependencyFilter);
         console.log('Selected dependency:', selectedDep);
-        if (selectedDep?.visualizers?.length > 0) {
+        if (selectedDep?.visualizers && selectedDep.visualizers.length > 0) {
           params.email = selectedDep.visualizers[0];
           console.log('Using email:', params.email);
         } else {
