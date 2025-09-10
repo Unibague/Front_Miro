@@ -136,10 +136,19 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
           },
         }
       );
-      if (response.data) {
-        setProducerEndDate(response.data.templates[0].period.deadline);
+      if (response.data && response.data.templates && response.data.templates.length > 0) {
+        const template = response.data.templates[0];
+        const deadline = template?.period?.producer_end_date || template?.period?.deadline;
+        if (deadline) {
+          const dateObj = new Date(deadline);
+          setProducerEndDate(!isNaN(dateObj.getTime()) ? dateObj : undefined);
+        } else {
+          setProducerEndDate(undefined);
+        }
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
+      } else {
+        setProducerEndDate(undefined);
       }
     } catch (error) {
       setTemplates([]);
@@ -473,7 +482,10 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
         </Table.Td>
     
         <Table.Td>
-          {dateToGMT(publishedTemplate.loaded_data[0].loaded_date)}
+          {publishedTemplate.loaded_data && publishedTemplate.loaded_data.length > 0 
+            ? dateToGMT(publishedTemplate.loaded_data[0].loaded_date)
+            : 'Sin fecha'
+          }
         </Table.Td>
         <Table.Td>
           <Center>
@@ -689,13 +701,16 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
         centered
         withCloseButton={false}
       >
-        {selectedTemplateId && (
+        {selectedTemplateId && producerEndDate && (
           <DropzoneUpdateButton
             pubTemId={selectedTemplateId}
             endDate={producerEndDate}
             onClose={closeUploadModal}
             edit
           />
+        )}
+        {selectedTemplateId && !producerEndDate && (
+          <div>Cargando información de fecha...</div>
         )}
       </Modal>
     </Container>

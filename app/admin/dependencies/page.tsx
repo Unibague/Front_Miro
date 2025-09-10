@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge } from "@mantine/core";
-import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown } from "@tabler/icons-react";
+import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from 'next/navigation';
 import { showNotification } from "@mantine/notifications";
@@ -24,6 +24,18 @@ interface MemberOption {
   label: string;
 }
 
+interface UserWithDependencies {
+  email: string;
+  full_name: string;
+  dep_code: string;
+  additional_dependencies: string[];
+}
+
+interface DependencyOption {
+  value: string;
+  label: string;
+}
+
 const AdminDependenciesPage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [opened, setOpened] = useState(false);
@@ -38,6 +50,14 @@ const AdminDependenciesPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [permissionsModalOpened, setPermissionsModalOpened] = useState(false);
+  const [usersWithDependencies, setUsersWithDependencies] = useState<UserWithDependencies[]>([]);
+  const [availableDependencies, setAvailableDependencies] = useState<DependencyOption[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserWithDependencies | null>(null);
+  const [selectedAdditionalDeps, setSelectedAdditionalDeps] = useState<string[]>([]);
+  const [userStatusModalOpened, setUserStatusModalOpened] = useState(false);
+  const [allUsersStatus, setAllUsersStatus] = useState<UserWithDependencies[]>([]);
+  const [userFilterSearch, setUserFilterSearch] = useState("");
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
 
@@ -164,6 +184,95 @@ const AdminDependenciesPage = () => {
     setMembers([]);
   };
 
+  const handlePermissionsModal = async () => {
+    try {
+      const [usersResponse, depsResponse] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+      ]);
+      
+      const usersData = await usersResponse.json();
+      const depsData = await depsResponse.json();
+      
+      setUsersWithDependencies(usersData);
+      setAvailableDependencies(depsData.map((dep: any) => ({
+        value: dep.dep_code,
+        label: `${dep.name}`
+      })));
+      
+      // Limpiar estado anterior
+      setSelectedUser(null);
+      setSelectedAdditionalDeps([]);
+      setPermissionsModalOpened(true);
+    } catch (error) {
+      showNotification({
+        title: "Error",
+        message: "Error al cargar datos de permisos",
+        color: "red",
+      });
+    }
+  };
+
+  const handleUserStatusModal = async () => {
+    try {
+      const [usersResponse, depsResponse] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+      ]);
+      
+      const usersData = await usersResponse.json();
+      const depsData = await depsResponse.json();
+      
+      setAllUsersStatus(usersData);
+      setAvailableDependencies(depsData.map((dep: any) => ({
+        value: dep.dep_code,
+        label: `${dep.name}`
+      })));
+      setUserStatusModalOpened(true);
+    } catch (error) {
+      showNotification({
+        title: "Error",
+        message: "Error al cargar estado de usuarios",
+        color: "red",
+      });
+    }
+  };
+
+  const handleUserSelect = (user: UserWithDependencies) => {
+    setSelectedUser(user);
+    setSelectedAdditionalDeps(user.additional_dependencies || []);
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users/${selectedUser.email}/dependencies`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additional_dependencies: selectedAdditionalDeps })
+      });
+      
+      showNotification({
+        title: "Actualizado",
+        message: "Permisos actualizados exitosamente",
+        color: "teal",
+      });
+      
+      // Refrescar datos y limpiar estado
+      await handlePermissionsModal();
+      setSelectedUser(null);
+      setSelectedAdditionalDeps([]);
+      setPermissionsModalOpened(false);
+    } catch (error) {
+      showNotification({
+        title: "Error",
+        message: "Error al actualizar permisos",
+        color: "red",
+      });
+    }
+  };
+
   //filter dependencies
 
   const filteredDependencies = sortedDependencies.filter(
@@ -211,6 +320,22 @@ const AdminDependenciesPage = () => {
           className={styles.searchInput}
         />
         <Button
+          variant="outline"
+          color="blue"
+          leftSection={<IconUsers size={16} />}
+          onClick={handlePermissionsModal}
+        >
+          Permisos a más dependencias
+        </Button>
+        <Button
+          variant="outline"
+          color="green"
+          leftSection={<IconUsers size={16} />}
+          onClick={handleUserStatusModal}
+        >
+          Estado de usuarios
+        </Button>
+        <Button
           variant="light"
           onClick={handleSyncDependencies}
           className={styles.syncButton} 
@@ -251,10 +376,10 @@ const AdminDependenciesPage = () => {
                 )}
               </Center>
             </Table.Th>
-            <Table.Th onClick={() => handleSort("responsible")} style={{ cursor: "pointer" }}>
+            <Table.Th onClick={() => handleSort("visualizers")} style={{ cursor: "pointer" }}>
               <Center inline>
                 Líder(es)
-                {sortConfig.key === "responsible" ? (
+                {sortConfig.key === "visualizers" ? (
                   sortConfig.direction === "asc" ? (
                     <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
                   ) : (
@@ -324,6 +449,112 @@ const AdminDependenciesPage = () => {
             Cancelar
           </Button>
         </Group>
+      </Modal>
+      
+      <Modal
+        opened={permissionsModalOpened}
+        onClose={() => {
+          setPermissionsModalOpened(false);
+          setSelectedUser(null);
+          setSelectedAdditionalDeps([]);
+        }}
+        title="Permisos a más dependencias"
+        size="lg"
+      >
+        <Group mb="md">
+          <Select
+            label="Seleccionar usuario"
+            placeholder="Buscar usuario..."
+            data={usersWithDependencies.map(user => ({
+              value: user.email,
+              label: `${user.full_name} (${user.email})`
+            }))}
+            searchable
+            value={selectedUser?.email || null}
+            onChange={(email) => {
+              const user = usersWithDependencies.find(u => u.email === email);
+              if (user) handleUserSelect(user);
+            }}
+          />
+        </Group>
+        
+        {selectedUser && (
+          <>
+            <Text size="sm" mb="xs">Dependencia principal: {availableDependencies.find(dep => dep.value === selectedUser.dep_code)?.label || selectedUser.dep_code}</Text>
+            <MultiSelect
+              label="Dependencias adicionales"
+              placeholder="Seleccionar dependencias..."
+              data={availableDependencies}
+              value={selectedAdditionalDeps}
+              onChange={setSelectedAdditionalDeps}
+              searchable
+            />
+            <Group mt="md">
+              <Button onClick={handleSavePermissions}>Guardar</Button>
+              <Button variant="outline" onClick={() => {
+                setPermissionsModalOpened(false);
+                setSelectedUser(null);
+                setSelectedAdditionalDeps([]);
+              }}>
+                Cancelar
+              </Button>
+            </Group>
+          </>
+        )}
+      </Modal>
+      
+      <Modal
+        opened={userStatusModalOpened}
+        onClose={() => {
+          setUserStatusModalOpened(false);
+          setUserFilterSearch("");
+        }}
+        title="Estado de usuarios"
+        size="95%"
+        centered
+      >
+        <TextInput
+          placeholder="Buscar usuarios por nombre..."
+          value={userFilterSearch}
+          onChange={(event) => setUserFilterSearch(event.currentTarget.value)}
+          mb="md"
+        />
+        <Table striped withTableBorder>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Usuario</Table.Th>
+              <Table.Th>Email</Table.Th>
+              <Table.Th>Dependencia Principal</Table.Th>
+              <Table.Th>Dependencias Adicionales</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {allUsersStatus
+              .filter((user) => 
+                user.full_name.toLowerCase().includes(userFilterSearch.toLowerCase())
+              )
+              .map((user) => (
+              <Table.Tr key={user.email}>
+                <Table.Td>{user.full_name}</Table.Td>
+                <Table.Td>{user.email}</Table.Td>
+                <Table.Td>{availableDependencies.find(dep => dep.value === user.dep_code)?.label || user.dep_code}</Table.Td>
+                <Table.Td>
+                  {user.additional_dependencies && user.additional_dependencies.length > 0 ? (
+                    <Group gap={5}>
+                      {user.additional_dependencies.map((depCode, index) => (
+                        <Badge key={index} variant="outline">
+                          {availableDependencies.find(dep => dep.value === depCode)?.label || depCode}
+                        </Badge>
+                      ))}
+                    </Group>
+                  ) : (
+                    <Text size="sm" c="dimmed">Sin Dependencias Adicionales</Text>
+                  )}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
       </Modal>
     </Container>
   );

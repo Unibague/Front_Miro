@@ -163,7 +163,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const addRow = () => {
-    setRows([...rows, {}]);
+    const newRows = [...rows, {}];
+    setRows(newRows);
+    
+    // Auto-seleccionar el primer campo con validador de la nueva fila
+    const newRowIndex = newRows.length - 1;
+    const firstFieldWithValidator = template?.fields.find(f => f.validate_with);
+    
+    if (firstFieldWithValidator) {
+      setActiveRowIndex(newRowIndex);
+      setActiveFieldName(firstFieldWithValidator.name);
+    }
   };
 
   const removeRow = (index: number) => {
@@ -188,11 +198,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
+    console.log('handleValidatorOpen - rowIndex:', rowIndex, 'fieldName:', fieldName);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
       setValidatorData(response.data.validator);
       setActiveRowIndex(rowIndex);
       setActiveFieldName(fieldName);
+      console.log('Valores establecidos - activeRowIndex:', rowIndex, 'activeFieldName:', fieldName);
       setValidatorModalOpen(true);
     } catch (error) {
       showNotification({
@@ -398,16 +410,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                       <Group>
                         {field.name} {field.required && <Text span color="red">*</Text>}
-                        {field.validate_with && (
-                            <ActionIcon
-                            size={"lg"}
-                            onClick={() => handleValidatorOpen(field.validate_with?.id!, 0, field.name)}
-                            title="Ver valores aceptados"
-                            disabled={!validatorExists[field.name]}
-                          >
-                            <IconEye />
-                          </ActionIcon>
-                        )}
                       </Group>
                     </Table.Th>
                   ))}
@@ -421,6 +423,22 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                       <Table.Td key={field.name} style={{ minWidth: '250px' }}>
                         <Group align="center">
                           {renderInputField(field, row, rowIndex)}
+                          {field.validate_with && (
+                            <ActionIcon
+                              size={"sm"}
+                              onClick={() => {
+                                setActiveRowIndex(rowIndex);
+                                setActiveFieldName(field.name);
+                                handleValidatorOpen(field.validate_with?.id!, rowIndex, field.name);
+                              }}
+                              title="Ver valores aceptados"
+                              color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
+                              variant={activeRowIndex === rowIndex && activeFieldName === field.name ? "filled" : "light"}
+                            >
+                              <IconEye />
+                            </ActionIcon>
+                          )}
+
                         </Group>
                       </Table.Td>
                     ))}
@@ -472,15 +490,22 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       </Group>
       <ValidatorModal
         opened={validatorModalOpen}
-        onClose={() => setValidatorModalOpen(false)}
+        onClose={() => {
+          setValidatorModalOpen(false);
+          setActiveRowIndex(null);
+          setActiveFieldName(null);
+        }}
         validatorId={validatorData?._id || ""}
         onCopy={(value: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
             const updatedRows = [...rows];
             updatedRows[activeRowIndex][activeFieldName] = value;
             setRows(updatedRows);
+            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName);
           }
           setValidatorModalOpen(false);
+          setActiveRowIndex(null);
+          setActiveFieldName(null);
         }}
       />
     </Container>

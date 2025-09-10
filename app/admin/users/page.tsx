@@ -89,6 +89,7 @@ const AdminUsersPage = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [migrateModalOpened, setMigrateModalOpened] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [historyChanges, setHistoryChanges] = useState<PendingChange[]>([]);
@@ -136,6 +137,20 @@ const AdminUsersPage = () => {
     } catch (error) {
       console.error("Error fetching dependencies:", error);
       setDependencies([]);
+    }
+  };
+
+  const fetchAvailableRoles = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/available-roles`
+      );
+      if (response.data) {
+        setAvailableRoles(response.data.roles || []);
+      }
+    } catch (error) {
+      console.error("Error fetching available roles:", error);
+      setAvailableRoles(["Usuario", "Administrador", "Responsable", "Productor"]);
     }
   };
 
@@ -198,6 +213,7 @@ const AdminUsersPage = () => {
     setRoles(
       user.roles.filter((role) => role !== "Productor" && role !== "Usuario")
     );
+    fetchAvailableRoles();
     setModalOpened(true);
   };
 
@@ -796,7 +812,7 @@ const AdminUsersPage = () => {
         <MultiSelect
           label="Roles"
           placeholder="Selecciona roles"
-          data={["Usuario", "Administrador", "Responsable"]}
+          data={availableRoles}
           value={roles}
           onChange={setRoles}
         />
