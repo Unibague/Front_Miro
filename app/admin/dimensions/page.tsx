@@ -49,16 +49,28 @@ const AdminDimensionsPage = () => {
 
   const fetchDimensions = async (page: number, search: string, dependencyFilter?: string) => {
     try {
-      const params: any = { page, limit: 10, search, email: session?.user?.email };
+      const params: any = { page, limit: 10, search, _t: Date.now() };
       if (dependencyFilter) {
-        params.dependencyId = dependencyFilter;
+        const selectedDep = allDependencies.find(dep => dep._id === dependencyFilter);
+        console.log('Selected dependency:', selectedDep);
+        if (selectedDep?.visualizers?.length > 0) {
+          params.email = selectedDep.visualizers[0];
+          console.log('Using email:', params.email);
+        } else {
+          console.log('No visualizers found, using session email');
+          params.email = session?.user?.email;
+        }
+      } else {
+        params.email = session?.user?.email;
       }
+      console.log('API params:', params);
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/all`, {
         params,
       });
       if (response.data) {
         const dimensions = response.data.dimensions || [];
-        setDimensions(dimensions);
+        console.log('Setting dimensions:', dimensions.length);
+        setDimensions([...dimensions]);
         setTotalPages(response.data.pages || 1);
       }
     } catch (error) {
@@ -79,17 +91,30 @@ const AdminDimensionsPage = () => {
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchDimensions(page, search, selectedDependencyFilter || undefined);
       fetchDependencies();
     }
-  }, [page, selectedDependencyFilter, session]);
+  }, [session]);
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
+    }
+  }, [page, session]);
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      setPage(1);
+      fetchDimensions(1, search, selectedDependencyFilter || undefined);
+    }
+  }, [selectedDependencyFilter, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchDimensions(page, search, selectedDependencyFilter || undefined);
+        setPage(1);
+        fetchDimensions(1, search, selectedDependencyFilter || undefined);
       }
-    }, 500);
+    }, 300);
 
     return () => clearTimeout(delayDebounceFn);
   }, [search, session]);
@@ -230,13 +255,16 @@ const AdminDimensionsPage = () => {
           style={{ flex: 1 }}
         />
         <Select
-          placeholder="Filtrar por ámbito"
+          placeholder="Filtrar por dependencia"
           data={[
-            { value: '', label: 'Todos mis ámbitos' },
+            { value: '', label: 'Todas las dependencias' },
             ...allDependencies.map(dep => ({ value: dep._id, label: dep.name }))
           ]}
-          value={selectedDependencyFilter}
-          onChange={setSelectedDependencyFilter}
+          value={selectedDependencyFilter || ''}
+          onChange={(value) => {
+            console.log('Dependency filter changed:', value);
+            setSelectedDependencyFilter(value || null);
+          }}
           clearable
           style={{ minWidth: 250 }}
         />
