@@ -40,6 +40,7 @@ interface DependencyOption {
 const AdminDependenciesPage = () => {
   const { data: session } = useSession();
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const isAdmin = session?.user?.role === 'admin';
   const [opened, setOpened] = useState(false);
   const [selectedDependency, setSelectedDependency] = useState<Dependency | null>(null);
   const [dep_code, setDepCode] = useState("");

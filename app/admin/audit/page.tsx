@@ -89,7 +89,7 @@ const AuditPage = () => {
     }
   };
 
-  const formatDetails = (details: string) => {
+  const formatDetails = (details?: string) => {
     if (!details) return 'Sin detalles';
     
     try {
@@ -158,13 +158,13 @@ const AuditPage = () => {
           placeholder="Filtrar por tipo"
           data={[
             { value: '', label: 'Todos los tipos' },
-            { value: 'TEMPLATE', label: 'Plantillas' },
-            { value: 'DIMENSION', label: 'Ámbitos' },
-            { value: 'DEPENDENCY', label: 'Dependencias' },
-            { value: 'REPORT', label: 'Informes' },
-            { value: 'producerReport', label: 'Informes Productor' },
-            { value: 'publishedTemplate', label: 'Plantillas Publicadas' },
-            { value: 'publishedProducerReport', label: 'Informes Productor Publicados' },
+            { value: 'Plantilla', label: 'Plantillas' },
+            { value: 'Ambitos', label: 'Ámbitos' },
+            { value: 'Dependencias', label: 'Dependencias' },
+            { value: 'Reporte', label: 'Informes' },
+            { value: 'Informe de Productor', label: 'Informes Productor' },
+            { value: 'Plantilla Publicada', label: 'Plantillas Publicadas' },
+            { value: 'Informe de Productor Publicado', label: 'Informes Productor Publicados' },
           ]}
           value={filterType}
           onChange={(value) => setFilterType(value || '')}

@@ -18,7 +18,7 @@ const DependencyPage = () => {
   const { data: session } = useSession();
   
   // Solo el rol Administrador puede editar
-  const isAdmin = session?.user?.roles?.includes('Administrador') || false;
+  const isAdmin = session?.user?.role === 'admin' || false;
   const [dependency, setDependency] = useState({
     _id: "",
     dep_code: "",
