@@ -278,6 +278,7 @@ const AdminUsersPage = () => {
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateStatus`, {
         userId,
         isActive,
+        adminEmail: session?.user?.email
       });
       showNotification({
         title: "Actualizado",
