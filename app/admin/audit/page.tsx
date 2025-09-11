@@ -65,6 +65,30 @@ const AuditPage = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [search, filterType]);
 
+  const translateAction = (action: string) => {
+    switch (action.toLowerCase()) {
+      case 'create': return 'Crear';
+      case 'update': return 'Actualizar';
+      case 'delete': return 'Eliminar';
+      case 'upload': return 'Subir';
+      default: return action;
+    }
+  };
+
+  const translateEntityType = (entityType: string) => {
+    switch (entityType) {
+      case 'TEMPLATE': return 'Plantilla';
+      case 'DIMENSION': return 'Ámbito';
+      case 'DEPENDENCY': return 'Dependencia';
+      case 'REPORT': return 'Informe';
+      case 'producerReport': return 'Informe Productor';
+      case 'publishedTemplate': return 'Plantilla Publicada';
+      case 'publishedProducerReport': return 'Informe Productor Publicado';
+      case 'USER': return 'Usuario';
+      default: return entityType;
+    }
+  };
+
   const getActionColor = (action: string) => {
     switch (action.toLowerCase()) {
       case 'create': return 'green';
@@ -76,15 +100,15 @@ const AuditPage = () => {
   };
 
   const getEntityTypeColor = (entityType: string) => {
-    switch (entityType.toLowerCase()) {
-      case 'template': return 'violet';
-      case 'dimension': return 'orange';
-      case 'dependency': return 'cyan';
-      case 'report': return 'blue';
-      case 'producerreport': return 'green';
-      case 'publishedtemplate': return 'grape';
-      case 'publishedproducerreport': return 'teal';
-      case 'user': return 'pink';
+    switch (entityType) {
+      case 'TEMPLATE': return 'violet';
+      case 'DIMENSION': return 'orange';
+      case 'DEPENDENCY': return 'cyan';
+      case 'REPORT': return 'blue';
+      case 'producerReport': return 'green';
+      case 'publishedTemplate': return 'grape';
+      case 'publishedProducerReport': return 'teal';
+      case 'USER': return 'pink';
       default: return 'gray';
     }
   };
@@ -114,12 +138,12 @@ const AuditPage = () => {
       </Table.Td>
       <Table.Td>
         <Badge color={getActionColor(log.action)} variant="light">
-          {log.action}
+          {translateAction(log.action)}
         </Badge>
       </Table.Td>
       <Table.Td>
         <Badge color={getEntityTypeColor(log.entity_type)} variant="outline">
-          {log.entity_type}
+          {translateEntityType(log.entity_type)}
         </Badge>
       </Table.Td>
       <Table.Td>
@@ -155,16 +179,16 @@ const AuditPage = () => {
           style={{ flex: 1 }}
         />
         <Select
-          placeholder="Filtrar por tipos"
+          placeholder="Filtrar por tipo"
           data={[
             { value: '', label: 'Todos los tipos' },
-            { value: 'Plantilla', label: 'Plantillas' },
-            { value: 'Ambitos', label: 'Ámbitos' },
-            { value: 'Dependencias', label: 'Dependencias' },
-            { value: 'Reporte', label: 'Informes' },
-            { value: 'Informe de Productor', label: 'Informes Productor' },
-            { value: 'Plantilla Publicada', label: 'Plantillas Publicadas' },
-            { value: 'Informe de Productor Publicado', label: 'Informes Productor Publicados' },
+            { value: 'TEMPLATE', label: 'Plantillas' },
+            { value: 'DIMENSION', label: 'Ámbitos' },
+            { value: 'DEPENDENCY', label: 'Dependencias' },
+            { value: 'REPORT', label: 'Informes' },
+            { value: 'producerReport', label: 'Informes Productor' },
+            { value: 'publishedTemplate', label: 'Plantillas Publicadas' },
+            { value: 'publishedProducerReport', label: 'Informes Productor Publicados' },
           ]}
           value={filterType}
           onChange={(value) => setFilterType(value || '')}
