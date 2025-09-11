@@ -77,14 +77,16 @@ const AuditPage = () => {
 
   const translateEntityType = (entityType: string) => {
     switch (entityType) {
-      case 'TEMPLATE': return 'Plantilla';
-      case 'DIMENSION': return 'Ámbito';
+      case 'TEMPLATE':
+      case 'template': return 'Plantilla';
+      case 'DIMENSION':
+      case 'dimension': return 'Ámbito';
       case 'DEPENDENCY': return 'Dependencia';
       case 'REPORT': return 'Informe';
       case 'producerReport': return 'Informe Productor';
       case 'publishedTemplate': return 'Plantilla Publicada';
       case 'publishedProducerReport': return 'Informe Productor Publicado';
-      case 'USER': return 'Usuario';
+      case 'USER':
       case 'user': return 'Usuario';
       default: return entityType;
     }
@@ -102,34 +104,49 @@ const AuditPage = () => {
 
   const getEntityTypeColor = (entityType: string) => {
     switch (entityType) {
-      case 'TEMPLATE': return 'violet';
-      case 'DIMENSION': return 'orange';
+      case 'TEMPLATE':
+      case 'template': return 'violet';
+      case 'DIMENSION':
+      case 'dimension': return 'orange';
       case 'DEPENDENCY': return 'cyan';
       case 'REPORT': return 'blue';
       case 'producerReport': return 'green';
       case 'publishedTemplate': return 'grape';
       case 'publishedProducerReport': return 'teal';
-      case 'USER': return 'pink';
+      case 'USER':
       case 'user': return 'pink';
       default: return 'gray';
     }
   };
 
-  const formatDetails = (details?: string) => {
+  const formatDetails = (details?: string, action?: string, entityType?: string) => {
     if (!details) return 'Sin detalles';
     
     try {
       const parsed = JSON.parse(details);
+      
+      // Manejo para informes
       if (parsed.reportId && parsed.reportName) {
         return `Eliminó el informe "${parsed.reportName}"`;
       }
+      
+      // Manejo para plantillas
       if (parsed.templateId && parsed.templateName) {
         return `Eliminó la plantilla "${parsed.templateName}"`;
       }
+      
+      // Manejo para usuarios
       if (parsed.userEmail && parsed.statusChange) {
-        const action = parsed.statusChange === 'activated' ? 'activó' : 'desactivó';
-        return `${action.charAt(0).toUpperCase() + action.slice(1)} al usuario ${parsed.userEmail}`;
+        const actionText = parsed.statusChange === 'activated' ? 'activó' : 'desactivó';
+        return `${actionText.charAt(0).toUpperCase() + actionText.slice(1)} al usuario ${parsed.userEmail}`;
       }
+      
+      // Manejo para dimensiones
+      if (parsed.dimensionName && parsed.responsibleDependency) {
+        const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
+        return `${actionText} el ámbito "${parsed.dimensionName}" asignado a ${parsed.responsibleDependency}`;
+      }
+      
       return details;
     } catch {
       return details;
@@ -171,7 +188,7 @@ const AuditPage = () => {
       </Table.Td>
       <Table.Td>
         <Text size="xs" c="dimmed" lineClamp={2}>
-          {formatDetails(log.details)}
+          {formatDetails(log.details, log.action, log.entity_type)}
         </Text>
       </Table.Td>
     </Table.Tr>
