@@ -102,6 +102,7 @@ const AdminUsersPage = () => {
     action: "approve" | "reject" | null;
     count: number;
   }>({ open: false, action: null, count: 0 });
+
   const {
     sortedItems: sortedUsers,
     handleSort,
@@ -269,6 +270,8 @@ const AdminUsersPage = () => {
       });
     }
   };
+
+
 
   const handleToggleActive = async (userId: string, isActive: boolean) => {
     try {
@@ -457,6 +460,8 @@ const AdminUsersPage = () => {
               <IconSwitch3 size={16} />
             </Button>
           </Tooltip>
+          
+
 
           {session?.user?.image ? (
             <Tooltip

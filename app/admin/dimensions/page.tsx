@@ -135,15 +135,19 @@ const AdminDimensionsPage = () => {
         responsible: responsible._id,
       };
 
+      const headers = {
+        'user-email': session?.user?.email || ''
+      };
+
       if (selectedDimension) {
-        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${selectedDimension._id}`, dimensionData);
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${selectedDimension._id}`, dimensionData, { headers });
         showNotification({
           title: "Actualizado",
           message: "Ámbito actualizado exitosamente",
           color: "teal",
         });
       } else {
-        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/create`, dimensionData);
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/create`, dimensionData, { headers });
         showNotification({
           title: "Creado",
           message: "Ámbito creado exitosamente",
@@ -175,7 +179,11 @@ const AdminDimensionsPage = () => {
   const handleDelete = async (id: string) => {
     if (!dimensionToDelete) return;
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${id}`);
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${id}?email=${encodeURIComponent(session?.user?.email || '')}`, {
+        headers: {
+          'user-email': session?.user?.email || ''
+        }
+      });
       showNotification({
         title: "Eliminado",
         message: "Ámbito eliminado exitosamente",

@@ -562,6 +562,20 @@ useEffect(() => {
     </Button>
   </Card>
 </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-audit">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconChartHistogram size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Historial de Trazabilidad</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Consulta el historial de cambios en plantillas y ámbitos
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/audit')}>
+                  Ir a Historial
+                </Button>
+              </Card>
+            </Grid.Col>,
 
         );
         break;
@@ -714,7 +728,7 @@ useEffect(() => {
               </Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>
-                  Administrar Mi Dependencia
+                  Ver Mi Dependencia
                 </Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">

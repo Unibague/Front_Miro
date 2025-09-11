@@ -5,6 +5,7 @@ import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, 
 import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { showNotification } from "@mantine/notifications";
 import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
@@ -37,6 +38,7 @@ interface DependencyOption {
 }
 
 const AdminDependenciesPage = () => {
+  const { data: session } = useSession();
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [opened, setOpened] = useState(false);
   const [selectedDependency, setSelectedDependency] = useState<Dependency | null>(null);
@@ -60,6 +62,8 @@ const AdminDependenciesPage = () => {
   const [userFilterSearch, setUserFilterSearch] = useState("");
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
+  
+
 
   const fetchDependencies = async (page: number, search: string) => {
     try {
@@ -247,17 +251,46 @@ const AdminDependenciesPage = () => {
     if (!selectedUser) return;
     
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users/${selectedUser.email}/dependencies`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ additional_dependencies: selectedAdditionalDeps })
-      });
+      console.log('=== DEBUG INFO ===');
+      console.log('Usuario seleccionado:', selectedUser);
+      console.log('Dependencias adicionales seleccionadas:', selectedAdditionalDeps);
+      console.log('Tipo de selectedAdditionalDeps:', typeof selectedAdditionalDeps);
+      console.log('Es array?', Array.isArray(selectedAdditionalDeps));
+      console.log('Longitud:', selectedAdditionalDeps?.length);
+      
+      const payload = { additionalDependencies: selectedAdditionalDeps };
+      console.log('Payload completo:', JSON.stringify(payload, null, 2));
+      
+      const response = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users/${selectedUser.email}/dependencies`,
+        {
+          ...payload,
+          adminEmail: session?.user?.email
+        }
+      );
+      
+      console.log('Respuesta completa del backend:', response.data);
       
       showNotification({
-        title: "Actualizado",
-        message: "Permisos actualizados exitosamente",
+        title: "✅ Permisos Actualizados",
+        message: `Dependencias actualizadas para ${selectedUser.full_name}. Email de notificación enviado.`,
         color: "teal",
+        autoClose: 5000,
       });
+      
+      // Mostrar todas las dependencias del usuario
+      if (response.data.allDependencies) {
+        console.log('Todas las dependencias del usuario:', response.data.allDependencies);
+        const totalDeps = response.data.allDependencies.length;
+        const additionalCount = response.data.allDependencies.filter((dep: any) => dep.type === 'adicional').length;
+        
+        showNotification({
+          title: "📋 Resumen de Dependencias",
+          message: `${selectedUser.full_name} ahora tiene acceso a ${totalDeps} dependencias (${additionalCount} adicionales)`,
+          color: "blue",
+          autoClose: 4000,
+        });
+      }
       
       // Refrescar datos y limpiar estado
       await handlePermissionsModal();
@@ -265,6 +298,7 @@ const AdminDependenciesPage = () => {
       setSelectedAdditionalDeps([]);
       setPermissionsModalOpened(false);
     } catch (error) {
+      console.error("Error updating permissions:", error);
       showNotification({
         title: "Error",
         message: "Error al actualizar permisos",
@@ -414,7 +448,7 @@ const AdminDependenciesPage = () => {
         }}
         onClose={handleModalClose}
         title={
-          selectedDependency ? "Editar Dependencia" : "Crear Nueva Dependencia"
+          selectedDependency ? (isAdmin ? "Editar Dependencia" : "Ver Dependencia") : "Crear Nueva Dependencia"
         }
       >
         <TextInput label="Código" value={dep_code} readOnly mb="md" />
