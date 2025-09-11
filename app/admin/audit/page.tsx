@@ -29,7 +29,7 @@ const AuditPage = () => {
   const fetchAuditLogs = async (page: number, search: string, entityType?: string) => {
     setLoading(true);
     try {
-      const params: any = { page, limit: 20, search };
+      const params: any = { page, limit: 15, search };
       if (entityType) params.entityType = entityType;
       
       const url = `${process.env.NEXT_PUBLIC_API_URL}/audit/logs`;
@@ -85,6 +85,7 @@ const AuditPage = () => {
       case 'publishedTemplate': return 'Plantilla Publicada';
       case 'publishedProducerReport': return 'Informe Productor Publicado';
       case 'USER': return 'Usuario';
+      case 'user': return 'Usuario';
       default: return entityType;
     }
   };
@@ -109,6 +110,7 @@ const AuditPage = () => {
       case 'publishedTemplate': return 'grape';
       case 'publishedProducerReport': return 'teal';
       case 'USER': return 'pink';
+      case 'user': return 'pink';
       default: return 'gray';
     }
   };
@@ -123,6 +125,10 @@ const AuditPage = () => {
       }
       if (parsed.templateId && parsed.templateName) {
         return `Eliminó la plantilla "${parsed.templateName}"`;
+      }
+      if (parsed.userEmail && parsed.statusChange) {
+        const action = parsed.statusChange === 'activated' ? 'activó' : 'desactivó';
+        return `${action.charAt(0).toUpperCase() + action.slice(1)} al usuario ${parsed.userEmail}`;
       }
       return details;
     } catch {
@@ -147,7 +153,18 @@ const AuditPage = () => {
         </Badge>
       </Table.Td>
       <Table.Td>
-        <Text size="sm">{log.entity_name}</Text>
+        <Text size="sm">{log.entity_type === 'user' && log.entity_name === 'Unknown' ? (
+          (() => {
+            try {
+              const parsed = JSON.parse(log.details || '{}');
+              if (parsed.userEmail && parsed.statusChange) {
+                const status = parsed.statusChange === 'activated' ? 'A' : 'I';
+                return `Usuario ${status}/I`;
+              }
+            } catch {}
+            return log.entity_name;
+          })()
+        ) : log.entity_name}</Text>
       </Table.Td>
       <Table.Td>
         <Text size="sm">{new Date(log.timestamp).toLocaleString('es-ES')}</Text>
@@ -189,6 +206,7 @@ const AuditPage = () => {
             { value: 'producerReport', label: 'Informes Productor' },
             { value: 'publishedTemplate', label: 'Plantillas Publicadas' },
             { value: 'publishedProducerReport', label: 'Informes Productor Publicados' },
+            { value: 'user', label: 'Usuarios' },
           ]}
           value={filterType}
           onChange={(value) => setFilterType(value || '')}
