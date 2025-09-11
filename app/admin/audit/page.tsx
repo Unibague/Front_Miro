@@ -155,7 +155,7 @@ const AuditPage = () => {
           style={{ flex: 1 }}
         />
         <Select
-          placeholder="Filtrar por tipo"
+          placeholder="Filtrar por tipos"
           data={[
             { value: '', label: 'Todos los tipos' },
             { value: 'Plantilla', label: 'Plantillas' },
