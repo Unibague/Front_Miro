@@ -320,8 +320,15 @@ const AdminUsersPage = () => {
 
   const handleImpersonateUser = async (userId: string) => {
     try {
+      console.log('🔍 Impersonating user with adminEmail:', session?.user?.email);
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate?id=${userId}`
+        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate`,
+        {
+          params: {
+            id: userId,
+            adminEmail: session?.user?.email
+          }
+        }
       );
 
       const { _id, email, full_name } = response.data || {};

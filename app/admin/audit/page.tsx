@@ -71,6 +71,7 @@ const AuditPage = () => {
       case 'update': return 'Actualizar';
       case 'delete': return 'Eliminar';
       case 'upload': return 'Subir';
+      case 'impersonate': return 'Impersonar';
       default: return action;
     }
   };
@@ -86,6 +87,7 @@ const AuditPage = () => {
       case 'producerReport': return 'Informe Productor';
       case 'publishedTemplate': return 'Plantilla Publicada';
       case 'publishedProducerReport': return 'Informe Productor Publicado';
+      case 'publishedTemplateData': return 'Plantilla Publicada';
       case 'USER':
       case 'user': return 'Usuario';
       default: return entityType;
@@ -98,6 +100,7 @@ const AuditPage = () => {
       case 'update': return 'blue';
       case 'delete': return 'red';
       case 'upload': return 'teal';
+      case 'impersonate': return 'purple';
       default: return 'gray';
     }
   };
@@ -113,6 +116,7 @@ const AuditPage = () => {
       case 'producerReport': return 'green';
       case 'publishedTemplate': return 'grape';
       case 'publishedProducerReport': return 'teal';
+      case 'publishedTemplateData': return 'grape';
       case 'USER':
       case 'user': return 'pink';
       default: return 'gray';
@@ -145,6 +149,17 @@ const AuditPage = () => {
       if (parsed.dimensionName && parsed.responsibleDependency) {
         const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
         return `${actionText} el ámbito "${parsed.dimensionName}" asignado a ${parsed.responsibleDependency}`;
+      }
+      
+      // Manejo para impersonación
+      if (parsed.targetUser) {
+        return `Impersonó al usuario ${parsed.targetUser}`;
+      }
+      
+      // Manejo para plantillas publicadas
+      if (parsed.publishedTemplateId && parsed.templateName) {
+        const actionText = action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
+        return `${actionText} la plantilla publicada "${parsed.templateName}" de la dependencia ${parsed.dependency}`;
       }
       
       return details;
@@ -222,6 +237,7 @@ const AuditPage = () => {
             { value: 'REPORT', label: 'Informes' },
             { value: 'producerReport', label: 'Informes Productor' },
             { value: 'publishedTemplate', label: 'Plantillas Publicadas' },
+            { value: 'publishedTemplateData', label: 'Plantillas Publicadas' },
             { value: 'publishedProducerReport', label: 'Informes Productor Publicados' },
             { value: 'user', label: 'Usuarios' },
           ]}
