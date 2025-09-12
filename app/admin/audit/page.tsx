@@ -29,23 +29,54 @@ const AuditPage = () => {
   const fetchAuditLogs = async (page: number, search: string, entityType?: string) => {
     setLoading(true);
     try {
-      const params: any = { page, limit: 15, search };
-      if (entityType) params.entityType = entityType;
-      
       const url = `${process.env.NEXT_PUBLIC_API_URL}/audit/logs`;
-      console.log('🔍 Fetching audit logs from:', url, 'with params:', params);
       
-      const response = await axios.get(url, {
-        params,
-        headers: {
-          'user-email': session?.user?.email || ''
+      // Mapeo de filtros combinados
+      const combinedFilters: { [key: string]: string[] } = {
+        'dimensions': ['dimension', 'DIMENSION'],
+        'templates': ['template', 'TEMPLATE', 'publishedTemplate', 'publishedTemplateData'],
+        'reports': ['producerReport', 'publishedProducerReport', 'REPORT']
+      };
+      
+      if (entityType && combinedFilters[entityType]) {
+        // Hacer múltiples peticiones para filtros combinados
+        const promises = combinedFilters[entityType].map(type => 
+          axios.get(url, {
+            params: { page: 1, limit: 100, search, entityType: type },
+            headers: { 'user-email': session?.user?.email || '' }
+          })
+        );
+        
+        const responses = await Promise.all(promises);
+        const allLogs = responses.flatMap(response => response.data.logs || []);
+        
+        // Ordenar por timestamp descendente
+        allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        // Paginar manualmente
+        const startIndex = (page - 1) * 15;
+        const endIndex = startIndex + 15;
+        const paginatedLogs = allLogs.slice(startIndex, endIndex);
+        
+        setAuditLogs(paginatedLogs);
+        setTotalPages(Math.ceil(allLogs.length / 15));
+      } else {
+        // Petición normal para otros filtros
+        const params: any = { page, limit: 15, search };
+        if (entityType && entityType !== '') {
+          params.entityType = entityType;
         }
-      });
-      
-      setAuditLogs(response.data.logs || []);
-      setTotalPages(response.data.pages || 1);
+        
+        const response = await axios.get(url, {
+          params,
+          headers: { 'user-email': session?.user?.email || '' }
+        });
+        
+        setAuditLogs(response.data.logs || []);
+        setTotalPages(response.data.totalPages || response.data.pages || 1);
+      }
     } catch (error) {
-      console.error("Eror fething audit logs:", error);
+      console.error("Error fetching audit logs:", error);
       setAuditLogs([]);
     } finally {
       setLoading(false);
@@ -100,7 +131,7 @@ const AuditPage = () => {
       case 'update': return 'blue';
       case 'delete': return 'red';
       case 'upload': return 'teal';
-      case 'impersonate': return 'purple';
+      case 'impersonate': return 'grape';
       default: return 'gray';
     }
   };
@@ -231,14 +262,9 @@ const AuditPage = () => {
           placeholder="Filtrar por tipo"
           data={[
             { value: '', label: 'Todos los tipos' },
-            { value: 'TEMPLATE', label: 'Plantillas' },
-            { value: 'DIMENSION', label: 'Ámbitos' },
-            { value: 'DEPENDENCY', label: 'Dependencias' },
-            { value: 'REPORT', label: 'Informes' },
-            { value: 'producerReport', label: 'Informes Productor' },
-            { value: 'publishedTemplate', label: 'Plantillas Publicadas' },
-            { value: 'publishedTemplateData', label: 'Plantillas Publicadas' },
-            { value: 'publishedProducerReport', label: 'Informes Productor Publicados' },
+            { value: 'dimensions', label: 'Ámbitos' },
+            { value: 'templates', label: 'Plantillas' },
+            { value: 'reports', label: 'Informes' },
             { value: 'user', label: 'Usuarios' },
           ]}
           value={filterType}
@@ -279,15 +305,20 @@ const AuditPage = () => {
         </Table.Tbody>
       </Table>
 
-      <Center mt="md">
-        <Pagination
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          siblings={1}
-          boundaries={3}
-        />
-      </Center>
+      {totalPages > 1 && (
+        <Center mt="md">
+          <Pagination
+            value={page}
+            onChange={setPage}
+            total={totalPages}
+            siblings={1}
+            boundaries={3}
+          />
+          <Text size="xs" c="dimmed" ml="md">
+            Página {page} de {totalPages} ({auditLogs.length} registros)
+          </Text>
+        </Center>
+      )}
     </Container>
   );
 };
