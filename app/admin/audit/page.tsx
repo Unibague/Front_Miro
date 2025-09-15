@@ -170,10 +170,16 @@ const AuditPage = () => {
         return `Eliminó la plantilla "${parsed.templateName}"`;
       }
       
-      // Manejo para usuarios
+      // Manejo para usuarios - cambio de estado
       if (parsed.userEmail && parsed.statusChange) {
         const actionText = parsed.statusChange === 'activated' ? 'activó' : 'desactivó';
         return `${actionText.charAt(0).toUpperCase() + actionText.slice(1)} al usuario ${parsed.userEmail}`;
+      }
+      
+      // Manejo para usuarios - cambio de roles
+      if (parsed.userEmail && parsed.newRoles) {
+        const roles = Array.isArray(parsed.newRoles) ? parsed.newRoles.join(', ') : parsed.newRoles;
+        return `Actualizó los roles del usuario ${parsed.userEmail} a: ${roles}`;
       }
       
       // Manejo para dimensiones
