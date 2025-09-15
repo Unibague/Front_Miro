@@ -76,7 +76,7 @@ const AuditPage = () => {
         setTotalPages(response.data.totalPages || response.data.pages || 1);
       }
     } catch (error) {
-      console.error("Error fetching audit logs:", error);
+      console.error("Error fetchin audit logs:", error);
       setAuditLogs([]);
     } finally {
       setLoading(false);
