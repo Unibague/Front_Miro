@@ -224,6 +224,7 @@ const AdminUsersPage = () => {
         await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateRole`, {
           email: selectedUser.email,
           roles,
+          adminEmail: session?.user?.email
         });
         showNotification({
           title: "Actualizado",
