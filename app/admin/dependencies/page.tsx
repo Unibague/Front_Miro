@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge } from "@mantine/core";
-import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers } from "@tabler/icons-react";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
+import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -496,6 +496,15 @@ const AdminDependenciesPage = () => {
         title="Permisos a más dependencias"
         size="lg"
       >
+        <Alert
+          icon={<IconAlertTriangle size={16} />}
+          title="Advertencia"
+          color="yellow"
+          mb="md"
+        >
+          Al actualizar las dependencias de un usuario, se enviará automáticamente un correo electrónico de notificación al usuario informándole sobre los cambios realizados.
+        </Alert>
+        
         <Group mb="md">
           <Select
             label="Seleccionar usuario"
