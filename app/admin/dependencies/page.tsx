@@ -502,7 +502,7 @@ const AdminDependenciesPage = () => {
           color="yellow"
           mb="md"
         >
-          Al actualizar las dependencias de un usuario, se enviará automáticamente un correo electrónico de notificación al usuario informándole sobre los cambios realizados.
+          ¡¡Al actualizar las dependencias de un usuario, se enviará automáticamente un correo electrónico de notificación al usuario informándole sobre los cambios realizados.!!
         </Alert>
         
         <Group mb="md">
