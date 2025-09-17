@@ -826,7 +826,7 @@ const AdminUsersPage = () => {
         <MultiSelect
           label="Roles"
           placeholder="Selecciona roles"
-          data={availableRoles}
+          data={["Usuario", "Administrador", "Responsable"]}
           value={roles}
           onChange={setRoles}
         />
@@ -857,10 +857,15 @@ const AdminUsersPage = () => {
         <Select
           label="Dependencia Nueva"
           placeholder="Selecciona una dependencia"
-          data={dependencies.map((dep) => ({
-            value: dep.dep_code,
-            label: dep.name,
-          }))}
+          data={dependencies
+            .filter((dep, index, self) => 
+              index === self.findIndex(d => d.dep_code === dep.dep_code)
+            )
+            .map((dep) => ({
+              value: dep.dep_code,
+              label: dep.name,
+            }))
+          }
           onChange={(value) =>
             setNewDependency(dependencies.find((dep) => dep.dep_code === value))
           }

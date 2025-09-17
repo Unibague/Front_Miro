@@ -105,6 +105,21 @@ const AdminValidationUpdatePage = () => {
   };
 
   const handleAddValue = () => {
+    // Verificar si hay valores duplicados en alguna columna
+    const hasDuplicates = columns.some(column => {
+      const values = column.values.filter(v => v !== "" && v !== null && v !== undefined);
+      return values.length !== new Set(values.map(v => String(v).toLowerCase())).size;
+    });
+
+    if (hasDuplicates) {
+      showNotification({
+        title: "Error",
+        message: "No se puede agregar una nueva fila mientras haya valores duplicados en las columnas",
+        color: "red",
+      });
+      return;
+    }
+
     const newColumns = columns.map(column => ({
       ...column,
       values: [...column.values, ""],
@@ -206,13 +221,21 @@ const AdminValidationUpdatePage = () => {
             return;
           }
         }
+        // Verificar duplicados en la columna
+        const nonEmptyValues = column.values.filter(v => v !== "" && v !== null && v !== undefined);
+        const uniqueValues = new Set(nonEmptyValues.map(v => String(v).toLowerCase()));
+        if (nonEmptyValues.length !== uniqueValues.size) {
+          setTooltipContent(`La columna "${column.name}" tiene valores duplicados.`);
+          setIsFormValid(false);
+          return;
+        }
       }
       if (!hasValidator) {
         setTooltipContent("Debe marcar al menos una columna como validadora.");
         setIsFormValid(false);
         return;
       }
-      setTooltipContent("Correcto");
+      setTooltipContent("Correcto.");
       setIsFormValid(true);
     };
 
@@ -338,7 +361,7 @@ const AdminValidationUpdatePage = () => {
           <>
             <Select
               label="Tipo"
-              placeholder="Seleccione el tipo"
+              placeholder="Seleccione el tipo."
               value={columns[currentColumnIndex].type || ""}
               onChange={(value) => handleChangeColumn(currentColumnIndex, 'type', value || '')}
               data={[
