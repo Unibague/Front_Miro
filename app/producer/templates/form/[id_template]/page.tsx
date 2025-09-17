@@ -111,7 +111,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             console.log("No se encontró una columna coincidente para:", columnToValidate);
           }
           return {
-            [field.name]: validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : []
+            [field.name]: validatorColumn ? 
+              [...new Set(validatorColumn.values.map((v: any) => v.toString()))] : []
           };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
@@ -315,7 +316,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-          data={multiSelectOptions[field.name] || []}
+          data={[...new Set(multiSelectOptions[field.name] || [])]}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}
