@@ -235,7 +235,7 @@ const AdminValidationUpdatePage = () => {
         setIsFormValid(false);
         return;
       }
-      setTooltipContent("Correcto");
+      setTooltipContent("Correcto.");
       setIsFormValid(true);
     };
 
