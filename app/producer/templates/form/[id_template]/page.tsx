@@ -110,9 +110,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           } else {
             console.log("No se encontró una columna coincidente para:", columnToValidate);
           }
+          const values = validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : [];
+          const uniqueValues = values.filter((value: string, index: number, self: string[]) => self.indexOf(value) === index);
           return {
-            [field.name]: validatorColumn ? 
-              [...new Set(validatorColumn.values.map((v: any) => v.toString()))] : []
+            [field.name]: uniqueValues
           };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
@@ -316,7 +317,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-          data={[...new Set(multiSelectOptions[field.name] || [])]}
+          data={(multiSelectOptions[field.name] || []).filter((value: string, index: number, self: string[]) => self.indexOf(value) === index)}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}

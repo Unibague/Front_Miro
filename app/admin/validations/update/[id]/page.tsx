@@ -361,7 +361,7 @@ const AdminValidationUpdatePage = () => {
           <>
             <Select
               label="Tipo"
-              placeholder="Seleccione el tipo"
+              placeholder="Seleccione el tipo."
               value={columns[currentColumnIndex].type || ""}
               onChange={(value) => handleChangeColumn(currentColumnIndex, 'type', value || '')}
               data={[
