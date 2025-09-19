@@ -576,40 +576,55 @@ useEffect(() => {
                 </Button>
               </Card>
             </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-with-filters">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconFileAnalytics size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Gestiona plantillas con filtros avanzados por dependencia y programa
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-with-filters')}>
+                  Ir a Plantillas con Filtros
+                </Button>
+              </Card>
+            </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-filters">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconFilter size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Gestionar Filtros</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Configura qué filtros están disponibles para cada plantilla
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/filters')}>
+                  Ir a Gestión de Filtros
+                </Button>
+              </Card>
+            </Grid.Col>,
 
-            // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-with-filters">
-            //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-            //     <Center><IconFileAnalytics size={80}/></Center>
-            //     <Group mt="md" mb="xs">
-            //       <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
-            //     </Group>
-            //     <Text ta={"center"} size="sm" color="dimmed">
-            //       Gestiona plantillas con filtros avanzados por dependencia y programa
-            //     </Text>
-            //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-with-filters')}>
-            //       Ir a Plantillas con Filtros
-            //     </Button>
-            //   </Card>
-            // </Grid.Col>,
+
 
         );
         break;
       case "Responsable":
         cards.push(
-          // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates">
-          //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-          //     <Center><IconFileAnalytics size={80}/></Center>
-          //     <Group mt="md" mb="xs">
-          //       <Text ta={"center"} w={500}>Crear | Asignar Plantillas</Text>
-          //     </Group>
-          //     <Text ta={"center"} size="sm" color="dimmed">
-          //       Crea y gestiona las plantillas que llenarán los usuarios.
-          //     </Text>
-          //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/templates')}>
-          //       Ir a Gestión de Plantillas
-          //     </Button>
-          //   </Card>
-          // </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFileAnalytics size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Crear | Asignar Plantillas</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Crea y gestiona las plantillas que llenarán los usuarios.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/templates')}>
+                Ir a Gestión de Plantillas
+              </Button>
+            </Card>
+          </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-published-templates">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconChecklist size={80}></IconChecklist></Center>
@@ -655,20 +670,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
-        // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
-        //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-        //     <Center><IconHexagon3d size={80}/></Center>
-        //     <Group mt="md" mb="xs">
-        //       <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
-        //     </Group>
-        //     <Text ta={"center"} size="sm" color="dimmed">
-        //       Gestiona la dimensión de la que eres responsable.
-        //     </Text>
-        //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-        //       Ir a Gestión de Mi Dimensión
-        //     </Button>
-        //   </Card>
-        // </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconHexagon3d size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Gestiona la dimensión de la que eres responsable.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
+                Ir a Gestión de Mi Dimensión
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -687,20 +702,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
-          // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-send-info">
-          //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-          //     <Center><IconFileUpload size={80}/></Center>
-          //     <Group mt="md" mb="xs">
-          //       <Text ta={"center"} w={500}>Plantillas Enviadas</Text>
-          //     </Group>
-          //     <Text ta={"center"} size="sm" color="dimmed">
-          //       Gestiona la información de tus plantillas cargadas.
-          //     </Text>
-          //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/producer/templates/uploaded')}>
-          //       Ir a Plantillas Enviadas
-          //     </Button>
-          //   </Card>
-          // </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-send-info">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFileUpload size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Plantillas Enviadas</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Gestiona la información de tus plantillas cargadas.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/producer/templates/uploaded')}>
+                Ir a Plantillas Enviadas
+              </Button>
+            </Card>
+          </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-reports">
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Center><IconClipboardData size={80}/></Center>
