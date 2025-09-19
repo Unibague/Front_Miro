@@ -102,6 +102,7 @@ const AdminUsersPage = () => {
     action: "approve" | "reject" | null;
     count: number;
   }>({ open: false, action: null, count: 0 });
+
   const {
     sortedItems: sortedUsers,
     handleSort,
@@ -223,6 +224,7 @@ const AdminUsersPage = () => {
         await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateRole`, {
           email: selectedUser.email,
           roles,
+          adminEmail: session?.user?.email
         });
         showNotification({
           title: "Actualizado",
@@ -270,11 +272,14 @@ const AdminUsersPage = () => {
     }
   };
 
+
+
   const handleToggleActive = async (userId: string, isActive: boolean) => {
     try {
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateStatus`, {
         userId,
         isActive,
+        adminEmail: session?.user?.email
       });
       showNotification({
         title: "Actualizado",
@@ -316,8 +321,15 @@ const AdminUsersPage = () => {
 
   const handleImpersonateUser = async (userId: string) => {
     try {
+      console.log('🔍 Impersonating user with adminEmail:', session?.user?.email);
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate?id=${userId}`
+        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate`,
+        {
+          params: {
+            id: userId,
+            adminEmail: session?.user?.email
+          }
+        }
       );
 
       const { _id, email, full_name } = response.data || {};
@@ -457,6 +469,8 @@ const AdminUsersPage = () => {
               <IconSwitch3 size={16} />
             </Button>
           </Tooltip>
+          
+
 
           {session?.user?.image ? (
             <Tooltip
