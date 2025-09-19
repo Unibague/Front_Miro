@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 
 interface Field {
   name: string;
@@ -63,6 +64,7 @@ const UpdateTemplatePage = () => {
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [originalTemplate, setOriginalTemplate] = useState<any>(null);
   const router = useRouter();
   const { id } = useParams();
   const { data: session } = useSession();
@@ -82,6 +84,15 @@ const UpdateTemplatePage = () => {
             setActive(response.data.active);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
+            
+            // Guardar estado original para comparar cambios
+            setOriginalTemplate({
+              name: response.data.name,
+              file_description: response.data.file_description,
+              fields: response.data.fields,
+              dimensions: response.data.dimensions,
+              producers: response.data.producers
+            });
           }
         } catch (error) {
           console.error("Error fetching template:", error);
@@ -198,6 +209,11 @@ const UpdateTemplatePage = () => {
 
     try {
       const response = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`, templateData);
+      
+      // Registrar cambios en auditoría
+      if (originalTemplate && session?.user?.email) {
+        await logAuditChanges(originalTemplate, templateData, session.user.email);
+      }
 
 if (response.data.warning) {
   showNotification({
@@ -246,6 +262,149 @@ router.back();
   });
 }      
     
+  };
+
+  const logAuditChanges = async (oldTemplate: any, newTemplate: any, userEmail: string) => {
+    // Comparar nombre
+    if (oldTemplate.name !== newTemplate.name) {
+      await logTemplateChange(
+        id as string,
+        newTemplate.name,
+        'update',
+        userEmail,
+        {
+          field: 'name',
+          oldValue: oldTemplate.name,
+          newValue: newTemplate.name,
+          action: `Cambió el nombre de "${oldTemplate.name}" a "${newTemplate.name}"`
+        }
+      );
+    }
+
+    // Comparar descripción
+    if (oldTemplate.file_description !== newTemplate.file_description) {
+      await logTemplateChange(
+        id as string,
+        newTemplate.name,
+        'update',
+        userEmail,
+        {
+          field: 'description',
+          oldValue: oldTemplate.file_description,
+          newValue: newTemplate.file_description,
+          action: `Cambió la descripción de la plantilla "${newTemplate.name}"`
+        }
+      );
+    }
+
+    // Comparar campos
+    const oldFields = oldTemplate.fields || [];
+    const newFields = newTemplate.fields || [];
+
+    // Campos agregados
+    newFields.forEach((newField: Field) => {
+      const oldField = oldFields.find((f: Field) => f.name === newField.name);
+      if (!oldField) {
+        logFieldChange(
+          newTemplate.name,
+          newField.name,
+          'create',
+          userEmail,
+          { fieldType: newField.datatype, required: newField.required }
+        );
+      } else if (JSON.stringify(oldField) !== JSON.stringify(newField)) {
+        // Campo modificado
+        logFieldChange(
+          newTemplate.name,
+          newField.name,
+          'update',
+          userEmail,
+          { oldField, newField }
+        );
+      }
+    });
+
+    // Campos eliminados
+    oldFields.forEach((oldField: Field) => {
+      const newField = newFields.find((f: Field) => f.name === oldField.name);
+      if (!newField) {
+        logFieldChange(
+          newTemplate.name,
+          oldField.name,
+          'delete',
+          userEmail,
+          { fieldType: oldField.datatype }
+        );
+      }
+    });
+
+    // Comparar productores
+    const oldProducers = oldTemplate.producers || [];
+    const newProducers = newTemplate.producers || [];
+
+    // Productores agregados
+    newProducers.forEach((producerId: string) => {
+      if (!oldProducers.includes(producerId)) {
+        const producer = dependencies.find(d => d._id === producerId);
+        if (producer) {
+          logProducerChange(
+            newTemplate.name,
+            producer.name,
+            'create',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Productores eliminados
+    oldProducers.forEach((producerId: string) => {
+      if (!newProducers.includes(producerId)) {
+        const producer = dependencies.find(d => d._id === producerId);
+        if (producer) {
+          logProducerChange(
+            newTemplate.name,
+            producer.name,
+            'delete',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Comparar dimensiones
+    const oldDimensions = oldTemplate.dimensions || [];
+    const newDimensions = newTemplate.dimensions || [];
+
+    // Dimensiones agregadas
+    newDimensions.forEach((dimensionId: string) => {
+      if (!oldDimensions.includes(dimensionId)) {
+        const dimension = dimensions.find(d => d._id === dimensionId);
+        if (dimension) {
+          logDimensionChange(
+            newTemplate.name,
+            dimension.name,
+            'create',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Dimensiones eliminadas
+    oldDimensions.forEach((dimensionId: string) => {
+      if (!newDimensions.includes(dimensionId)) {
+        const dimension = dimensions.find(d => d._id === dimensionId);
+        if (dimension) {
+          logDimensionChange(
+            newTemplate.name,
+            dimension.name,
+            'delete',
+            userEmail
+          );
+        }
+      }
+    });
   };
 
   const onDragEnd = (result: DropResult) => {

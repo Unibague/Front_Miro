@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { logTemplateChange } from "@/app/utils/auditUtils";
 
 interface Field {
   name: string;
@@ -206,10 +207,26 @@ const CreateTemplatePage = () => {
     };
 
     try {
-      await axios.post(
+      const response = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/templates/create`,
         templateData
       );
+      
+      // Registrar en auditoría
+      await logTemplateChange(
+        response.data._id || 'new-template',
+        name,
+        'create',
+        userEmail,
+        {
+          templateName: name,
+          fieldsCount: fields.length,
+          dimensions: selectedDimensions?.map(d => d.name).join(', '),
+          producers: selectedDependencies?.length || 0,
+          action: `Creó la plantilla "${name}" con ${fields.length} campos`
+        }
+      );
+      
       showNotification({
         title: "Creado",
         message: "Plantilla creada exitosamente",

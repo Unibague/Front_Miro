@@ -439,9 +439,15 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                     {filter.inputType === 'date' && (
                       <DatePickerInput
                         placeholder={`Seleccionar ${filter.label.toLowerCase()}...`}
-                        value={filterValues[filter.name]?.[0] ? new Date(filterValues[filter.name][0]) : null}
+                        value={filterValues[filter.name]?.[0] ? (() => {
+                          try {
+                            return new Date(filterValues[filter.name][0]);
+                          } catch {
+                            return null;
+                          }
+                        })() : null}
                         onChange={(date) => {
-                          if (date) {
+                          if (date && date instanceof Date && !isNaN(date.getTime())) {
                             const dateString = date.toISOString().split('T')[0];
                             handleFilterChange(filter.name, [dateString]);
                           } else {
@@ -452,10 +458,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         size="xs"
                         radius="md"
                         leftSection={<IconCalendar size={14} />}
+                        valueFormat="DD/MM/YYYY"
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
                             fontSize: '12px',
+                            cursor: 'pointer',
                             '&:focus': {
                               borderColor: `var(--mantine-color-${filter.color}-6)`
                             }

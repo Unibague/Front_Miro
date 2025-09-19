@@ -4,7 +4,7 @@ import { useEffect, useState, FormEvent } from "react";
 import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Select, Tooltip, Text, Checkbox } from "@mantine/core";
 import axios,{ AxiosError } from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy, IconHistory } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
@@ -15,6 +15,7 @@ import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { DatePickerInput } from "@mantine/dates";
 import { shouldAddWorksheet, sanitizeSheetName } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { logTemplateChange } from "@/app/utils/auditUtils";
 
 interface Field {
   name: string;
@@ -138,7 +139,24 @@ const AdminTemplatesPage = () => {
 
   const handleDelete = async (id: string) => {
     try {
+      const templateToDelete = templates.find(t => t._id === id);
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/templates/delete`, { data: { id } });
+      
+      // Registrar en auditoría
+      if (templateToDelete && session?.user?.email) {
+        await logTemplateChange(
+          id,
+          templateToDelete.name,
+          'delete',
+          session.user.email,
+          {
+            templateId: id,
+            templateName: templateToDelete.name,
+            action: 'Eliminó la plantilla'
+          }
+        );
+      }
+      
       showNotification({
         title: "Eliminado",
         message: "Plantilla eliminada exitosamente",
@@ -430,6 +448,7 @@ const AdminTemplatesPage = () => {
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
+
             <Tooltip
                   label="Borrar plantilla"
                   transitionProps={{ transition: 'fade-up', duration: 300 }}

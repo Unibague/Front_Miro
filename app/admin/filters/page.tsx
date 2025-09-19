@@ -1,203 +1,287 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Container, Title, Card, Text, Button, Group, Table, Modal, TextInput, Select, Switch } from "@mantine/core";
-import { IconPlus, IconEdit, IconTrash } from "@tabler/icons-react";
+import { Container, Title, Card, Text, Button, Group, Table, Modal, TextInput, Select, Switch, Accordion, Badge, Checkbox, Stack, Divider } from "@mantine/core";
+import { IconPlus, IconEdit, IconTrash, IconTemplate, IconFilter, IconEye, IconEyeOff } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 
-interface Filter {
+interface Template {
   _id: string;
   name: string;
-  type: 'dependency' | 'program';
-  isActive: boolean;
-  description: string;
+  createdAt: string;
+  fields?: TemplateField[];
+  publishedTemplate?: {
+    template: {
+      fields: TemplateField[];
+    };
+  };
+  template?: {
+    fields: TemplateField[];
+  };
+}
+
+interface TemplateField {
+  name: string;
+  type: string;
+  required: boolean;
+}
+
+interface TemplateFilter {
+  _id: string;
+  templateId: string;
+  fieldName: string;
+  isVisible: boolean;
+  filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date';
+  order: number;
 }
 
 const FiltersPage = () => {
-  const [filters, setFilters] = useState<Filter[]>([]);
-  const [modalOpened, setModalOpened] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<Filter | null>(null);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<'dependency' | 'program'>('dependency');
-  const [description, setDescription] = useState("");
-  const [isActive, setIsActive] = useState(true);
+  const { data: session } = useSession();
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateFilters, setTemplateFilters] = useState<Record<string, TemplateFilter[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchFilters = async () => {
+  const fetchTemplates = async () => {
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/filters`);
-      setFilters(response.data || []);
+      setError(null);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates-filtered/all`, {
+        params: { 
+          email: session?.user?.email,
+          periodId: '671fb0cc5468f4fe93a75e65'
+        }
+      });
+      console.log('API Response:', response.data);
+      setTemplates(response.data || []);
     } catch (error) {
-      console.error("Error fetching filters:", error);
+      console.error("Error fetching templates:", error);
+      setError("Error al cargar las plantillas");
+      setTemplates([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTemplateData = async (templateId: string) => {
+    try {
+      // Los datos ya están disponibles en el template, no necesitamos hacer otra llamada
+      const template = templates.find(t => t._id === templateId);
+      if (template) {
+        const fields = template.publishedTemplate?.template?.fields || template.fields || template.template?.fields || [];
+        const generatedFilters = generateFiltersForTemplate({
+          _id: templateId,
+          name: template.name,
+          createdAt: template.createdAt,
+          fields: fields
+        });
+        
+        setTemplateFilters(prev => ({
+          ...prev,
+          [templateId]: generatedFilters
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching template data:", error);
     }
   };
 
   useEffect(() => {
-    fetchFilters();
-  }, []);
-
-  const handleSave = async () => {
-    try {
-      const filterData = { name, type, description, isActive };
-      
-      if (selectedFilter) {
-        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/filters/${selectedFilter._id}`, filterData);
-        showNotification({
-          title: "Actualizado",
-          message: "Filtro actualizado exitosamente",
-          color: "teal",
-        });
-      } else {
-        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/filters`, filterData);
-        showNotification({
-          title: "Creado",
-          message: "Filtro creado exitosamente",
-          color: "teal",
-        });
-      }
-      
-      handleModalClose();
-      fetchFilters();
-    } catch (error) {
-      console.error("Error saving filter:", error);
-      showNotification({
-        title: "Error",
-        message: "Error al guardar el filtro",
-        color: "red",
-      });
+    if (session?.user?.email) {
+      fetchTemplates();
     }
-  };
+  }, [session]);
 
-  const handleEdit = (filter: Filter) => {
-    setSelectedFilter(filter);
-    setName(filter.name);
-    setType(filter.type);
-    setDescription(filter.description);
-    setIsActive(filter.isActive);
-    setModalOpened(true);
-  };
-
-  const handleDelete = async (filterId: string) => {
+  const updateFilterVisibility = async (templateId: string, fieldName: string, isVisible: boolean) => {
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/filters/${filterId}`);
+      // Por ahora solo actualizar estado local
+      // En el futuro se puede conectar con el backend para persistir
+      setTemplateFilters(prev => ({
+        ...prev,
+        [templateId]: prev[templateId]?.map(filter => 
+          filter.fieldName === fieldName 
+            ? { ...filter, isVisible }
+            : filter
+        ) || []
+      }));
+      
       showNotification({
-        title: "Eliminado",
-        message: "Filtro eliminado exitosamente",
+        title: "Actualizado",
+        message: `Filtro ${isVisible ? 'activado' : 'desactivado'} exitosamente`,
         color: "teal",
       });
-      fetchFilters();
     } catch (error) {
-      console.error("Error deleting filter:", error);
+      console.error("Error updating filter:", error);
       showNotification({
         title: "Error",
-        message: "Error al eliminar el filtro",
+        message: "Error al actualizar el filtro",
         color: "red",
       });
     }
   };
 
-  const handleModalClose = () => {
-    setModalOpened(false);
-    setSelectedFilter(null);
-    setName("");
-    setType('dependency');
-    setDescription("");
-    setIsActive(true);
+  const generateFiltersForTemplate = (template: Template): TemplateFilter[] => {
+    const fields = template.fields || template.publishedTemplate?.template?.fields || template.template?.fields || [];
+    return fields.map((field, index) => {
+      const fieldLower = field.name.toLowerCase();
+      let filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date' = 'dropdown';
+      
+      if (fieldLower.includes('fecha') || fieldLower.includes('date')) {
+        filterType = 'date';
+      } else if (fieldLower.includes('descripcion') || fieldLower.includes('nombre')) {
+        filterType = 'autocomplete';
+      } else {
+        filterType = 'dropdown';
+      }
+      
+      return {
+        _id: `${template._id}_${field.name}`,
+        templateId: template._id,
+        fieldName: field.name,
+        isVisible: true,
+        filterType,
+        order: index
+      };
+    });
   };
 
-  const rows = filters.map((filter) => (
-    <Table.Tr key={filter._id}>
-      <Table.Td>{filter.name}</Table.Td>
-      <Table.Td>{filter.type === 'dependency' ? 'Dependencia' : 'Programa'}</Table.Td>
-      <Table.Td>{filter.description}</Table.Td>
-      <Table.Td>{filter.isActive ? 'Activo' : 'Inactivo'}</Table.Td>
-      <Table.Td>
-        <Group gap={5}>
-          <Button variant="outline" size="xs" onClick={() => handleEdit(filter)}>
-            <IconEdit size={16} />
-          </Button>
-          <Button variant="outline" color="red" size="xs" onClick={() => handleDelete(filter._id)}>
-            <IconTrash size={16} />
-          </Button>
-        </Group>
-      </Table.Td>
-    </Table.Tr>
-  ));
+  if (loading) {
+    return (
+      <Container size="xl">
+        <Title ta="center" mt="md" mb="md">Cargando...</Title>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container size="xl">
+        <Title ta="center" mt="md" mb="md">Error</Title>
+        <Card withBorder p="md">
+          <Text ta="center" c="red">{error}</Text>
+          <Group justify="center" mt="md">
+            <Button onClick={() => fetchTemplates()}>Reintentar</Button>
+          </Group>
+        </Card>
+      </Container>
+    );
+  }
 
   return (
     <Container size="xl">
       <Title ta="center" mt="md" mb="md">
-        Gestión de Filtros
+        Gestión de Filtros por Plantilla
       </Title>
       
       <Card withBorder mb="md">
         <Group justify="space-between">
-          <Text>Administra los filtros disponibles para las plantillas</Text>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setModalOpened(true)}>
-            Crear Filtro
-          </Button>
+          <Text>Configura qué filtros aparecen en cada plantilla</Text>
+          <Badge variant="light" size="lg">
+            {templates.length} Plantillas
+          </Badge>
         </Group>
       </Card>
 
-      <Table striped withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Nombre</Table.Th>
-            <Table.Th>Tipo</Table.Th>
-            <Table.Th>Descripción</Table.Th>
-            <Table.Th>Estado</Table.Th>
-            <Table.Th>Acciones</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>{rows}</Table.Tbody>
-      </Table>
-
-      <Modal
-        opened={modalOpened}
-        onClose={handleModalClose}
-        title={selectedFilter ? "Editar Filtro" : "Crear Filtro"}
-      >
-        <TextInput
-          label="Nombre"
-          placeholder="Nombre del filtro"
-          value={name}
-          onChange={(event) => setName(event.currentTarget.value)}
-          mb="md"
-        />
-        
-        <Select
-          label="Tipo"
-          data={[
-            { value: 'dependency', label: 'Dependencia' },
-            { value: 'program', label: 'Programa' }
-          ]}
-          value={type}
-          onChange={(value) => setType(value as 'dependency' | 'program')}
-          mb="md"
-        />
-        
-        <TextInput
-          label="Descripción"
-          placeholder="Descripción del filtro"
-          value={description}
-          onChange={(event) => setDescription(event.currentTarget.value)}
-          mb="md"
-        />
-        
-        <Switch
-          label="Activo"
-          checked={isActive}
-          onChange={(event) => setIsActive(event.currentTarget.checked)}
-          mb="md"
-        />
-        
-        <Group mt="md">
-          <Button onClick={handleSave}>Guardar</Button>
-          <Button variant="outline" onClick={handleModalClose}>
-            Cancelar
-          </Button>
-        </Group>
-      </Modal>
+      <Accordion variant="separated">
+        {templates && templates.length > 0 ? templates.map((template) => {
+          const filters = templateFilters[template._id] || generateFiltersForTemplate(template);
+          const visibleFilters = filters.filter(f => f.isVisible).length;
+          
+          return (
+            <Accordion.Item key={template._id} value={template._id}>
+              <Accordion.Control
+                icon={<IconTemplate size={20} />}
+                onClick={() => {
+                  if (!templateFilters[template._id]) {
+                    fetchTemplateData(template._id);
+                  }
+                }}
+              >
+                <Group justify="space-between">
+                  <div>
+                    <Text fw={600}>{template.name}</Text>
+                    <Text size="sm" c="dimmed">
+                      {(template.fields || template.publishedTemplate?.template?.fields || template.template?.fields || []).length} campos disponibles
+                    </Text>
+                  </div>
+                  <Badge 
+                    variant="filled" 
+                    color={visibleFilters > 0 ? "green" : "gray"}
+                  >
+                    {visibleFilters} filtros activos
+                  </Badge>
+                </Group>
+              </Accordion.Control>
+              
+              <Accordion.Panel>
+                <Stack gap="md">
+                  <Text size="sm" c="dimmed">
+                    Selecciona qué campos quieres que aparezcan como filtros:
+                  </Text>
+                  
+                  <Divider />
+                  
+                  {(template.fields || template.publishedTemplate?.template?.fields || template.template?.fields || []).map((field, index) => {
+                    const filter = filters.find(f => f.fieldName === field.name);
+                    const isVisible = filter?.isVisible ?? true;
+                    
+                    return (
+                      <Card key={field.name} p="sm" withBorder>
+                        <Group justify="space-between">
+                          <Group>
+                            <IconFilter size={16} color={isVisible ? "green" : "gray"} />
+                            <div>
+                              <Text fw={500}>{field.name.replace(/_/g, ' ')}</Text>
+                              <Text size="xs" c="dimmed">
+                                Tipo: {field.type} {field.required && '(Requerido)'}
+                              </Text>
+                            </div>
+                          </Group>
+                          
+                          <Group>
+                            <Badge 
+                              variant="light" 
+                              color={isVisible ? "green" : "gray"}
+                              size="sm"
+                            >
+                              {filter?.filterType || 'dropdown'}
+                            </Badge>
+                            
+                            <Switch
+                              checked={isVisible}
+                              onChange={(event) => 
+                                updateFilterVisibility(
+                                  template._id, 
+                                  field.name, 
+                                  event.currentTarget.checked
+                                )
+                              }
+                              thumbIcon={
+                                isVisible ? (
+                                  <IconEye size={12} />
+                                ) : (
+                                  <IconEyeOff size={12} />
+                                )
+                              }
+                            />
+                          </Group>
+                        </Group>
+                      </Card>
+                    );
+                  })}
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          );
+        }) : (
+          <Card withBorder p="md">
+            <Text ta="center" c="dimmed">
+              No hay plantillas disponibles
+            </Text>
+          </Card>
+        )}
+      </Accordion>
     </Container>
   );
 };

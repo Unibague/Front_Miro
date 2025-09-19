@@ -19,12 +19,15 @@ import {
   Anchor,
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
-import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow, IconFilter } from "@tabler/icons-react";
+import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow, IconFilter, IconDownload } from "@tabler/icons-react";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { useSearchParams } from "next/navigation";
 import FilterSidebar from "@/app/components/FilterSidebar";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import { showNotification } from "@mantine/notifications";
 
 interface RowData {
   [key: string]: any;
@@ -236,6 +239,130 @@ const renderCellContent = (value: any) => {
     </Text>
   );
 };
+  const handleDownloadFiltered = async () => {
+    try {
+      await downloadExcel(tableData, `${templateName}_filtrado`);
+    } catch (error) {
+      console.error("Error downloading filtered data:", error);
+      showNotification({
+        title: "Error",
+        message: "Error al descargar los datos filtrados",
+        color: "red",
+      });
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    try {
+      await downloadExcel(originalTableData, `${templateName}_completo`);
+    } catch (error) {
+      console.error("Error downloading all data:", error);
+      showNotification({
+        title: "Error",
+        message: "Error al descargar todos los datos",
+        color: "red",
+      });
+    }
+  };
+
+  const downloadExcel = async (data: RowData[], fileName: string) => {
+    if (data.length === 0) {
+      showNotification({
+        title: "Sin datos",
+        message: "No hay datos para descargar",
+        color: "orange",
+      });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(templateName || "Datos");
+
+    // Obtener las columnas del primer registro
+    const columns = Object.keys(data[0]);
+    
+    // Crear encabezados
+    const headerRow = worksheet.addRow(columns);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: "FFFFFF" } };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "0f1f39" },
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+
+    // Agregar datos
+    data.forEach((row) => {
+      const rowValues = columns.map(column => {
+        const value = row[column];
+        
+        // Manejar diferentes tipos de datos
+        if (value === null || value === undefined) {
+          return "";
+        }
+        
+        if (typeof value === "boolean") {
+          return value ? "Sí" : "No";
+        }
+        
+        if (typeof value === "object") {
+          // Si tiene texto, usar ese
+          if (value.text) {
+            return value.text;
+          }
+          // Si es número de Mongo
+          const mongoNumeric = value?.$numberInt || value?.$numberDouble;
+          if (mongoNumeric !== undefined) {
+            return mongoNumeric;
+          }
+          // Por defecto, convertir a JSON
+          return JSON.stringify(value);
+        }
+        
+        // Para fechas, formatear
+        if (typeof value === "string" && isValidDateString(value) && dayjs(value).isValid()) {
+          return dayjs(value).format("YYYY/MM/DD");
+        }
+        
+        return value.toString();
+      });
+      
+      const dataRow = worksheet.addRow(rowValues);
+      dataRow.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
+
+    // Ajustar ancho de columnas
+    worksheet.columns.forEach((column) => {
+      column.width = 20;
+    });
+
+    // Generar y descargar archivo
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    saveAs(blob, `${fileName}.xlsx`);
+    
+    showNotification({
+      title: "Éxito",
+      message: `Archivo ${fileName}.xlsx descargado exitosamente`,
+      color: "green",
+    });
+  };
+
   const handleFiltersChange = (filters: Record<string, string[]>) => {
     setAppliedFilters(filters);
     
@@ -425,13 +552,27 @@ const renderCellContent = (value: any) => {
             <Text size="sm" c="dimmed">
               {tableData.length} registro{tableData.length !== 1 ? 's' : ''} encontrado{tableData.length !== 1 ? 's' : ''}
             </Text>
-            <Anchor 
-              href={`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/export/${id}?email=${session?.user?.email}`}
-              target="_blank"
-              size="sm"
-            >
-              📥 Descargar datos completos
-            </Anchor>
+            <Group gap="xs">
+              <Button
+                variant="outline"
+                size="sm"
+                leftSection={<IconDownload size={16} />}
+                onClick={() => handleDownloadFiltered()}
+                disabled={tableData.length === 0}
+              >
+                 Descargar datos {Object.keys(appliedFilters).length > 0 ? 'filtrados' : 'completos'}
+              </Button>
+              {Object.keys(appliedFilters).length > 0 && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  leftSection={<IconDownload size={16} />}
+                  onClick={() => handleDownloadAll()}
+                >
+                   Descargar todos los datos
+                </Button>
+              )}
+            </Group>
           </Group>
           
           <Box 
@@ -446,7 +587,7 @@ const renderCellContent = (value: any) => {
               style={{ height: '100%' }}
               scrollbarSize={8}
             >
-              <Table striped withTableBorder fontSize="sm" style={{ minWidth: '100%', borderCollapse: 'collapse' }}>
+              <Table striped withTableBorder style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <Table.Thead 
                   style={{
                     position: 'sticky',

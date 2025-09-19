@@ -170,6 +170,26 @@ const AuditPage = () => {
         return `Eliminó la plantilla "${parsed.templateName}"`;
       }
       
+      // Manejo para cambios de campos
+      if (parsed.fieldName && parsed.action) {
+        return `${parsed.action} el campo "${parsed.fieldName}" en la plantilla "${parsed.templateName || 'plantilla'}"`;
+      }
+      
+      // Manejo para cambios de productores
+      if (parsed.producerName && parsed.action) {
+        return parsed.action;
+      }
+      
+      // Manejo para cambios de dimensiones
+      if (parsed.dimensionName && parsed.action) {
+        return parsed.action;
+      }
+      
+      // Manejo para cambios generales de plantilla
+      if (parsed.field && parsed.action) {
+        return parsed.action;
+      }
+      
       // Manejo para usuarios - cambio de estado
       if (parsed.userEmail && parsed.statusChange) {
         const actionText = parsed.statusChange === 'activated' ? 'activó' : 'desactivó';
@@ -197,6 +217,11 @@ const AuditPage = () => {
       if (parsed.publishedTemplateId && parsed.templateName) {
         const actionText = action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
         return `${actionText} la plantilla publicada "${parsed.templateName}" de la dependencia ${parsed.dependency}`;
+      }
+      
+      // Manejo para creación de plantillas
+      if (parsed.templateName && parsed.fieldsCount && action?.toLowerCase() === 'create') {
+        return `Creó la plantilla "${parsed.templateName}" con ${parsed.fieldsCount} campos`;
       }
       
       return details;

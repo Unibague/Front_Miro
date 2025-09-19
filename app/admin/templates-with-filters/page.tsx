@@ -18,10 +18,15 @@ import {
   MultiSelect,
   Paper,
   Grid,
+  Modal,
+  Card,
+  Switch,
+  Badge,
+  Divider,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
-import { IconArrowLeft, IconDownload, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFilter } from "@tabler/icons-react";
+import { IconArrowLeft, IconDownload, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFilter, IconSettings, IconEye, IconEyeOff } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -82,6 +87,15 @@ interface PublishedTemplate {
   deadline: Date;
 }
 
+interface TemplateFilter {
+  _id: string;
+  templateId: string;
+  fieldName: string;
+  isVisible: boolean;
+  filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date';
+  order: number;
+}
+
 
 
 const TemplatesWithFiltersPage = () => {
@@ -99,6 +113,11 @@ const TemplatesWithFiltersPage = () => {
   // Filter states
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
+  
+  // Filter management modal states
+  const [filterModalOpened, setFilterModalOpened] = useState(false);
+  const [selectedTemplateForFilters, setSelectedTemplateForFilters] = useState<PublishedTemplate | null>(null);
+  const [templateFilters, setTemplateFilters] = useState<Record<string, TemplateFilter[]>>({});
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
@@ -155,6 +174,60 @@ const TemplatesWithFiltersPage = () => {
 
   const handleFiltersChange = (filters: Record<string, string[]>) => {
     setAppliedFilters(filters);
+  };
+
+  const generateFiltersForTemplate = (template: PublishedTemplate): TemplateFilter[] => {
+    const fields = template.template.fields || [];
+    return fields.map((field, index) => {
+      const fieldLower = field.name.toLowerCase();
+      let filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date' = 'dropdown';
+      
+      if (fieldLower.includes('fecha') || fieldLower.includes('date')) {
+        filterType = 'date';
+      } else if (fieldLower.includes('descripcion') || fieldLower.includes('nombre')) {
+        filterType = 'autocomplete';
+      } else {
+        filterType = 'dropdown';
+      }
+      
+      return {
+        _id: `${template._id}_${field.name}`,
+        templateId: template._id,
+        fieldName: field.name,
+        isVisible: true,
+        filterType,
+        order: index
+      };
+    });
+  };
+
+  const openFilterModal = (template: PublishedTemplate) => {
+    setSelectedTemplateForFilters(template);
+    if (!templateFilters[template._id]) {
+      const generatedFilters = generateFiltersForTemplate(template);
+      setTemplateFilters(prev => ({
+        ...prev,
+        [template._id]: generatedFilters
+      }));
+    }
+    setFilterModalOpened(true);
+  };
+
+  const updateFilterVisibility = (templateId: string, fieldName: string, isVisible: boolean) => {
+    setTemplateFilters(prev => ({
+      ...prev,
+      [templateId]: prev[templateId]?.map(filter => 
+        filter.fieldName === fieldName 
+          ? { ...filter, isVisible }
+          : filter
+      ) || []
+    }));
+    
+    showNotification({
+      title: "Actualizado",
+      message: `Filtro ${isVisible ? 'activado' : 'desactivado'} exitosamente`,
+      color: "teal",
+    });
   };
 
   const handleDelete = async (id: string) => {
@@ -416,25 +489,40 @@ const TemplatesWithFiltersPage = () => {
                   <IconDownload size={18} />
                 </Button>
               </Tooltip>
-              { userRole === "Administrador" &&
-                <Tooltip
-                  label={ publishedTemplate.loaded_data?.length > 0 ?
-                    "No puedes eliminar una plantilla con información enviada"
-                    : "Eliminar plantilla publicada"
-                  }
-                  transitionProps={{ transition: "slide-up", duration: 300 }}
-                  withArrow
-                >
-                  <Button
-                    variant="outline"
-                    onClick={() => handleDelete(publishedTemplate._id)}
-                    color="red"
-                    disabled={publishedTemplate.loaded_data?.length > 0}
+              { userRole === "Administrador" && (
+                <>
+                  <Tooltip
+                    label="Gestionar filtros de plantilla"
+                    transitionProps={{ transition: "slide-up", duration: 300 }}
+                    withArrow
                   >
-                    <IconTrash size={18} />
-                  </Button>
-                </Tooltip>
-              }
+                    <Button
+                      variant="outline"
+                      onClick={() => openFilterModal(publishedTemplate)}
+                      color="blue"
+                    >
+                      <IconSettings size={18} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip
+                    label={ publishedTemplate.loaded_data?.length > 0 ?
+                      "No puedes eliminar una plantilla con información enviada"
+                      : "Eliminar plantilla publicada"
+                    }
+                    transitionProps={{ transition: "slide-up", duration: 300 }}
+                    withArrow
+                  >
+                    <Button
+                      variant="outline"
+                      onClick={() => handleDelete(publishedTemplate._id)}
+                      color="red"
+                      disabled={publishedTemplate.loaded_data?.length > 0}
+                    >
+                      <IconTrash size={18} />
+                    </Button>
+                  </Tooltip>
+                </>
+              )}
             </Group>
           </Center>
         </Table.Td>
@@ -597,6 +685,95 @@ const TemplatesWithFiltersPage = () => {
           </Center>
         </Container>
       </div>
+      
+      {/* Modal de Gestión de Filtros */}
+      <Modal
+        opened={filterModalOpened}
+        onClose={() => setFilterModalOpened(false)}
+        title={`Gestionar Filtros - ${selectedTemplateForFilters?.name}`}
+        size="lg"
+      >
+        {selectedTemplateForFilters && (
+          <Stack gap="md">
+            <Text size="sm" c="dimmed">
+              Selecciona qué campos quieres que aparezcan como filtros para esta plantilla:
+            </Text>
+            
+            <Divider />
+            
+            {selectedTemplateForFilters.template.fields.map((field, index) => {
+              const filters = templateFilters[selectedTemplateForFilters._id] || [];
+              const filter = filters.find(f => f.fieldName === field.name);
+              const isVisible = filter?.isVisible ?? true;
+              
+              return (
+                <Card key={field.name} p="sm" withBorder>
+                  <Group justify="space-between">
+                    <Group>
+                      <IconFilter size={16} color={isVisible ? "green" : "gray"} />
+                      <div>
+                        <Text fw={500}>{field.name.replace(/_/g, ' ')}</Text>
+                        <Text size="xs" c="dimmed">
+                          Tipo: {field.datatype} {field.required && '(Requerido)'}
+                        </Text>
+                      </div>
+                    </Group>
+                    
+                    <Group>
+                      <Badge 
+                        variant="light" 
+                        color={isVisible ? "green" : "gray"}
+                        size="sm"
+                      >
+                        {filter?.filterType || 'dropdown'}
+                      </Badge>
+                      
+                      <Switch
+                        checked={isVisible}
+                        onChange={(event) => 
+                          updateFilterVisibility(
+                            selectedTemplateForFilters._id, 
+                            field.name, 
+                            event.currentTarget.checked
+                          )
+                        }
+                        thumbIcon={
+                          isVisible ? (
+                            <IconEye size={12} />
+                          ) : (
+                            <IconEyeOff size={12} />
+                          )
+                        }
+                      />
+                    </Group>
+                  </Group>
+                </Card>
+              );
+            })}
+            
+            <Group justify="flex-end" mt="md">
+              <Button 
+                variant="outline" 
+                onClick={() => setFilterModalOpened(false)}
+              >
+                Cerrar
+              </Button>
+              <Button 
+                onClick={() => {
+                  showNotification({
+                    title: "Guardado",
+                    message: "Configuración de filtros guardada exitosamente",
+                    color: "green",
+                  });
+                  setFilterModalOpened(false);
+                }}
+              >
+                Guardar Cambios
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </div>
   );
 };
