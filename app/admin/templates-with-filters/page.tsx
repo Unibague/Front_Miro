@@ -178,7 +178,7 @@ const TemplatesWithFiltersPage = () => {
 
   const generateFiltersForTemplate = (template: PublishedTemplate): TemplateFilter[] => {
     const fields = template.template.fields || [];
-    return fields.map((field, index) => {
+    const filters = fields.map((field, index) => {
       const fieldLower = field.name.toLowerCase();
       let filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date' = 'dropdown';
       
@@ -199,17 +199,51 @@ const TemplatesWithFiltersPage = () => {
         order: index
       };
     });
+    
+    // Agregar manualmente el filtro DEPENDENCIA
+    filters.push({
+      _id: `${template._id}_DEPENDENCIA`,
+      templateId: template._id,
+      fieldName: 'DEPENDENCIA',
+      isVisible: true,
+      filterType: 'dropdown',
+      order: fields.length
+    });
+    
+    return filters;
   };
 
   const openFilterModal = (template: PublishedTemplate) => {
     setSelectedTemplateForFilters(template);
-    if (!templateFilters[template._id]) {
+    
+    // Intentar cargar configuración guardada desde localStorage
+    const savedConfig = localStorage.getItem(`template_filters_${template._id}`);
+    
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+        setTemplateFilters(prev => ({
+          ...prev,
+          [template._id]: config.filters
+        }));
+      } catch (error) {
+        console.error('Error loading saved filter config:', error);
+        // Si hay error, generar filtros por defecto
+        const generatedFilters = generateFiltersForTemplate(template);
+        setTemplateFilters(prev => ({
+          ...prev,
+          [template._id]: generatedFilters
+        }));
+      }
+    } else if (!templateFilters[template._id]) {
+      // Si no hay configuración guardada, generar filtros por defecto
       const generatedFilters = generateFiltersForTemplate(template);
       setTemplateFilters(prev => ({
         ...prev,
         [template._id]: generatedFilters
       }));
     }
+    
     setFilterModalOpened(true);
   };
 
@@ -536,6 +570,9 @@ const TemplatesWithFiltersPage = () => {
         onFiltersChange={handleFiltersChange}
         isVisible={sidebarVisible}
         onToggle={() => setSidebarVisible(!sidebarVisible)}
+        savedFilters={templateFilters}
+        templates={templates}
+        key={JSON.stringify(templateFilters)} // Force re-render when filters change
       />
       
       <div 
@@ -701,55 +738,62 @@ const TemplatesWithFiltersPage = () => {
             
             <Divider />
             
-            {selectedTemplateForFilters.template.fields.map((field, index) => {
+            {(() => {
               const filters = templateFilters[selectedTemplateForFilters._id] || [];
-              const filter = filters.find(f => f.fieldName === field.name);
-              const isVisible = filter?.isVisible ?? true;
               
-              return (
-                <Card key={field.name} p="sm" withBorder>
-                  <Group justify="space-between">
-                    <Group>
-                      <IconFilter size={16} color={isVisible ? "green" : "gray"} />
-                      <div>
-                        <Text fw={500}>{field.name.replace(/_/g, ' ')}</Text>
-                        <Text size="xs" c="dimmed">
-                          Tipo: {field.datatype} {field.required && '(Requerido)'}
-                        </Text>
-                      </div>
-                    </Group>
-                    
-                    <Group>
-                      <Badge 
-                        variant="light" 
-                        color={isVisible ? "green" : "gray"}
-                        size="sm"
-                      >
-                        {filter?.filterType || 'dropdown'}
-                      </Badge>
+              return filters.map((filter) => {
+                const templateField = selectedTemplateForFilters.template.fields.find(f => f.name === filter.fieldName);
+                const isVisible = filter.isVisible ?? true;
+                
+                return (
+                  <Card key={filter.fieldName} p="sm" withBorder>
+                    <Group justify="space-between">
+                      <Group>
+                        <IconFilter size={16} color={isVisible ? "green" : "gray"} />
+                        <div>
+                          <Text fw={500}>{filter.fieldName.replace(/_/g, ' ')}</Text>
+                          <Text size="xs" c="dimmed">
+                            {templateField ? (
+                              `Tipo: ${templateField.datatype} ${templateField.required ? '(Requerido)' : ''}`
+                            ) : (
+                              filter.fieldName === 'DEPENDENCIA' ? 'Campo de dependencia' : 'Campo adicional'
+                            )}
+                          </Text>
+                        </div>
+                      </Group>
                       
-                      <Switch
-                        checked={isVisible}
-                        onChange={(event) => 
-                          updateFilterVisibility(
-                            selectedTemplateForFilters._id, 
-                            field.name, 
-                            event.currentTarget.checked
-                          )
-                        }
-                        thumbIcon={
-                          isVisible ? (
-                            <IconEye size={12} />
-                          ) : (
-                            <IconEyeOff size={12} />
-                          )
-                        }
-                      />
+                      <Group>
+                        <Badge 
+                          variant="light" 
+                          color={isVisible ? "green" : "gray"}
+                          size="sm"
+                        >
+                          {filter.filterType || 'dropdown'}
+                        </Badge>
+                        
+                        <Switch
+                          checked={isVisible}
+                          onChange={(event) => 
+                            updateFilterVisibility(
+                              selectedTemplateForFilters._id, 
+                              filter.fieldName, 
+                              event.currentTarget.checked
+                            )
+                          }
+                          thumbIcon={
+                            isVisible ? (
+                              <IconEye size={12} />
+                            ) : (
+                              <IconEyeOff size={12} />
+                            )
+                          }
+                        />
+                      </Group>
                     </Group>
-                  </Group>
-                </Card>
-              );
-            })}
+                  </Card>
+                );
+              });
+            })()}
             
             <Group justify="flex-end" mt="md">
               <Button 
@@ -759,13 +803,38 @@ const TemplatesWithFiltersPage = () => {
                 Cerrar
               </Button>
               <Button 
-                onClick={() => {
-                  showNotification({
-                    title: "Guardado",
-                    message: "Configuración de filtros guardada exitosamente",
-                    color: "green",
-                  });
-                  setFilterModalOpened(false);
+                onClick={async () => {
+                  try {
+                    const filtersToSave = templateFilters[selectedTemplateForFilters._id] || [];
+                    
+                    // Aquí deberías implementar la llamada a la API para guardar los filtros
+                    // Por ahora, solo guardamos en localStorage como solución temporal
+                    const filterConfig = {
+                      templateId: selectedTemplateForFilters._id,
+                      filters: filtersToSave
+                    };
+                    
+                    localStorage.setItem(
+                      `template_filters_${selectedTemplateForFilters._id}`, 
+                      JSON.stringify(filterConfig)
+                    );
+                    
+                    showNotification({
+                      title: "Guardado",
+                      message: "Configuración de filtros guardada exitosamente",
+                      color: "green",
+                    });
+                    
+                    // Force FilterSidebar to reload with new configuration
+                    setAppliedFilters({});
+                    setFilterModalOpened(false);
+                  } catch (error) {
+                    showNotification({
+                      title: "Error",
+                      message: "Error al guardar la configuración de filtros",
+                      color: "red",
+                    });
+                  }
                 }}
               >
                 Guardar Cambios

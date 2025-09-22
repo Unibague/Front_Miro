@@ -65,6 +65,7 @@ const UploadedTemplatePage = () => {
   const { data: session } = useSession();
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
+  const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
     try {
@@ -146,6 +147,19 @@ const UploadedTemplatePage = () => {
 
     fetchTemplateName();
     fetchUploadedData();
+    
+    // Cargar configuración de filtros guardada
+    if (id) {
+      const savedConfig = localStorage.getItem(`template_filters_${id}`);
+      if (savedConfig) {
+        try {
+          const config = JSON.parse(savedConfig);
+          setSavedFilters({ [id as string]: config.filters });
+        } catch (error) {
+          console.error('Error loading saved filter config:', error);
+        }
+      }
+    }
   }, [id, session]);
 
   useEffect(() => {
@@ -375,12 +389,42 @@ const renderCellContent = (value: any) => {
     
     Object.entries(filters).forEach(([filterName, values]) => {
       if (values.length > 0) {
+        console.log('Aplicando filtro:', filterName, 'con valores:', values);
         filteredData = filteredData.filter(row => {
           // Buscar el campo correspondiente en la fila
           const fieldNames = Object.keys(row);
-          const matchingField = fieldNames.find(field => 
+          
+          // Primero intentar encontrar por transformación inversa (filterName -> fieldName)
+          let matchingField = fieldNames.find(field => 
             field.toLowerCase().replace(/[^a-z0-9]/g, '_') === filterName
           );
+          
+          // Si no se encuentra, intentar coincidencia exacta
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => field === filterName);
+          }
+          
+          // Si no se encuentra, intentar coincidencia directa
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => 
+              field.toLowerCase() === filterName.toLowerCase()
+            );
+          }
+          
+          // Si aún no se encuentra, intentar sin espacios ni caracteres especiales
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => 
+              field.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === 
+              filterName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+            );
+          }
+          
+          if (!matchingField) {
+            console.log('CAMPO NO ENCONTRADO - Buscado:', filterName, 'Disponibles:', fieldNames.slice(0, 10));
+            return true; // Si no encuentra el campo, no filtrar
+          }
+          
+          console.log('Campo buscado:', filterName, 'Campo encontrado:', matchingField);
           
           if (matchingField) {
             const fieldValue = row[matchingField];
@@ -404,11 +448,50 @@ const renderCellContent = (value: any) => {
               const searchValue = value.toLowerCase().trim();
               const cellValue = cellText.toLowerCase().trim();
               
-              // Coincidencia exacta, parcial o contenida
+              // Para filtros de fecha, hacer comparación especial
+              if (filterName.includes('fecha') || filterName.includes('date')) {
+                console.log('DATE FILTER COMPARISON:', {
+                  filterName,
+                  searchValue,
+                  cellValue,
+                  fieldValue,
+                  matchingField
+                });
+                
+                // Si el valor de búsqueda es una fecha (YYYY-MM-DD)
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                  // Convertir ambos valores a fechas para comparar
+                  try {
+                    const searchDate = new Date(value);
+                    let cellDate;
+                    
+                    if (typeof fieldValue === 'string' && isValidDateString(fieldValue)) {
+                      cellDate = new Date(fieldValue);
+                    } else if (fieldValue instanceof Date) {
+                      cellDate = fieldValue;
+                    } else {
+                      return false;
+                    }
+                    
+                    // Comparar solo las fechas (sin hora)
+                    const searchDateStr = searchDate.toISOString().split('T')[0];
+                    const cellDateStr = cellDate.toISOString().split('T')[0];
+                    
+                    console.log('Date comparison:', { searchDateStr, cellDateStr, match: searchDateStr === cellDateStr });
+                    
+                    return searchDateStr === cellDateStr;
+                  } catch (error) {
+                    console.log('Date parsing error:', error);
+                    return false;
+                  }
+                }
+              }
+              
+              // Para otros tipos de filtros, usar lógica normal
               return cellValue === searchValue || 
                      cellValue.includes(searchValue) ||
                      searchValue.includes(cellValue) ||
-                     // Para fechas, buscar coincidencias parciales
+                     // Para fechas como texto, buscar coincidencias parciales
                      (cellValue.includes('-') && searchValue.includes('-') && 
                       cellValue.split('-').some(part => searchValue.includes(part))) ||
                      // Para texto largo, buscar palabras individuales
@@ -460,6 +543,7 @@ const renderCellContent = (value: any) => {
         onToggle={() => setSidebarVisible(!sidebarVisible)}
         templateId={id as string}
         templateData={originalTableData}
+        savedFilters={savedFilters}
       />
       
       <Box 
