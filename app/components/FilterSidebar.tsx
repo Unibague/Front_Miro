@@ -93,7 +93,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       filters.push({
         _id: `dynamic_${index}`,
         name: fieldName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-        label: fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        label: fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
         type: 'select',
         source: 'template_fields',
         sourceField: fieldName,
@@ -158,7 +158,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
 
   useEffect(() => {
     if (templateData && templateData.length > 0) {
-      let filtersToUse = [];
+      let filtersToUse: (FilterConfig & { icon: any; color: string; inputType: string })[] = [];
       
       // Si hay configuración guardada para alguna plantilla, usarla
       if (savedFilters && Object.keys(savedFilters).length > 0) {
@@ -181,7 +181,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
               return {
                 _id: filter._id,
                 name: filter.fieldName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-                label: filter.fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                label: filter.fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
                 type: 'select',
                 source: 'template_fields',
                 sourceField: filter.fieldName, // Mantener el nombre original del campo
