@@ -282,7 +282,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             {activeFilters.length === 0 ? (
               <Box ta="center" py="xl">
                 <IconSearch size={48} color="#adb5bd" />
-                <Text size="sm" c="dimmed" mt="md">Cargando filtros...</Text>
+                <Text size="sm" c="dimmed" mt="md">Cargando filtros....</Text>
               </Box>
             ) : (
               activeFilters.map((filter) => {
