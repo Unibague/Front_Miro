@@ -111,7 +111,7 @@ const TemplatesWithFiltersPage = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   
   // Filter states
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   
   // Filter management modal states
@@ -148,7 +148,8 @@ const TemplatesWithFiltersPage = () => {
       });
       
       if (response.data) {
-        setTemplates(response.data.templates || []);
+        const sortedTemplates = sortTemplatesWithVisited(response.data.templates || []);
+        setTemplates(sortedTemplates);
         setTotalPages(response.data.pages || 1);
       }
     } catch (error) {
@@ -166,10 +167,42 @@ const TemplatesWithFiltersPage = () => {
 
 
 
+  // Sort templates to show visited ones first
+  const sortTemplatesWithVisited = (templates: PublishedTemplate[]) => {
+    const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+    
+    return templates.sort((a, b) => {
+      const aVisited = visitedTemplates.includes(a._id);
+      const bVisited = visitedTemplates.includes(b._id);
+      
+      if (aVisited && !bVisited) return -1;
+      if (!aVisited && bVisited) return 1;
+      return 0;
+    });
+  };
+
+  // Load search from localStorage on component mount
   useEffect(() => {
-    if (session?.user?.email) {
-      fetchTemplates(page, search, appliedFilters);
+    const savedSearch = localStorage.getItem('templates_search');
+    if (savedSearch) {
+      setSearch(savedSearch);
     }
+  }, []);
+
+  // Save search to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('templates_search', search);
+  }, [search]);
+
+  // Fetch templates with debounced search
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    
+    const delayDebounceFn = setTimeout(() => {
+      fetchTemplates(page, search, appliedFilters);
+    }, search ? 500 : 0); // No delay if search is empty, 500ms delay if there's search text
+
+    return () => clearTimeout(delayDebounceFn);
   }, [page, search, session, selectedPeriodId, appliedFilters]);
 
   const handleFiltersChange = (filters: Record<string, string[]>) => {
@@ -262,6 +295,27 @@ const TemplatesWithFiltersPage = () => {
       message: `Filtro ${isVisible ? 'activado' : 'desactivado'} exitosamente`,
       color: "teal",
     });
+  };
+
+  const toggleAllFilters = (templateId: string, activateAll: boolean) => {
+    setTemplateFilters(prev => ({
+      ...prev,
+      [templateId]: prev[templateId]?.map(filter => ({
+        ...filter,
+        isVisible: activateAll
+      })) || []
+    }));
+    
+    showNotification({
+      title: "Actualizado",
+      message: `Todos los filtros ${activateAll ? 'activados' : 'desactivados'} exitosamente`,
+      color: "teal",
+    });
+  };
+
+  const areAllFiltersActive = (templateId: string): boolean => {
+    const filters = templateFilters[templateId] || [];
+    return filters.length > 0 && filters.every(filter => filter.isVisible);
   };
 
   const handleDelete = async (id: string) => {
@@ -472,7 +526,15 @@ const TemplatesWithFiltersPage = () => {
             >
               <Stack
                 gap={0} style={{ cursor: "pointer" }}
-                onClick={()=>router.push(`/templates/uploaded/${publishedTemplate._id}?resume=true`)}
+                onClick={() => {
+                  // Mark template as visited
+                  const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+                  if (!visitedTemplates.includes(publishedTemplate._id)) {
+                    visitedTemplates.push(publishedTemplate._id);
+                    localStorage.setItem('visited_templates', JSON.stringify(visitedTemplates));
+                  }
+                  router.push(`/templates/uploaded/${publishedTemplate._id}?resume=true`);
+                }}
               >
                 <Progress.Root
                   mt={"xs"}
@@ -503,6 +565,12 @@ const TemplatesWithFiltersPage = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    // Mark template as visited
+                    const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+                    if (!visitedTemplates.includes(publishedTemplate._id)) {
+                      visitedTemplates.push(publishedTemplate._id);
+                      localStorage.setItem('visited_templates', JSON.stringify(visitedTemplates));
+                    }
                     router.push(`/templates/uploaded/${publishedTemplate._id}?resume=false`);
                   }}
                   disabled={publishedTemplate.loaded_data.length === 0}
@@ -738,6 +806,43 @@ const TemplatesWithFiltersPage = () => {
             
             <Divider />
             
+            {/* Switch General para Activar/Desactivar Todos */}
+            <Card p="md" withBorder style={{ backgroundColor: '#f8f9fa' }}>
+              <Group justify="space-between">
+                <Group>
+                  <IconFilter size={20} color="blue" />
+                  <div>
+                    <Text fw={600} size="md">Control General de Filtros</Text>
+                    <Text size="xs" c="dimmed">
+                      Activa o desactiva todos los filtros de una vez
+                    </Text>
+                  </div>
+                </Group>
+                
+                <Switch
+                  size="lg"
+                  checked={areAllFiltersActive(selectedTemplateForFilters._id)}
+                  onChange={(event) => 
+                    toggleAllFilters(
+                      selectedTemplateForFilters._id, 
+                      event.currentTarget.checked
+                    )
+                  }
+                  label={areAllFiltersActive(selectedTemplateForFilters._id) ? "Desactivar todos" : "Activar todos"}
+                  thumbIcon={
+                    areAllFiltersActive(selectedTemplateForFilters._id) ? (
+                      <IconEye size={16} />
+                    ) : (
+                      <IconEyeOff size={16} />
+                    )
+                  }
+                  color="blue"
+                />
+              </Group>
+            </Card>
+            
+            <Divider label="Filtros Individuales" labelPosition="center" />
+            
             {(() => {
               const filters = templateFilters[selectedTemplateForFilters._id] || [];
               
@@ -763,14 +868,6 @@ const TemplatesWithFiltersPage = () => {
                       </Group>
                       
                       <Group>
-                        <Badge 
-                          variant="light" 
-                          color={isVisible ? "green" : "gray"}
-                          size="sm"
-                        >
-                          {filter.filterType || 'dropdown'}
-                        </Badge>
-                        
                         <Switch
                           checked={isVisible}
                           onChange={(event) => 
