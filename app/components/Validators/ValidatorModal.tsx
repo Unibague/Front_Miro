@@ -31,10 +31,17 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
 
   useEffect(() => {
     const fetchValidatorData = async () => {
+      console.log('fetchValidatorData - validatorId:', validatorId);
+      if (!validatorId || validatorId === 'undefined' || validatorId.trim() === '') {
+        console.error('ID de validador inválido:', validatorId);
+        return;
+      }
+      
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
         setValidatorData(response.data.validator);
       } catch (error) {
+        console.error('Error en fetchValidatorData:', error);
         showNotification({
           title: "Error",
           message: "No se pudieron cargar los datos de validación",
@@ -43,7 +50,7 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
       }
     };
 
-    if (validatorId) {
+    if (validatorId && validatorId !== 'undefined' && validatorId.trim() !== '') {
       fetchValidatorData();
     }
   }, [validatorId]);

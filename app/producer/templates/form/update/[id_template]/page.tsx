@@ -32,7 +32,7 @@ interface Field {
   name: string;
   datatype: string;
   required: boolean;
-  validate_with?: { id: string; name: string };
+  validate_with?: { id: string; name: string } | string;
   comment?: string;
   multiple?: boolean;
 }
@@ -79,6 +79,7 @@ const ProducerTemplateUpdatePage = ({
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
+  const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
   
   useEffect(() => {
     if (id_template) {
@@ -100,18 +101,32 @@ const ProducerTemplateUpdatePage = ({
         }
       );
 
-      const transformedRows = transformData(dataResponse.data.data);
-
+      console.log('Data response:', dataResponse.data);
+      console.log('Template fields:', templateResponse.data.template.fields);
+      
+      const transformedRows = transformData(dataResponse.data.data, templateResponse.data.template);
+      
+      console.log('Transformed rows:', transformedRows);
       setRows(transformedRows);
 
       const validatorCheckPromises = templateResponse.data.template.fields.map(
         async (field) => {
           if (field.validate_with) {
             try {
-              const validatorResponse = await axios.get(
-                `${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${field.validate_with.id}`
-              );
-              return { [field.name]: !!validatorResponse.data.validator };
+              let validatorId = '';
+              if (typeof field.validate_with === 'string') {
+                const parts = field.validate_with.split(' - ');
+                validatorId = parts.length >= 2 ? parts[1].trim() : '';
+              } else {
+                validatorId = field.validate_with.id;
+              }
+              
+              if (validatorId) {
+                const validatorResponse = await axios.get(
+                  `${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`
+                );
+                return { [field.name]: !!validatorResponse.data.validator };
+              }
             } catch {
               return { [field.name]: false };
             }
@@ -131,9 +146,26 @@ const ProducerTemplateUpdatePage = ({
       .filter(field => field.multiple && field.validate_with)
       .map(async (field) => {
         try {
-          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${field.validate_with?.id}`);
+          let validatorId = '';
+          let columnToValidate = '';
+          
+          if (typeof field.validate_with === 'string') {
+            const parts = field.validate_with.split(' - ');
+            if (parts.length >= 2) {
+              validatorId = parts[1].trim();
+              columnToValidate = parts[1].trim().toLowerCase();
+            }
+          } else if (field.validate_with?.id) {
+            validatorId = field.validate_with.id;
+            columnToValidate = field.validate_with.name.split(" - ")[1]?.toLowerCase();
+          }
+          
+          if (!validatorId) {
+            return { [field.name]: [] };
+          }
+          
+          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
           const validatorColumns = validatorResponse.data.validator.columns || [];
-          const columnToValidate = field.validate_with?.name.split(" - ")[1]?.toLowerCase();
           const validatorColumn = validatorColumns.find(
             (col: { is_validator: boolean; name: string }) =>
               col.is_validator && col.name.toLowerCase() === columnToValidate
@@ -143,8 +175,10 @@ const ProducerTemplateUpdatePage = ({
           } else {
             console.log("No se encontró una columna coincidente para:", columnToValidate);
           }
+          const values = validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : [];
+          const uniqueValues = Array.from(new Set(values)) as string[];
           return {
-            [field.name]: validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : []
+            [field.name]: uniqueValues
           };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
@@ -165,28 +199,74 @@ const ProducerTemplateUpdatePage = ({
     }
   };
 
-const transformData = (data: any[]): Record<string, any>[] => {
-  const rowCount = data[0]?.values?.length || 0;
+const transformData = (data: any[], template: Template): Record<string, any>[] => {
+  if (!data.length || !template?.fields.length) return [];
+  
+  // Extraer valores de la estructura de Mongoose
+  const firstFieldData = data[0];
+  const firstFieldValues = firstFieldData?._doc?.values || firstFieldData?.values || [];
+  const rowCount = firstFieldValues.length;
+  
   const transformedRows: Record<string, any>[] = Array.from({ length: rowCount }, () => ({}));
 
+  // Mapear cada campo de la plantilla con los datos correspondientes
   data.forEach((fieldData) => {
-    const isMultiple = template?.fields.find(f => f.name === fieldData.field_name)?.multiple;
-
-    fieldData.values.forEach((value: any, index: number) => {
-      if (isMultiple) {
-        if (Array.isArray(value)) {
-          transformedRows[index][fieldData.field_name] = value.map(v => v.toString());
-        } else if (typeof value === "number") {
-          transformedRows[index][fieldData.field_name] = [value.toString()];
-        } else if (typeof value === "string") {
-          transformedRows[index][fieldData.field_name] = value.split(",").map(v => v.trim());
-        } else {
-          transformedRows[index][fieldData.field_name] = [];
+    const fieldName = fieldData?._doc?.field_name || fieldData?.field_name;
+    const fieldValues = fieldData?._doc?.values || fieldData?.values || [];
+    const field = template.fields.find(f => f.name === fieldName);
+    
+    if (field && fieldValues.length > 0) {
+      fieldValues.forEach((value: any, rowIndex: number) => {
+        if (rowIndex < rowCount) {
+          if (field.multiple) {
+            if (Array.isArray(value)) {
+              transformedRows[rowIndex][field.name] = value.map(v => v.toString());
+            } else if (typeof value === "string" && value.includes(",")) {
+              transformedRows[rowIndex][field.name] = value.split(",").map(v => v.trim());
+            } else {
+              transformedRows[rowIndex][field.name] = [value?.toString() || ""];
+            }
+          } else {
+            let processedValue = value;
+            
+            // Si es un array, tomar el primer elemento
+            if (Array.isArray(value) && value.length > 0) {
+              processedValue = value[0];
+            }
+            
+            // Intentar parsear JSON si es string
+            if (typeof processedValue === 'string') {
+              try {
+                const parsed = JSON.parse(processedValue);
+                if (parsed && typeof parsed === 'object' && parsed.text) {
+                  processedValue = parsed.text;
+                }
+              } catch {
+                // No es JSON válido, mantener como string
+              }
+            }
+            
+            // Manejar objetos de email (hyperlinks)
+            if (processedValue && typeof processedValue === 'object' && processedValue.text) {
+              transformedRows[rowIndex][field.name] = processedValue.text;
+            }
+            // Validar fechas para evitar valores inválidos
+            else if (field.datatype === 'Fecha' && processedValue) {
+              const dateValue = new Date(processedValue);
+              transformedRows[rowIndex][field.name] = isNaN(dateValue.getTime()) ? null : dateValue;
+            }
+            // Convertir strings a números para campos con validadores de tipo entero
+            else if (field.validate_with && field.datatype === 'Entero' && processedValue) {
+              const numValue = parseInt(String(processedValue), 10);
+              transformedRows[rowIndex][field.name] = isNaN(numValue) ? processedValue : numValue;
+            }
+            else {
+              transformedRows[rowIndex][field.name] = processedValue;
+            }
+          }
         }
-      } else {
-        transformedRows[index][fieldData.field_name] = value;
-      }
-    });
+      });
+    }
   });
 
   return transformedRows;
@@ -251,15 +331,19 @@ const transformData = (data: any[]): Record<string, any>[] => {
   };
 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
+    console.log('handleValidatorOpen - validatorId:', validatorId, 'rowIndex:', rowIndex, 'fieldName:', fieldName);
     try {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`
       );
       setValidatorData(response.data.validator);
+      setCurrentValidatorId(validatorId);
       setActiveRowIndex(rowIndex);
       setActiveFieldName(fieldName);
+      console.log('Valores establecidos - activeRowIndex:', rowIndex, 'activeFieldName:', fieldName);
       setValidatorModalOpen(true);
     } catch (error) {
+      console.error('Error en handleValidatorOpen:', error);
       showNotification({
         title: "Error",
         message: "No se pudieron cargar los datos de validación",
@@ -343,7 +427,7 @@ const transformData = (data: any[]): Record<string, any>[] => {
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-          data={multiSelectOptions[field.name] || []}
+          data={Array.from(new Set(multiSelectOptions[field.name] || [])).map(value => ({ value: String(value), label: String(value) }))}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}
@@ -356,12 +440,16 @@ const transformData = (data: any[]): Record<string, any>[] => {
       case "Entero":
       case "Decimal":
       case "Porcentaje":
-        const formattedValue = field.datatype === "Porcentaje" ? (row[field.name] ? `${row[field.name]}%` : "") : row[field.name];
+        let numericValue = "";
+        if (row[field.name] !== null && row[field.name] !== undefined) {
+          const rawValue = typeof row[field.name] === 'object' ? "" : String(row[field.name]);
+          numericValue = field.datatype === "Porcentaje" ? (rawValue ? `${rawValue}%` : "") : rawValue;
+        }
 
         return (
           <NumberInput
             {...commonProps}
-            value={formattedValue}
+            value={numericValue}
             min={0}
             step={field.datatype === "Porcentaje" ? 1 : 1}
             hideControls
@@ -399,10 +487,15 @@ const transformData = (data: any[]): Record<string, any>[] => {
           />
         );
       case "Fecha":
+        let dateValue = null;
+        if (row[field.name]) {
+          const tempDate = new Date(row[field.name]);
+          dateValue = isNaN(tempDate.getTime()) ? null : tempDate;
+        }
         return (
           <DateInput
             {...commonProps}
-            value={row[field.name] ? new Date(row[field.name]) : null}
+            value={dateValue}
             locale="es"
             valueFormat="DD/MM/YYYY"
             onChange={(date) => handleInputChange(rowIndex, field.name, date)}
@@ -472,9 +565,36 @@ const transformData = (data: any[]): Record<string, any>[] => {
                             <ActionIcon
                               size={"sm"}
                               onClick={() => {
-                                setActiveRowIndex(rowIndex);
-                                setActiveFieldName(field.name);
-                                handleValidatorOpen(field.validate_with?.id!, rowIndex, field.name);
+                                console.log('Botón ojo clickeado - field:', field.name);
+                                console.log('field.validate_with completo:', field.validate_with);
+                                
+                                // Extraer ID del validador del string
+                                let validatorId = '';
+                                if (typeof field.validate_with === 'string') {
+                                  // Formato esperado: "NOMBRE_VALIDADOR - ID_VALIDADOR"
+                                  const parts = field.validate_with.split(' - ');
+                                  if (parts.length >= 2) {
+                                    validatorId = parts[1].trim();
+                                  }
+                                } else if (field.validate_with?.id) {
+                                  validatorId = field.validate_with.id;
+                                }
+                                
+                                console.log('ID extraído:', validatorId);
+                                
+                                if (validatorId) {
+                                  setActiveRowIndex(rowIndex);
+                                  setActiveFieldName(field.name);
+                                  handleValidatorOpen(validatorId, rowIndex, field.name);
+                                } else {
+                                  console.error('No se pudo extraer ID del validador para campo:', field.name);
+                                  console.error('validate_with:', field.validate_with);
+                                  showNotification({
+                                    title: "Error",
+                                    message: `No se pudo obtener ID del validador para ${field.name}`,
+                                    color: "red",
+                                  });
+                                }
                               }}
                               title="Ver valores aceptados"
                               color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
@@ -538,17 +658,20 @@ const transformData = (data: any[]): Record<string, any>[] => {
           setValidatorModalOpen(false);
           setActiveRowIndex(null);
           setActiveFieldName(null);
+          setCurrentValidatorId("");
         }}
-        validatorId={validatorData?._id || ""}
+        validatorId={currentValidatorId}
         onCopy={(value: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
             const updatedRows = [...rows];
             updatedRows[activeRowIndex][activeFieldName] = value;
             setRows(updatedRows);
+            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName);
           }
           setValidatorModalOpen(false);
           setActiveRowIndex(null);
           setActiveFieldName(null);
+          setCurrentValidatorId("");
         }}
       />
 

@@ -209,6 +209,61 @@ const renderCellContent = (value: any) => {
   }
 
   if (typeof value === "object" && value !== null) {
+    // Si es un array, mostrar elementos separados por comas
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return <Text size="sm">-</Text>;
+      }
+      
+      const arrayText = value.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          // Manejar hipervínculos de Excel
+          if (item.hyperlink || item.text || item.formula) {
+            return item.text || item.hyperlink || item.formula;
+          }
+          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+          const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+          return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+        }
+        return item;
+      }).join(', ');
+      
+      if (arrayText.length > 50) {
+        return (
+          <Tooltip label={arrayText} multiline maw={300}>
+            <Text size="sm" lineClamp={3}>
+              {truncateText(arrayText)}
+            </Text>
+          </Tooltip>
+        );
+      }
+      
+      return (
+        <Text size="sm">
+          {arrayText}
+        </Text>
+      );
+    }
+    
+    // Manejar hipervínculos de Excel primero
+    if (value.hyperlink || value.text || value.formula) {
+      const displayText = value.text || value.hyperlink || value.formula;
+      if (displayText.length > 50) {
+        return (
+          <Tooltip label={displayText} multiline maw={300}>
+            <Text size="sm" lineClamp={3}>
+              {truncateText(displayText)}
+            </Text>
+          </Tooltip>
+        );
+      }
+      return (
+        <Text size="sm">
+          {displayText}
+        </Text>
+      );
+    }
+    
     // Si tiene un campo .text, mostramos solo ese
     if (typeof value.text === "string") {
       return (
@@ -223,6 +278,33 @@ const renderCellContent = (value: any) => {
     // Si es objeto con número Mongo
     const mongoNumeric = value?.$numberInt || value?.$numberDouble;
     if (mongoNumeric !== undefined) return mongoNumeric;
+
+    // Buscar propiedades de email de forma más exhaustiva
+    const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+    const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+    
+    if (emailKey) {
+      const emailValue = value[emailKey];
+      return (
+        <Text size="sm">
+          {emailValue}
+        </Text>
+      );
+    }
+
+    // Intentar extraer cualquier valor string del objeto
+    const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
+    if (objectValues.length > 0) {
+      const firstStringValue = objectValues[0] as string;
+      // Si parece un email, mostrarlo
+      if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+        return (
+          <Text size="sm">
+            {firstStringValue}
+          </Text>
+        );
+      }
+    }
 
     // Por defecto: mostramos objeto como string
     const jsonString = JSON.stringify(value);
@@ -328,6 +410,10 @@ const renderCellContent = (value: any) => {
         }
         
         if (typeof value === "object") {
+          // Manejar hipervínculos de Excel primero
+          if (value.hyperlink || value.text || value.formula) {
+            return value.text || value.hyperlink || value.formula;
+          }
           // Si tiene texto, usar ese
           if (value.text) {
             return value.text;
@@ -337,6 +423,43 @@ const renderCellContent = (value: any) => {
           if (mongoNumeric !== undefined) {
             return mongoNumeric;
           }
+          
+          // Buscar propiedades de email de forma más exhaustiva
+          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+          const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+          
+          if (emailKey) {
+            return value[emailKey];
+          }
+          
+          // Si es un array, unir elementos
+          if (Array.isArray(value)) {
+            if (value.length === 0) {
+              return "";
+            }
+            return value.map(item => {
+              if (typeof item === 'object' && item !== null) {
+                // Manejar hipervínculos de Excel
+                if (item.hyperlink || item.text || item.formula) {
+                  return item.text || item.hyperlink || item.formula;
+                }
+                const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+                return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+              }
+              return item;
+            }).join(', ');
+          }
+          
+          // Intentar extraer cualquier valor string del objeto
+          const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
+          if (objectValues.length > 0) {
+            const firstStringValue = objectValues[0] as string;
+            // Si parece un email, usarlo
+            if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+              return firstStringValue;
+            }
+          }
+          
           // Por defecto, convertir a JSON
           return JSON.stringify(value);
         }
@@ -434,11 +557,49 @@ const renderCellContent = (value: any) => {
             if (fieldValue === null || fieldValue === undefined) {
               cellText = '';
             } else if (typeof fieldValue === 'object') {
-              // Si es objeto, extraer texto o convertir a JSON
-              if (fieldValue.text) {
+              // Manejar hipervínculos de Excel primero
+              if (fieldValue.hyperlink || fieldValue.text || fieldValue.formula) {
+                cellText = (fieldValue.text || fieldValue.hyperlink || fieldValue.formula).toString();
+              } else if (fieldValue.text) {
                 cellText = fieldValue.text.toString();
               } else {
-                cellText = JSON.stringify(fieldValue);
+                // Buscar propiedades de email de forma más exhaustiva
+                const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+                const emailKey = possibleEmailKeys.find(key => fieldValue[key] && typeof fieldValue[key] === 'string');
+                
+                if (emailKey) {
+                  cellText = fieldValue[emailKey].toString();
+                } else if (Array.isArray(fieldValue)) {
+                  if (fieldValue.length === 0) {
+                    cellText = '';
+                  } else {
+                    cellText = fieldValue.map(item => {
+                      if (typeof item === 'object' && item !== null) {
+                        // Manejar hipervínculos de Excel
+                        if (item.hyperlink || item.text || item.formula) {
+                          return item.text || item.hyperlink || item.formula;
+                        }
+                        const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+                        return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+                      }
+                      return item;
+                    }).join(', ');
+                  }
+                } else {
+                  // Intentar extraer cualquier valor string del objeto
+                  const objectValues = Object.values(fieldValue).filter(val => typeof val === 'string' && val.length > 0);
+                  if (objectValues.length > 0) {
+                    const firstStringValue = objectValues[0] as string;
+                    // Si parece un email, usarlo
+                    if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+                      cellText = firstStringValue;
+                    } else {
+                      cellText = JSON.stringify(fieldValue);
+                    }
+                  } else {
+                    cellText = JSON.stringify(fieldValue);
+                  }
+                }
               }
             } else {
               cellText = fieldValue.toString();
