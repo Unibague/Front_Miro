@@ -138,6 +138,7 @@ const AuditPage = () => {
       case 'publishedTemplate': return 'Plantilla Publicada';
       case 'publishedProducerReport': return 'Informe Productor Publicado';
       case 'publishedTemplateData': return 'Plantilla Publicada';
+      case 'validator': return 'Validador';
       case 'USER':
       case 'user': return 'Usuario';
       default: return entityType;
@@ -170,6 +171,7 @@ const AuditPage = () => {
       case 'publishedTemplate': return 'grape';
       case 'publishedProducerReport': return 'teal';
       case 'publishedTemplateData': return 'grape';
+      case 'validator': return 'yellow';
       case 'USER':
       case 'user': return 'pink';
       default: return 'gray';
@@ -316,6 +318,12 @@ const AuditPage = () => {
         return `Creó la plantilla "${parsed.templateName}" con ${parsed.fieldsCount} campos`;
       }
       
+      // Manejo para validadores
+      if (parsed.validatorId && parsed.validatorName) {
+        const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
+        return `${actionText} el validador "${parsed.validatorName}"`;
+      }
+      
       return details;
     } catch {
       // Fallback para logs antiguos que pueden tener códigos de dependencias sin mapear
@@ -402,6 +410,7 @@ const AuditPage = () => {
             { value: 'dependency', label: 'Dependencias' },
             { value: 'dependency_permission', label: 'Permisos de Dependencias' },
             { value: 'userDependencies', label: 'Permisos de Dependencias' },
+            { value: 'validator', label: 'Validadores' },
             { value: 'user', label: 'Usuarios' },
           ]}
           value={filterType}
