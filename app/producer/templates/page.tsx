@@ -863,7 +863,6 @@ if (field.multiple) {
           />
         )}
       </Modal>
-      {console.log('selectedDependency pasado al componente hijo:', selectedDependency)}
       <ProducerUploadedTemplatesPage 
         fetchTemp={fetchTemplates} 
         selectedDependency={selectedDependency}
