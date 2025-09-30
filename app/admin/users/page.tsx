@@ -826,7 +826,7 @@ const AdminUsersPage = () => {
         <MultiSelect
           label="Roles"
           placeholder="Selecciona roles"
-          data={["Usuario", "Administrador", "Responsable"]}
+          data={["Usuario", "Administrador", "Responsable", "Productor"]}
           value={roles}
           onChange={setRoles}
         />

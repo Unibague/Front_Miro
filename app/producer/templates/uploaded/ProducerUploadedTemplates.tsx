@@ -102,9 +102,11 @@ interface PublishedTemplate {
 
 interface ProducerUploadedTemplatesPageProps {
   fetchTemp: () => void;
+  selectedDependency?: string;
+  userDependencies?: {value: string, label: string}[];
 }
 
-const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesPageProps) => {
+const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDependencies }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
   const router = useRouter();
   const { data: session } = useSession();
@@ -122,20 +124,30 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
     useDisclosure(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
-  const fetchTemplates = async (page: number, search: string) => {
+  const fetchTemplates = async (page: number, search: string, filterByDependency?: string) => {
     try {
+      const params: any = {
+        email: session?.user?.email, 
+        page, 
+        limit: 10, 
+        search,
+        periodId: selectedPeriodId,
+      };
+      
+      if (filterByDependency) {
+        params.filterByDependency = filterByDependency;
+      }
+      
+      console.log('Parámetros enviados:', params);
+      console.log('selectedDependency desde props:', selectedDependency);
+      console.log('filterByDependency calculado:', filterByDependency);
+      
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/uploaded`,
-        {
-          params: { 
-            email: session?.user?.email, 
-            page, 
-            limit: 10, 
-            search,
-            periodId: selectedPeriodId,
-          },
-        }
+        { params }
       );
+      
+      console.log('Respuesta del backend:', response.data);
       if (response.data && response.data.templates && response.data.templates.length > 0) {
         const template = response.data.templates[0];
         const deadline = template?.period?.producer_end_date || template?.period?.deadline;
@@ -157,14 +169,16 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp }: ProducerUploadedTemplatesP
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search);
+      const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
+      fetchTemplates(page, search, filterDep);
     }
-  }, [page, search, session, selectedPeriodId]);
+  }, [page, search, session, selectedPeriodId, selectedDependency]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search);
+        const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
+        fetchTemplates(page, search, filterDep);
       }
     }, 500);
 
@@ -442,7 +456,8 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
           message: "La información ha sido eliminada exitosamente",
           color: "blue",
         });
-        fetchTemplates(page, search);
+        const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
+        fetchTemplates(page, search, filterDep);
         fetchTemp();
       }
     } catch (error) {
@@ -690,7 +705,8 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
         opened={uploadModalOpen}
         onClose={() => {
           closeUploadModal();
-          fetchTemplates(page, search);
+          const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
+          fetchTemplates(page, search, filterDep);
         }}
         title="Editar Información"
         overlayProps={{
