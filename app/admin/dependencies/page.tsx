@@ -116,8 +116,37 @@ const AdminDependenciesPage = () => {
 
   const handleSyncDependencies = async () => {
     setIsLoading(true);
+    
+    console.log('=== SYNC DEBUG ===');
+    console.log('Session:', session);
+    console.log('User email:', session?.user?.email);
+    console.log('Is admin:', isAdmin);
+    
+    if (!session?.user?.email) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el email del administrador",
+        color: "red",
+      });
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`);
+      const payload = { adminEmail: session.user.email };
+      const headers = { 
+        'user-email': session.user.email,
+        'Content-Type': 'application/json'
+      };
+      
+      console.log('Payload:', payload);
+      console.log('Headers:', headers);
+      
+      // Establecer cookie para el middleware
+      document.cookie = `userEmail=${session.user.email}; path=/`;
+      
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`, payload, { headers });
+      
       showNotification({
         title: "Sincronizado",
         message: "Dependencias sincronizadas exitosamente",
@@ -154,6 +183,20 @@ const AdminDependenciesPage = () => {
       return;
     }
 
+    console.log('=== SAVE DEBUG ===');
+    console.log('Session:', session);
+    console.log('User email:', session?.user?.email);
+    console.log('Selected dependency ID:', selectedDependency?._id);
+    
+    if (!session?.user?.email) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el email del administrador",
+        color: "red",
+      });
+      return;
+    }
+
     try {
       // Guardar estado anterior para auditoría
       const oldDependency = selectedDependency ? {
@@ -167,11 +210,19 @@ const AdminDependenciesPage = () => {
         responsible,
         dep_father,
         producers: selectedProducers,
+        adminEmail: session.user.email
       };
+      
+      console.log('Dependency data:', dependencyData);
+      
+      // Establecer cookie para el middleware
+      document.cookie = `userEmail=${session.user.email}; path=/`;
 
-      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/${selectedDependency?._id}`, {
-        ...dependencyData,
-        adminEmail: session?.user?.email
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/${selectedDependency?._id}`, dependencyData, {
+        headers: {
+          'user-email': session.user.email,
+          'Content-Type': 'application/json'
+        }
       });
       
       // Registrar cambios en auditoría

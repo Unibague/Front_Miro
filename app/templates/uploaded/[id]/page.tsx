@@ -116,6 +116,8 @@ const UploadedTemplatePage = () => {
           );
 
           const data = response.data.data;
+          console.log('Raw data from API:', response.data);
+          console.log('Processed data:', data);
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -134,6 +136,24 @@ const UploadedTemplatePage = () => {
               };
             });
 
+            console.log('Final table data:', updatedData);
+            console.log('Sample row keys:', updatedData[0] ? Object.keys(updatedData[0]) : 'No data');
+            
+            // Analizar datos de evidencias
+            const evidenciasStats = updatedData.reduce((stats, row) => {
+              const evidencias = row['EVIDENCIAS'] || row['Evidencias'] || row['evidencias'];
+              if (evidencias && evidencias !== '' && evidencias !== undefined) {
+                stats.withData++;
+                if (stats.samples.length < 3) {
+                  stats.samples.push(evidencias);
+                }
+              } else {
+                stats.withoutData++;
+              }
+              return stats;
+            }, { withData: 0, withoutData: 0, samples: [] });
+            
+            console.log('Evidencias analysis:', evidenciasStats);
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
@@ -190,7 +210,21 @@ const truncateText = (text: string, maxLines: number = 3) => {
   return words.slice(0, maxWords).join(' ') + '...';
 };
 
-const renderCellContent = (value: any) => {
+const renderCellContent = (value: any, fieldName?: string) => {
+  // Remover log repetitivo de evidencias
+  // if (fieldName && (fieldName.toLowerCase().includes('evidencia') || fieldName.toLowerCase().includes('evidence'))) {
+  //   console.log('Rendering Evidencias field:', { fieldName, value, valueType: typeof value });
+  // }
+  
+  // Manejar valores undefined, null o cadenas vacías
+  if (value === undefined || value === null || value === '') {
+    return (
+      <Text size="sm" c="dimmed">
+        Sin datos
+      </Text>
+    );
+  }
+  
   if (typeof value === "boolean") {
     return value ? (
       <IconCheck color="green" size={20} />
@@ -842,9 +876,9 @@ const renderCellContent = (value: any) => {
                   }}
                 >
                   <Table.Tr>
-                    {Object.keys(tableData[0]).map((fieldName, index) => (
+                    {tableData.length > 0 && Object.keys(tableData[0]).map((fieldName, index) => (
                       <Table.Th 
-                        key={index} 
+                        key={`header-${index}`} 
                         style={{ 
                           minWidth: "140px", 
                           maxWidth: "180px",
@@ -862,24 +896,27 @@ const renderCellContent = (value: any) => {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {tableData.map((rowData, rowIndex) => (
-                    <Table.Tr key={rowIndex}>
-                      {Object.keys(rowData).map((fieldName, cellIndex) => (
-                        <Table.Td 
-                          key={cellIndex} 
-                          style={{ 
-                            minWidth: "140px", 
-                            maxWidth: "180px",
-                            padding: "10px 8px",
-                            verticalAlign: "top",
-                            border: '1px solid #dee2e6'
-                          }}
-                        >
-                          {renderCellContent(rowData[fieldName])}
-                        </Table.Td>
-                      ))}
-                    </Table.Tr>
-                  ))}
+                  {tableData.map((rowData, rowIndex) => {
+                    const fieldNames = Object.keys(tableData[0]);
+                    return (
+                      <Table.Tr key={`row-${rowIndex}`}>
+                        {fieldNames.map((fieldName, cellIndex) => (
+                          <Table.Td 
+                            key={`cell-${rowIndex}-${cellIndex}`} 
+                            style={{ 
+                              minWidth: "140px", 
+                              maxWidth: "180px",
+                              padding: "10px 8px",
+                              verticalAlign: "top",
+                              border: '1px solid #dee2e6'
+                            }}
+                          >
+                            {renderCellContent(rowData[fieldName], fieldName)}
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    );
+                  })}
                 </Table.Tbody>
               </Table>
             </ScrollArea>
