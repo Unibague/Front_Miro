@@ -448,23 +448,6 @@ const renderCellContent = (value: any, fieldName?: string) => {
           if (value.hyperlink || value.text || value.formula) {
             return value.text || value.hyperlink || value.formula;
           }
-          // Si tiene texto, usar ese
-          if (value.text) {
-            return value.text;
-          }
-          // Si es número de Mongo
-          const mongoNumeric = value?.$numberInt || value?.$numberDouble;
-          if (mongoNumeric !== undefined) {
-            return mongoNumeric;
-          }
-          
-          // Buscar propiedades de email de forma más exhaustiva
-          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
-          const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
-          
-          if (emailKey) {
-            return value[emailKey];
-          }
           
           // Si es un array, unir elementos
           if (Array.isArray(value)) {
@@ -477,11 +460,31 @@ const renderCellContent = (value: any, fieldName?: string) => {
                 if (item.hyperlink || item.text || item.formula) {
                   return item.text || item.hyperlink || item.formula;
                 }
+                const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
                 const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
                 return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
               }
               return item;
             }).join(', ');
+          }
+          
+          // Si tiene texto, usar ese
+          if (value.text) {
+            return value.text;
+          }
+          
+          // Si es número de Mongo
+          const mongoNumeric = value?.$numberInt || value?.$numberDouble;
+          if (mongoNumeric !== undefined) {
+            return mongoNumeric;
+          }
+          
+          // Buscar propiedades de email de forma más exhaustiva
+          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+          const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+          
+          if (emailKey) {
+            return value[emailKey];
           }
           
           // Intentar extraer cualquier valor string del objeto
