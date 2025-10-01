@@ -218,7 +218,10 @@ const dateFields = new Set(
     .map(f => f.name)
 );
 
-      console.log("Template: ", template);
+      console.log("Template fields:", template.fields.map(f => f.name));
+      console.log("Data keys:", Object.keys(data[0]));
+      console.log("Sample data:", data[0]);
+      
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
       const helpWorksheet = workbook.addWorksheet("Guía");
@@ -239,7 +242,19 @@ const dateFields = new Set(
         helpRow.getCell(2).alignment = { wrapText: true };
       });
 
-      const headerRow = worksheet.addRow(Object.keys(data[0]));
+      // Usar las claves que realmente vienen del backend
+      const dataKeys = Object.keys(data[0]);
+      // Asegurar que Dependencia esté primero
+      const availableFields = dataKeys.sort((a, b) => {
+        if (a === 'Dependencia') return -1;
+        if (b === 'Dependencia') return 1;
+        return 0;
+      });
+      
+      console.log("Data keys from backend:", dataKeys);
+      console.log("Final field order:", availableFields);
+      
+      const headerRow = worksheet.addRow(availableFields);
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };
         cell.fill = {
@@ -260,10 +275,12 @@ const dateFields = new Set(
         column.width = 20;
       });
 
-      // Add the data to the worksheet starting from the second row
+      // Add the data to the worksheet using the same field order
       data.forEach((row: any) => {
-        const formattedRow = Object.entries(row).map(([key, value]) => {
-          if (value && dateFields.has(key)) {
+        const formattedRow = availableFields.map(fieldName => {
+          let value = row[fieldName];
+          
+          if (value && dateFields.has(fieldName)) {
             if (
               typeof value === 'string' ||
               typeof value === 'number' ||

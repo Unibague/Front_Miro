@@ -272,6 +272,56 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
       ? fieldData.values[i]
       : null;
 
+          // Manejar hipervínculos de Excel y objetos complejos
+          if (value && typeof value === 'object' && value !== null) {
+            // Manejar hipervínculos de Excel primero
+            if (value.hyperlink || value.text || value.formula) {
+              value = value.text || value.hyperlink || value.formula;
+            }
+            // Si es un array, unir elementos
+            else if (Array.isArray(value)) {
+              if (value.length === 0) {
+                value = '';
+              } else {
+                value = value.map(item => {
+                  if (typeof item === 'object' && item !== null) {
+                    // Manejar hipervínculos de Excel en arrays
+                    if (item.hyperlink || item.text || item.formula) {
+                      return item.text || item.hyperlink || item.formula;
+                    }
+                    const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+                    const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+                    return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+                  }
+                  return item;
+                }).join(', ');
+              }
+            }
+            // Buscar propiedades de email de forma más exhaustiva
+            else {
+              const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+              const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+              
+              if (emailKey) {
+                value = value[emailKey];
+              } else {
+                // Intentar extraer cualquier valor string del objeto
+                const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
+                if (objectValues.length > 0) {
+                  const firstStringValue = objectValues[0] as string;
+                  // Si parece un email, usarlo
+                  if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+                    value = firstStringValue;
+                  } else {
+                    value = JSON.stringify(value);
+                  }
+                } else {
+                  value = JSON.stringify(value);
+                }
+              }
+            }
+          }
+
           if (
             value &&
             (field.datatype === "Fecha" || field.datatype === "Fecha Inicial / Fecha Final")
