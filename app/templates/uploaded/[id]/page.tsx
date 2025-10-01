@@ -141,7 +141,7 @@ const UploadedTemplatePage = () => {
             
             // Analizar datos de evidencias
             const evidenciasStats = updatedData.reduce((stats, row) => {
-              const evidencias = row['EVIDENCIAS'] || row['Evidencias'] || row['evidencias'];
+              const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
               if (evidencias && evidencias !== '' && evidencias !== undefined) {
                 stats.withData++;
                 if (stats.samples.length < 3) {
@@ -151,7 +151,7 @@ const UploadedTemplatePage = () => {
                 stats.withoutData++;
               }
               return stats;
-            }, { withData: 0, withoutData: 0, samples: [] });
+            }, { withData: 0, withoutData: 0, samples: [] as any[] });
             
             console.log('Evidencias analysis:', evidenciasStats);
             setTableData(updatedData);
