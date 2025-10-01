@@ -22,6 +22,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 import styles from './AdminValidationUpdatePage.module.css';
 
 interface Column {
@@ -35,6 +36,7 @@ const AdminValidationUpdatePage = () => {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { data: session } = useSession();
 
   const [name, setName] = useState<string>("");
   const [columns, setColumns] = useState<Column[]>([]);
@@ -159,6 +161,7 @@ const AdminValidationUpdatePage = () => {
         id,
         name,
         columns: columnsToSave,
+        adminEmail: session?.user?.email,
       });
       showNotification({
         title: "Validación actualizada",

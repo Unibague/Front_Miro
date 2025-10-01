@@ -25,6 +25,7 @@ const AuditPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [dependencyNames, setDependencyNames] = useState<Record<string, string>>({});
 
   const fetchAuditLogs = async (page: number, search: string, entityType?: string) => {
     setLoading(true);
@@ -83,7 +84,22 @@ const AuditPage = () => {
     }
   };
 
+  const fetchDependencyNames = async () => {
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`);
+      const deps = response.data.dependencies || [];
+      const nameMap: Record<string, string> = {};
+      deps.forEach((dep: any) => {
+        nameMap[dep.dep_code] = dep.name;
+      });
+      setDependencyNames(nameMap);
+    } catch (error) {
+      console.error('Error fetching dependency names:', error);
+    }
+  };
+
   useEffect(() => {
+    fetchDependencyNames();
     fetchAuditLogs(page, search, filterType);
   }, [page]);
 
@@ -114,11 +130,15 @@ const AuditPage = () => {
       case 'DIMENSION':
       case 'dimension': return 'Ámbito';
       case 'DEPENDENCY': return 'Dependencia';
+      case 'dependency': return 'Dependencia';
+      case 'dependency_permission': return 'Permisos de Dependencia';
+      case 'userDependencies': return 'Permisos de Dependencia';
       case 'REPORT': return 'Informe';
       case 'producerReport': return 'Informe Productor';
       case 'publishedTemplate': return 'Plantilla Publicada';
       case 'publishedProducerReport': return 'Informe Productor Publicado';
       case 'publishedTemplateData': return 'Plantilla Publicada';
+      case 'validator': return 'Validador';
       case 'USER':
       case 'user': return 'Usuario';
       default: return entityType;
@@ -143,11 +163,15 @@ const AuditPage = () => {
       case 'DIMENSION':
       case 'dimension': return 'orange';
       case 'DEPENDENCY': return 'cyan';
+      case 'dependency': return 'cyan';
+      case 'dependency_permission': return 'indigo';
+      case 'userDependencies': return 'indigo';
       case 'REPORT': return 'blue';
       case 'producerReport': return 'green';
       case 'publishedTemplate': return 'grape';
       case 'publishedProducerReport': return 'teal';
       case 'publishedTemplateData': return 'grape';
+      case 'validator': return 'yellow';
       case 'USER':
       case 'user': return 'pink';
       default: return 'gray';
@@ -208,6 +232,76 @@ const AuditPage = () => {
         return `${actionText} el ámbito "${parsed.dimensionName}" asignado a ${parsed.responsibleDependency}`;
       }
       
+      // Manejo para cambios de permisos de dependencias (nuevo formato)
+      if (parsed.userEmail && parsed.dependencyChanges) {
+        let dependencyChanges;
+        try {
+          dependencyChanges = typeof parsed.dependencyChanges === 'string' 
+            ? JSON.parse(parsed.dependencyChanges) 
+            : parsed.dependencyChanges;
+        } catch {
+          dependencyChanges = parsed.dependencyChanges;
+        }
+        
+        let message = `Actualizó permisos de dependencias para ${parsed.userEmail}`;
+        
+        if (dependencyChanges.added && dependencyChanges.added.length > 0) {
+          const addedNames = dependencyChanges.added.map((code: string) => 
+            dependencyNames[code] || code
+          );
+          message += `. Agregó: ${addedNames.join(', ')}`;
+        }
+        if (dependencyChanges.removed && dependencyChanges.removed.length > 0) {
+          const removedNames = dependencyChanges.removed.map((code: string) => 
+            dependencyNames[code] || code
+          );
+          message += `. Eliminó: ${removedNames.join(', ')}`;
+        }
+        
+        return message;
+      }
+      
+      // Manejo para cambios de permisos de dependencias (formato anterior)
+      if (parsed.targetUser && parsed.changes) {
+        const { added, removed } = parsed.changes;
+        let message = `Actualizó permisos de ${parsed.targetUser.name || parsed.targetUser.email}`;
+        
+        if (added && added.length > 0) {
+          const addedNames = added.map((code: string) => 
+            dependencyNames[code] || code
+          );
+          message += `. Agregó: ${addedNames.join(', ')}`;
+        }
+        if (removed && removed.length > 0) {
+          const removedNames = removed.map((code: string) => 
+            dependencyNames[code] || code
+          );
+          message += `. Eliminó: ${removedNames.join(', ')}`;
+        }
+        
+        return message;
+      }
+      
+      // Manejo para cambios de dependencias
+      if (parsed.dependencyCode && parsed.changes) {
+        let message = `Actualizó dependencia ${parsed.dependencyCode}`;
+        const changes = parsed.changes;
+        
+        if (changes.responsible) {
+          message += `. Responsable: ${changes.responsible.old || 'Sin asignar'} → ${changes.responsible.new || 'Sin asignar'}`;
+        }
+        if (changes.producers) {
+          if (changes.producers.added && changes.producers.added.length > 0) {
+            message += `. Agregó productores: ${changes.producers.added.join(', ')}`;
+          }
+          if (changes.producers.removed && changes.producers.removed.length > 0) {
+            message += `. Eliminó productores: ${changes.producers.removed.join(', ')}`;
+          }
+        }
+        
+        return message;
+      }
+      
       // Manejo para impersonación
       if (parsed.targetUser) {
         return `Impersonó al usuario ${parsed.targetUser}`;
@@ -224,8 +318,25 @@ const AuditPage = () => {
         return `Creó la plantilla "${parsed.templateName}" con ${parsed.fieldsCount} campos`;
       }
       
+      // Manejo para validadores
+      if (parsed.validatorId && parsed.validatorName) {
+        const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
+        return `${actionText} el validador "${parsed.validatorName}"`;
+      }
+      
       return details;
     } catch {
+      // Fallback para logs antiguos que pueden tener códigos de dependencias sin mapear
+      if (details && typeof details === 'string') {
+        // Buscar y reemplazar códigos de dependencias por nombres
+        let processedDetails = details;
+        Object.entries(dependencyNames).forEach(([code, name]) => {
+          // Reemplazar códigos que aparecen como texto plano
+          const codeRegex = new RegExp(`\\b${code}\\b`, 'g');
+          processedDetails = processedDetails.replace(codeRegex, name);
+        });
+        return processedDetails;
+      }
       return details;
     }
   };
@@ -296,6 +407,10 @@ const AuditPage = () => {
             { value: 'dimensions', label: 'Ámbitos' },
             { value: 'templates', label: 'Plantillas' },
             { value: 'reports', label: 'Informes' },
+            { value: 'dependency', label: 'Dependencias' },
+            { value: 'dependency_permission', label: 'Permisos de Dependencias' },
+            { value: 'userDependencies', label: 'Permisos de Dependencias' },
+            { value: 'validator', label: 'Validadores' },
             { value: 'user', label: 'Usuarios' },
           ]}
           value={filterType}

@@ -111,7 +111,7 @@ const TemplatesWithFiltersPage = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   
   // Filter states
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   
   // Filter management modal states
@@ -148,7 +148,8 @@ const TemplatesWithFiltersPage = () => {
       });
       
       if (response.data) {
-        setTemplates(response.data.templates || []);
+        const sortedTemplates = sortTemplatesWithVisited(response.data.templates || []);
+        setTemplates(sortedTemplates);
         setTotalPages(response.data.pages || 1);
       }
     } catch (error) {
@@ -166,10 +167,42 @@ const TemplatesWithFiltersPage = () => {
 
 
 
+  // Sort templates to show visited ones first
+  const sortTemplatesWithVisited = (templates: PublishedTemplate[]) => {
+    const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+    
+    return templates.sort((a, b) => {
+      const aVisited = visitedTemplates.includes(a._id);
+      const bVisited = visitedTemplates.includes(b._id);
+      
+      if (aVisited && !bVisited) return -1;
+      if (!aVisited && bVisited) return 1;
+      return 0;
+    });
+  };
+
+  // Load search from localStorage on component mount
   useEffect(() => {
-    if (session?.user?.email) {
-      fetchTemplates(page, search, appliedFilters);
+    const savedSearch = localStorage.getItem('templates_search');
+    if (savedSearch) {
+      setSearch(savedSearch);
     }
+  }, []);
+
+  // Save search to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('templates_search', search);
+  }, [search]);
+
+  // Fetch templates with debounced search
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    
+    const delayDebounceFn = setTimeout(() => {
+      fetchTemplates(page, search, appliedFilters);
+    }, search ? 500 : 0); // No delay if search is empty, 500ms delay if there's search text
+
+    return () => clearTimeout(delayDebounceFn);
   }, [page, search, session, selectedPeriodId, appliedFilters]);
 
   const handleFiltersChange = (filters: Record<string, string[]>) => {
@@ -178,7 +211,7 @@ const TemplatesWithFiltersPage = () => {
 
   const generateFiltersForTemplate = (template: PublishedTemplate): TemplateFilter[] => {
     const fields = template.template.fields || [];
-    return fields.map((field, index) => {
+    const filters = fields.map((field, index) => {
       const fieldLower = field.name.toLowerCase();
       let filterType: 'autocomplete' | 'dropdown' | 'radio' | 'multiselect' | 'date' = 'dropdown';
       
@@ -199,17 +232,51 @@ const TemplatesWithFiltersPage = () => {
         order: index
       };
     });
+    
+    // Agregar manualmente el filtro DEPENDENCIA
+    filters.push({
+      _id: `${template._id}_DEPENDENCIA`,
+      templateId: template._id,
+      fieldName: 'DEPENDENCIA',
+      isVisible: true,
+      filterType: 'dropdown',
+      order: fields.length
+    });
+    
+    return filters;
   };
 
   const openFilterModal = (template: PublishedTemplate) => {
     setSelectedTemplateForFilters(template);
-    if (!templateFilters[template._id]) {
+    
+    // Intentar cargar configuración guardada desde localStorage
+    const savedConfig = localStorage.getItem(`template_filters_${template._id}`);
+    
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+        setTemplateFilters(prev => ({
+          ...prev,
+          [template._id]: config.filters
+        }));
+      } catch (error) {
+        console.error('Error loading saved filter config:', error);
+        // Si hay error, generar filtros por defecto
+        const generatedFilters = generateFiltersForTemplate(template);
+        setTemplateFilters(prev => ({
+          ...prev,
+          [template._id]: generatedFilters
+        }));
+      }
+    } else if (!templateFilters[template._id]) {
+      // Si no hay configuración guardada, generar filtros por defecto
       const generatedFilters = generateFiltersForTemplate(template);
       setTemplateFilters(prev => ({
         ...prev,
         [template._id]: generatedFilters
       }));
     }
+    
     setFilterModalOpened(true);
   };
 
@@ -228,6 +295,27 @@ const TemplatesWithFiltersPage = () => {
       message: `Filtro ${isVisible ? 'activado' : 'desactivado'} exitosamente`,
       color: "teal",
     });
+  };
+
+  const toggleAllFilters = (templateId: string, activateAll: boolean) => {
+    setTemplateFilters(prev => ({
+      ...prev,
+      [templateId]: prev[templateId]?.map(filter => ({
+        ...filter,
+        isVisible: activateAll
+      })) || []
+    }));
+    
+    showNotification({
+      title: "Actualizado",
+      message: `Todos los filtros ${activateAll ? 'activados' : 'desactivados'} exitosamente`,
+      color: "teal",
+    });
+  };
+
+  const areAllFiltersActive = (templateId: string): boolean => {
+    const filters = templateFilters[templateId] || [];
+    return filters.length > 0 && filters.every(filter => filter.isVisible);
   };
 
   const handleDelete = async (id: string) => {
@@ -438,7 +526,15 @@ const TemplatesWithFiltersPage = () => {
             >
               <Stack
                 gap={0} style={{ cursor: "pointer" }}
-                onClick={()=>router.push(`/templates/uploaded/${publishedTemplate._id}?resume=true`)}
+                onClick={() => {
+                  // Mark template as visited
+                  const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+                  if (!visitedTemplates.includes(publishedTemplate._id)) {
+                    visitedTemplates.push(publishedTemplate._id);
+                    localStorage.setItem('visited_templates', JSON.stringify(visitedTemplates));
+                  }
+                  router.push(`/templates/uploaded/${publishedTemplate._id}?resume=true`);
+                }}
               >
                 <Progress.Root
                   mt={"xs"}
@@ -469,6 +565,12 @@ const TemplatesWithFiltersPage = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    // Mark template as visited
+                    const visitedTemplates = JSON.parse(localStorage.getItem('visited_templates') || '[]');
+                    if (!visitedTemplates.includes(publishedTemplate._id)) {
+                      visitedTemplates.push(publishedTemplate._id);
+                      localStorage.setItem('visited_templates', JSON.stringify(visitedTemplates));
+                    }
                     router.push(`/templates/uploaded/${publishedTemplate._id}?resume=false`);
                   }}
                   disabled={publishedTemplate.loaded_data.length === 0}
@@ -536,6 +638,9 @@ const TemplatesWithFiltersPage = () => {
         onFiltersChange={handleFiltersChange}
         isVisible={sidebarVisible}
         onToggle={() => setSidebarVisible(!sidebarVisible)}
+        savedFilters={templateFilters}
+        templates={templates}
+        key={JSON.stringify(templateFilters)} // Force re-render when filters change
       />
       
       <div 
@@ -701,55 +806,91 @@ const TemplatesWithFiltersPage = () => {
             
             <Divider />
             
-            {selectedTemplateForFilters.template.fields.map((field, index) => {
+            {/* Switch General para Activar/Desactivar Todos */}
+            <Card p="md" withBorder style={{ backgroundColor: '#f8f9fa' }}>
+              <Group justify="space-between">
+                <Group>
+                  <IconFilter size={20} color="blue" />
+                  <div>
+                    <Text fw={600} size="md">Control General de Filtros</Text>
+                    <Text size="xs" c="dimmed">
+                      Activa o desactiva todos los filtros de una vez
+                    </Text>
+                  </div>
+                </Group>
+                
+                <Switch
+                  size="lg"
+                  checked={areAllFiltersActive(selectedTemplateForFilters._id)}
+                  onChange={(event) => 
+                    toggleAllFilters(
+                      selectedTemplateForFilters._id, 
+                      event.currentTarget.checked
+                    )
+                  }
+                  label={areAllFiltersActive(selectedTemplateForFilters._id) ? "Desactivar todos" : "Activar todos"}
+                  thumbIcon={
+                    areAllFiltersActive(selectedTemplateForFilters._id) ? (
+                      <IconEye size={16} />
+                    ) : (
+                      <IconEyeOff size={16} />
+                    )
+                  }
+                  color="blue"
+                />
+              </Group>
+            </Card>
+            
+            <Divider label="Filtros Individuales" labelPosition="center" />
+            
+            {(() => {
               const filters = templateFilters[selectedTemplateForFilters._id] || [];
-              const filter = filters.find(f => f.fieldName === field.name);
-              const isVisible = filter?.isVisible ?? true;
               
-              return (
-                <Card key={field.name} p="sm" withBorder>
-                  <Group justify="space-between">
-                    <Group>
-                      <IconFilter size={16} color={isVisible ? "green" : "gray"} />
-                      <div>
-                        <Text fw={500}>{field.name.replace(/_/g, ' ')}</Text>
-                        <Text size="xs" c="dimmed">
-                          Tipo: {field.datatype} {field.required && '(Requerido)'}
-                        </Text>
-                      </div>
-                    </Group>
-                    
-                    <Group>
-                      <Badge 
-                        variant="light" 
-                        color={isVisible ? "green" : "gray"}
-                        size="sm"
-                      >
-                        {filter?.filterType || 'dropdown'}
-                      </Badge>
+              return filters.map((filter) => {
+                const templateField = selectedTemplateForFilters.template.fields.find(f => f.name === filter.fieldName);
+                const isVisible = filter.isVisible ?? true;
+                
+                return (
+                  <Card key={filter.fieldName} p="sm" withBorder>
+                    <Group justify="space-between">
+                      <Group>
+                        <IconFilter size={16} color={isVisible ? "green" : "gray"} />
+                        <div>
+                          <Text fw={500}>{filter.fieldName.replace(/_/g, ' ')}</Text>
+                          <Text size="xs" c="dimmed">
+                            {templateField ? (
+                              `Tipo: ${templateField.datatype} ${templateField.required ? '(Requerido)' : ''}`
+                            ) : (
+                              filter.fieldName === 'DEPENDENCIA' ? 'Campo de dependencia' : 'Campo adicional'
+                            )}
+                          </Text>
+                        </div>
+                      </Group>
                       
-                      <Switch
-                        checked={isVisible}
-                        onChange={(event) => 
-                          updateFilterVisibility(
-                            selectedTemplateForFilters._id, 
-                            field.name, 
-                            event.currentTarget.checked
-                          )
-                        }
-                        thumbIcon={
-                          isVisible ? (
-                            <IconEye size={12} />
-                          ) : (
-                            <IconEyeOff size={12} />
-                          )
-                        }
-                      />
+                      <Group>
+                        <Switch
+                          checked={isVisible}
+                          onChange={(event) => 
+                            updateFilterVisibility(
+                              selectedTemplateForFilters._id, 
+                              filter.fieldName, 
+                              event.currentTarget.checked
+                            )
+                          }
+                          thumbIcon={
+                            isVisible ? (
+                              <IconEye size={12} />
+                            ) : (
+                              <IconEyeOff size={12} />
+                            )
+                          }
+                        />
+                      </Group>
                     </Group>
-                  </Group>
-                </Card>
-              );
-            })}
+                  </Card>
+                );
+              });
+            })()}
             
             <Group justify="flex-end" mt="md">
               <Button 
@@ -759,13 +900,38 @@ const TemplatesWithFiltersPage = () => {
                 Cerrar
               </Button>
               <Button 
-                onClick={() => {
-                  showNotification({
-                    title: "Guardado",
-                    message: "Configuración de filtros guardada exitosamente",
-                    color: "green",
-                  });
-                  setFilterModalOpened(false);
+                onClick={async () => {
+                  try {
+                    const filtersToSave = templateFilters[selectedTemplateForFilters._id] || [];
+                    
+                    // Aquí deberías implementar la llamada a la API para guardar los filtros
+                    // Por ahora, solo guardamos en localStorage como solución temporal
+                    const filterConfig = {
+                      templateId: selectedTemplateForFilters._id,
+                      filters: filtersToSave
+                    };
+                    
+                    localStorage.setItem(
+                      `template_filters_${selectedTemplateForFilters._id}`, 
+                      JSON.stringify(filterConfig)
+                    );
+                    
+                    showNotification({
+                      title: "Guardado",
+                      message: "Configuración de filtros guardada exitosamente",
+                      color: "green",
+                    });
+                    
+                    // Force FilterSidebar to reload with new configuration
+                    setAppliedFilters({});
+                    setFilterModalOpened(false);
+                  } catch (error) {
+                    showNotification({
+                      title: "Error",
+                      message: "Error al guardar la configuración de filtros",
+                      color: "red",
+                    });
+                  }
                 }}
               >
                 Guardar Cambios

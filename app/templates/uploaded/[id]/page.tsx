@@ -65,6 +65,7 @@ const UploadedTemplatePage = () => {
   const { data: session } = useSession();
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
+  const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
     try {
@@ -115,6 +116,8 @@ const UploadedTemplatePage = () => {
           );
 
           const data = response.data.data;
+          console.log('Raw data from API:', response.data);
+          console.log('Processed data:', data);
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -133,6 +136,24 @@ const UploadedTemplatePage = () => {
               };
             });
 
+            console.log('Final table data:', updatedData);
+            console.log('Sample row keys:', updatedData[0] ? Object.keys(updatedData[0]) : 'No data');
+            
+            // Analizar datos de evidencias
+            const evidenciasStats = updatedData.reduce((stats, row) => {
+              const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
+              if (evidencias && evidencias !== '' && evidencias !== undefined) {
+                stats.withData++;
+                if (stats.samples.length < 3) {
+                  stats.samples.push(evidencias);
+                }
+              } else {
+                stats.withoutData++;
+              }
+              return stats;
+            }, { withData: 0, withoutData: 0, samples: [] as any[] });
+            
+            console.log('Evidencias analysis:', evidenciasStats);
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
@@ -146,6 +167,19 @@ const UploadedTemplatePage = () => {
 
     fetchTemplateName();
     fetchUploadedData();
+    
+    // Cargar configuración de filtros guardada
+    if (id) {
+      const savedConfig = localStorage.getItem(`template_filters_${id}`);
+      if (savedConfig) {
+        try {
+          const config = JSON.parse(savedConfig);
+          setSavedFilters({ [id as string]: config.filters });
+        } catch (error) {
+          console.error('Error loading saved filter config:', error);
+        }
+      }
+    }
   }, [id, session]);
 
   useEffect(() => {
@@ -176,7 +210,21 @@ const truncateText = (text: string, maxLines: number = 3) => {
   return words.slice(0, maxWords).join(' ') + '...';
 };
 
-const renderCellContent = (value: any) => {
+const renderCellContent = (value: any, fieldName?: string) => {
+  // Remover log repetitivo de evidencias
+  // if (fieldName && (fieldName.toLowerCase().includes('evidencia') || fieldName.toLowerCase().includes('evidence'))) {
+  //   console.log('Rendering Evidencias field:', { fieldName, value, valueType: typeof value });
+  // }
+  
+  // Manejar valores undefined, null o cadenas vacías
+  if (value === undefined || value === null || value === '') {
+    return (
+      <Text size="sm" c="dimmed">
+        Sin datos
+      </Text>
+    );
+  }
+  
   if (typeof value === "boolean") {
     return value ? (
       <IconCheck color="green" size={20} />
@@ -195,6 +243,61 @@ const renderCellContent = (value: any) => {
   }
 
   if (typeof value === "object" && value !== null) {
+    // Si es un array, mostrar elementos separados por comas
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return <Text size="sm">-</Text>;
+      }
+      
+      const arrayText = value.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          // Manejar hipervínculos de Excel
+          if (item.hyperlink || item.text || item.formula) {
+            return item.text || item.hyperlink || item.formula;
+          }
+          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+          const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+          return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+        }
+        return item;
+      }).join(', ');
+      
+      if (arrayText.length > 50) {
+        return (
+          <Tooltip label={arrayText} multiline maw={300}>
+            <Text size="sm" lineClamp={3}>
+              {truncateText(arrayText)}
+            </Text>
+          </Tooltip>
+        );
+      }
+      
+      return (
+        <Text size="sm">
+          {arrayText}
+        </Text>
+      );
+    }
+    
+    // Manejar hipervínculos de Excel primero
+    if (value.hyperlink || value.text || value.formula) {
+      const displayText = value.text || value.hyperlink || value.formula;
+      if (displayText.length > 50) {
+        return (
+          <Tooltip label={displayText} multiline maw={300}>
+            <Text size="sm" lineClamp={3}>
+              {truncateText(displayText)}
+            </Text>
+          </Tooltip>
+        );
+      }
+      return (
+        <Text size="sm">
+          {displayText}
+        </Text>
+      );
+    }
+    
     // Si tiene un campo .text, mostramos solo ese
     if (typeof value.text === "string") {
       return (
@@ -209,6 +312,33 @@ const renderCellContent = (value: any) => {
     // Si es objeto con número Mongo
     const mongoNumeric = value?.$numberInt || value?.$numberDouble;
     if (mongoNumeric !== undefined) return mongoNumeric;
+
+    // Buscar propiedades de email de forma más exhaustiva
+    const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+    const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+    
+    if (emailKey) {
+      const emailValue = value[emailKey];
+      return (
+        <Text size="sm">
+          {emailValue}
+        </Text>
+      );
+    }
+
+    // Intentar extraer cualquier valor string del objeto
+    const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
+    if (objectValues.length > 0) {
+      const firstStringValue = objectValues[0] as string;
+      // Si parece un email, mostrarlo
+      if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+        return (
+          <Text size="sm">
+            {firstStringValue}
+          </Text>
+        );
+      }
+    }
 
     // Por defecto: mostramos objeto como string
     const jsonString = JSON.stringify(value);
@@ -314,6 +444,10 @@ const renderCellContent = (value: any) => {
         }
         
         if (typeof value === "object") {
+          // Manejar hipervínculos de Excel primero
+          if (value.hyperlink || value.text || value.formula) {
+            return value.text || value.hyperlink || value.formula;
+          }
           // Si tiene texto, usar ese
           if (value.text) {
             return value.text;
@@ -323,6 +457,43 @@ const renderCellContent = (value: any) => {
           if (mongoNumeric !== undefined) {
             return mongoNumeric;
           }
+          
+          // Buscar propiedades de email de forma más exhaustiva
+          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+          const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
+          
+          if (emailKey) {
+            return value[emailKey];
+          }
+          
+          // Si es un array, unir elementos
+          if (Array.isArray(value)) {
+            if (value.length === 0) {
+              return "";
+            }
+            return value.map(item => {
+              if (typeof item === 'object' && item !== null) {
+                // Manejar hipervínculos de Excel
+                if (item.hyperlink || item.text || item.formula) {
+                  return item.text || item.hyperlink || item.formula;
+                }
+                const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+                return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+              }
+              return item;
+            }).join(', ');
+          }
+          
+          // Intentar extraer cualquier valor string del objeto
+          const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
+          if (objectValues.length > 0) {
+            const firstStringValue = objectValues[0] as string;
+            // Si parece un email, usarlo
+            if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+              return firstStringValue;
+            }
+          }
+          
           // Por defecto, convertir a JSON
           return JSON.stringify(value);
         }
@@ -375,12 +546,42 @@ const renderCellContent = (value: any) => {
     
     Object.entries(filters).forEach(([filterName, values]) => {
       if (values.length > 0) {
+        console.log('Aplicando filtro:', filterName, 'con valores:', values);
         filteredData = filteredData.filter(row => {
           // Buscar el campo correspondiente en la fila
           const fieldNames = Object.keys(row);
-          const matchingField = fieldNames.find(field => 
+          
+          // Primero intentar encontrar por transformación inversa (filterName -> fieldName)
+          let matchingField = fieldNames.find(field => 
             field.toLowerCase().replace(/[^a-z0-9]/g, '_') === filterName
           );
+          
+          // Si no se encuentra, intentar coincidencia exacta
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => field === filterName);
+          }
+          
+          // Si no se encuentra, intentar coincidencia directa
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => 
+              field.toLowerCase() === filterName.toLowerCase()
+            );
+          }
+          
+          // Si aún no se encuentra, intentar sin espacios ni caracteres especiales
+          if (!matchingField) {
+            matchingField = fieldNames.find(field => 
+              field.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === 
+              filterName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+            );
+          }
+          
+          if (!matchingField) {
+            console.log('CAMPO NO ENCONTRADO - Buscado:', filterName, 'Disponibles:', fieldNames.slice(0, 10));
+            return true; // Si no encuentra el campo, no filtrar
+          }
+          
+          console.log('Campo buscado:', filterName, 'Campo encontrado:', matchingField);
           
           if (matchingField) {
             const fieldValue = row[matchingField];
@@ -390,11 +591,49 @@ const renderCellContent = (value: any) => {
             if (fieldValue === null || fieldValue === undefined) {
               cellText = '';
             } else if (typeof fieldValue === 'object') {
-              // Si es objeto, extraer texto o convertir a JSON
-              if (fieldValue.text) {
+              // Manejar hipervínculos de Excel primero
+              if (fieldValue.hyperlink || fieldValue.text || fieldValue.formula) {
+                cellText = (fieldValue.text || fieldValue.hyperlink || fieldValue.formula).toString();
+              } else if (fieldValue.text) {
                 cellText = fieldValue.text.toString();
               } else {
-                cellText = JSON.stringify(fieldValue);
+                // Buscar propiedades de email de forma más exhaustiva
+                const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+                const emailKey = possibleEmailKeys.find(key => fieldValue[key] && typeof fieldValue[key] === 'string');
+                
+                if (emailKey) {
+                  cellText = fieldValue[emailKey].toString();
+                } else if (Array.isArray(fieldValue)) {
+                  if (fieldValue.length === 0) {
+                    cellText = '';
+                  } else {
+                    cellText = fieldValue.map(item => {
+                      if (typeof item === 'object' && item !== null) {
+                        // Manejar hipervínculos de Excel
+                        if (item.hyperlink || item.text || item.formula) {
+                          return item.text || item.hyperlink || item.formula;
+                        }
+                        const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
+                        return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
+                      }
+                      return item;
+                    }).join(', ');
+                  }
+                } else {
+                  // Intentar extraer cualquier valor string del objeto
+                  const objectValues = Object.values(fieldValue).filter(val => typeof val === 'string' && val.length > 0);
+                  if (objectValues.length > 0) {
+                    const firstStringValue = objectValues[0] as string;
+                    // Si parece un email, usarlo
+                    if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
+                      cellText = firstStringValue;
+                    } else {
+                      cellText = JSON.stringify(fieldValue);
+                    }
+                  } else {
+                    cellText = JSON.stringify(fieldValue);
+                  }
+                }
               }
             } else {
               cellText = fieldValue.toString();
@@ -404,11 +643,50 @@ const renderCellContent = (value: any) => {
               const searchValue = value.toLowerCase().trim();
               const cellValue = cellText.toLowerCase().trim();
               
-              // Coincidencia exacta, parcial o contenida
+              // Para filtros de fecha, hacer comparación especial
+              if (filterName.includes('fecha') || filterName.includes('date')) {
+                console.log('DATE FILTER COMPARISON:', {
+                  filterName,
+                  searchValue,
+                  cellValue,
+                  fieldValue,
+                  matchingField
+                });
+                
+                // Si el valor de búsqueda es una fecha (YYYY-MM-DD)
+                if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                  // Convertir ambos valores a fechas para comparar
+                  try {
+                    const searchDate = new Date(value);
+                    let cellDate;
+                    
+                    if (typeof fieldValue === 'string' && isValidDateString(fieldValue)) {
+                      cellDate = new Date(fieldValue);
+                    } else if (fieldValue instanceof Date) {
+                      cellDate = fieldValue;
+                    } else {
+                      return false;
+                    }
+                    
+                    // Comparar solo las fechas (sin hora)
+                    const searchDateStr = searchDate.toISOString().split('T')[0];
+                    const cellDateStr = cellDate.toISOString().split('T')[0];
+                    
+                    console.log('Date comparison:', { searchDateStr, cellDateStr, match: searchDateStr === cellDateStr });
+                    
+                    return searchDateStr === cellDateStr;
+                  } catch (error) {
+                    console.log('Date parsing error:', error);
+                    return false;
+                  }
+                }
+              }
+              
+              // Para otros tipos de filtros, usar lógica normal
               return cellValue === searchValue || 
                      cellValue.includes(searchValue) ||
                      searchValue.includes(cellValue) ||
-                     // Para fechas, buscar coincidencias parciales
+                     // Para fechas como texto, buscar coincidencias parciales
                      (cellValue.includes('-') && searchValue.includes('-') && 
                       cellValue.split('-').some(part => searchValue.includes(part))) ||
                      // Para texto largo, buscar palabras individuales
@@ -460,6 +738,7 @@ const renderCellContent = (value: any) => {
         onToggle={() => setSidebarVisible(!sidebarVisible)}
         templateId={id as string}
         templateData={originalTableData}
+        savedFilters={savedFilters}
       />
       
       <Box 
@@ -597,9 +876,9 @@ const renderCellContent = (value: any) => {
                   }}
                 >
                   <Table.Tr>
-                    {Object.keys(tableData[0]).map((fieldName, index) => (
+                    {tableData.length > 0 && Object.keys(tableData[0]).map((fieldName, index) => (
                       <Table.Th 
-                        key={index} 
+                        key={`header-${index}`} 
                         style={{ 
                           minWidth: "140px", 
                           maxWidth: "180px",
@@ -617,24 +896,27 @@ const renderCellContent = (value: any) => {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {tableData.map((rowData, rowIndex) => (
-                    <Table.Tr key={rowIndex}>
-                      {Object.keys(rowData).map((fieldName, cellIndex) => (
-                        <Table.Td 
-                          key={cellIndex} 
-                          style={{ 
-                            minWidth: "140px", 
-                            maxWidth: "180px",
-                            padding: "10px 8px",
-                            verticalAlign: "top",
-                            border: '1px solid #dee2e6'
-                          }}
-                        >
-                          {renderCellContent(rowData[fieldName])}
-                        </Table.Td>
-                      ))}
-                    </Table.Tr>
-                  ))}
+                  {tableData.map((rowData, rowIndex) => {
+                    const fieldNames = Object.keys(tableData[0]);
+                    return (
+                      <Table.Tr key={`row-${rowIndex}`}>
+                        {fieldNames.map((fieldName, cellIndex) => (
+                          <Table.Td 
+                            key={`cell-${rowIndex}-${cellIndex}`} 
+                            style={{ 
+                              minWidth: "140px", 
+                              maxWidth: "180px",
+                              padding: "10px 8px",
+                              verticalAlign: "top",
+                              border: '1px solid #dee2e6'
+                            }}
+                          >
+                            {renderCellContent(rowData[fieldName], fieldName)}
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    );
+                  })}
                 </Table.Tbody>
               </Table>
             </ScrollArea>

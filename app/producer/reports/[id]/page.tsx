@@ -285,9 +285,9 @@ const ResponsibleReportPage = () => {
 
   return (
     <>
-      <Container size={'xl'} ml={'md'} fluid>
+      <Container size="xl" ml="md" fluid>
         <DateConfig/>
-        <Title ta={'center'} mb={'md'}>{publishedReport?.report.name}</Title>
+        <Title ta="center" mb="md">{publishedReport?.report.name}</Title>
 
         {publishedReport && !isWithinProducerDateWindow() && (
           <Text
@@ -453,7 +453,7 @@ const ResponsibleReportPage = () => {
                 leftSection={<IconCloudUpload/>}
                 mb={'md'}
                 variant="outline"
-                disabled={canSend || publishedReport?.filled_reports[0]?.status === "Rechazado" ||
+                disabled={publishedReport?.filled_reports[0]?.status === "Rechazado" ||
                   sendsHistory.some((report) => report.status === "Aprobado" 
                   || report.status === "En Revisión" || (new Date(publishedReport?.deadline || "") < dateNow()))
                 }
@@ -473,7 +473,7 @@ const ResponsibleReportPage = () => {
                 mb={'md'}
                 variant="outline"
                 color="blue"
-                disabled={!canSend || publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
+                disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
                   sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión")
                   || (new Date(publishedReport?.deadline || "") < dateNow())
                 }
@@ -493,7 +493,6 @@ const ResponsibleReportPage = () => {
                 className={classes.pillDrive}
                 onRemove={() => {
                   setDeletedReport(publishedReport?.filled_reports[0].report_file.id)
-                  setCanSend(false)
                 }}
                 onClick={() => {
                   if(typeof window !== "undefined")
@@ -526,7 +525,6 @@ const ResponsibleReportPage = () => {
                   return;
                 }
                 setReportFile(files[0]);
-                setCanSend(false)
                 if (publishedReport?.filled_reports[0]?.report_file)
                   setDeletedReport(
                     publishedReport?.filled_reports[0].report_file.id
@@ -535,12 +533,22 @@ const ResponsibleReportPage = () => {
               text="Arrastra o selecciona el archivo con tu informe"
             />
           )}
+          {((publishedReport?.filled_reports[0]?.report_file && !deletedReport) || reportFile) && attachments.length === 0 && (publishedReport?.filled_reports[0]?.attachments?.length || 0) === 0 && (
+            <>
+              <Divider mt="md" mb="md" variant="dashed"/>
+              <Text fw={700} mt="md">Carga tus anexos:</Text>
+              <DropzoneCustomComponent
+                onDrop={(files) => {
+                  setAttachments([...attachments, ...files]);
+                }}
+                text="Arrastra o selecciona anexos"
+              />
+            </>
+          )}
           {publishedReport?.report.requires_attachment && (
             <>
-              <Divider mt='md' mb='md' variant="dashed"/>
-              <Text fw={700} mt='md'>Carga tus anexos y sus descripciones:</Text>
-              {(publishedReport?.filled_reports[0]?.attachments.length > 0 || attachments.length > 0) ? (
-                <Table
+              {attachments.length > 0 || (publishedReport?.filled_reports[0]?.attachments?.length || 0) > 0 ? (
+                <><Table
                   striped
                   style={{ width: "100%" }}
                   mt="md"
@@ -556,7 +564,7 @@ const ResponsibleReportPage = () => {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {publishedReport?.filled_reports[0]?.attachments.map((attachment, index) => (
+                    {(publishedReport?.filled_reports[0]?.attachments || []).map((attachment, index) => (
                       <Table.Tr key={attachment.id}>
                         <Table.Td w={1}>
                           <Center>
@@ -568,15 +576,13 @@ const ResponsibleReportPage = () => {
                                 setDeletedAttachments([...deletedAttachments, attachment.id]);
                                 publishedReport.filled_reports[0].attachments = publishedReport.filled_reports[0].attachments
                                   .filter((att) => att.id !== attachment.id);
-                                setCanSend(false)
-                              }}
-                              disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" 
+                              } }
+                              disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador"
                                 || !publishedReport?.filled_reports[0]?.status}
                             >
-                              <IconX 
+                              <IconX
                                 size={30}
-                                color="red"
-                              />
+                                color="red" />
                             </Button>
                           </Center>
                         </Table.Td>
@@ -584,22 +590,22 @@ const ResponsibleReportPage = () => {
                           <Group
                             gap="xs"
                             onClick={() => {
-                              if(typeof window !== "undefined")
-                                window.open(attachment.view_link)
-                            }}
+                              if (typeof window !== "undefined")
+                                window.open(attachment.view_link);
+                            } }
                             style={{ cursor: "pointer" }}
                           >
-                          <IconCloud size={16} color="gray" />
-                          <Text
-                            size="sm"
-                          >
-                            {attachment.name}
-                          </Text>
+                            <IconCloud size={16} color="gray" />
+                            <Text
+                              size="sm"
+                            >
+                              {attachment.name}
+                            </Text>
                           </Group>
                         </Table.Td>
                         <Table.Td>
                           <TextInput
-                            disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" 
+                            disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador"
                               || !publishedReport?.filled_reports[0]?.status}
                             value={attachment.description}
                             onChange={(event) => {
@@ -611,9 +617,7 @@ const ResponsibleReportPage = () => {
                                 updatedFilledReports[0].attachments[attachmentIndex].description = event.currentTarget.value;
                                 setPublishedReport({ ...publishedReport, filled_reports: updatedFilledReports });
                               }
-                              setCanSend(false)
-                            }}
-                          />
+                            } } />
                         </Table.Td>
                       </Table.Tr>
                     ))}
@@ -625,8 +629,7 @@ const ResponsibleReportPage = () => {
                               const newAttachments = [...attachments];
                               newAttachments.splice(index, 1);
                               setAttachments(newAttachments);
-                              setCanSend(false)
-                            }}/>
+                            } } />
                           </Center>
                         </Table.Td>
                         <Table.Td>
@@ -638,12 +641,10 @@ const ResponsibleReportPage = () => {
                           <TextInput
                             value={attachment.description}
                             onChange={(event) => {
-                              setCanSend(false)
                               const newAttachments = [...attachments];
                               newAttachments[index].description = event.currentTarget.value;
                               setAttachments(newAttachments);
-                            }}
-                          />
+                            } } />
                         </Table.Td>
                       </Table.Tr>
                     ))}
@@ -652,38 +653,50 @@ const ResponsibleReportPage = () => {
                         <FileButton
                           onChange={(files) => {
                             setAttachments([...attachments, ...files]);
-                            setCanSend(false)
-                          }}
+                          } }
                           accept="*"
                           multiple
                         >
-                          {(props) => 
-                            <Button 
-                            {...props} 
-                            variant="light" 
+                          {(props) => <Button
+                            {...props}
+                            variant="light"
                             fullWidth
-                            leftSection={<IconCirclePlus/>}
-                            disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" 
-                              || !publishedReport?.filled_reports[0]?.status}
+                            leftSection={<IconCirclePlus />}
 
-                            >
-                              Añadir anexo(s)
-                            </Button>
-                          }
+
+                          >
+                            Añadir anexo(s)
+                          </Button>}
                         </FileButton>
                       </Table.Td>
                     </Table.Tr>
                   </Table.Tbody>
                 </Table>
-              ) : 
-              <DropzoneCustomComponent
-                onDrop={(files) => {
-                  setAttachments(files);
-                  setCanSend(false)
-                }}
-                text="Arrastra o selecciona los anexos"
-              />
-              }
+              </>
+              ) : (
+                <>
+                  <FileButton
+                    onChange={(files) => {
+                      setAttachments([...attachments, ...files]);
+                    }}
+                    accept="*"
+                    multiple
+                  >
+                    {(props) => 
+                      <Button 
+                      {...props} 
+                      variant="light" 
+                      fullWidth
+                      leftSection={<IconCirclePlus/>}
+                      mt="md"
+
+                      >
+                        Añadir anexo(s)
+                      </Button>
+                    }
+                  </FileButton>
+                </>
+              )}
             </>
           )}
         </Collapse>

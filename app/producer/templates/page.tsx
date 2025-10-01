@@ -715,7 +715,10 @@ if (field.multiple) {
         />
         <Select
           placeholder="Filtrar por dependencia"
-          data={userDependencies}
+          data={[
+            { value: '', label: 'Todas las dependencias' },
+            ...userDependencies
+          ]}
           value={selectedDependency}
           onChange={(value) => setSelectedDependency(value || '')}
           clearable
@@ -860,7 +863,11 @@ if (field.multiple) {
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage fetchTemp={fetchTemplates} />
+      <ProducerUploadedTemplatesPage 
+        fetchTemp={fetchTemplates} 
+        selectedDependency={selectedDependency}
+        userDependencies={userDependencies}
+      />
     </Container>
   );
 };

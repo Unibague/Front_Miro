@@ -116,6 +116,67 @@ export const logDimensionChange = async (
   }
 };
 
+export const logDependencyPermissionChange = async (
+  userEmail: string,
+  userName: string,
+  dependencyChanges: {
+    added: string[];
+    removed: string[];
+  },
+  adminEmail: string
+) => {
+  try {
+    const details = {
+      targetUser: {
+        email: userEmail,
+        name: userName
+      },
+      changes: dependencyChanges,
+      action: 'Actualización de permisos de dependencias'
+    };
+
+    const auditData: AuditLog = {
+      user_email: adminEmail,
+      action: 'update',
+      entity_type: 'dependency_permission',
+      entity_name: `Permisos de ${userName}`,
+      details: JSON.stringify(details)
+    };
+
+    await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/audit`, auditData);
+  } catch (error) {
+    console.error('Error logging dependency permission change:', error);
+  }
+};
+
+export const logDependencyUpdate = async (
+  dependencyCode: string,
+  dependencyName: string,
+  changes: any,
+  adminEmail: string
+) => {
+  try {
+    const details = {
+      dependencyCode,
+      dependencyName,
+      changes,
+      action: 'Actualización de dependencia'
+    };
+
+    const auditData: AuditLog = {
+      user_email: adminEmail,
+      action: 'update',
+      entity_type: 'dependency',
+      entity_name: dependencyName,
+      details: JSON.stringify(details)
+    };
+
+    await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/audit`, auditData);
+  } catch (error) {
+    console.error('Error logging dependency update:', error);
+  }
+};
+
 export const compareTemplateChanges = (oldTemplate: any, newTemplate: any) => {
   const changes: any = {};
   
@@ -211,4 +272,41 @@ export const compareTemplateChanges = (oldTemplate: any, newTemplate: any) => {
   }
   
   return changes;
+};
+
+export const compareDependencyChanges = (oldDependency: any, newDependency: any) => {
+  const changes: any = {};
+  
+  // Comparar responsable
+  if (oldDependency.responsible !== newDependency.responsible) {
+    changes.responsible = {
+      old: oldDependency.responsible,
+      new: newDependency.responsible
+    };
+  }
+  
+  // Comparar productores
+  const oldProducers = oldDependency.producers || [];
+  const newProducers = newDependency.producers || [];
+  
+  const producerChanges: {
+    added: string[];
+    removed: string[];
+  } = {
+    added: newProducers.filter((np: string) => !oldProducers.includes(np)),
+    removed: oldProducers.filter((op: string) => !newProducers.includes(op))
+  };
+  
+  if (producerChanges.added.length > 0 || producerChanges.removed.length > 0) {
+    changes.producers = producerChanges;
+  }
+  
+  return changes;
+};
+
+export const compareDependencyPermissions = (oldPermissions: string[], newPermissions: string[]) => {
+  return {
+    added: newPermissions.filter(np => !oldPermissions.includes(np)),
+    removed: oldPermissions.filter(op => !newPermissions.includes(op))
+  };
 };

@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
+import { useSession } from 'next-auth/react';
 
 interface Member {
   email: string;
@@ -23,6 +24,7 @@ interface Member {
 }
 
 const AdminUpdateDependencyPage = () => {
+  const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
   const { id } = params;
@@ -75,6 +77,15 @@ const AdminUpdateDependencyPage = () => {
   }, [id]);
 
   const handleSave = async () => {
+    if (!session?.user?.email) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el email del administrador",
+        color: "red",
+      });
+      return;
+    }
+
     try {
       const producers = members
         .filter((member) => member.isProducer)
@@ -84,33 +95,50 @@ const AdminUpdateDependencyPage = () => {
         .filter((member) => !member.isProducer)
         .map((member) => member.email);
 
+      const headers = {
+        'user-email': session.user.email,
+        'Content-Type': 'application/json'
+      };
+
+      // Establecer cookie para el middleware
+      document.cookie = `userEmail=${session.user.email}; path=/`;
+
       await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/dependencies/setResponsible`,
         {
           dep_code: dependency.dep_code,
           email: dependency.responsible,
-        }
+          adminEmail: session.user.email
+        },
+        { headers }
       );
 
       await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/users/updateProducer`,
-        [
-          ...producers.map((email) => ({
-            email,
-            roles: ["Productor"],
-          })),
-          ...nonProducers.map((email) => ({
-            email,
-            roles: [],
-          })),
-        ]
+        {
+          users: [
+            ...producers.map((email) => ({
+              email,
+              roles: ["Productor"],
+            })),
+            ...nonProducers.map((email) => ({
+              email,
+              roles: [],
+            })),
+          ],
+          adminEmail: session.user.email
+        },
+        { headers }
       );
 
       if (dependency.visualizers && Array.isArray(dependency.visualizers)) {
         await axios.put(
           `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${id}/visualizers`,
-
-          { visualizers: dependency.visualizers }
+          { 
+            visualizers: dependency.visualizers,
+            adminEmail: session.user.email
+          },
+          { headers }
         );
       }
 

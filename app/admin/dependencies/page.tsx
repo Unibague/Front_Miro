@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { showNotification } from "@mantine/notifications";
 import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
+import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
 
 interface Dependency {
   _id: string;
@@ -90,7 +91,10 @@ const AdminDependenciesPage = () => {
           .map((member: any) => ({
             value: member.email,
             label: `${member.full_name} (${member.email})`,
-          }));
+          }))
+          .filter((option: any, index: number, self: any[]) => 
+            index === self.findIndex(o => o.value === option.value)
+          );
         setMembers(memberOptions);
       }
     } catch (error) {
@@ -112,8 +116,37 @@ const AdminDependenciesPage = () => {
 
   const handleSyncDependencies = async () => {
     setIsLoading(true);
+    
+    console.log('=== SYNC DEBUG ===');
+    console.log('Session:', session);
+    console.log('User email:', session?.user?.email);
+    console.log('Is admin:', isAdmin);
+    
+    if (!session?.user?.email) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el email del administrador",
+        color: "red",
+      });
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`);
+      const payload = { adminEmail: session.user.email };
+      const headers = { 
+        'user-email': session.user.email,
+        'Content-Type': 'application/json'
+      };
+      
+      console.log('Payload:', payload);
+      console.log('Headers:', headers);
+      
+      // Establecer cookie para el middleware
+      document.cookie = `userEmail=${session.user.email}; path=/`;
+      
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`, payload, { headers });
+      
       showNotification({
         title: "Sincronizado",
         message: "Dependencias sincronizadas exitosamente",
@@ -150,16 +183,67 @@ const AdminDependenciesPage = () => {
       return;
     }
 
+    console.log('=== SAVE DEBUG ===');
+    console.log('Session:', session);
+    console.log('User email:', session?.user?.email);
+    console.log('Selected dependency ID:', selectedDependency?._id);
+    
+    if (!session?.user?.email) {
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el email del administrador",
+        color: "red",
+      });
+      return;
+    }
+
     try {
+      // Guardar estado anterior para auditoría
+      const oldDependency = selectedDependency ? {
+        responsible: selectedDependency.responsible,
+        producers: selectedDependency.members || []
+      } : null;
+      
       const dependencyData = {
         dep_code,
         name,
         responsible,
         dep_father,
         producers: selectedProducers,
+        adminEmail: session.user.email
       };
+      
+      console.log('Dependency data:', dependencyData);
+      
+      // Establecer cookie para el middleware
+      document.cookie = `userEmail=${session.user.email}; path=/`;
 
-      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/${selectedDependency?._id}`, dependencyData);
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/${selectedDependency?._id}`, dependencyData, {
+        headers: {
+          'user-email': session.user.email,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      // Registrar cambios en auditoría
+      if (session?.user?.email && oldDependency) {
+        const newDependency = {
+          responsible,
+          producers: selectedProducers
+        };
+        
+        const changes = compareDependencyChanges(oldDependency, newDependency);
+        
+        if (Object.keys(changes).length > 0) {
+          await logDependencyUpdate(
+            dep_code,
+            name,
+            changes,
+            session.user.email
+          );
+        }
+      }
+      
       showNotification({
         title: "Actualizado",
         message: "Dependencia actualizada exitosamente",
@@ -200,10 +284,15 @@ const AdminDependenciesPage = () => {
       const depsData = await depsResponse.json();
       
       setUsersWithDependencies(usersData);
-      setAvailableDependencies(depsData.map((dep: any) => ({
-        value: dep.dep_code,
-        label: `${dep.name}`
-      })));
+      const uniqueDeps = depsData
+        .map((dep: any) => ({
+          value: dep.dep_code,
+          label: `${dep.name}`
+        }))
+        .filter((option: any, index: number, self: any[]) => 
+          index === self.findIndex(o => o.value === option.value)
+        );
+      setAvailableDependencies(uniqueDeps);
       
       // Limpiar estado anterior
       setSelectedUser(null);
@@ -229,10 +318,15 @@ const AdminDependenciesPage = () => {
       const depsData = await depsResponse.json();
       
       setAllUsersStatus(usersData);
-      setAvailableDependencies(depsData.map((dep: any) => ({
-        value: dep.dep_code,
-        label: `${dep.name}`
-      })));
+      const uniqueDeps = depsData
+        .map((dep: any) => ({
+          value: dep.dep_code,
+          label: `${dep.name}`
+        }))
+        .filter((option: any, index: number, self: any[]) => 
+          index === self.findIndex(o => o.value === option.value)
+        );
+      setAvailableDependencies(uniqueDeps);
       setUserStatusModalOpened(true);
     } catch (error) {
       showNotification({
@@ -252,6 +346,9 @@ const AdminDependenciesPage = () => {
     if (!selectedUser) return;
     
     try {
+      // Guardar estado anterior para auditoría
+      const oldPermissions = selectedUser.additional_dependencies || [];
+      
       console.log('=== DEBUG INFO ===');
       console.log('Usuario seleccionado:', selectedUser);
       console.log('Dependencias adicionales seleccionadas:', selectedAdditionalDeps);
@@ -271,6 +368,36 @@ const AdminDependenciesPage = () => {
       );
       
       console.log('Respuesta completa del backend:', response.data);
+      
+      // Registrar cambios en auditoría
+      if (session?.user?.email) {
+        const permissionChanges = compareDependencyPermissions(oldPermissions, selectedAdditionalDeps);
+        
+        console.log('=== AUDIT DEBUG ===');
+        console.log('Old permissions:', oldPermissions);
+        console.log('New permissions:', selectedAdditionalDeps);
+        console.log('Permission changes:', permissionChanges);
+        console.log('Admin email:', session.user.email);
+        
+        if (permissionChanges.added.length > 0 || permissionChanges.removed.length > 0) {
+          console.log('Calling logDependencyPermissionChange...');
+          try {
+            await logDependencyPermissionChange(
+              selectedUser.email,
+              selectedUser.full_name,
+              permissionChanges,
+              session.user.email
+            );
+            console.log('Audit log sent successfully');
+          } catch (auditError) {
+            console.error('Error sending audit log:', auditError);
+          }
+        } else {
+          console.log('No changes detected, skipping audit log');
+        }
+      } else {
+        console.log('No admin email found, skipping audit log');
+      }
       
       showNotification({
         title: "✅ Permisos Actualizados",
@@ -509,10 +636,14 @@ const AdminDependenciesPage = () => {
           <Select
             label="Seleccionar usuario"
             placeholder="Buscar usuario..."
-            data={usersWithDependencies.map(user => ({
-              value: user.email,
-              label: `${user.full_name} (${user.email})`
-            }))}
+            data={usersWithDependencies
+              .map(user => ({
+                value: user.email,
+                label: `${user.full_name} (${user.email})`
+              }))
+              .filter((option, index, self) => 
+                index === self.findIndex(o => o.value === option.value)
+              )}
             searchable
             value={selectedUser?.email || null}
             onChange={(email) => {
@@ -575,7 +706,7 @@ const AdminDependenciesPage = () => {
           <Table.Tbody>
             {allUsersStatus
               .filter((user) => 
-                user.full_name.toLowerCase().includes(userFilterSearch.toLowerCase())
+                user.full_name && user.full_name.toLowerCase().includes(userFilterSearch.toLowerCase())
               )
               .map((user) => (
               <Table.Tr key={user.email}>
