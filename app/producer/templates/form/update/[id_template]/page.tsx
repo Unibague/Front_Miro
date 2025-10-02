@@ -101,7 +101,7 @@ const ProducerTemplateUpdatePage = ({
         }
       );
 
-      console.log('Data response:', dataResponse.data);
+      console.log('Datta response:', dataResponse.data);
       console.log('Template fields:', templateResponse.data.template.fields);
       
       const transformedRows = transformData(dataResponse.data.data, templateResponse.data.template);
