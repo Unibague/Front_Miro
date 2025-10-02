@@ -207,6 +207,32 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
       helpRow.getCell(2).alignment = { wrapText: true };
     });
 
+    // Campos de tipo fecha para formatear correctamente
+    const dateFields = new Set(
+      template.fields
+        .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
+        .map(f => f.name)
+    );
+
+    // Obtener el dep_code del usuario actual desde la API
+    const userResp = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`);
+    const depCode = userResp.data.dep_code;
+
+    // Buscar en loaded_data el bloque correcto
+    const filledData: any = publishedTemplate.loaded_data.find(
+      (entry) => entry.dependency === depCode
+    );
+
+    if (!filledData) {
+      showNotification({
+        title: "Sin datos cargados",
+        message: "No se encontraron datos cargados para tu dependencia.",
+        color: "yellow",
+      });
+      return;
+    }
+
+    // Usar la misma lógica que published templates - crear headers con los campos de la plantilla
     const headerRow = worksheet.addRow(
       template.fields.map((field) => field.name)
     );
@@ -241,36 +267,43 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
       column.width = 20;
     });
 
-// Obtener el dep_code del usuario actual desde la API
-const userResp = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`);
-const depCode = userResp.data.dep_code;
-
-// Buscar en loaded_data el bloque correcto
-const filledData: any = publishedTemplate.loaded_data.find(
-  (entry) => entry.dependency === depCode
-);
-
-if (!filledData) {
-  showNotification({
-    title: "Sin datos cargados",
-    message: "No se encontraron datos cargados para tu dependencia.",
-    color: "yellow",
-  });
-  return;
-}
-
     if (filledData) {
+      console.log('=== DEBUGGING DOWNLOAD ===');
+      console.log('Template fields:', template.fields.map(f => f.name));
+      console.log('Filled data fields:', filledData.filled_data.map((fd: any) => fd.field_name));
+      console.log('ALL filled data:', filledData.filled_data);
+      console.log('Total template fields:', template.fields.length);
+      console.log('Total filled data fields:', filledData.filled_data.length);
+      
       const firstFilled = filledData?.filled_data.find((fd: any) => Array.isArray(fd.values) && fd.values.length > 0);
-const numRows = firstFilled ? firstFilled.values.length : 0;
+      const numRows = firstFilled ? firstFilled.values.length : 0;
+      console.log('Number of rows to process:', numRows);
+      
       for (let i = 0; i < numRows; i++) {
         const rowValues = template.fields.map((field) => {
-          const fieldData = filledData.filled_data.find(
+          // Búsqueda exacta primero
+          let fieldData = filledData.filled_data.find(
             (data: FilledFieldData) => data.field_name === field.name
           );
+          
+          // Si no encuentra coincidencia exacta, buscar de forma flexible
+          if (!fieldData) {
+            const normalizedFieldName = field.name.toLowerCase().trim();
+            fieldData = filledData.filled_data.find(
+              (data: FilledFieldData) => data.field_name.toLowerCase().trim() === normalizedFieldName
+            );
+          }
 
-    let value = (fieldData?.values && fieldData.values[i] !== undefined)
-      ? fieldData.values[i]
-      : null;
+          let value = (fieldData?.values && fieldData.values[i] !== undefined)
+            ? fieldData.values[i]
+            : null;
+            
+          // Debug para campos específicos
+          if (field.name.includes('ESTRATEGIA') || field.name.includes('FLEXIBILIZACIÓN')) {
+            console.log(`Field: ${field.name}`);
+            console.log(`Found fieldData:`, fieldData);
+            console.log(`Value at index ${i}:`, value);
+          }
 
           // Manejar hipervínculos de Excel y objetos complejos
           if (value && typeof value === 'object' && value !== null) {
@@ -338,7 +371,15 @@ const numRows = firstFilled ? firstFilled.values.length : 0;
 
           return value;
         });
-        worksheet.addRow(rowValues);
+        
+        // Solo agregar la fila si tiene al menos un valor no vacío
+        const hasNonEmptyValue = rowValues.some(val => 
+          val !== null && val !== undefined && val !== '' && val !== 'null'
+        );
+        
+        if (hasNonEmptyValue) {
+          worksheet.addRow(rowValues);
+        }
       }
     } 
 
