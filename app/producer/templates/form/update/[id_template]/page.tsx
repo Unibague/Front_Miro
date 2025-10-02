@@ -101,7 +101,7 @@ const ProducerTemplateUpdatePage = ({
         }
       );
 
-      console.log('Data response:', dataResponse.data);
+      console.log('Datta response:', dataResponse.data);
       console.log('Template fields:', templateResponse.data.template.fields);
       
       const transformedRows = transformData(dataResponse.data.data, templateResponse.data.template);
@@ -202,20 +202,111 @@ const ProducerTemplateUpdatePage = ({
 const transformData = (data: any[], template: Template): Record<string, any>[] => {
   if (!data.length || !template?.fields.length) return [];
   
+  console.log('=== TRANSFORM DATA DEBUG ===');
+  console.log('Raw data length:', data.length);
+  console.log('Template fields length:', template.fields.length);
+  console.log('Sample raw data item:', data[0]);
+  
   // Extraer valores de la estructura de Mongoose
   const firstFieldData = data[0];
   const firstFieldValues = firstFieldData?._doc?.values || firstFieldData?.values || [];
   const rowCount = firstFieldValues.length;
   
+  console.log('Row count determined:', rowCount);
+  
   const transformedRows: Record<string, any>[] = Array.from({ length: rowCount }, () => ({}));
 
   // Mapear cada campo de la plantilla con los datos correspondientes
-  data.forEach((fieldData) => {
-    const fieldName = fieldData?._doc?.field_name || fieldData?.field_name;
-    const fieldValues = fieldData?._doc?.values || fieldData?.values || [];
-    const field = template.fields.find(f => f.name === fieldName);
+  data.forEach((fieldData, dataIndex) => {
+    // Extraer datos de Mongoose
+    let fieldName, fieldValues;
     
-    if (field && fieldValues.length > 0) {
+    if (fieldData._doc) {
+      fieldName = fieldData._doc.field_name;
+      fieldValues = fieldData._doc.values || [];
+    } else {
+      fieldName = fieldData.field_name;
+      fieldValues = fieldData.values || [];
+    }
+    
+    console.log(`Processing field ${dataIndex}: ${fieldName}, values:`, fieldValues);
+    
+    // Buscar campo con coincidencia exacta primero
+    let field = template.fields.find(f => f.name === fieldName);
+    
+    // Si no se encuentra, buscar con coincidencia fuzzy
+    if (!field) {
+      // Normalizar nombres para comparación
+      const normalizeFieldName = (name: string) => {
+        return name
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '') // Remover caracteres especiales
+          .trim();
+      };
+      
+      const normalizedFieldName = normalizeFieldName(fieldName);
+      
+      field = template.fields.find(f => {
+        const normalizedTemplateName = normalizeFieldName(f.name);
+        
+        // Estrategia 1: Coincidencia exacta normalizada
+        if (normalizedTemplateName === normalizedFieldName) {
+          return true;
+        }
+        
+        // Estrategia 2: Contención mutua
+        if (normalizedTemplateName.includes(normalizedFieldName) || 
+            normalizedFieldName.includes(normalizedTemplateName)) {
+          return true;
+        }
+        
+        // Estrategia 3: Palabras clave principales
+        const dataWords = normalizedFieldName.split(/\s+/).filter(w => w.length > 2);
+        const templateWords = normalizedTemplateName.split(/\s+/).filter(w => w.length > 2);
+        
+        // Si al menos el 70% de las palabras coinciden
+        const matchingWords = dataWords.filter(word => 
+          templateWords.some(tWord => tWord.includes(word) || word.includes(tWord))
+        );
+        
+        if (matchingWords.length >= Math.ceil(dataWords.length * 0.7)) {
+          return true;
+        }
+        
+        // Estrategia 4: Mapeos específicos conocidos
+        const specificMappings: Record<string, string[]> = {
+          'tipodemovilidad': ['tipo_movilidad', 'tipomovilidad'],
+          'institucion': ['institucion_procedencia', 'institucionprocedencia'],
+          'fechadeinicio': ['fecha_de_inicio', 'fechadeiniciodelmovilidad'],
+          'fechadefinalizacion': ['fecha_de_finalizacion', 'fechadefinalizaciondelmovilidad'],
+          'duraciontiempodeestadia': ['num_dias_movilidad', 'diasmovilidad', 'duracion'],
+          'duraciontiempo': ['num_dias_movilidad', 'diasmovilidad', 'duracion'],
+          'tiempodeestadia': ['num_dias_movilidad', 'diasmovilidad', 'duracion'],
+          'idpaisextranjero': ['id_pais_procedencia', 'paisextranjero', 'paisprocedencia'],
+          'paisextranjero': ['id_pais_procedencia', 'paisextranjero', 'paisprocedencia'],
+          'idtipomovextranj': ['tipo_movilidad', 'tipomovilidad', 'movextranjero'],
+          'tipomovextranj': ['tipo_movilidad', 'tipomovilidad', 'movextranjero']
+        };
+        
+        for (const [key, variations] of Object.entries(specificMappings)) {
+          if (normalizedFieldName.includes(key) || key.includes(normalizedFieldName)) {
+            if (variations.some(variation => normalizedTemplateName.includes(variation))) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      });
+      
+      if (field) {
+        console.log(`🔄 Field found with fuzzy match: "${fieldName}" -> "${field.name}"`);
+      }
+    }
+    
+    if (field) {
+      console.log(`✅ Field found in template: ${fieldName}`);
+      
       fieldValues.forEach((value: any, rowIndex: number) => {
         if (rowIndex < rowCount) {
           if (field.multiple) {
@@ -234,6 +325,33 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
               processedValue = value[0];
             }
             
+            // Manejar hipervínculos de Excel y objetos complejos
+            if (processedValue && typeof processedValue === 'object') {
+              // Hipervínculos de Excel
+              if (processedValue.hyperlink || processedValue.text || processedValue.formula) {
+                processedValue = processedValue.text || processedValue.hyperlink || processedValue.formula;
+              }
+              // Objetos con propiedades de email
+              else {
+                const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
+                const emailKey = possibleEmailKeys.find(key => processedValue[key] && typeof processedValue[key] === 'string');
+                
+                if (emailKey) {
+                  processedValue = processedValue[emailKey];
+                } else if (processedValue.text) {
+                  processedValue = processedValue.text;
+                } else {
+                  // Intentar extraer cualquier valor string del objeto
+                  const objectValues = Object.values(processedValue).filter(val => typeof val === 'string' && val.length > 0);
+                  if (objectValues.length > 0) {
+                    processedValue = objectValues[0];
+                  } else {
+                    processedValue = JSON.stringify(processedValue);
+                  }
+                }
+              }
+            }
+            
             // Intentar parsear JSON si es string
             if (typeof processedValue === 'string') {
               try {
@@ -246,12 +364,8 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
               }
             }
             
-            // Manejar objetos de email (hyperlinks)
-            if (processedValue && typeof processedValue === 'object' && processedValue.text) {
-              transformedRows[rowIndex][field.name] = processedValue.text;
-            }
             // Validar fechas para evitar valores inválidos
-            else if (field.datatype === 'Fecha' && processedValue) {
+            if (field.datatype === 'Fecha' && processedValue) {
               const dateValue = new Date(processedValue);
               transformedRows[rowIndex][field.name] = isNaN(dateValue.getTime()) ? null : dateValue;
             }
@@ -266,8 +380,14 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           }
         }
       });
+    } else {
+      console.log(`❌ Field NOT found in template: ${fieldName}`);
+      console.log('Available template fields:', template.fields.map(f => f.name));
     }
   });
+  
+  console.log('Final transformed rows:', transformedRows);
+  console.log('=== END TRANSFORM DEBUG ===');
 
   return transformedRows;
 };

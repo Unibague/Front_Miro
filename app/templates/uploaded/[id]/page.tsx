@@ -373,7 +373,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
     try {
       await downloadExcel(tableData, `${templateName}_filtrado`);
     } catch (error) {
-      console.error("Error downloading filtered data:", error);
+      console.error("Error downloading fitered data:", error);
       showNotification({
         title: "Error",
         message: "Error al descargar los datos filtrados",
