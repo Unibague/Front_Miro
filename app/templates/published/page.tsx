@@ -208,8 +208,10 @@ const PublishedTemplatesPage = () => {
         }
       );
 
-      const data = response.data.data;
+      const rawData = response.data.data;
       const { template } = publishedTemplate;
+
+      const data = rawData;
 
       // Campos de tipo fecha para formatear correctamente
 const dateFields = new Set(
@@ -242,19 +244,7 @@ const dateFields = new Set(
         helpRow.getCell(2).alignment = { wrapText: true };
       });
 
-      // Usar las claves que realmente vienen del backend
-      const dataKeys = Object.keys(data[0]);
-      // Asegurar que Dependencia esté primero
-      const availableFields = dataKeys.sort((a, b) => {
-        if (a === 'Dependencia') return -1;
-        if (b === 'Dependencia') return 1;
-        return 0;
-      });
-      
-      console.log("Data keys from backend:", dataKeys);
-      console.log("Final field order:", availableFields);
-      
-      const headerRow = worksheet.addRow(availableFields);
+      const headerRow = worksheet.addRow(Object.keys(data[0]));
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };
         cell.fill = {
@@ -275,12 +265,10 @@ const dateFields = new Set(
         column.width = 20;
       });
 
-      // Add the data to the worksheet using the same field order
+      // Add the data to the worksheet starting from the second row
       data.forEach((row: any) => {
-        const formattedRow = availableFields.map(fieldName => {
-          let value = row[fieldName];
-          
-          if (value && dateFields.has(fieldName)) {
+        const formattedRow = Object.entries(row).map(([key, value]) => {
+          if (value && dateFields.has(key)) {
             if (
               typeof value === 'string' ||
               typeof value === 'number' ||
