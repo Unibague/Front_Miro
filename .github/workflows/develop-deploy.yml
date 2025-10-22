@@ -51,7 +51,7 @@ jobs:
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test || exit;
           if [ ! -d ".git" ]; then
-            git clone https://github.com/BrayanD117/Front_Miro.git .
+            git clone https://github.com/Unibague/Front_Miro.git .
           else
             git pull
           fi'
