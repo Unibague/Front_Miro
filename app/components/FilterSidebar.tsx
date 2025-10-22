@@ -353,7 +353,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         const allSavedFilters = Object.values(savedFilters).flat();
         
         if (allSavedFilters.length > 0) {
-          // Usar solo los filtros que están marcados como visibles
+          // Usar solo los filtros que están marcados como visible
           const visibleFilters = allSavedFilters.filter(filter => filter.isVisible === true);
           
           console.log('Filtros guardados:', allSavedFilters.length, 'visibles:', visibleFilters.length);
