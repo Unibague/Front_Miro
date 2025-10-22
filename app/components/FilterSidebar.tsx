@@ -200,7 +200,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           console.log(`VALIDATOR DEBUG - First validator structure:`, validators[0]);
           
           // Buscar el validador más apropiado para este campo
-          const candidateValidators = validators.filter(validator => {
+          const candidateValidators = validators.filter((validator: any) => {
             if (!validator.columns || validator.columns.length < 2) return false;
             
             const idColumn = validator.columns.find((col: any) => col.is_validator === true);
@@ -222,10 +222,10 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           });
           
           console.log(`VALIDATOR DEBUG - Found ${candidateValidators.length} candidate validators for ${fieldName}:`, 
-                     candidateValidators.map(v => v.name));
+                     candidateValidators.map((v: any) => v.name));
           
           // Seleccionar el validador más apropiado basado en similitud de nombres
-          const relevantValidator = candidateValidators.find(validator => {
+          const relevantValidator = candidateValidators.find((validator: any) => {
             const validatorName = validator.name.toLowerCase();
             const fieldNameClean = fieldName.toLowerCase().replace(/[^a-z]/g, '');
             
@@ -332,7 +332,9 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     
     const resolvedOptions = await Promise.all(optionPromises.filter(Boolean));
     
-    resolvedOptions.forEach(({ sourceField, options }) => {
+    resolvedOptions.forEach((result: any) => {
+      if (!result) return;
+      const { sourceField, options } = result;
       if (sourceField && options) {
         newOptions[sourceField] = options;
       }
