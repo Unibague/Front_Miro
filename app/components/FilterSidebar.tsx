@@ -77,6 +77,18 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           fieldLower.includes('time') || fieldLower.includes('hora')) {
         inputType = 'date';
       }
+      // Campos que parecen ser IDs de validadores - usar radio para mostrar descripciones
+      else if ((fieldLower.includes('id') || fieldLower.includes('tipo') || 
+                fieldLower.includes('estado') || fieldLower.includes('sexo') ||
+                fieldLower.includes('biologico') || fieldLower.includes('civil') ||
+                fieldLower.includes('fuente') || fieldLower.includes('pais') ||
+                fieldLower.includes('movilidad') || fieldLower.includes('impacto') ||
+                fieldLower.includes('estrategia') || fieldLower.includes('flexibilizaci') ||
+                fieldLower.includes('enfoques')) &&
+               uniqueValues.length > 0 && uniqueValues.length <= 20 &&
+               uniqueValues.every(val => val != null && /^\d{1,3}$/.test(val.toString()))) {
+        inputType = 'radio';
+      }
       // Campos con muy pocos valores únicos - usar radio
       else if (uniqueValues.length <= 5) {
         inputType = 'radio';
@@ -108,7 +120,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     return filters;
   };
 
-  const generateFilterOptions = (fieldName: string, data: any[]) => {
+  const generateFilterOptions = async (fieldName: string, data: any[]) => {
     if (!data || data.length === 0) return [];
     
     // Usar Set para garantizar valores únicos desde el inicio
@@ -132,25 +144,198 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       }
     });
     
-    // Convertir Set a array de opciones
-    return Array.from(uniqueValues)
-      .sort((a, b) => a.localeCompare(b))
-      .map(value => ({
-        value,
-        label: value
-      }));
+    const valuesArray = Array.from(uniqueValues).sort((a, b) => a.localeCompare(b));
+    
+    // Verificar si los valores parecen ser IDs de validadores (números cortos, no documentos)
+    const areValidatorIds = valuesArray.every(value => {
+      // Solo números de 1-3 dígitos (IDs de validadores típicos)
+      return /^\d{1,3}$/.test(value);
+    });
+    
+    // También verificar que el nombre del campo sugiera que es un validador
+    const fieldLower = fieldName.toLowerCase();
+    
+    // Excluir campos que claramente NO son validadores
+    const isExcludedField = fieldLower.includes('dias') ||
+                           fieldLower.includes('valor') ||
+                           fieldLower.includes('numero') ||
+                           fieldLower.includes('num') ||
+                           fieldLower.includes('cantidad') ||
+                           fieldLower.includes('monto') ||
+                           fieldLower.includes('precio') ||
+                           fieldLower.includes('costo');
+    
+    const fieldSuggestsValidator = !isExcludedField && (
+                                  fieldLower.includes('id') || 
+                                  fieldLower.includes('tipo') ||
+                                  fieldLower.includes('estado') ||
+                                  fieldLower.includes('sexo') ||
+                                  fieldLower.includes('biologico') ||
+                                  fieldLower.includes('civil') ||
+                                  fieldLower.includes('fuente') ||
+                                  fieldLower.includes('pais') ||
+                                  fieldLower.includes('movilidad') ||
+                                  fieldLower.includes('impacto') ||
+                                  fieldLower.includes('estrategia') ||
+                                  fieldLower.includes('flexibilizaci') ||
+                                  fieldLower.includes('enfoques')
+                                  );
+    
+    console.log(`VALIDATOR DEBUG - Field: ${fieldName}`);
+    console.log(`VALIDATOR DEBUG - areValidatorIds: ${areValidatorIds}`);
+    console.log(`VALIDATOR DEBUG - fieldSuggestsValidator: ${fieldSuggestsValidator}`);
+    console.log(`VALIDATOR DEBUG - valuesArray:`, valuesArray);
+    
+    if (areValidatorIds && valuesArray.length > 0 && fieldSuggestsValidator) {
+      try {
+        console.log(`VALIDATOR DEBUG - Fetching validators for field: ${fieldName}`);
+        // Obtener todos los validadores disponibles
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination?page=1&limit=200`
+        );
+        
+        if (response.data && response.data.validators) {
+          const validators = response.data.validators;
+          console.log(`VALIDATOR DEBUG - Found ${validators.length} validators`);
+          console.log(`VALIDATOR DEBUG - First validator structure:`, validators[0]);
+          
+          // Buscar el validador más apropiado para este campo
+          const candidateValidators = validators.filter(validator => {
+            if (!validator.columns || validator.columns.length < 2) return false;
+            
+            const idColumn = validator.columns.find((col: any) => col.is_validator === true);
+            if (!idColumn || !idColumn.values) return false;
+            
+            // Verificar coincidencias
+            const hasMatchingValues = valuesArray.some(fieldValue => {
+              const exactMatch = idColumn.values.some((validatorValue: any) => 
+                validatorValue.toString() === fieldValue
+              );
+              const numericValue = parseInt(fieldValue);
+              const indexMatch = !isNaN(numericValue) && 
+                                numericValue >= 1 && 
+                                numericValue <= idColumn.values.length;
+              return exactMatch || indexMatch;
+            });
+            
+            return hasMatchingValues;
+          });
+          
+          console.log(`VALIDATOR DEBUG - Found ${candidateValidators.length} candidate validators for ${fieldName}:`, 
+                     candidateValidators.map(v => v.name));
+          
+          // Seleccionar el validador más apropiado basado en similitud de nombres
+          const relevantValidator = candidateValidators.find(validator => {
+            const validatorName = validator.name.toLowerCase();
+            const fieldNameClean = fieldName.toLowerCase().replace(/[^a-z]/g, '');
+            
+            // Buscar coincidencias específicas en el nombre
+            const nameMatches = [
+              fieldNameClean.includes('documento') && validatorName.includes('documento'),
+              fieldNameClean.includes('sexo') && validatorName.includes('sexo'),
+              fieldNameClean.includes('estado') && validatorName.includes('estado'),
+              fieldNameClean.includes('civil') && validatorName.includes('civil'),
+              fieldNameClean.includes('movilidad') && validatorName.includes('movilidad'),
+              fieldNameClean.includes('modalidad') && validatorName.includes('movilidad'),
+              fieldNameClean.includes('fuente') && validatorName.includes('fuente'),
+              fieldNameClean.includes('nacional') && validatorName.includes('nacional'),
+              fieldNameClean.includes('internacional') && validatorName.includes('internacional'),
+              fieldNameClean.includes('pais') && (validatorName.includes('departamento') || validatorName.includes('municipio')),
+              fieldNameClean.includes('impacto') && validatorName.includes('movilidad'),
+              fieldNameClean.includes('estrategia') && validatorName.includes('estrategia'),
+              fieldNameClean.includes('flexibilizaci') && validatorName.includes('flexibilizacion'),
+              fieldNameClean.includes('enfoque') && validatorName.includes('enfoque')
+            ];
+            
+            return nameMatches.some(match => match === true);
+          }) || candidateValidators[0]; // Fallback al primer candidato si no hay coincidencia de nombre
+          
+          if (!relevantValidator) {
+            console.log(`VALIDATOR DEBUG - No matching validator found for ${fieldName}`);
+            return valuesArray.map(value => ({ value, label: value }));
+          }
+          
+          console.log(`VALIDATOR DEBUG - Using validator: ${relevantValidator.name} for field: ${fieldName}`);
+          
+          // Mapear cada ID a su descripción correspondiente usando el validador correcto
+          const mappedOptions = valuesArray.map(id => {
+            console.log(`VALIDATOR DEBUG - Processing ID: ${id} with validator: ${relevantValidator.name}`);
+            
+            if (relevantValidator.columns && relevantValidator.columns.length >= 2) {
+              // Buscar las columnas de ID y DESCRIPCION (pueden tener nombres diferentes)
+              const idColumn = relevantValidator.columns.find((col: any) => 
+                col.is_validator === true && col.values && col.values.length > 0
+              );
+              const descripcionColumn = relevantValidator.columns.find((col: any) => 
+                (col.name.includes('DESCRIPCION') || col.name.includes('DESCRIPCIÓN')) && 
+                col.values && col.values.length > 0
+              );
+              
+              if (idColumn && descripcionColumn) {
+                console.log(`VALIDATOR DEBUG - ID column (${idColumn.name}):`, idColumn.values);
+                console.log(`VALIDATOR DEBUG - DESCRIPCION column (${descripcionColumn.name}):`, descripcionColumn.values);
+                
+                // Buscar el índice del ID
+                let index = idColumn.values.findIndex((value: any) => value.toString() === id);
+                
+                // Si no se encuentra por valor exacto, usar como índice (base 1)
+                if (index === -1) {
+                  const numericId = parseInt(id);
+                  if (!isNaN(numericId) && numericId >= 1 && numericId <= idColumn.values.length) {
+                    index = numericId - 1;
+                    console.log(`VALIDATOR DEBUG - Using ${id} as index, converted to ${index}`);
+                  }
+                }
+                
+                if (index !== -1 && index < descripcionColumn.values.length) {
+                  const codigo = idColumn.values[index];
+                  const descripcion = descripcionColumn.values[index];
+                  console.log(`VALIDATOR DEBUG - Found mapping: ${codigo} - ${descripcion}`);
+                  return {
+                    value: id,
+                    label: `${codigo} - ${descripcion}`
+                  };
+                }
+              }
+            }
+            
+            console.log(`VALIDATOR DEBUG - No description found for ${id}`);
+            return { value: id, label: id };
+          });
+          
+          console.log(`VALIDATOR DEBUG - Final mapped options:`, mappedOptions);
+          return mappedOptions;
+        }
+      } catch (error) {
+        console.error('Error obteniendo descripciones de validadores:', error);
+      }
+    }
+    
+    // Si no son IDs de validadores, devolver opciones normales
+    console.log(`VALIDATOR DEBUG - Returning normal options for ${fieldName}:`, valuesArray);
+    return valuesArray.map(value => ({
+      value,
+      label: value
+    }));
   };
 
-  const loadFilterOptions = (filters: any[], data: any[]) => {
+  const loadFilterOptions = async (filters: any[], data: any[]) => {
     const newOptions: Record<string, FilterOption[]> = {};
     
-    filters.forEach(filter => {
+    // Procesar filtros de forma asíncrona
+    const optionPromises = filters.map(async (filter) => {
       if (!filter.sourceField) return;
       
-      const options = generateFilterOptions(filter.sourceField, data);
-      
-      // Solo usar sourceField como clave para evitar duplicados
-      newOptions[filter.sourceField] = options;
+      const options = await generateFilterOptions(filter.sourceField, data);
+      return { sourceField: filter.sourceField, options };
+    });
+    
+    const resolvedOptions = await Promise.all(optionPromises.filter(Boolean));
+    
+    resolvedOptions.forEach(({ sourceField, options }) => {
+      if (sourceField && options) {
+        newOptions[sourceField] = options;
+      }
     });
     
     setFilterOptions(newOptions);
@@ -397,13 +582,23 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                     </Group>
                     
                     {filter.inputType === 'autocomplete' && (
-                      <TextInput
+                      <Autocomplete
                         placeholder={`Buscar ${filter.label.toLowerCase()}...`}
-                        value={filterValues[filter.name]?.[0] || ''}
-                        onChange={(event) => {
-                          const value = event.currentTarget.value;
+                        data={options.map(opt => opt.label)}
+                        value={(() => {
+                          const currentValue = filterValues[filter.name]?.[0];
+                          if (currentValue) {
+                            const option = options.find(opt => opt.value === currentValue);
+                            return option ? option.label : currentValue;
+                          }
+                          return '';
+                        })()}
+                        onChange={(value) => {
                           if (value && value.trim()) {
-                            handleFilterChange(filter.name, [value.trim()]);
+                            // Buscar el valor correspondiente al label seleccionado
+                            const option = options.find(opt => opt.label === value);
+                            const valueToUse = option ? option.value : value.trim();
+                            handleFilterChange(filter.name, [valueToUse]);
                           } else {
                             handleFilterChange(filter.name, []);
                           }
@@ -411,6 +606,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         size="xs"
                         radius="md"
                         leftSection={<IconSearch size={14} />}
+                        limit={10}
+                        maxDropdownHeight={200}
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
@@ -418,6 +615,9 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                             '&:focus': {
                               borderColor: `var(--mantine-color-${filter.color}-6)`
                             }
+                          },
+                          dropdown: {
+                            zIndex: 10000
                           }
                         }}
                       />
