@@ -53,11 +53,14 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/Unibague/Front_Miro.git .
           else
-            # Fix permissions before git pull
-            chmod -R 755 .
-            git reset --hard HEAD
+            # Stop PM2 process to release file locks
+            pm2 stop Front_Dev || true
+            # Force reset and clean
+            git fetch --all
+            git reset --hard origin/develop
             git clean -fd
-            git pull
+            # Restart PM2 after cleanup
+            pm2 start Front_Dev || true
           fi'
 
     - name: Build project on remote server for develop
@@ -75,7 +78,10 @@ jobs:
 
     - name: Restart PM2 for develop
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'pm2 restart Front_Dev'
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          pm2 stop Front_Dev || true
+          sleep 2
+          pm2 start Front_Dev || pm2 restart Front_Dev'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
