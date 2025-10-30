@@ -18,9 +18,9 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Install Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v3
       with:
-        node-version: '22.14.0'
+        node-version: '20.14.0'
 
     - name: Install OpenConnect
       run: sudo apt-get install -y openconnect
@@ -51,71 +51,17 @@ jobs:
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test || exit;
           if [ ! -d ".git" ]; then
-            git clone https://github.com/Unibague/Front_Miro.git .
+            git clone https://github.com/BrayanD117/Front_Miro.git .
           else
-            # Stop PM2 process to release file locks
-            pm2 stop Front_Dev || true
-            # Force reset and clean
-            git fetch --all
-            git reset --hard origin/develop
-            git clean -fd
-            # Restart PM2 after cleanup
-            pm2 start Front_Dev || true
-          fi'
-
-    - name: Verify files after git operations
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "Checking if templates-with-filters directory exists:";
-          ls -la app/ | grep templates;
-          echo "Checking templates-with-filters content:";
-          if [ -d "app/templates-with-filters" ]; then
-            ls -la app/templates-with-filters/;
-            echo "Checking TypeScript syntax in templates-with-filters:";
-            npx tsc --noEmit app/templates-with-filters/page.tsx || echo "TypeScript errors found in templates-with-filters";
-          else
-            echo "templates-with-filters directory NOT FOUND";
+            git pull
           fi'
 
     - name: Build project on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "Cleaning Next.js cache...";
-          rm -rf .next;
-          echo "Installing dependencies...";
           npm install;
-          echo "Starting build process...";
-          npm run build 2>&1 | tee build.log;
-          echo "Build completed. Checking for errors...";
-          if grep -E "(✘ Error|⨯ Error|Failed to compile|Build failed)" build.log; then
-            echo "❌ Build errors found!";
-            exit 1;
-          else
-            echo "✅ Build completed successfully";
-          fi'
-
-    - name: Verify build output
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "Checking .next build output:";
-          ls -la .next/server/app/ | grep templates || echo "No templates directories found in build";
-          echo "Checking if templates-with-filters was built:";
-          if [ -d ".next/server/app/templates-with-filters" ]; then
-            echo "✅ templates-with-filters found in build";
-            ls -la .next/server/app/templates-with-filters/;
-          else
-            echo "❌ templates-with-filters NOT found in build output";
-          fi
-          echo "Checking if admin/templates-management was built:";
-          if [ -d ".next/server/app/admin/templates-management" ]; then
-            echo "✅ admin/templates-management found in build";
-            ls -la .next/server/app/admin/templates-management/;
-          else
-            echo "❌ admin/templates-management NOT found in build output";
-          fi'
+          npm run build'
 
     - name: Run Semantic Release
       working-directory: ./    
@@ -125,10 +71,7 @@ jobs:
 
     - name: Restart PM2 for develop
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          pm2 stop Front_Dev || true
-          sleep 2
-          pm2 start Front_Dev || pm2 restart Front_Dev'
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'pm2 restart Front_Dev'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
