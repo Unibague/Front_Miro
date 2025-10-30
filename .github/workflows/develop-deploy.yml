@@ -63,12 +63,39 @@ jobs:
             pm2 start Front_Dev || true
           fi'
 
+    - name: Verify files after git operations
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "Checking if templates-with-filters directory exists:";
+          ls -la app/ | grep templates;
+          echo "Checking templates-with-filters content:";
+          if [ -d "app/templates-with-filters" ]; then
+            ls -la app/templates-with-filters/;
+          else
+            echo "templates-with-filters directory NOT FOUND";
+          fi'
+
     - name: Build project on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
           npm install;
           npm run build'
+
+    - name: Verify build output
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "Checking .next build output:";
+          ls -la .next/server/app/ | grep templates || echo "No templates directories found in build";
+          echo "Checking if templates-with-filters was built:";
+          if [ -d ".next/server/app/templates-with-filters" ]; then
+            echo "✅ templates-with-filters found in build";
+            ls -la .next/server/app/templates-with-filters/;
+          else
+            echo "❌ templates-with-filters NOT found in build output";
+          fi'
 
     - name: Run Semantic Release
       working-directory: ./    
