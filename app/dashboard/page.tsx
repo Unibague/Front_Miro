@@ -306,6 +306,7 @@ useEffect(() => {
 
   const renderCards = () => {
     const cards = [];
+    console.log('DEBUG - Current userRole:', userRole);
 
     switch (userRole) {
       case "Administrador":
@@ -585,7 +586,7 @@ useEffect(() => {
                 <Text ta={"center"} size="sm" color="dimmed">
                   Gestiona plantillas con filtros avanzados por dependencia y programa
                 </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-with-filters')}>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
                   Ir a Plantillas con Filtros
                 </Button>
               </Card>
@@ -671,6 +672,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFilter size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
+                Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -731,6 +746,20 @@ useEffect(() => {
             </Button>
           </Card>
         </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-templates-with-filters-all">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFilter size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
+                Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         if (isVisualizer) {
 
@@ -822,7 +851,8 @@ useEffect(() => {
                   Ir a visualizador de reportes
                 </Button>
               </Card>
-            </Grid.Col>
+            </Grid.Col>,
+
           );
         }
   break;
