@@ -72,6 +72,8 @@ jobs:
           echo "Checking templates-with-filters content:";
           if [ -d "app/templates-with-filters" ]; then
             ls -la app/templates-with-filters/;
+            echo "Checking TypeScript syntax in templates-with-filters:";
+            npx tsc --noEmit app/templates-with-filters/page.tsx || echo "TypeScript errors found in templates-with-filters";
           else
             echo "templates-with-filters directory NOT FOUND";
           fi'
@@ -80,8 +82,19 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "Cleaning Next.js cache...";
+          rm -rf .next;
+          echo "Installing dependencies...";
           npm install;
-          npm run build'
+          echo "Starting build process...";
+          npm run build 2>&1 | tee build.log;
+          echo "Build completed. Checking for errors...";
+          if grep -i "error" build.log; then
+            echo "❌ Build errors found!";
+            exit 1;
+          else
+            echo "✅ Build completed successfully";
+          fi'
 
     - name: Verify build output
       run: |
