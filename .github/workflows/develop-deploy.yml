@@ -53,6 +53,10 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/Unibague/Front_Miro.git .
           else
+            # Fix permissions before git pull
+            chmod -R 755 .
+            git reset --hard HEAD
+            git clean -fd
             git pull
           fi'
 
