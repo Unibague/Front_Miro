@@ -33,10 +33,10 @@ import { saveAs } from "file-saver";
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import { useSort } from "../../hooks/useSort";
+import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
-import FilterSidebar from "@/app/components/FilterSidebar";
+import FilterSidebarSimple from "@/app/components/FilterSidebarSimple";
 
 interface Field {
   name: string;
@@ -643,13 +643,12 @@ const TemplatesWithFiltersPage = () => {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <FilterSidebar 
+      <FilterSidebarSimple 
         onFiltersChange={handleFiltersChange}
         isVisible={sidebarVisible}
         onToggle={() => setSidebarVisible(!sidebarVisible)}
         savedFilters={templateFilters}
         templates={templates}
-        key={JSON.stringify(templateFilters)} // Force re-render when filters change
       />
       
       <div 
