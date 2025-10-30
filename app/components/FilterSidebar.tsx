@@ -665,15 +665,15 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     
     // Procesar filtros de forma asíncrona
     const optionPromises = filters.map(async (filter) => {
-      if (!filter.sourceField) return;
+      if (!filter.sourceField) return null;
       
       const options = await generateFilterOptions(filter.sourceField, data);
       return { sourceField: filter.sourceField, options };
     });
     
-    const resolvedOptions = await Promise.all(optionPromises.filter(Boolean));
+    const resolvedOptions = await Promise.all(optionPromises);
     
-    resolvedOptions.forEach((result: any) => {
+    resolvedOptions.forEach((result) => {
       if (!result) return;
       const { sourceField, options } = result;
       if (sourceField && options) {
