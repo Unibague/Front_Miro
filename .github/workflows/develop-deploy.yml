@@ -89,7 +89,7 @@ jobs:
           echo "Starting build process...";
           npm run build 2>&1 | tee build.log;
           echo "Build completed. Checking for errors...";
-          if grep -E "(Error:|Failed|✘|⨯)" build.log; then
+          if grep -E "(✘ Error|⨯ Error|Failed to compile|Build failed)" build.log; then
             echo "❌ Build errors found!";
             exit 1;
           else
@@ -108,6 +108,13 @@ jobs:
             ls -la .next/server/app/templates-with-filters/;
           else
             echo "❌ templates-with-filters NOT found in build output";
+          fi
+          echo "Checking if admin/templates-management was built:";
+          if [ -d ".next/server/app/admin/templates-management" ]; then
+            echo "✅ admin/templates-management found in build";
+            ls -la .next/server/app/admin/templates-management/;
+          else
+            echo "❌ admin/templates-management NOT found in build output";
           fi'
 
     - name: Run Semantic Release
