@@ -89,7 +89,7 @@ jobs:
           echo "Starting build process...";
           npm run build 2>&1 | tee build.log;
           echo "Build completed. Checking for errors...";
-          if grep -i "error" build.log; then
+          if grep -E "(Error:|Failed|✘|⨯)" build.log; then
             echo "❌ Build errors found!";
             exit 1;
           else

@@ -577,17 +577,17 @@ useEffect(() => {
                 </Button>
               </Card>
             </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-with-filters">
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-management">
               <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconFileAnalytics size={80}/></Center>
+                <Center><IconFilter size={80}/></Center>
                 <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+                  <Text ta={"center"} w={500}>Gestión Avanzada de Plantillas</Text>
                 </Group>
                 <Text ta={"center"} size="sm" color="dimmed">
-                  Gestiona plantillas con filtros avanzados por dependencia y programa
+                  Gestiona plantillas con filtros avanzados y configuraciones administrativas
                 </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
-                  Ir a Plantillas con Filtros
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-management')}>
+                  Ir a Gestión Avanzada
                 </Button>
               </Card>
             </Grid.Col>,
