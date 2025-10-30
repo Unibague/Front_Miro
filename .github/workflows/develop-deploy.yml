@@ -82,15 +82,18 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "Cleaning Next.js cache...";
+          echo "🧹 Cleaning all caches and build artifacts...";
           rm -rf .next;
-          echo "Installing dependencies...";
-          npm install;
-          echo "Starting build process...";
-          npm run build 2>&1 | tee build.log;
-          echo "Build completed. Checking for errors...";
+          rm -rf node_modules/.cache;
+          npm cache clean --force;
+          echo "📦 Installing dependencies...";
+          npm ci;
+          echo "🔨 Starting fresh build process...";
+          NODE_ENV=production npm run build 2>&1 | tee build.log;
+          echo "✅ Build completed. Checking for errors...";
           if grep -E "(✘ Error|⨯ Error|Failed to compile|Build failed)" build.log; then
             echo "❌ Build errors found!";
+            cat build.log;
             exit 1;
           else
             echo "✅ Build completed successfully";
@@ -126,9 +129,15 @@ jobs:
     - name: Restart PM2 for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          pm2 stop Front_Dev || true
-          sleep 2
-          pm2 start Front_Dev || pm2 restart Front_Dev'
+          echo "🔄 Restarting PM2 application...";
+          pm2 stop Front_Dev || true;
+          sleep 3;
+          pm2 delete Front_Dev || true;
+          sleep 2;
+          pm2 start ecosystem.config.js --only Front_Dev || pm2 start npm --name "Front_Dev" -- start;
+          pm2 save;
+          echo "✅ PM2 restart completed";
+          pm2 status'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
