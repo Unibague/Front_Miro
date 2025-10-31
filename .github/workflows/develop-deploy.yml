@@ -53,34 +53,15 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/BrayanD117/Front_Miro.git .
           else
-            # Stop PM2 to release file locks
-            pm2 stop Front_Dev || true
-            # Force reset and clean
-            git fetch --all
-            git reset --hard origin/develop
-            git clean -fd
+            git pull
           fi'
 
     - name: Build project on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🧹 Cleaning all caches and build artifacts...";
-          rm -rf .next;
-          rm -rf node_modules/.cache;
-          npm cache clean --force;
-          echo "📦 Installing dependencies...";
-          npm ci;
-          echo "🔨 Starting fresh build process...";
-          NODE_ENV=production npm run build 2>&1 | tee build.log;
-          echo "✅ Build completed. Checking for errors...";
-          if grep -E "(✘ Error|⨯ Error|Failed to compile|Build failed)" build.log; then
-            echo "❌ Build errors found!";
-            cat build.log;
-            exit 1;
-          else
-            echo "✅ Build completed successfully";
-          fi'
+          npm install;
+          npm run build'
 
     - name: Run Semantic Release
       working-directory: ./    
@@ -90,64 +71,7 @@ jobs:
 
     - name: Restart PM2 for develop
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🔄 Stopping PM2 application...";
-          pm2 stop Front_Dev || true;
-          pm2 delete Front_Dev || true;
-          sleep 3;
-          echo "📋 Checking available start scripts...";
-          if [ -f "ecosystem.config.js" ]; then
-            echo "✅ Found ecosystem.config.js, checking content...";
-            cat ecosystem.config.js;
-            echo "🚀 Attempting to start with ecosystem...";
-            pm2 start ecosystem.config.js --only Front_Dev;
-            sleep 3;
-            if ! pm2 list | grep -q "Front_Dev.*online"; then
-              echo "⚠️ ecosystem.config.js didn't start Front_Dev, using npm start...";
-              pm2 start npm --name "Front_Dev" -- start;
-            else
-              echo "✅ Front_Dev started successfully with ecosystem.config.js";
-            fi
-          elif [ -f "package.json" ]; then
-            echo "✅ Using package.json start script";
-            pm2 start npm --name "Front_Dev" -- start;
-          else
-            echo "❌ No valid start configuration found";
-            exit 1;
-          fi;
-          sleep 5;
-          echo "📊 PM2 Status:";
-          pm2 status;
-          echo "📝 PM2 Logs (last 20 lines):";
-          pm2 logs Front_Dev --lines 20 || true;
-          echo "🔍 Checking if application is responding...";
-          sleep 10;
-          if curl -f http://localhost:3000 > /dev/null 2>&1; then
-            echo "✅ Application is responding";
-          else
-            echo "⏳ Waiting 20 more seconds...";
-            sleep 20;
-            if curl -f http://localhost:3000 > /dev/null 2>&1; then
-              echo "✅ Application is responding after wait";
-            else
-              echo "❌ Application is not responding after 30 seconds";
-            fi;
-          fi;
-          pm2 save;'
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'pm2 restart Front_Dev'
 
-    - name: Verify deployment
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          echo "🔍 Final deployment verification...";
-          pm2 status;
-          echo "📊 System resources:";
-          free -h;
-          echo "🌐 Network status:";
-          netstat -tlnp | grep :3000 || echo "Port 3000 not listening";
-          echo "📝 Recent application logs:";
-          pm2 logs Front_Dev --lines 10 || true;
-        '
-      
     - name: Post Checkout repository
       run: echo "Development deployment complete"
