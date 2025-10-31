@@ -140,10 +140,10 @@ jobs:
             echo "Found ecosystem.config.js:";
             cat ecosystem.config.js;
             echo "⚠️ Ecosystem only has Front_Miro, creating Front_Dev manually...";
-            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+            pm2 start npm --name "Front_Dev" --env PORT=3001 -- start;
           else
             echo "🚀 Starting Front_Dev on port 3001...";
-            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+            pm2 start npm --name "Front_Dev" --env PORT=3001 -- start;
           fi
           sleep 10;
           pm2 status;
