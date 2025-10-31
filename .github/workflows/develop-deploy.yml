@@ -81,7 +81,20 @@ jobs:
           rm -rf node_modules;
           npm ci;
           echo "🔨 Building project from scratch...";
-          NODE_ENV=production npm run build;
+          echo "🔍 Checking if templates-management page exists...";
+          if [ -f "app/admin/templates-management/page.tsx" ]; then
+            echo "✅ templates-management page.tsx exists";
+            echo "🔍 Checking for TypeScript errors in the file...";
+            npx tsc --noEmit app/admin/templates-management/page.tsx || echo "⚠️ TypeScript errors found";
+          else
+            echo "❌ templates-management page.tsx NOT found";
+          fi;
+          NODE_ENV=production npm run build 2>&1 | tee build.log;
+          echo "🔍 Checking build log for errors...";
+          if grep -i "error\|failed" build.log; then
+            echo "❌ Build errors found:";
+            grep -A 5 -B 5 "templates-management" build.log || echo "No specific errors for templates-management";
+          fi;
           echo "✅ Verifying build output...";
           ls -la .next/server/app/ | head -10;
           echo "🔍 Checking if admin/templates-management was built...";
