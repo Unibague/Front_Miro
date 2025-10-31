@@ -98,8 +98,11 @@ jobs:
           sleep 3;
           echo "📋 Checking available start scripts...";
           if [ -f "ecosystem.config.js" ]; then
-            echo "✅ Found ecosystem.config.js";
-            pm2 start ecosystem.config.js --only Front_Dev;
+            echo "✅ Found ecosystem.config.js, attempting to start...";
+            pm2 start ecosystem.config.js --only Front_Dev || {
+              echo "⚠️ ecosystem.config.js failed, trying alternative method...";
+              pm2 start npm --name "Front_Dev" -- start;
+            }
           elif [ -f "package.json" ]; then
             echo "✅ Using package.json start script";
             pm2 start npm --name "Front_Dev" -- start;
@@ -113,7 +116,16 @@ jobs:
           echo "📝 PM2 Logs (last 20 lines):";
           pm2 logs Front_Dev --lines 20 || true;
           echo "🔍 Checking if application is responding...";
-          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ Application is responding" || echo "❌ Application is not responding";
+          for i in {1..6}; do
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Application is responding on attempt $i";
+              break;
+            else
+              echo "⏳ Waiting for application to start (attempt $i/6)...";
+              sleep 10;
+            fi;
+          done;
+          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ Final check: Application is responding" || echo "❌ Final check: Application is not responding";
           pm2 save;'
 
     - name: Verify deployment
