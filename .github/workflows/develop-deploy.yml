@@ -45,7 +45,6 @@ jobs:
     - name: Test internal connectivity with SSH
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
-
     - name: Clone repository on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
@@ -65,56 +64,32 @@ jobs:
             git reset --hard origin/develop;
             git clean -fd;
           fi'
-
     - name: Build project on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🧹 Deep cleaning all caches and build artifacts...";
+          echo "🧹 Cleaning caches...";
           rm -rf .next;
-          rm -rf node_modules/.cache;
-          rm -rf .swc;
-          rm -rf out;
-          rm -rf dist;
           npm cache clean --force;
-          echo "📦 Fresh install of dependencies...";
-          rm -rf node_modules;
+          echo "📦 Installing dependencies...";
           npm ci;
-          echo "🔨 Building project from scratch...";
-          echo "🔍 Checking if templates-with-filters page exists...";
+          echo "🔍 Checking if admin/templates-with-filters exists...";
           if [ -f "app/admin/templates-with-filters/page.tsx" ]; then
-            echo "✅ templates-with-filters page.tsx exists";
+            echo "✅ File exists, checking first 10 lines:";
+            head -10 app/admin/templates-with-filters/page.tsx;
           else
-            echo "❌ templates-with-filters page.tsx NOT found";
-            echo "🔍 The file was deleted, need to restore it from repository";
-            echo "🔍 Checking git status:";
-            git status;
-            echo "🔍 Restoring deleted file...";
-            git checkout HEAD~1 -- app/admin/templates-with-filters/page.tsx || echo "Could not restore file";
+            echo "❌ File does NOT exist in repository";
+            echo "Available admin directories:";
+            ls -la app/admin/;
           fi;
+          echo "🔨 Building project...";
           NODE_ENV=production npm run build 2>&1 | tee build.log;
-          echo "🔍 Checking build log for errors...";
-          if grep -i "error\|failed" build.log; then
-            echo "❌ Build errors found:";
-            grep -A 5 -B 5 "templates-management" build.log || echo "No specific errors for templates-management";
-          fi;
-          echo "✅ Verifying build output...";
-          ls -la .next/server/app/ | head -10;
-          echo "🔍 Checking if admin/templates-with-filters was built...";
-          if [ -d ".next/server/app/admin/templates-with-filters" ]; then
-            echo "✅ admin/templates-with-filters found in build";
-            ls -la .next/server/app/admin/templates-with-filters/;
+          echo "🔍 Build result:";
+          if grep -q "admin/templates-with-filters" build.log; then
+            echo "✅ templates-with-filters mentioned in build";
           else
-            echo "❌ admin/templates-with-filters NOT found in build";
-            echo "Available admin routes:";
-            ls -la .next/server/app/admin/ || echo "No admin directory found";
-          fi;
-          echo "🔍 Checking middleware.ts...";
-          if [ -f "middleware.ts" ]; then
-            echo "Found middleware.ts:";
-            cat middleware.ts;
+            echo "❌ templates-with-filters NOT mentioned in build";
           fi;'
-
     - name: Run Semantic Release
       working-directory: ./    
       env:
@@ -134,26 +109,21 @@ jobs:
             echo "Found ecosystem.config.js:";
             cat ecosystem.config.js;
             echo "⚠️ Ecosystem only has Front_Miro, creating Front_Dev manually...";
-            pm2 start npm --name "Front_Dev" --env PORT=3001 -- start;
+            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
           else
             echo "🚀 Starting Front_Dev on port 3001...";
-            pm2 start npm --name "Front_Dev" --env PORT=3001 -- start;
+            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
           fi
           sleep 10;
           pm2 status;
           echo "🔍 Testing application...";
           curl -f http://localhost:3001 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
-          echo "🔍 Testing specific route...";
-          curl -s http://localhost:3001/admin/templates-with-filters | head -20;
-          echo "🔍 Checking nginx configuration...";
-          sudo nginx -t || echo "Nginx config has issues";
-          echo "🔍 Checking what port nginx is proxying to...";
-          sudo grep -r "3001\|3000" /etc/nginx/sites-available/ || echo "No nginx config found";
+          echo "🔍 Testing admin/templates-with-filters route:";
+          curl -s http://localhost:3001/admin/templates-with-filters | head -5;
           echo "📝 Checking application logs for errors...";
           pm2 logs Front_Dev --lines 30 --nostream || true;
           echo "🔍 Final status check...";
           pm2 status;
           pm2 save;'
-
     - name: Post Checkout repository
       run: echo "Development deployment complete"
