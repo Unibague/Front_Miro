@@ -97,6 +97,10 @@ jobs:
           pm2 status;
           echo "🔍 Testing application...";
           curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ App responding" || echo "❌ App not responding";
+          echo "📝 Checking application logs for errors...";
+          pm2 logs Front_Dev --lines 30 --nostream || true;
+          echo "🔍 Final status check...";
+          pm2 status;
           pm2 save;'
 
     - name: Post Checkout repository
