@@ -81,22 +81,16 @@ jobs:
           rm -rf node_modules;
           npm ci;
           echo "🔨 Building project from scratch...";
-          echo "🔍 Checking if templates-management page exists...";
-          if [ -f "app/admin/templates-management/page.tsx" ]; then
-            echo "✅ templates-management page.tsx exists";
-            echo "🔍 Checking for TypeScript errors in the file...";
-            npx tsc --noEmit app/admin/templates-management/page.tsx || echo "⚠️ TypeScript errors found";
+          echo "🔍 Checking if templates-with-filters page exists...";
+          if [ -f "app/admin/templates-with-filters/page.tsx" ]; then
+            echo "✅ templates-with-filters page.tsx exists";
           else
-            echo "❌ templates-management page.tsx NOT found";
-            echo "🔍 Checking what files are in admin directory:";
-            ls -la app/admin/ || echo "No admin directory found";
+            echo "❌ templates-with-filters page.tsx NOT found";
+            echo "🔍 The file was deleted, need to restore it from repository";
             echo "🔍 Checking git status:";
             git status;
-            echo "🔍 Checking recent commits:";
-            git log --oneline -5;
-            echo "🔍 Creating missing directory and file...";
-            mkdir -p app/admin/templates-management;
-            echo "This file was missing and recreated by deploy" > app/admin/templates-management/page.tsx;
+            echo "🔍 Restoring deleted file...";
+            git checkout HEAD~1 -- app/admin/templates-with-filters/page.tsx || echo "Could not restore file";
           fi;
           NODE_ENV=production npm run build 2>&1 | tee build.log;
           echo "🔍 Checking build log for errors...";
@@ -106,12 +100,12 @@ jobs:
           fi;
           echo "✅ Verifying build output...";
           ls -la .next/server/app/ | head -10;
-          echo "🔍 Checking if admin/templates-management was built...";
-          if [ -d ".next/server/app/admin/templates-management" ]; then
-            echo "✅ admin/templates-management found in build";
-            ls -la .next/server/app/admin/templates-management/;
+          echo "🔍 Checking if admin/templates-with-filters was built...";
+          if [ -d ".next/server/app/admin/templates-with-filters" ]; then
+            echo "✅ admin/templates-with-filters found in build";
+            ls -la .next/server/app/admin/templates-with-filters/;
           else
-            echo "❌ admin/templates-management NOT found in build";
+            echo "❌ admin/templates-with-filters NOT found in build";
             echo "Available admin routes:";
             ls -la .next/server/app/admin/ || echo "No admin directory found";
           fi;
@@ -150,7 +144,7 @@ jobs:
           echo "🔍 Testing application...";
           curl -f http://localhost:3001 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
           echo "🔍 Testing specific route...";
-          curl -s http://localhost:3001/admin/templates-management | head -20;
+          curl -s http://localhost:3001/admin/templates-with-filters | head -20;
           echo "🔍 Checking nginx configuration...";
           sudo nginx -t || echo "Nginx config has issues";
           echo "🔍 Checking what port nginx is proxying to...";
