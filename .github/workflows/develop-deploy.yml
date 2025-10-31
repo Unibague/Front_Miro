@@ -98,11 +98,17 @@ jobs:
           sleep 3;
           echo "📋 Checking available start scripts...";
           if [ -f "ecosystem.config.js" ]; then
-            echo "✅ Found ecosystem.config.js, attempting to start...";
-            pm2 start ecosystem.config.js --only Front_Dev || {
-              echo "⚠️ ecosystem.config.js failed, trying alternative method...";
+            echo "✅ Found ecosystem.config.js, checking content...";
+            cat ecosystem.config.js;
+            echo "🚀 Attempting to start with ecosystem...";
+            pm2 start ecosystem.config.js --only Front_Dev;
+            sleep 3;
+            if ! pm2 list | grep -q "Front_Dev.*online"; then
+              echo "⚠️ ecosystem.config.js didn't start Front_Dev, using npm start...";
               pm2 start npm --name "Front_Dev" -- start;
-            }
+            else
+              echo "✅ Front_Dev started successfully with ecosystem.config.js";
+            fi
           elif [ -f "package.json" ]; then
             echo "✅ Using package.json start script";
             pm2 start npm --name "Front_Dev" -- start;
