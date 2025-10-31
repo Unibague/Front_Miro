@@ -53,9 +53,17 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/Unibague/Front_Miro.git .
           else
-            pm2 stop Front_Dev || true
-            git stash || true
-            git pull origin develop
+            echo "🛑 Stopping all processes...";
+            pm2 stop Front_Dev || true;
+            pm2 delete Front_Dev || true;
+            sleep 2;
+            echo "🧹 Cleaning file locks...";
+            sudo fuser -k . || true;
+            echo "📥 Updating repository...";
+            git stash || true;
+            git fetch --all;
+            git reset --hard origin/develop;
+            git clean -fd;
           fi'
 
     - name: Build project on remote server for develop
