@@ -92,11 +92,20 @@ jobs:
           pm2 stop Front_Dev || true;
           pm2 delete Front_Dev || true;
           sleep 3;
-          pm2 start npm --name "Front_Dev" -- start;
+          echo "📋 Checking ecosystem configuration...";
+          if [ -f "ecosystem.config.js" ]; then
+            echo "Found ecosystem.config.js:";
+            cat ecosystem.config.js;
+            echo "🚀 Starting with ecosystem...";
+            pm2 start ecosystem.config.js --only Front_Dev;
+          else
+            echo "🚀 Starting Front_Dev on port 3000...";
+            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+          fi
           sleep 10;
           pm2 status;
           echo "🔍 Testing application...";
-          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ App responding" || echo "❌ App not responding";
+          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
           echo "📝 Checking application logs for errors...";
           pm2 logs Front_Dev --lines 30 --nostream || true;
           echo "🔍 Final status check...";
