@@ -83,7 +83,21 @@ jobs:
           echo "🔨 Building project from scratch...";
           NODE_ENV=production npm run build;
           echo "✅ Verifying build output...";
-          ls -la .next/server/app/ | head -10;'
+          ls -la .next/server/app/ | head -10;
+          echo "🔍 Checking if admin/templates-management was built...";
+          if [ -d ".next/server/app/admin/templates-management" ]; then
+            echo "✅ admin/templates-management found in build";
+            ls -la .next/server/app/admin/templates-management/;
+          else
+            echo "❌ admin/templates-management NOT found in build";
+            echo "Available admin routes:";
+            ls -la .next/server/app/admin/ || echo "No admin directory found";
+          fi;
+          echo "🔍 Checking middleware.ts...";
+          if [ -f "middleware.ts" ]; then
+            echo "Found middleware.ts:";
+            cat middleware.ts;
+          fi;'
 
     - name: Run Semantic Release
       working-directory: ./    
@@ -113,6 +127,12 @@ jobs:
           pm2 status;
           echo "🔍 Testing application...";
           curl -f http://localhost:3001 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
+          echo "🔍 Testing specific route...";
+          curl -s http://localhost:3001/admin/templates-management | head -20;
+          echo "🔍 Checking nginx configuration...";
+          sudo nginx -t || echo "Nginx config has issues";
+          echo "🔍 Checking what port nginx is proxying to...";
+          sudo grep -r "3001\|3000" /etc/nginx/sites-available/ || echo "No nginx config found";
           echo "📝 Checking application logs for errors...";
           pm2 logs Front_Dev --lines 30 --nostream || true;
           echo "🔍 Final status check...";
