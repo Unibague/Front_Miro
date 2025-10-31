@@ -206,7 +206,21 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                                   fieldLower.includes('beneficiarios') ||
                                   fieldLower.includes('apoyo') ||
                                   fieldLower.includes('cooperaci') ||
-                                  fieldLower.includes('formaci')
+                                  fieldLower.includes('formaci') ||
+                                  fieldLower.includes('sector') ||
+                                  // Campos específicos de CONVENIOS_DE_COOPERACIÓN
+                                  fieldLower.includes('alcance') ||
+                                  fieldLower.includes('origen') ||
+                                  fieldLower.includes('convenio') ||
+                                  fieldLower.includes('tipologia') ||
+                                  fieldLower.includes('institucional') ||
+                                  // Campos específicos de EDUCACION_CONTINUA
+                                  fieldLower.includes('extension') ||
+                                  fieldLower.includes('benef') ||
+                                  // Campos específicos de CONSULTORIAS
+                                  fieldLower.includes('consultoria') ||
+                                  fieldLower.includes('nivel') ||
+                                  fieldLower.includes('estudio')
                                   );
     
     console.log(`VALIDATOR DEBUG - Field: ${fieldName}`);
@@ -215,7 +229,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     console.log(`VALIDATOR DEBUG - valuesArray:`, valuesArray);
     
     // Debug específico para campos problemáticos
-    if (['TIPO_MOVILIDAD', 'ID_PAIS_PROCEDENCIA', 'ID_PAIS_FINANCIADOR'].includes(fieldName)) {
+    if (['TIPO_MOVILIDAD', 'ID_PAIS_PROCEDENCIA', 'ID_PAIS_FINANCIADOR', 'ID SECTOR CONSULTORIA', 'TIPO_DE_APOYO_FINANCIERO_ACAD_MICO_OTROS_APOYOS', 'TIPO DE APOYO (FINANCIERO, ACADÉMICO, OTROS APOYOS'].includes(fieldName)) {
       console.log(`SPECIFIC DEBUG - ${fieldName}:`);
       console.log(`  - fieldLower: ${fieldLower}`);
       console.log(`  - isExcludedField: ${isExcludedField}`);
@@ -252,13 +266,61 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           const fieldNameClean = fieldName.toLowerCase().replace(/[^a-z]/g, '');
           console.log(`VALIDATOR DEBUG - Field name cleaned: ${fieldNameClean}`);
           
-          // Mapeo directo específico
+          // Mapeo por nombre exacto del campo (prioritario)
+          const exactFieldMappings: Record<string, string> = {
+            'TIPO DE APOYO (FINANCIERO, ACADÉMICO, OTROS APOYOS': 'TIPO_DE_APOYO',
+            'TIPO_DE_APOYO_FINANCIERO_ACAD_MICO_OTROS_APOYOS': 'TIPO_DE_APOYO',
+            'ID_TIPO_DOCUMENTO': 'TIPO_DOCUMENTO',
+            'CODIGO_CONSULTORIA': 'SECTOR_CONSULTORIA',
+            'ID_MAXIMO_NIVEL_ESTUDIO': 'TIPO_ACADEMICO_NO_ACADEMICO',
+            'TIPO_CONSULTORIA': 'SECTOR_CONSULTORIA',
+            'TIPO_RECURSO': 'TIPO_RECURSOS',
+            'ID_TIPO_RECURSO': 'TIPO_RECURSOS'
+          };
+          
+          const exactMatch = exactFieldMappings[fieldName];
+          console.log(`VALIDATOR DEBUG - Exact field mapping for ${fieldName}: ${exactMatch}`);
+          
+          // Mapeo inteligente por patrones (más escalable)
+          const getValidatorByPattern = (fieldNameClean: string): string | null => {
+            // Patrones específicos con alta prioridad
+            if (fieldNameClean.includes('tipodocumento')) return 'TIPO_DOCUMENTO';
+            if (fieldNameClean.includes('sexobiologico')) return 'SEXO_BIOLOGICO';
+            if (fieldNameClean.includes('estadocivil')) return 'ESTADO_CIVIL';
+            if (fieldNameClean.includes('sectorconsultoria')) return 'SECTOR_CONSULTORIA';
+            if (fieldNameClean.includes('tipoconvenio') || fieldNameClean.includes('tipologiaconvenio')) return 'TIPOLOGIA_CONVENIOS';
+            if (fieldNameClean.includes('tipobenefextension')) return 'TIPO_DE_EXTENSION';
+            if (fieldNameClean.includes('tipodeapoyo')) return 'TIPO_DE_APOYO';
+            if (fieldNameClean.includes('tiporecurso')) return 'TIPO_RECURSOS';
+            if (fieldNameClean.includes('nivelestudio')) return 'TIPO_ACADEMICO_NO_ACADEMICO';
+            
+            // Patrones por palabras clave
+            if (fieldNameClean.includes('pais')) return 'PAIS';
+            if (fieldNameClean.includes('alcance')) return 'TIPO_ALCANCE';
+            if (fieldNameClean.includes('beneficiario')) return 'TIPO_BENEFICIARIO';
+            if (fieldNameClean.includes('estrategia')) return 'TIPOLOGIA_ESTRATEGIAS';
+            if (fieldNameClean.includes('actividad')) return 'ACTIVIDADES_DE_BIENESTAR';
+            if (fieldNameClean.includes('movilidad')) {
+              if (fieldNameClean.includes('saliente') || fieldNameClean.includes('funcionario')) return 'TIPO_MOVILIDAD_SALIENTE_FUNCIONARIOS';
+              return 'TIPO_MOVILIDAD_ENTRANTE_ESTUDIANTES';
+            }
+            if (fieldNameClean.includes('fuente')) {
+              if (fieldNameClean.includes('nacional')) return 'TIPO_FUENTE _NACIONAL_INVESTIGACION';
+              if (fieldNameClean.includes('internacional')) return 'ID_FUENTE_INTERNACIONAL';
+            }
+            
+            return null;
+          };
+          
+          const patternMatch = getValidatorByPattern(fieldNameClean);
+          
+          // Mapeo directo específico (fallback)
           const directMappings: Record<string, string> = {
             'modalidad': 'TIPO_MOVILIDAD_SALIENTE_FUNCIONARIOS',
             'tipomovilidad': 'TIPO_MOVILIDAD_ENTRANTE_ESTUDIANTES', 
             'idsexobiologico': 'SEXO_BIOLOGICO',
             'idestadocivil': 'ESTADO_CIVIL',
-            'idtipodocumento': 'TIPO_DOCUMENTO',
+            // 'idtipodocumento': 'TIPO_DOCUMENTO', // Removido para evitar conflictos, usar solo mapeo exacto
             'idfuentenacionalinvestig': 'TIPO_FUENTE _NACIONAL_INVESTIGACION',
             'idfuenteinternacional': 'ID_FUENTE_INTERNACIONAL',
             'idpaisnacimiento': 'PAIS',
@@ -270,14 +332,45 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             'laestrategiacorrespondeaunap': 'TIPO_BENEFICIARIO',
             'laestrategiaseenmarcaenalg': 'TIPOLOGIA_ESTRATEGIAS',
             'laestrategiatienealgunodelo': 'TIPO_ALCANCE',
-            'cantidadbeneficiariosextern': 'ACTIVIDADES_BENEFICIARIO_BIENESTAR'
+            'cantidadbeneficiariosextern': 'ACTIVIDADES_BENEFICIARIO_BIENESTAR',
+            'idsectorconsultoria': 'SECTOR_CONSULTORIA',
+            'sectorconsultoria': 'SECTOR_CONSULTORIA',
+            // Mapeos para CONVENIOS_DE_COOPERACIÓN
+            'alcance': 'TIPO_ALCANCE',
+            'origendeconvenio': 'ORIGEN_CONVENIO',
+            'origenconvenio': 'ORIGEN_CONVENIO',
+            'idpaisinstitucionalasociado': 'PAIS',
+            'paisinstitucionalasociado': 'PAIS',
+            'tipologiadeconvenio': 'TIPOLOGIA_CONVENIOS',
+            'tipologiaconvenio': 'TIPOLOGIA_CONVENIOS',
+            'idtipoconveni': 'TIPOLOGIA_CONVENIOS',
+            'tipoconveni': 'TIPOLOGIA_CONVENIOS',
+            // Mapeos para EDUCACION_CONTINUA_BENEFICIARIOS
+            'idtipobenefextension': 'TIPO_DE_EXTENSION',
+            'tipobenefextension': 'TIPO_DE_EXTENSION',
+            // Mapeos para APOYOS_ACADÉMICOS_FINANCIEROS_U_OTROS
+            'tipodeapoyofinancieroacacmicootrosapoyos': 'TIPO_DE_APOYO',
+            'tipodeapoyofinancieroacadmicootrosapoyos': 'TIPO_DE_APOYO',
+            'tipodeapoyo': 'TIPO_DE_APOYO',
+            'tipodeapoyofinanciero': 'TIPO_DE_APOYO',
+            'tipodeapoyoacademico': 'TIPO_DE_APOYO',
+            // Mapeos para CONSULTORIAS_RECURSO_HUMANO
+            'codigoconsultoria': 'SECTOR_CONSULTORIA',
+            'tipoconsultoria': 'SECTOR_CONSULTORIA',
+            'idmaximonivelestudio': 'TIPO_ACADEMICO_NO_ACADEMICO',
+            'maximonivelestudio': 'TIPO_ACADEMICO_NO_ACADEMICO',
+            'nivelestudio': 'TIPO_ACADEMICO_NO_ACADEMICO',
+            'tiporecurso': 'TIPO_RECURSOS',
+            'idtiporecurso': 'TIPO_RECURSOS'
           };
           
-          const directMatch = directMappings[fieldNameClean];
+          const directMatch = exactMatch || patternMatch || directMappings[fieldNameClean];
           console.log(`VALIDATOR DEBUG - Direct mapping for ${fieldNameClean}: ${directMatch}`);
+          console.log(`VALIDATOR DEBUG - Using exact match: ${exactMatch ? 'YES' : 'NO'}`);
+          console.log(`VALIDATOR DEBUG - Using pattern match: ${patternMatch ? 'YES' : 'NO'}`);
           
           // Debug específico para campos problemáticos
-          if (['tipomovilidad', 'idpaisprocedencia', 'idpaisfinanciador'].includes(fieldNameClean)) {
+          if (['tipomovilidad', 'idpaisprocedencia', 'idpaisfinanciador', 'idsectorconsultoria', 'alcance', 'origendeconvenio', 'origenconvenio', 'idpaisinstitucionalasociado', 'paisinstitucionalasociado', 'tipologiadeconvenio', 'tipologiaconvenio', 'idtipoconveni', 'tipoconveni', 'idtipobenefextension', 'tipobenefextension', 'tipodeapoyofinancieroacacmicootrosapoyos', 'tipodeapoyo', 'codigoconsultoria', 'idmaximonivelestudio'].includes(fieldNameClean)) {
             console.log(`SPECIFIC MAPPING DEBUG - ${fieldNameClean}:`);
             console.log(`  - Looking for validator: ${directMatch}`);
             console.log(`  - Available validators:`, validators.map((v: any) => v.name));
@@ -291,13 +384,14 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
               );
               console.log(`  - ID column values:`, idColumn?.values);
               console.log(`  - DESC column values:`, descColumn?.values);
-              console.log(`  - Looking for value: ${valuesArray[0]} in validator`);
+              console.log(`  - Looking for values:`, valuesArray, 'in validator');
             }
             if (!foundValidator && directMatch) {
               const similarValidators = validators.filter((v: any) => 
                 v.name.toLowerCase().includes('movilidad') || 
                 v.name.toLowerCase().includes('pais') ||
-                v.name.toLowerCase().includes('tipo')
+                v.name.toLowerCase().includes('tipo') ||
+                v.name.toLowerCase().includes('sector')
               );
               console.log(`  - Similar validators:`, similarValidators.map((v: any) => v.name));
             }
@@ -313,7 +407,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
               console.log(`VALIDATOR DEBUG - Found direct match: ${specificValidator.name}`);
               
               // Debug adicional para campos específicos
-              if (['tipomovilidad', 'idpaisprocedencia', 'idpaisfinanciador'].includes(fieldNameClean)) {
+              if (['tipomovilidad', 'idpaisprocedencia', 'idpaisfinanciador', 'idsectorconsultoria', 'alcance', 'origendeconvenio', 'origenconvenio', 'idpaisinstitucionalasociado', 'paisinstitucionalasociado', 'tipologiadeconvenio', 'tipologiaconvenio', 'idtipoconveni', 'tipoconveni', 'idtipobenefextension', 'tipobenefextension', 'tipodeapoyofinancieroacacmicootrosapoyos', 'tipodeapoyo', 'codigoconsultoria', 'idmaximonivelestudio'].includes(fieldNameClean)) {
                 console.log(`VALIDATOR STRUCTURE DEBUG - ${specificValidator.name}:`);
                 console.log(`  - Columns:`, specificValidator.columns?.map((c: any) => ({ name: c.name, is_validator: c.is_validator })));
                 const idCol = specificValidator.columns?.find((col: any) => col.is_validator === true);
@@ -928,7 +1022,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                 const options = filterOptions[filter.sourceField] || filterOptions[filter.name] || [];
                 
                 // Debug para filtros específicos
-                if (['CODIGO ACTIVIDAD', 'ID TIPO ACTIVIDAD', 'DESCRIPCION ACTIVIDAD', 'FECHA INICIO', 'FECHA FINAL'].includes(filter.label)) {
+                if (['CODIGO ACTIVIDAD', 'ID TIPO ACTIVIDAD', 'DESCRIPCION ACTIVIDAD', 'FECHA INICIO', 'FECHA FINAL', 'TIPOLOGIA_CONVENIOS'].includes(filter.label)) {
                   console.log(`${filter.label} Debug:`, {
                     name: filter.name,
                     sourceField: filter.sourceField,
