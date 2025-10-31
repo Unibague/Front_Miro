@@ -122,12 +122,14 @@ jobs:
           echo "📝 PM2 Logs (last 20 lines):";
           pm2 logs Front_Dev --lines 20 || true;
           echo "🔍 Checking if application is responding...";
-          for i in {1..6}; do
+          ATTEMPTS=0;
+          while [ $ATTEMPTS -lt 6 ]; do
+            ATTEMPTS=$((ATTEMPTS + 1));
             if curl -f http://localhost:3000 > /dev/null 2>&1; then
-              echo "✅ Application is responding on attempt $i";
+              echo "✅ Application is responding on attempt $ATTEMPTS";
               break;
             else
-              echo "⏳ Waiting for application to start (attempt $i/6)...";
+              echo "⏳ Waiting for application to start (attempt $ATTEMPTS/6)...";
               sleep 10;
             fi;
           done;
