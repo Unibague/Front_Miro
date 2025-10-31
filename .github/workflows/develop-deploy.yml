@@ -88,6 +88,15 @@ jobs:
             npx tsc --noEmit app/admin/templates-management/page.tsx || echo "⚠️ TypeScript errors found";
           else
             echo "❌ templates-management page.tsx NOT found";
+            echo "🔍 Checking what files are in admin directory:";
+            ls -la app/admin/ || echo "No admin directory found";
+            echo "🔍 Checking git status:";
+            git status;
+            echo "🔍 Checking recent commits:";
+            git log --oneline -5;
+            echo "🔍 Creating missing directory and file...";
+            mkdir -p app/admin/templates-management;
+            echo "This file was missing and recreated by deploy" > app/admin/templates-management/page.tsx;
           fi;
           NODE_ENV=production npm run build 2>&1 | tee build.log;
           echo "🔍 Checking build log for errors...";
