@@ -53,15 +53,22 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/Unibague/Front_Miro.git .
           else
-            git pull
+            pm2 stop Front_Dev || true
+            git stash || true
+            git pull origin develop
           fi'
 
     - name: Build project on remote server for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          npm install;
-          npm run build'
+          echo "🧹 Cleaning caches...";
+          rm -rf .next;
+          npm cache clean --force;
+          echo "📦 Installing dependencies...";
+          npm ci;
+          echo "🔨 Building project...";
+          NODE_ENV=production npm run build;'
 
     - name: Run Semantic Release
       working-directory: ./    
@@ -71,7 +78,18 @@ jobs:
 
     - name: Restart PM2 for develop
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'pm2 restart Front_Dev'
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "🔄 Restarting PM2...";
+          pm2 stop Front_Dev || true;
+          pm2 delete Front_Dev || true;
+          sleep 3;
+          pm2 start npm --name "Front_Dev" -- start;
+          sleep 10;
+          pm2 status;
+          echo "🔍 Testing application...";
+          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ App responding" || echo "❌ App not responding";
+          pm2 save;'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
