@@ -91,15 +91,43 @@ jobs:
     - name: Restart PM2 for develop
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          echo "🔄 Restarting PM2 application...";
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "🔄 Stopping PM2 application...";
           pm2 stop Front_Dev || true;
-          sleep 3;
           pm2 delete Front_Dev || true;
-          sleep 2;
-          pm2 start ecosystem.config.js --only Front_Dev || pm2 start npm --name "Front_Dev" -- start;
-          pm2 save;
-          echo "✅ PM2 restart completed";
-          pm2 status'
+          sleep 3;
+          echo "📋 Checking available start scripts...";
+          if [ -f "ecosystem.config.js" ]; then
+            echo "✅ Found ecosystem.config.js";
+            pm2 start ecosystem.config.js --only Front_Dev;
+          elif [ -f "package.json" ]; then
+            echo "✅ Using package.json start script";
+            pm2 start npm --name "Front_Dev" -- start;
+          else
+            echo "❌ No valid start configuration found";
+            exit 1;
+          fi;
+          sleep 5;
+          echo "📊 PM2 Status:";
+          pm2 status;
+          echo "📝 PM2 Logs (last 20 lines):";
+          pm2 logs Front_Dev --lines 20 || true;
+          echo "🔍 Checking if application is responding...";
+          curl -f http://localhost:3000 > /dev/null 2>&1 && echo "✅ Application is responding" || echo "❌ Application is not responding";
+          pm2 save;'
 
+    - name: Verify deployment
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          echo "🔍 Final deployment verification...";
+          pm2 status;
+          echo "📊 System resources:";
+          free -h;
+          echo "🌐 Network status:";
+          netstat -tlnp | grep :3000 || echo "Port 3000 not listening";
+          echo "📝 Recent application logs:";
+          pm2 logs Front_Dev --lines 10 || true;
+        '
+      
     - name: Post Checkout repository
       run: echo "Development deployment complete"
