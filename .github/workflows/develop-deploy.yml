@@ -70,13 +70,20 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🧹 Cleaning caches...";
+          echo "🧹 Deep cleaning all caches and build artifacts...";
           rm -rf .next;
+          rm -rf node_modules/.cache;
+          rm -rf .swc;
+          rm -rf out;
+          rm -rf dist;
           npm cache clean --force;
-          echo "📦 Installing dependencies...";
+          echo "📦 Fresh install of dependencies...";
+          rm -rf node_modules;
           npm ci;
-          echo "🔨 Building project...";
-          NODE_ENV=production npm run build;'
+          echo "🔨 Building project from scratch...";
+          NODE_ENV=production npm run build;
+          echo "✅ Verifying build output...";
+          ls -la .next/server/app/ | head -10;'
 
     - name: Run Semantic Release
       working-directory: ./    
