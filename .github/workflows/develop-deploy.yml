@@ -73,10 +73,10 @@ jobs:
           npm cache clean --force;
           echo "📦 Installing dependencies...";
           npm ci;
-          echo "🔍 Checking if admin/templates-with-filters exists...";
-          if [ -f "app/admin/templates-with-filters/page.tsx" ]; then
+          echo "🔍 Checking if admin/templates-management exists...";
+          if [ -f "app/admin/templates-management/page.tsx" ]; then
             echo "✅ File exists, checking first 10 lines:";
-            head -10 app/admin/templates-with-filters/page.tsx;
+            head -10 app/admin/templates-management/page.tsx;
           else
             echo "❌ File does NOT exist in repository";
             echo "Available admin directories:";
@@ -85,10 +85,10 @@ jobs:
           echo "🔨 Building project...";
           NODE_ENV=production npm run build 2>&1 | tee build.log;
           echo "🔍 Build result:";
-          if grep -q "admin/templates-with-filters" build.log; then
-            echo "✅ templates-with-filters mentioned in build";
+          if grep -q "admin/templates-management" build.log; then
+            echo "✅ templates-management mentioned in build";
           else
-            echo "❌ templates-with-filters NOT mentioned in build";
+            echo "❌ templates-management NOT mentioned in build";
           fi;'
     - name: Run Semantic Release
       working-directory: ./    
@@ -118,8 +118,8 @@ jobs:
           pm2 status;
           echo "🔍 Testing application...";
           curl -f http://localhost:3001 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
-          echo "🔍 Testing admin/templates-with-filters route:";
-          curl -s http://localhost:3001/admin/templates-with-filters | head -5;
+          echo "🔍 Testing admin/templates-management route:";
+          curl -s http://localhost:3001/admin/templates-management | head -5;
           echo "📝 Checking application logs for errors...";
           pm2 logs Front_Dev --lines 30 --nostream || true;
           echo "🔍 Final status check...";
