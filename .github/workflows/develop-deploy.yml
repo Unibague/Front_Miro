@@ -49,22 +49,18 @@ jobs:
     - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test || exit;
-          if [ ! -d ".git" ]; then
-            git clone https://github.com/BrayanD117/Front_Miro.git .
-            git checkout develop
-          else
-            git checkout develop
-            git pull origin develop
-          fi'
+          pm2 stop Front_Dev || true;
+          pm2 delete Front_Dev || true;
+          cd ~/MIRO_TEST;
+          rm -rf Front_Miro_Test;
+          git clone https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
+          cd Front_Miro_Test;
+          git checkout develop'
 
     - name: Build project on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          pm2 stop Front_Dev || true;
-          pm2 delete Front_Dev || true;
-          rm -rf .next || true;
           npm install;
           npm run build'
 
