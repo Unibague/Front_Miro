@@ -51,7 +51,7 @@ jobs:
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test || exit;
           if [ ! -d ".git" ]; then
-            git clone https://github.com/Unibague/Front_Miro.git .
+            git clone https://github.com/BrayanD117/Front_Miro.git .
             git checkout develop
           else
             git checkout develop
@@ -62,7 +62,9 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          sudo rm -rf .next || true;
+          pm2 stop Front_Dev || true;
+          pm2 delete Front_Dev || true;
+          rm -rf .next || true;
           npm install;
           npm run build'
 
@@ -76,8 +78,6 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          pm2 stop Front_Dev || true;
-          pm2 delete Front_Dev || true;
           PORT=3001 pm2 start npm --name "Front_Dev" -- start;
           pm2 save'
 
