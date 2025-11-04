@@ -49,19 +49,24 @@ jobs:
     - name: Clean workspace on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          pm2 list | grep Front_Dev || echo "No Front_Dev PM2 process found, skipping stop";
-          pm2 stop Front_Dev || true;
-          pm2 delete Front_Dev || true;
+          echo "Checking PM2 processes...";
+          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
+          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
           cd ~/MIRO_TEST;
-          rm -rf Front_Miro_Test || true'
+          if [ -d "Front_Miro_Test" ]; then
+            echo "Cleaning existing directory...";
+            chmod -R u+w Front_Miro_Test || true;
+            rm -rf Front_Miro_Test || sudo rm -rf Front_Miro_Test;
+          fi;
+          echo "Workspace cleaned successfully"'
 
-    - name: Checkout code to remote server
+    - name: Clone repository to remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST;
-          git clone https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
-          cd Front_Miro_Test;
-          git checkout develop'
+          echo "Cloning repository...";
+          git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
+          echo "Repository cloned successfully"'
 
     - name: Build project on remote server
       run: |
