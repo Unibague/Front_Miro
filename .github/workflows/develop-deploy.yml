@@ -59,10 +59,11 @@ jobs:
             pm2 delete Front_Dev || true;
             sleep 2;
             echo "🧹 Cleaning file locks...";
-            sudo fuser -k . || true;
             echo "📥 Updating repository...";
             git checkout develop;
+            git stash push -m "Auto-stash before deploy" || true;
             git pull origin develop;
+            echo "✅ Repository updated successfully";
           fi'
     - name: Build project on remote server for develop
       run: |
