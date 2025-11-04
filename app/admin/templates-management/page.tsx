@@ -37,6 +37,7 @@ import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
+import { logPublishedTemplateAction, logFilterConfigChange, logMultiTemplateDownload } from "@/app/utils/auditUtils";
 
 interface Field {
   name: string;
@@ -368,6 +369,8 @@ const TemplatesWithFiltersPage = () => {
 
   const handleDelete = async (id: string) => {
     try {
+      const templateToDelete = templates.find(t => t._id === id);
+      
       const response = await axios.delete(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/delete`,
         {
@@ -376,6 +379,16 @@ const TemplatesWithFiltersPage = () => {
       );
 
       if (response.data) {
+        // Log audit
+        if (templateToDelete && session?.user?.email) {
+          await logPublishedTemplateAction(
+            'delete',
+            templateToDelete.name,
+            session.user.email,
+            { templateId: id, period: templateToDelete.period.name }
+          );
+        }
+        
         showNotification({
           title: "Éxito",
           message: "Plantilla eliminada exitosamente",
@@ -526,6 +539,21 @@ const TemplatesWithFiltersPage = () => {
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
+      
+      // Log audit
+      if (session?.user?.email) {
+        await logPublishedTemplateAction(
+          'download',
+          publishedTemplate.name,
+          session.user.email,
+          { 
+            templateId: publishedTemplate._id,
+            fileName: template.file_name,
+            dataRows: data.length,
+            period: publishedTemplate.period.name
+          }
+        );
+      }
     } catch (error) {
       console.error("Error downloading merged data:", error);
       showNotification({
@@ -829,6 +857,16 @@ const TemplatesWithFiltersPage = () => {
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       const fileName = `Datos_Combinados_${new Date().toISOString().slice(0, 10)}.xlsx`;
       saveAs(blob, fileName);
+      
+      // Log audit
+      if (session?.user?.email) {
+        const templateNames = selectedTemplates.map(t => t.name);
+        await logMultiTemplateDownload(
+          templateNames,
+          selectedFields,
+          session.user.email
+        );
+      }
       
       showNotification({
         title: "Éxito",
@@ -1328,6 +1366,20 @@ const TemplatesWithFiltersPage = () => {
                       JSON.stringify(filterConfig)
                     );
                     
+                    // Log audit
+                    if (session?.user?.email) {
+                      const filterChanges = filtersToSave.map(f => ({
+                        field: f.fieldName,
+                        visible: f.isVisible
+                      }));
+                      
+                      await logFilterConfigChange(
+                        selectedTemplateForFilters.name,
+                        filterChanges,
+                        session.user.email
+                      );
+                    }
+                    
                     showNotification({
                       title: "Guardado",
                       message: "Configuración de filtros guardada exitosamente",
@@ -1510,7 +1562,7 @@ const TemplatesWithFiltersPage = () => {
               Cancelar
             </Button>
             <Button 
-              onClick={() => {
+              onClick={async () => {
                 // Guardar configuración en localStorage
                 const configKey = `field_config_${selectedTemplateIds.sort().join('_')}`;
                 const fieldsOrder: Record<string, number> = {};
@@ -1527,6 +1579,24 @@ const TemplatesWithFiltersPage = () => {
                 };
                 
                 localStorage.setItem(configKey, JSON.stringify(configToSave));
+                
+                // Log audit
+                if (session?.user?.email) {
+                  const selectedTemplateNames = allTemplates
+                    .filter(t => selectedTemplateIds.includes(t._id))
+                    .map(t => t.name);
+                  
+                  await logPublishedTemplateAction(
+                    'field_config',
+                    selectedTemplateNames.join(', '),
+                    session.user.email,
+                    {
+                      templatesCount: selectedTemplateIds.length,
+                      fieldsCount: selectedFields.length,
+                      selectedFields
+                    }
+                  );
+                }
                 
                 setFieldConfigModalOpened(false);
                 showNotification({

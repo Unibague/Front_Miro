@@ -310,3 +310,78 @@ export const compareDependencyPermissions = (oldPermissions: string[], newPermis
     removed: oldPermissions.filter(op => !newPermissions.includes(op))
   };
 };
+
+// Funciones de auditoría para gestión de plantillas publicadas
+export const logPublishedTemplateAction = async (
+  action: 'download' | 'delete' | 'filter_config' | 'field_config' | 'multi_download',
+  templateName: string,
+  adminEmail: string,
+  details?: any
+) => {
+  try {
+    const auditData: AuditLog = {
+      user_email: adminEmail,
+      action,
+      entity_type: 'published_template',
+      entity_name: templateName,
+      details: typeof details === 'string' ? details : JSON.stringify(details)
+    };
+
+    await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/audit`, auditData);
+  } catch (error) {
+    console.error('Error logging published template action:', error);
+  }
+};
+
+export const logFilterConfigChange = async (
+  templateName: string,
+  filterChanges: { field: string, visible: boolean }[],
+  adminEmail: string
+) => {
+  try {
+    const details = {
+      templateName,
+      filterChanges,
+      action: 'Configuración de filtros actualizada'
+    };
+
+    const auditData: AuditLog = {
+      user_email: adminEmail,
+      action: 'update',
+      entity_type: 'template_filters',
+      entity_name: `Filtros de ${templateName}`,
+      details: JSON.stringify(details)
+    };
+
+    await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/audit`, auditData);
+  } catch (error) {
+    console.error('Error logging filter config change:', error);
+  }
+};
+
+export const logMultiTemplateDownload = async (
+  templateNames: string[],
+  selectedFields: string[],
+  adminEmail: string
+) => {
+  try {
+    const details = {
+      templates: templateNames,
+      fieldsCount: selectedFields.length,
+      selectedFields,
+      action: 'Descarga múltiple de plantillas con campos configurados'
+    };
+
+    const auditData: AuditLog = {
+      user_email: adminEmail,
+      action: 'multi_download',
+      entity_type: 'published_template',
+      entity_name: `${templateNames.length} plantillas`,
+      details: JSON.stringify(details)
+    };
+
+    await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/audit`, auditData);
+  } catch (error) {
+    console.error('Error logging multi template download:', error);
+  }
+};
