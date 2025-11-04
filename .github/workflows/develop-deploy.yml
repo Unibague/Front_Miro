@@ -50,7 +50,9 @@ jobs:
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test || exit;
           if [ ! -d ".git" ]; then
+            echo "📥 Cloning repository...";
             git clone https://github.com/Unibague/Front_Miro.git .
+            git checkout develop;
           else
             echo "🛑 Stopping all processes...";
             pm2 stop Front_Dev || true;
@@ -59,10 +61,8 @@ jobs:
             echo "🧹 Cleaning file locks...";
             sudo fuser -k . || true;
             echo "📥 Updating repository...";
-            git stash || true;
-            git fetch --all;
-            git reset --hard origin/develop;
-            git clean -fd;
+            git checkout develop;
+            git pull origin develop;
           fi'
     - name: Build project on remote server for develop
       run: |
