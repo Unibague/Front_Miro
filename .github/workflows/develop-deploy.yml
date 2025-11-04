@@ -46,17 +46,19 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
         
-    - name: Update repository on remote server
+    - name: Clean workspace on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          pm2 list | grep Front_Dev || echo "No Front_Dev PM2 process found, skipping stop";
           pm2 stop Front_Dev || true;
           pm2 delete Front_Dev || true;
           cd ~/MIRO_TEST;
-          if [ -d "Front_Miro_Test" ]; then
-            sudo chown -R ${{ secrets.INTERNAL_USER }}:${{ secrets.INTERNAL_USER }} Front_Miro_Test;
-            chmod -R u+rw Front_Miro_Test;
-            rm -rf Front_Miro_Test;
-          fi;
+          rm -rf Front_Miro_Test || true'
+
+    - name: Checkout code to remote server
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST;
           git clone https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
           cd Front_Miro_Test;
           git checkout develop'
