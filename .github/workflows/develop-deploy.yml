@@ -52,7 +52,11 @@ jobs:
           pm2 stop Front_Dev || true;
           pm2 delete Front_Dev || true;
           cd ~/MIRO_TEST;
-          rm -rf Front_Miro_Test;
+          if [ -d "Front_Miro_Test" ]; then
+            sudo chown -R ${{ secrets.INTERNAL_USER }}:${{ secrets.INTERNAL_USER }} Front_Miro_Test;
+            chmod -R u+rw Front_Miro_Test;
+            rm -rf Front_Miro_Test;
+          fi;
           git clone https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
           cd Front_Miro_Test;
           git checkout develop'
