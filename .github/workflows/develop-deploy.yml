@@ -45,86 +45,33 @@ jobs:
     - name: Test internal connectivity with SSH
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
-    - name: Clone repository on remote server for develop
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test || exit;
-          if [ ! -d ".git" ]; then
-            echo "📥 Cloning repository...";
-            git clone https://github.com/Unibague/Front_Miro.git .
-            git checkout develop;
-          else
-            echo "🛑 Stopping all processes...";
-            pm2 stop Front_Dev || true;
-            pm2 delete Front_Dev || true;
-            sleep 2;
-            echo "🧹 Cleaning file locks...";
-            echo "📥 Updating repository...";
-            git checkout develop;
-            git stash push -m "Auto-stash before deploy" || true;
-            git pull origin develop;
-            echo "✅ Repository updated successfully";
-          fi'
-    - name: Build project on remote server for develop
+    - name: Update Repository on Remote Server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🧹 Cleaning caches...";
-          rm -rf .next;
-          npm cache clean --force;
+          echo "🛑 Stopping PM2...";
+          pm2 stop Front_Dev || true;
+          pm2 delete Front_Dev || true;
+          echo "📥 Updating repository...";
+          git reset --hard HEAD;
+          git clean -fd;
+          git pull;
+          echo "✅ Repository updated successfully";'
+    - name: Build and Restart PM2 for Development
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
           echo "📦 Installing dependencies...";
-          npm ci;
-          echo "🔍 Checking if admin/templates-management exists...";
-          if [ -f "app/admin/templates-management/page.tsx" ]; then
-            echo "✅ File exists, checking first 10 lines:";
-            head -10 app/admin/templates-management/page.tsx;
-          else
-            echo "❌ File does NOT exist in repository";
-            echo "Available admin directories:";
-            ls -la app/admin/;
-          fi;
+          npm install;
           echo "🔨 Building project...";
-          NODE_ENV=production npm run build 2>&1 | tee build.log;
-          echo "🔍 Build result:";
-          if grep -q "admin/templates-management" build.log; then
-            echo "✅ templates-management mentioned in build";
-          else
-            echo "❌ templates-management NOT mentioned in build";
-          fi;'
+          npm run build;
+          echo "🚀 Starting PM2...";
+          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+          pm2 save;'
     - name: Run Semantic Release
       working-directory: ./    
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
-
-    - name: Restart PM2 for develop
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🔄 Restarting PM2...";
-          pm2 stop Front_Dev || true;
-          pm2 delete Front_Dev || true;
-          sleep 3;
-          echo "📋 Checking ecosystem configuration...";
-          if [ -f "ecosystem.config.js" ]; then
-            echo "Found ecosystem.config.js:";
-            cat ecosystem.config.js;
-            echo "⚠️ Ecosystem only has Front_Miro, creating Front_Dev manually...";
-            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
-          else
-            echo "🚀 Starting Front_Dev on port 3001...";
-            PORT=3001 pm2 start npm --name "Front_Dev" -- start;
-          fi
-          sleep 10;
-          pm2 status;
-          echo "🔍 Testing application...";
-          curl -f http://localhost:3001 > /dev/null 2>&1 && echo "✅ App responding on port 3001" || echo "❌ App not responding on port 3001";
-          echo "🔍 Testing admin/templates-management route:";
-          curl -s http://localhost:3001/admin/templates-management | head -5;
-          echo "📝 Checking application logs for errors...";
-          pm2 logs Front_Dev --lines 30 --nostream || true;
-          echo "🔍 Final status check...";
-          pm2 status;
-          pm2 save;'
     - name: Post Checkout repository
       run: echo "Development deployment complete"
