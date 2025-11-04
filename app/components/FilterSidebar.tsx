@@ -504,7 +504,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           
           // Si no hay mapeo directo, buscar candidatos (más restrictivo)
           if (candidateValidators.length === 0) {
-            console.log(`VALIDATOR DEBUG - No direct match found, searching candidates for ${fieldNameClean}`);
+            console.log(`VALIDATOR DEUG - No direct match found, searching candidates for ${fieldNameClean}`);
             
             // Primero buscar por similitud de nombre
             const nameBasedCandidates = validators.filter((validator: any) => {
