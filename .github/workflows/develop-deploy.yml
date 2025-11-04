@@ -53,9 +53,9 @@ jobs:
           pm2 stop Front_Dev || true;
           pm2 delete Front_Dev || true;
           echo "📥 Updating repository...";
-          git reset --hard HEAD;
+          git fetch origin develop;
+          git reset --hard origin/develop;
           git clean -fd;
-          git pull;
           echo "✅ Repository updated successfully";'
     - name: Build and Restart PM2 for Development
       run: |
