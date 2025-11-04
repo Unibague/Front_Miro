@@ -111,6 +111,7 @@ const TemplatesWithFiltersPage = () => {
     }
   }, [userRole, router]);
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
+  const [allTemplates, setAllTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -125,8 +126,40 @@ const TemplatesWithFiltersPage = () => {
   const [filterModalOpened, setFilterModalOpened] = useState(false);
   const [selectedTemplateForFilters, setSelectedTemplateForFilters] = useState<PublishedTemplate | null>(null);
   const [templateFilters, setTemplateFilters] = useState<Record<string, TemplateFilter[]>>({});
+  
+  // Multi-template selection states
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
+  const [isDownloadingMultiple, setIsDownloadingMultiple] = useState(false);
+  
+  // Field selection states
+  const [fieldConfigModalOpened, setFieldConfigModalOpened] = useState(false);
+  const [availableFields, setAvailableFields] = useState<{field: string, template: string, selected: boolean, order: number}[]>([]);
+  const [selectedFields, setSelectedFields] = useState<string[]>([]);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
+
+  const fetchAllTemplates = async () => {
+    try {
+      const email = session?.user?.email;
+      if (!email) return;
+      
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension`, {
+        params: {
+          page: 1,
+          limit: 1000, // Obtener todas las plantillas
+          email,
+          periodId: selectedPeriodId,
+          filterByUserScope: true,
+        }
+      });
+      
+      if (response.data) {
+        setAllTemplates(response.data.templates || []);
+      }
+    } catch (error) {
+      console.error("Error fetching all templates:", error);
+    }
+  };
 
   const fetchTemplates = async (page: number, search: string, filters?: Record<string, string[]>) => {
     try {
@@ -201,6 +234,13 @@ const TemplatesWithFiltersPage = () => {
   useEffect(() => {
     localStorage.setItem('templates_search', search);
   }, [search]);
+
+  // Fetch all templates when period or session changes
+  useEffect(() => {
+    if (session?.user?.email && selectedPeriodId) {
+      fetchAllTemplates();
+    }
+  }, [session, selectedPeriodId]);
 
   // Fetch templates with debounced search
   useEffect(() => {
@@ -502,6 +542,312 @@ const TemplatesWithFiltersPage = () => {
     );
   };
 
+  const openFieldConfigModal = () => {
+    if (selectedTemplateIds.length === 0) {
+      showNotification({
+        title: "Error",
+        message: "Selecciona al menos una plantilla",
+        color: "red",
+      });
+      return;
+    }
+    
+    // Generar clave única para la configuración basada en las plantillas seleccionadas
+    const configKey = `field_config_${selectedTemplateIds.sort().join('_')}`;
+    
+    // Intentar cargar configuración guardada
+    const savedConfig = localStorage.getItem(configKey);
+    
+    // Generar lista de campos disponibles de todas las plantillas seleccionadas
+    const selectedTemplates = allTemplates.filter(t => selectedTemplateIds.includes(t._id));
+    const allFields: {field: string, template: string, selected: boolean, order: number}[] = [];
+    
+    selectedTemplates.forEach((template, templateIndex) => {
+      template.template.fields.forEach((field, fieldIndex) => {
+        allFields.push({
+          field: field.name,
+          template: template.name,
+          selected: true, // Por defecto seleccionado
+          order: templateIndex * 100 + fieldIndex
+        });
+      });
+      // Agregar campo DEPENDENCIA
+      allFields.push({
+        field: 'DEPENDENCIA',
+        template: template.name,
+        selected: true, // Por defecto seleccionado
+        order: templateIndex * 100 + 999
+      });
+    });
+    
+    // Si hay configuración guardada, aplicarla
+    if (savedConfig) {
+      try {
+        const config = JSON.parse(savedConfig);
+        const savedSelectedFields = config.selectedFields || [];
+        const savedFieldsOrder = config.fieldsOrder || {};
+        
+        // Actualizar campos con configuración guardada
+        allFields.forEach(field => {
+          const fieldKey = `${field.template}|${field.field}`;
+          field.selected = savedSelectedFields.includes(fieldKey);
+          if (savedFieldsOrder[fieldKey] !== undefined) {
+            field.order = savedFieldsOrder[fieldKey];
+          }
+        });
+        
+        setSelectedFields(savedSelectedFields);
+      } catch (error) {
+        console.error('Error loading saved field config:', error);
+        // Si hay error, usar configuración por defecto
+        setSelectedFields(allFields.filter(f => f.selected).map(f => `${f.template}|${f.field}`));
+      }
+    } else {
+      // Sin configuración guardada, usar todos los campos seleccionados por defecto
+      setSelectedFields(allFields.filter(f => f.selected).map(f => `${f.template}|${f.field}`));
+    }
+    
+    setAvailableFields(allFields);
+    setFieldConfigModalOpened(true);
+  };
+  
+  const handleMultipleTemplatesDownload = async () => {
+    if (selectedFields.length === 0) {
+      showNotification({
+        title: "Error",
+        message: "Selecciona al menos un campo para incluir",
+        color: "red",
+      });
+      return;
+    }
+
+    setIsDownloadingMultiple(true);
+    
+    try {
+      // Validaciones iniciales
+      if (!allTemplates || allTemplates.length === 0) {
+        throw new Error('No hay plantillas disponibles');
+      }
+      
+      if (!selectedTemplateIds || selectedTemplateIds.length === 0) {
+        throw new Error('No hay plantillas seleccionadas');
+      }
+      
+      const selectedTemplates = allTemplates.filter(t => t && t._id && selectedTemplateIds.includes(t._id));
+      
+      if (selectedTemplates.length === 0) {
+        throw new Error('Las plantillas seleccionadas no se encontraron');
+      }
+      
+      console.log('Creating workbook...');
+      const workbook = new ExcelJS.Workbook();
+      
+      // Crear hoja única combinada
+      console.log('Creating worksheet...');
+      const combinedSheet = workbook.addWorksheet("Datos_Combinados");
+      
+      // Validar availableFields
+      if (!availableFields || availableFields.length === 0) {
+        throw new Error('No hay campos disponibles configurados');
+      }
+      
+      // Obtener campos seleccionados en orden
+      const fieldsToInclude = availableFields
+        .filter(f => f && f.field && f.template && selectedFields.includes(`${f.template}|${f.field}`))
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map(f => ({ field: f.field, template: f.template }));
+      
+      if (fieldsToInclude.length === 0) {
+        throw new Error('No hay campos válidos para incluir');
+      }
+      
+      console.log('Fields to include:', fieldsToInclude);
+      
+      // Crear encabezados con prefijo de plantilla
+      const headers = ['PLANTILLA_ORIGEN']; // Agregar columna de origen primero
+      fieldsToInclude.forEach(f => {
+        if (f.field && f.template) {
+          headers.push(`${f.template}_${f.field}`);
+        }
+      });
+      
+      console.log('Creating headers:', headers);
+      
+      if (!headers || headers.length === 0) {
+        throw new Error('No se pudieron crear los encabezados');
+      }
+      
+      const headerRow = combinedSheet.addRow(headers);
+      
+      // Aplicar estilos a los encabezados de forma segura
+      if (headerRow && headerRow.eachCell) {
+        headerRow.eachCell((cell) => {
+          if (cell) {
+            cell.font = { bold: true, color: { argb: "FFFFFF" } };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
+            cell.border = {
+              top: { style: "thin" }, left: { style: "thin" },
+              bottom: { style: "thin" }, right: { style: "thin" }
+            };
+          }
+        });
+      }
+      
+      // Procesar datos de cada plantilla
+      let totalRowsAdded = 0;
+      
+      for (const template of selectedTemplates) {
+        try {
+          if (!template || !template._id || !template.name) {
+            console.error('Invalid template:', template);
+            continue;
+          }
+          
+          if (!session?.user?.email) {
+            throw new Error('No hay sesión de usuario válida');
+          }
+          
+          console.log(`Processing template: ${template.name} (ID: ${template._id})`);
+          
+          const params: any = {
+            pubTem_id: template._id,
+            email: session.user.email,
+            filterByUserScope: true,
+          };
+          
+          // Aplicar filtros
+          if (appliedFilters && Object.keys(appliedFilters).length > 0) {
+            Object.entries(appliedFilters).forEach(([key, values]) => {
+              if (values.length > 0) {
+                params[key] = values.join(',');
+              }
+            });
+            console.log('Applied filters:', appliedFilters);
+          }
+          
+          console.log('Request params:', params);
+          
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+            { params }
+          );
+          
+          console.log(`Response for ${template.name}:`, {
+            status: response.status,
+            dataExists: !!response.data,
+            dataLength: response.data?.data?.length || 0
+          });
+          
+          const data = response.data.data;
+          if (!data || data.length === 0) {
+            console.log(`No data found for template: ${template.name}`);
+            // Agregar fila vacía para mostrar que la plantilla fue procesada
+            const emptyRow = [template.name];
+            fieldsToInclude.forEach(() => emptyRow.push('Sin datos'));
+            combinedSheet.addRow(emptyRow);
+            continue;
+          }
+          
+          console.log(`Processing ${data.length} rows for ${template.name}`);
+          console.log('Sample data row:', data[0]);
+          
+          // Agregar datos de esta plantilla
+          data.forEach((row: any, rowIndex: number) => {
+            try {
+              if (!row || typeof row !== 'object') {
+                console.warn(`Invalid row data at index ${rowIndex}:`, row);
+                return;
+              }
+              
+              const combinedRow = [template.name || 'Sin nombre']; // Columna de origen
+              
+              fieldsToInclude.forEach(({ field, template: fieldTemplate }) => {
+                if (fieldTemplate === template.name) {
+                  const fieldValue = row[field];
+                  // Convertir valores a string seguro para Excel
+                  let safeValue = '';
+                  if (fieldValue !== undefined && fieldValue !== null) {
+                    safeValue = typeof fieldValue === 'object' ? JSON.stringify(fieldValue) : String(fieldValue);
+                  }
+                  combinedRow.push(safeValue);
+                } else {
+                  combinedRow.push(''); // Campo vacío si no pertenece a esta plantilla
+                }
+              });
+              
+              // Validar que combinedRow tenga el número correcto de columnas
+              if (combinedRow.length !== headers.length) {
+                console.warn(`Row length mismatch: expected ${headers.length}, got ${combinedRow.length}`);
+                // Ajustar la longitud
+                while (combinedRow.length < headers.length) {
+                  combinedRow.push('');
+                }
+                combinedRow.splice(headers.length);
+              }
+              
+              combinedSheet.addRow(combinedRow);
+              totalRowsAdded++;
+            } catch (rowError) {
+              console.error(`Error processing row ${rowIndex}:`, rowError);
+            }
+          });
+          
+          console.log(`Added ${data.length} rows for ${template.name}`);
+          
+        } catch (error) {
+          console.error(`Error processing template ${template.name}:`, error);
+          if (axios.isAxiosError(error)) {
+            console.error('Axios error details:', {
+              status: error.response?.status,
+              statusText: error.response?.statusText,
+              data: error.response?.data
+            });
+          }
+          
+          // Agregar fila de error
+          const errorRow = [template.name];
+          fieldsToInclude.forEach(() => errorRow.push('Error al cargar'));
+          combinedSheet.addRow(errorRow);
+        }
+      }
+      
+      console.log(`Total rows added to Excel: ${totalRowsAdded}`);
+      
+      if (totalRowsAdded === 0) {
+        // Agregar mensaje si no hay datos
+        const noDataRow = ['Sin datos disponibles'];
+        fieldsToInclude.forEach(() => noDataRow.push(''));
+        combinedSheet.addRow(noDataRow);
+      }
+      
+      combinedSheet.columns.forEach((column) => {
+        column.width = 25;
+      });
+      
+      // Descargar archivo
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/octet-stream" });
+      const fileName = `Datos_Combinados_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      saveAs(blob, fileName);
+      
+      showNotification({
+        title: "Éxito",
+        message: `Descarga completada: ${selectedTemplates.length} plantillas procesadas, ${totalRowsAdded} filas de datos`,
+        color: "green",
+      });
+      
+    } catch (error) {
+      console.error("Error downloading combined data:", error);
+      showNotification({
+        title: "Error",
+        message: "Hubo un error al generar los datos combinados",
+        color: "red",
+      });
+    } finally {
+      setIsDownloadingMultiple(false);
+    }
+  };
+
   const rows = sortedTemplates.map((publishedTemplate) => {
     let progress = {
       total: publishedTemplate.template.producers.length,
@@ -681,6 +1027,63 @@ const TemplatesWithFiltersPage = () => {
             onChange={(event) => setSearch(event.currentTarget.value)}
             mb="md"
           />
+          
+          {/* Selector múltiple de plantillas */}
+          <Paper p="md" withBorder mb="md">
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Text fw={600} size="md">Descarga Múltiple con Filtros</Text>
+                <Badge variant="filled" color="blue">
+                  {selectedTemplateIds.length} seleccionadas
+                </Badge>
+              </Group>
+              
+              <MultiSelect
+                placeholder="Selecciona plantillas para descargar"
+                data={allTemplates.map(t => ({ value: t._id, label: t.name }))}
+                value={selectedTemplateIds}
+                onChange={setSelectedTemplateIds}
+                searchable
+                clearable
+                maxDropdownHeight={200}
+              />
+              
+              <Group justify="flex-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedTemplateIds([])}
+                  disabled={selectedTemplateIds.length === 0}
+                  size="sm"
+                >
+                  Limpiar Selección
+                </Button>
+                <Button
+                  variant="outline"
+                  leftSection={<IconSettings size={16} />}
+                  onClick={openFieldConfigModal}
+                  disabled={selectedTemplateIds.length === 0}
+                  size="sm"
+                >
+                  Configurar Campos
+                </Button>
+                <Button
+                  leftSection={<IconDownload size={16} />}
+                  onClick={handleMultipleTemplatesDownload}
+                  disabled={selectedFields.length === 0 || isDownloadingMultiple}
+                  loading={isDownloadingMultiple}
+                  size="sm"
+                >
+                  {isDownloadingMultiple ? 'Generando...' : 'Generar Datos Combinados'}
+                </Button>
+              </Group>
+              
+              {selectedTemplateIds.length > 0 && (
+                <Text size="xs" c="dimmed">
+                  Se aplicarán los filtros activos del panel lateral a todas las plantillas seleccionadas
+                </Text>
+              )}
+            </Stack>
+          </Paper>
           <Group justify="space-between">
             {
               userRole === "Administrador" && ( 
@@ -948,6 +1351,196 @@ const TemplatesWithFiltersPage = () => {
             </Group>
           </Stack>
         )}
+      </Modal>
+      
+      {/* Modal de Configuración de Campos */}
+      <Modal
+        opened={fieldConfigModalOpened}
+        onClose={() => setFieldConfigModalOpened(false)}
+        title="Configurar Campos para Descarga"
+        size="lg"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Selecciona y ordena los campos que quieres incluir en la descarga combinada:
+          </Text>
+          
+          <Group justify="space-between">
+            <Badge variant="filled" color="blue">
+              {selectedFields.length} campos seleccionados
+            </Badge>
+            <Group>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => {
+                  const allFieldKeys = availableFields.map(f => `${f.template}|${f.field}`);
+                  setSelectedFields(allFieldKeys);
+                  setAvailableFields(prev => prev.map(f => ({ ...f, selected: true })));
+                }}
+              >
+                Seleccionar Todos
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => {
+                  setSelectedFields([]);
+                  setAvailableFields(prev => prev.map(f => ({ ...f, selected: false })));
+                }}
+              >
+                Deseleccionar Todos
+              </Button>
+            </Group>
+          </Group>
+          
+          <Paper p="sm" withBorder style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <Stack gap="xs">
+              {availableFields
+                .sort((a, b) => a.order - b.order)
+                .map((field, index) => {
+                  const fieldKey = `${field.template}|${field.field}`;
+                  const isSelected = selectedFields.includes(fieldKey);
+                  
+                  return (
+                    <Card key={fieldKey} p="xs" withBorder style={{ 
+                      backgroundColor: isSelected ? '#e3f2fd' : 'white',
+                      border: isSelected ? '2px solid #2196f3' : '1px solid #e0e0e0'
+                    }}>
+                      <Group justify="space-between">
+                        <Group>
+                          <Switch
+                            checked={isSelected}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              if (checked) {
+                                setSelectedFields(prev => [...prev, fieldKey]);
+                              } else {
+                                setSelectedFields(prev => prev.filter(f => f !== fieldKey));
+                              }
+                              setAvailableFields(prev => 
+                                prev.map(f => 
+                                  f.field === field.field && f.template === field.template 
+                                    ? { ...f, selected: checked }
+                                    : f
+                                )
+                              );
+                            }}
+                            size="sm"
+                          />
+                          <div>
+                            <Text fw={500} size="sm">{field.field}</Text>
+                            <Text size="xs" c="dimmed">de {field.template}</Text>
+                          </div>
+                        </Group>
+                        
+                        <Group gap="xs">
+                          <Button
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => {
+                              const sortedFields = availableFields.sort((a, b) => a.order - b.order);
+                              const currentIndex = sortedFields.findIndex(f => f.field === field.field && f.template === field.template);
+                              
+                              if (currentIndex > 0) {
+                                setAvailableFields(prev => {
+                                  const newFields = [...prev];
+                                  const currentField = newFields.find(f => f.field === field.field && f.template === field.template);
+                                  const prevField = sortedFields[currentIndex - 1];
+                                  const prevFieldInArray = newFields.find(f => f.field === prevField.field && f.template === prevField.template);
+                                  
+                                  if (currentField && prevFieldInArray) {
+                                    // Intercambiar órdenes
+                                    const tempOrder = currentField.order;
+                                    currentField.order = prevFieldInArray.order;
+                                    prevFieldInArray.order = tempOrder;
+                                  }
+                                  
+                                  return newFields;
+                                });
+                              }
+                            }}
+                            disabled={availableFields.sort((a, b) => a.order - b.order).findIndex(f => f.field === field.field && f.template === field.template) === 0}
+                          >
+                            ↑
+                          </Button>
+                          <Button
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => {
+                              const sortedFields = availableFields.sort((a, b) => a.order - b.order);
+                              const currentIndex = sortedFields.findIndex(f => f.field === field.field && f.template === field.template);
+                              
+                              if (currentIndex < sortedFields.length - 1) {
+                                setAvailableFields(prev => {
+                                  const newFields = [...prev];
+                                  const currentField = newFields.find(f => f.field === field.field && f.template === field.template);
+                                  const nextField = sortedFields[currentIndex + 1];
+                                  const nextFieldInArray = newFields.find(f => f.field === nextField.field && f.template === nextField.template);
+                                  
+                                  if (currentField && nextFieldInArray) {
+                                    // Intercambiar órdenes
+                                    const tempOrder = currentField.order;
+                                    currentField.order = nextFieldInArray.order;
+                                    nextFieldInArray.order = tempOrder;
+                                  }
+                                  
+                                  return newFields;
+                                });
+                              }
+                            }}
+                            disabled={availableFields.sort((a, b) => a.order - b.order).findIndex(f => f.field === field.field && f.template === field.template) === availableFields.length - 1}
+                          >
+                            ↓
+                          </Button>
+                        </Group>
+                      </Group>
+                    </Card>
+                  );
+                })
+              }
+            </Stack>
+          </Paper>
+          
+          <Group justify="flex-end">
+            <Button 
+              variant="outline" 
+              onClick={() => setFieldConfigModalOpened(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={() => {
+                // Guardar configuración en localStorage
+                const configKey = `field_config_${selectedTemplateIds.sort().join('_')}`;
+                const fieldsOrder: Record<string, number> = {};
+                
+                availableFields.forEach(field => {
+                  const fieldKey = `${field.template}|${field.field}`;
+                  fieldsOrder[fieldKey] = field.order;
+                });
+                
+                const configToSave = {
+                  selectedFields,
+                  fieldsOrder,
+                  timestamp: new Date().toISOString()
+                };
+                
+                localStorage.setItem(configKey, JSON.stringify(configToSave));
+                
+                setFieldConfigModalOpened(false);
+                showNotification({
+                  title: "Configuración Guardada",
+                  message: `${selectedFields.length} campos configurados para descarga`,
+                  color: "green",
+                });
+              }}
+              disabled={selectedFields.length === 0}
+            >
+              Aplicar Configuración
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </div>
   );
