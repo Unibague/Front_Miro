@@ -49,7 +49,7 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "🛑 Stopping PM2...";
+          echo "🛑 Stoping PM2...";
           pm2 stop Front_Dev || true;
           pm2 delete Front_Dev || true;
           echo "📥 Updating repository...";
