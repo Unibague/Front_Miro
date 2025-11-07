@@ -85,7 +85,7 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+          PORT=3000 pm2 start npm --name "Front_Dev" -- start;
           pm2 save'
 
     - name: Post Checkout repository
