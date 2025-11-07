@@ -78,7 +78,7 @@ jobs:
           echo "=== BUILD OUTPUT ===";
           npm run build'
 
-    - name: Start PM2 process
+    - name: Start PM2 process and update nginx
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
@@ -100,6 +100,11 @@ jobs:
           # Start PM2 with available port
           PORT=$AVAILABLE_PORT pm2 start npm --name "Front_Dev" -- start;
           pm2 save;
+          
+          # Update nginx configuration
+          echo "Updating nginx configuration for port $AVAILABLE_PORT";
+          sudo sed -i "s/proxy_pass http:\/\/localhost:[0-9]\+/proxy_pass http:\/\/localhost:$AVAILABLE_PORT/g" /etc/nginx/sites-available/mirodev || echo "Nginx config not found";
+          sudo nginx -t && sudo systemctl reload nginx || echo "Nginx reload failed";
           
           echo "Front_Dev started successfully on port $AVAILABLE_PORT"'
 
