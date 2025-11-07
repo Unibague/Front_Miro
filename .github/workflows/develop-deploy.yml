@@ -67,19 +67,14 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "=== DIRECTORY CONTENTS ===";
-          ls -la;
-          echo "=== ENV FILES ===";
-          ls -la .env* 2>/dev/null || echo "No .env files found";
           echo "=== ENV FILE CONTENT ===";
-          cat .env 2>/dev/null || echo "Cannot read .env file";
-          echo "=== ENVIRONMENT VARIABLES ===";
-          printenv | grep -E "(API|NEXT)" || echo "No API/NEXT vars in environment";
-          echo "=== PACKAGE.JSON SCRIPTS ===";
-          cat package.json | grep -A 10 "scripts" || echo "No scripts found";
+          cat .env;
+          echo "=== TESTING VARIABLE LOADING ===";
+          export $(cat .env | grep -v "^#" | xargs);
+          echo "NEXT_PUBLIC_API_URL after export: $NEXT_PUBLIC_API_URL";
           npm install;
-          echo "=== BUILD OUTPUT ===";
-          npm run build'
+          echo "=== BUILD WITH EXPLICIT VARS ===";
+          NEXT_PUBLIC_API_URL="https://mirodev.unibague.edu.co/api/d" npm run build'
 
     - name: Start PM2 process
       run: |
