@@ -81,12 +81,30 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
 
-    - name: Restart PM2
+    - name: Find Available Port and Start PM2
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          PORT=3000 pm2 start npm --name "Front_Dev" -- start;
-          pm2 save'
+          
+          # Function to find available port
+          find_available_port() {
+            local port=3000
+            while netstat -tlnp | grep -q ":$port "; do
+              echo "Port $port is busy, trying next port...";
+              port=$((port + 1));
+            done
+            echo $port
+          }
+          
+          # Find available port
+          AVAILABLE_PORT=$(find_available_port)
+          echo "Using port: $AVAILABLE_PORT"
+          
+          # Start PM2 with available port
+          PORT=$AVAILABLE_PORT pm2 start npm --name "Front_Dev" -- start;
+          pm2 save;
+          
+          echo "Front_Dev started successfully on port $AVAILABLE_PORT"'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
