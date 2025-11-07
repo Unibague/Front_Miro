@@ -63,18 +63,20 @@ jobs:
           fi;
           echo "Repository updated successfully"'
 
-    - name: Debug environment and build
+    - name: Fix environment and build
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "=== ENV FILE CONTENT ===";
-          cat .env;
+          echo "=== FIXING ENV FILE FORMAT ===";
+          sed -i "s/ = /=/g" .env;
+          echo "=== FIXED ENV FILE ===";
+          cat .env | grep -E "(API|NODE_TLS)";
           echo "=== TESTING VARIABLE LOADING ===";
           export $(cat .env | grep -v "^#" | xargs);
-          echo "NEXT_PUBLIC_API_URL after export: $NEXT_PUBLIC_API_URL";
+          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
           npm install;
-          echo "=== BUILD WITH EXPLICIT VARS ===";
-          NEXT_PUBLIC_API_URL="https://mirodev.unibague.edu.co/api/d" npm run build'
+          echo "=== BUILD OUTPUT ===";
+          npm run build'
 
     - name: Start PM2 process
       run: |
