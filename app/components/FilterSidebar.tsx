@@ -7,6 +7,7 @@ import { IconFilter, IconX, IconBuilding, IconSchool, IconWorld, IconUser, IconS
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { usePeriod } from "@/app/context/PeriodContext";
+import CleanValidatorService from "./CleanValidatorService";
 
 interface FilterConfig {
   _id: string;
@@ -300,6 +301,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             if (fieldNameClean.includes('beneficiario')) return 'TIPO_BENEFICIARIO';
             if (fieldNameClean.includes('estrategia')) return 'TIPOLOGIA_ESTRATEGIAS';
             if (fieldNameClean.includes('actividad')) return 'ACTIVIDADES_DE_BIENESTAR';
+            if(fieldNameClean.includes('estimulo')) return 'TIPO_ESTIMULO';
+            if (fieldNameClean.includes('estimulo')) return 'NOMBRE_ESTIMULO';
             if (fieldNameClean.includes('movilidad')) {
               if (fieldNameClean.includes('saliente') || fieldNameClean.includes('funcionario')) return 'TIPO_MOVILIDAD_SALIENTE_FUNCIONARIOS';
               return 'TIPO_MOVILIDAD_ENTRANTE_ESTUDIANTES';
@@ -597,149 +600,10 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             }
           }
           
-          // Usar el candidato seleccionado
-          const relevantValidator = candidateValidators[0];
-          
-          if (!relevantValidator) {
-            console.log(`VALIDATOR DEBUG - No matching validator found for ${fieldName}`);
-            return valuesArray.map(value => ({ value, label: value }));
-          }
-          
-          console.log(`VALIDATOR DEBUG - Using validator: ${relevantValidator.name} for field: ${fieldName}`);
-          
-          // Debug específico para CANTIDAD_BENEFICIARIOS_EXTERNOS
-          if (fieldName === 'CANTIDAD_BENEFICIARIOS_EXTERNOS') {
-            console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - Validator structure:`, relevantValidator);
-            console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - Values to process:`, valuesArray);
-          }
-          
-          // Mapear cada ID a su descripción correspondiente usando el validador correcto
-          const mappedOptions = valuesArray.map(id => {
-            if (fieldName === 'MODALIDAD') {
-              console.log(`MODALIDAD DEBUG - Processing ID: ${id} with validator: ${relevantValidator.name}`);
-              console.log(`MODALIDAD DEBUG - Validator full structure:`, relevantValidator);
-            } else if (fieldName === 'CANTIDAD_BENEFICIARIOS_EXTERNOS') {
-              console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - Processing ID: ${id}`);
-            } else {
-              console.log(`VALIDATOR DEBUG - Processing ID: ${id} with validator: ${relevantValidator.name}`);
-            }
-            
-            if (relevantValidator.columns && relevantValidator.columns.length >= 2) {
-              // Buscar las columnas de ID y DESCRIPCION (pueden tener nombres diferentes)
-              const idColumn = relevantValidator.columns.find((col: any) => 
-                col.is_validator === true && col.values && col.values.length > 0
-              );
-              const descripcionColumn = relevantValidator.columns.find((col: any) => 
-                (col.name.includes('DESCRIPCION') || col.name.includes('DESCRIPCIÓN') || col.name.startsWith('DESC')) && 
-                col.values && col.values.length > 0
-              );
-              
-              if (idColumn && descripcionColumn) {
-                if (fieldName === 'MODALIDAD') {
-                  console.log(`MODALIDAD DEBUG - ID column (${idColumn.name}):`, idColumn.values);
-                  console.log(`MODALIDAD DEBUG - DESCRIPCION column (${descripcionColumn.name}):`, descripcionColumn.values);
-                  console.log(`MODALIDAD DEBUG - ID column full structure:`, idColumn);
-                  console.log(`MODALIDAD DEBUG - DESCRIPCION column full structure:`, descripcionColumn);
-                } else if (fieldName === 'CANTIDAD_BENEFICIARIOS_EXTERNOS') {
-                  console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - ID column (${idColumn.name}):`, idColumn.values);
-                  console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - DESCRIPCION column (${descripcionColumn.name}):`, descripcionColumn.values);
-                  console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - ID column full structure:`, idColumn);
-                  console.log(`CANTIDAD_BENEFICIARIOS_EXTERNOS DEBUG - DESCRIPCION column full structure:`, descripcionColumn);
-                } else {
-                  console.log(`VALIDATOR DEBUG - ID column (${idColumn.name}):`, idColumn.values);
-                  console.log(`VALIDATOR DEBUG - DESCRIPCION column (${descripcionColumn.name}):`, descripcionColumn.values);
-                }
-                
-                // Buscar el índice del ID con múltiples estrategias
-                let index = -1;
-                
-                // Estrategia 1: Búsqueda exacta por valor
-                index = idColumn.values.findIndex((value: any) => 
-                  value.toString() === id || parseInt(value) === parseInt(id)
-                );
-                console.log(`VALIDATOR DEBUG - Exact match search for ${id}: index ${index}`);
-                
-                // Estrategia 2: Búsqueda por índice (base 1)
-                if (index === -1) {
-                  const numericId = parseInt(id);
-                  if (!isNaN(numericId) && numericId >= 1 && numericId <= idColumn.values.length) {
-                    index = numericId - 1;
-                    console.log(`VALIDATOR DEBUG - Using ${id} as index (base 1), converted to ${index}`);
-                  }
-                }
-                
-                // Estrategia 3: Búsqueda por índice directo (base 0)
-                if (index === -1) {
-                  const numericId = parseInt(id);
-                  if (!isNaN(numericId) && numericId >= 0 && numericId < idColumn.values.length) {
-                    index = numericId;
-                    console.log(`VALIDATOR DEBUG - Using ${id} as direct index (base 0): ${index}`);
-                  }
-                }
-                
-                console.log(`VALIDATOR DEBUG - Final index for ID ${id}: ${index}`);
-                console.log(`VALIDATOR DEBUG - Available ID values:`, idColumn.values);
-                console.log(`VALIDATOR DEBUG - ID column length:`, idColumn.values.length);
-                
-                if (index !== -1 && index < descripcionColumn.values.length) {
-                  const codigo = idColumn.values[index];
-                  const descripcion = descripcionColumn.values[index];
-                  console.log(`VALIDATOR DEBUG - Found mapping: ${codigo} - ${descripcion}`);
-                  return {
-                    value: id,
-                    label: `${codigo} - ${descripcion}`
-                  };
-                } else {
-                  console.log(`VALIDATOR DEBUG - No mapping found for ID ${id}. Index: ${index}, descripcionColumn length: ${descripcionColumn.values.length}`);
-                  if (index !== -1) {
-                    console.log(`VALIDATOR DEBUG - Available descriptions:`, descripcionColumn.values);
-                  }
-                }
-              }
-            }
-            
-            console.log(`VALIDATOR DEBUG - No description found for ${id} in ${relevantValidator.name}`);
-            
-            // Estrategia de fallback: buscar en otros validadores de beneficiarios
-            if (fieldNameClean.includes('beneficiario')) {
-              console.log(`VALIDATOR DEBUG - Trying fallback search for beneficiario field`);
-              const otherBeneficiaryValidators = validators.filter((v: any) => 
-                v.name.includes('BENEFICIARIO') && v.name !== relevantValidator.name
-              );
-              
-              for (const fallbackValidator of otherBeneficiaryValidators) {
-                console.log(`VALIDATOR DEBUG - Trying fallback validator: ${fallbackValidator.name}`);
-                if (fallbackValidator.columns && fallbackValidator.columns.length >= 2) {
-                  const fallbackIdColumn = fallbackValidator.columns.find((col: any) => col.is_validator === true);
-                  const fallbackDescColumn = fallbackValidator.columns.find((col: any) => 
-                    (col.name.includes('DESCRIPCION') || col.name.includes('DESCRIPCIÓN') || col.name.startsWith('DESC'))
-                  );
-                  
-                  if (fallbackIdColumn && fallbackDescColumn) {
-                    const fallbackIndex = fallbackIdColumn.values.findIndex((value: any) => 
-                      value.toString() === id || parseInt(value) === parseInt(id)
-                    );
-                    
-                    if (fallbackIndex !== -1 && fallbackIndex < fallbackDescColumn.values.length) {
-                      const codigo = fallbackIdColumn.values[fallbackIndex];
-                      const descripcion = fallbackDescColumn.values[fallbackIndex];
-                      console.log(`VALIDATOR DEBUG - Found in fallback validator: ${codigo} - ${descripcion}`);
-                      return {
-                        value: id,
-                        label: `${codigo} - ${descripcion}`
-                      };
-                    }
-                  }
-                }
-              }
-            }
-            
-            console.log(`VALIDATOR DEBUG - No description found for ${id} in any validator`);
-            return { value: id, label: id };
-          });
-          
-          console.log(`VALIDATOR DEBUG - Final mapped options:`, mappedOptions);
-          return mappedOptions;
+          // Usar el servicio limpio de validadores
+          const cleanValidator = CleanValidatorService.getInstance();
+          const enrichedOptions = await cleanValidator.enrichWithDescriptions(fieldName, valuesArray);
+          return enrichedOptions;
         }
       } catch (error) {
         console.error('Error obteniendo descripciones de validadores:', error);
