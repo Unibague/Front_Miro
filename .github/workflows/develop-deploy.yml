@@ -46,65 +46,54 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
         
-    - name: Clean workspace on remote server
+    - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           echo "Checking PM2 processes...";
           pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
           pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
           cd ~/MIRO_TEST;
-          if [ -d "Front_Miro_Test" ]; then
-            echo "Cleaning existing directory...";
-            chmod -R u+w Front_Miro_Test || true;
-            rm -rf Front_Miro_Test || sudo rm -rf Front_Miro_Test;
+          if [ ! -d "Front_Miro_Test" ]; then
+            echo "Directory does not exist, cloning repository...";
+            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
+          else
+            echo "Updating existing repository...";
+            cd Front_Miro_Test;
+            git pull origin develop;
           fi;
-          echo "Workspace cleaned successfully"'
+          echo "Repository updated successfully"'
 
-    - name: Clone repository to remote server
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST;
-          echo "Cloning repository...";
-          git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
-          echo "Repository cloned successfully"'
-
-    - name: Build project on remote server
+    - name: Fix environment and build
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "=== FIXING ENV FILE FORMAT ===";
+          sed -i "s/ = /=/g" .env;
+          echo "=== FIXED ENV FILE ===";
+          cat .env | grep -E "(API|NODE_TLS)";
+          echo "=== TESTING VARIABLE LOADING ===";
+          export $(cat .env | grep -v "^#" | xargs);
+          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
           npm install;
+          echo "=== BUILD OUTPUT ===";
           npm run build'
+
+    - name: Start PM2 process
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          
+          # Start PM2 with fixed port 3001 (already configured in nginx)
+          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+          pm2 save;
+          
+          echo "Front_Dev started successfully on port 3001"'
 
     - name: Run Semantic Release
       working-directory: ./    
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
-
-    - name: Find Available Port and Start PM2
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          
-          # Function to find available port
-          find_available_port() {
-            local port=3000
-            while netstat -tlnp | grep -q ":$port "; do
-              echo "Port $port is busy, trying next port...";
-              port=$((port + 1));
-            done
-            echo $port
-          }
-          
-          # Find available port
-          AVAILABLE_PORT=$(find_available_port)
-          echo "Using port: $AVAILABLE_PORT"
-          
-          # Start PM2 with available port
-          PORT=$AVAILABLE_PORT pm2 start npm --name "Front_Dev" -- start;
-          pm2 save;
-          
-          echo "Front_Dev started successfully on port $AVAILABLE_PORT"'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"
