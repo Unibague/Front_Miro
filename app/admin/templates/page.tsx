@@ -125,8 +125,13 @@ const AdminTemplatesPage = () => {
         const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/feedOptions`, {
           params: { email },
         });
-        setPeriods(data.periods);
-        setProducers(data.producers);
+        
+        console.log('🔍 Full API response:', data);
+        console.log('📅 Periods array:', data.periods);
+        console.log('📅 Periods length:', data.periods?.length);
+        
+        setPeriods(data.periods || []);
+        setProducers(data.producers || []);
       } catch (error) {
         console.error('Error fetching data:', error);
       }
