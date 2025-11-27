@@ -691,11 +691,18 @@ const TemplatesWithFiltersPage = () => {
       
       console.log('Fields to include:', fieldsToInclude);
       
-      // Crear encabezados con prefijo de plantilla
-      const headers = ['PLANTILLA_ORIGEN']; // Agregar columna de origen primero
+      // Crear encabezados sin prefijo de plantilla
+      const headers: string[] = [];
       fieldsToInclude.forEach(f => {
         if (f.field && f.template) {
-          headers.push(`${f.template}_${f.field}`);
+          // Limpiar el nombre del campo quitando el prefijo de la plantilla
+          let cleanFieldName = f.field;
+          // Si el campo contiene el nombre de la plantilla como prefijo, quitarlo
+          const templateNameUpper = f.template.toUpperCase().replace(/\s+/g, '_');
+          if (cleanFieldName.startsWith(templateNameUpper + '_')) {
+            cleanFieldName = cleanFieldName.substring(templateNameUpper.length + 1);
+          }
+          headers.push(cleanFieldName);
         }
       });
       
@@ -770,7 +777,7 @@ const TemplatesWithFiltersPage = () => {
           if (!data || data.length === 0) {
             console.log(`No data found for template: ${template.name}`);
             // Agregar fila vacía para mostrar que la plantilla fue procesada
-            const emptyRow = [template.name];
+            const emptyRow: any[] = [];
             fieldsToInclude.forEach(() => emptyRow.push('Sin datos'));
             combinedSheet.addRow(emptyRow);
             continue;
@@ -787,7 +794,7 @@ const TemplatesWithFiltersPage = () => {
                 return;
               }
               
-              const combinedRow = [template.name || 'Sin nombre']; // Columna de origen
+              const combinedRow: any[] = [];
               
               fieldsToInclude.forEach(({ field, template: fieldTemplate }) => {
                 if (fieldTemplate === template.name) {
@@ -833,7 +840,7 @@ const TemplatesWithFiltersPage = () => {
           }
           
           // Agregar fila de error
-          const errorRow = [template.name];
+          const errorRow: any[] = [];
           fieldsToInclude.forEach(() => errorRow.push('Error al cargar'));
           combinedSheet.addRow(errorRow);
         }
@@ -843,8 +850,8 @@ const TemplatesWithFiltersPage = () => {
       
       if (totalRowsAdded === 0) {
         // Agregar mensaje si no hay datos
-        const noDataRow = ['Sin datos disponibles'];
-        fieldsToInclude.forEach(() => noDataRow.push(''));
+        const noDataRow: any[] = [];
+        fieldsToInclude.forEach(() => noDataRow.push('Sin datos disponibles'));
         combinedSheet.addRow(noDataRow);
       }
       
