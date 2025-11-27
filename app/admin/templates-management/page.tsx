@@ -599,13 +599,7 @@ const TemplatesWithFiltersPage = () => {
           order: templateIndex * 100 + fieldIndex
         });
       });
-      // Agregar campo DEPENDENCIA
-      allFields.push({
-        field: 'DEPENDENCIA',
-        template: template.name,
-        selected: true, // Por defecto seleccionado
-        order: templateIndex * 100 + 999
-      });
+
     });
     
     // Si hay configuración guardada, aplicarla
