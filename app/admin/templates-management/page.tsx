@@ -310,7 +310,7 @@ const TemplatesWithFiltersPage = () => {
         }));
       } catch (error) {
         console.error('Error loading saved filter config:', error);
-        // Si hay error, generar filtros por defecto
+        // Si hay error, generar filtros por defect
         const generatedFilters = generateFiltersForTemplate(template);
         setTemplateFilters(prev => ({
           ...prev,
