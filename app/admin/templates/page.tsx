@@ -388,7 +388,7 @@ const AdminTemplatesPage = () => {
         user_email: session?.user?.email,
         deadline: customDeadline ? deadline : periods.find(period => period._id === selectedPeriod)?.producer_end_date,
       });
-      console.log('Template successfully published');
+      console.log('Template successfully pubished');
       showNotification({
         title: "Publicación Exitosa",
         message: "La plantilla ha sido publicada exitosamente",

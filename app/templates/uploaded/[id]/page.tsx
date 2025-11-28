@@ -111,6 +111,7 @@ const UploadedTemplatePage = () => {
               params: {
                 pubTem_id: id,
                 email: session?.user?.email,
+                filterByUserScope: true, // Filtrar por ámbito del usuario
               },
             }
           );

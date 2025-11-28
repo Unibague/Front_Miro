@@ -33,7 +33,7 @@ import { saveAs } from "file-saver";
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import { useSort } from "../../hooks/useSort";
+import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
@@ -96,13 +96,29 @@ interface TemplateFilter {
   order: number;
 }
 
-
-
 const TemplatesWithFiltersPage = () => {
   const { userRole, setUserRole } = useRole();
   const router = useRouter();
   const { selectedPeriodId } = usePeriod();
   const { data: session } = useSession();
+  
+  // Verificar acceso
+  useEffect(() => {
+    if (userRole && !['Administrador', 'Responsable', 'Productor'].includes(userRole)) {
+      router.push('/dashboard');
+    }
+  }, [userRole, router]);
+
+  // Mostrar loading mientras se carga el rol
+  if (!userRole) {
+    return (
+      <Container size="xl">
+        <Center style={{ height: '50vh' }}>
+          <Text>Cargando...</Text>
+        </Center>
+      </Container>
+    );
+  }
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -132,6 +148,8 @@ const TemplatesWithFiltersPage = () => {
         search,
         email,
         periodId: selectedPeriodId,
+        filterByUserScope: true, // Nuevo parámetro para filtrar por ámbito del usuario
+        userRole: userRole, // Enviar el rol del usuario para filtrado correcto
       };
       
       // Add filter parameters
@@ -143,9 +161,10 @@ const TemplatesWithFiltersPage = () => {
         });
       }
       
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension`, {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
         params
       });
+      
       
       if (response.data) {
         const sortedTemplates = sortTemplatesWithVisited(response.data.templates || []);
@@ -162,10 +181,6 @@ const TemplatesWithFiltersPage = () => {
       setTemplates([]);
     }
   };
-
-
-
-
 
   // Sort templates to show visited ones first
   const sortTemplatesWithVisited = (templates: PublishedTemplate[]) => {
@@ -356,6 +371,8 @@ const TemplatesWithFiltersPage = () => {
           params: {
             pubTem_id: publishedTemplate._id,
             email: session?.user?.email,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
+            userRole: userRole, // Enviar el rol del usuario
           },
         }
       );
@@ -770,7 +787,16 @@ const TemplatesWithFiltersPage = () => {
               {rows.length > 0 ? rows : (
                 <Table.Tr>
                   <Table.Td colSpan={6}>
-                      No hay plantillas publicadas en el periodo
+                    <Center>
+                      <Text c="dimmed">
+                        {userRole === 'Productor' 
+                          ? 'No tienes plantillas asignadas en este periodo'
+                          : userRole === 'Responsable'
+                          ? 'No hay plantillas de tus dependencias en este periodo'
+                          : 'No hay plantillas publicadas en el periodo'
+                        }
+                      </Text>
+                    </Center>
                   </Table.Td>
                 </Table.Tr>
               )}

@@ -18,9 +18,9 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Install Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '20.14.0'
+        node-version: '22.14.0'
 
     - name: Install OpenConnect
       run: sudo apt-get install -y openconnect
@@ -45,33 +45,55 @@ jobs:
     - name: Test internal connectivity with SSH
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
-
-    - name: Clone repository on remote server for develop
+        
+    - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test || exit;
-          if [ ! -d ".git" ]; then
-            git clone https://github.com/BrayanD117/Front_Miro.git .
+          echo "Checking PM2 processes...";
+          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
+          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
+          cd ~/MIRO_TEST;
+          if [ ! -d "Front_Miro_Test" ]; then
+            echo "Directory does not exist, cloning repository...";
+            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
           else
-            git pull
-          fi'
+            echo "Updating existing repository...";
+            cd Front_Miro_Test;
+            git pull origin develop;
+          fi;
+          echo "Repository updated successfully"'
 
-    - name: Build project on remote server for develop
+    - name: Fix environment and build
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
+          echo "=== FIXING ENV FILE FORMAT ===";
+          sed -i "s/ = /=/g" .env;
+          echo "=== FIXED ENV FILE ===";
+          cat .env | grep -E "(API|NODE_TLS)";
+          echo "=== TESTING VARIABLE LOADING ===";
+          export $(cat .env | grep -v "^#" | xargs);
+          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
           npm install;
+          echo "=== BUILD OUTPUT ===";
           npm run build'
+
+    - name: Start PM2 process
+      run: |
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          cd ~/MIRO_TEST/Front_Miro_Test;
+          
+          # Start PM2 with fixed port 3001 (already configured in nginx)
+          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
+          pm2 save;
+          
+          echo "Front_Dev started successfully on port 3001"'
 
     - name: Run Semantic Release
       working-directory: ./    
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
-
-    - name: Restart PM2 for develop
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'pm2 restart Front_Dev'
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"

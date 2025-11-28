@@ -108,7 +108,7 @@ const AdminPeriodsPage = () => {
   producer_report_end_date: producerReportEndDate.toISOString(),
         responsible_start_date: responsibleStartDate.toISOString(),
         responsible_end_date: responsibleEndDate.toISOString(),
-        is_active: true,
+        is_active: isActive,
       };
 
       if (selectedPeriod) {
@@ -158,6 +158,27 @@ const AdminPeriodsPage = () => {
     }
   };
 
+  const handleToggleActive = async (id: string, currentStatus: boolean) => {
+    try {
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/periods/${id}/toggle-active`, {
+        is_active: !currentStatus
+      });
+      showNotification({
+        title: "Actualizado",
+        message: `Periodo ${!currentStatus ? 'activado' : 'desactivado'} exitosamente`,
+        color: "teal",
+      });
+      fetchPeriods(page, search);
+    } catch (error) {
+      console.error("Error cambiando estado del periodo:", error);
+      showNotification({
+        title: "Error",
+        message: "Hubo un error al cambiar el estado del periodo",
+        color: "red",
+      });
+    }
+  };
+
   const handleModalClose = () => {
     setOpened(false);
     setName("");
@@ -169,7 +190,7 @@ const AdminPeriodsPage = () => {
 setProducerReportEndDate(null);
     setResponsibleStartDate(null);
     setResponsibleEndDate(null);
-    setIsActive(false);
+    setIsActive(true);
     setSelectedPeriod(null);
   };
 
@@ -184,7 +205,16 @@ setProducerReportEndDate(null);
       <Table.Td><Center>{dateToGMT(period.producer_report_end_date, "DD MMM, YYYY")}</Center></Table.Td>
       <Table.Td><Center>{dateToGMT(period.responsible_start_date, "DD MMM, YYYY")}</Center></Table.Td>
       <Table.Td><Center>{dateToGMT(period.responsible_end_date, "DD MMM, YYYY")}</Center></Table.Td>
-      <Table.Td><Center>{period.is_active ? "Activo" : "Inactivo"}</Center></Table.Td>
+      <Table.Td>
+        <Center>
+          <Switch
+            checked={period.is_active}
+            onChange={() => handleToggleActive(period._id, period.is_active)}
+            label={period.is_active ? "Activo" : "Inactivo"}
+            color="teal"
+          />
+        </Center>
+      </Table.Td>
       <Table.Td>
         <Center>
           <Group gap={5}>
@@ -405,6 +435,14 @@ setProducerReportEndDate(null);
             disabled={!startDate || !endDate}
           />
         </Stack>
+        <Switch
+          label="Período Activo"
+          description="Los períodos activos pueden ser utilizados para crear plantillas"
+          checked={isActive}
+          onChange={(event) => setIsActive(event.currentTarget.checked)}
+          mb="md"
+          color="teal"
+        />
         <Group mt="md">
           <Button onClick={handleSave}>Guardar</Button>
           <Button variant="outline" onClick={handleModalClose}>

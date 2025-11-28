@@ -8,5 +8,6 @@ export const config = {
     "/producer/:path*",
     "/responsible/:path*",
     "/templates/:path*",
+    "/templates-with-filters/:path*",
   ],
 };

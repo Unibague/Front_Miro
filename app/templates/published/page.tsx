@@ -108,6 +108,7 @@ const PublishedTemplatesPage = () => {
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
           },
         }
       );
@@ -204,6 +205,7 @@ const PublishedTemplatesPage = () => {
           params: {
             pubTem_id: publishedTemplate._id,
             email: session?.user?.email,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
           },
         }
       );
