@@ -92,7 +92,6 @@ const UploadedTemplatePage = () => {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${id}`
         );
-        console.log(response.data)
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
@@ -101,8 +100,13 @@ const UploadedTemplatePage = () => {
         })
         setResumeData(sentDepedencies)
         setDependencies(response.data.publishedTemplate.template.producers)
-      } catch (error) {
-        console.error("Error fetching template name:", error);
+      } catch (error: any) {
+        console.error('Error fetching template name:', error);
+        
+        if (error.response?.status === 403) {
+          router.push('/dashboard');
+          return;
+        }
       }
     };
 
@@ -122,8 +126,6 @@ const UploadedTemplatePage = () => {
           );
 
           const data = response.data.data;
-          console.log('Raw data from API:', response.data);
-          console.log('Processed data:', data);
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -142,9 +144,7 @@ const UploadedTemplatePage = () => {
               };
             });
 
-            console.log('Final table data:', updatedData);
-            console.log('Sample row keys:', updatedData[0] ? Object.keys(updatedData[0]) : 'No data');
-            
+ 
             // Analizar datos de evidencias
             const evidenciasStats = updatedData.reduce((stats, row) => {
               const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
@@ -159,14 +159,13 @@ const UploadedTemplatePage = () => {
               return stats;
             }, { withData: 0, withoutData: 0, samples: [] as any[] });
             
-            console.log('Evidencias analysis:', evidenciasStats);
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
             console.error("Invalid data format received from API.");
           }
-        } catch (error) {
-          console.error("Error fetching uploaded data:", error);
+        } catch (error: any) {
+          console.error('Error fetching uploaded data:', error);
         }
       }
     };
@@ -552,7 +551,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
     
     Object.entries(filters).forEach(([filterName, values]) => {
       if (values.length > 0) {
-        console.log('Aplicando filtro:', filterName, 'con valores:', values);
+
         filteredData = filteredData.filter(row => {
           // Buscar el campo correspondiente en la fila
           const fieldNames = Object.keys(row);
@@ -583,11 +582,11 @@ const renderCellContent = (value: any, fieldName?: string) => {
           }
           
           if (!matchingField) {
-            console.log('CAMPO NO ENCONTRADO - Buscado:', filterName, 'Disponibles:', fieldNames.slice(0, 10));
+
             return true; // Si no encuentra el campo, no filtrar
           }
           
-          console.log('Campo buscado:', filterName, 'Campo encontrado:', matchingField);
+
           
           if (matchingField) {
             const fieldValue = row[matchingField];
@@ -651,13 +650,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
               
               // Para filtros de fecha, hacer comparación especial
               if (filterName.includes('fecha') || filterName.includes('date')) {
-                console.log('DATE FILTER COMPARISON:', {
-                  filterName,
-                  searchValue,
-                  cellValue,
-                  fieldValue,
-                  matchingField
-                });
+
                 
                 // Si el valor de búsqueda es una fecha (YYYY-MM-DD)
                 if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -678,11 +671,11 @@ const renderCellContent = (value: any, fieldName?: string) => {
                     const searchDateStr = searchDate.toISOString().split('T')[0];
                     const cellDateStr = cellDate.toISOString().split('T')[0];
                     
-                    console.log('Date comparison:', { searchDateStr, cellDateStr, match: searchDateStr === cellDateStr });
+
                     
                     return searchDateStr === cellDateStr;
                   } catch (error) {
-                    console.log('Date parsing error:', error);
+
                     return false;
                   }
                 }
