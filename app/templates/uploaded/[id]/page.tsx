@@ -28,6 +28,7 @@ import FilterSidebar from "@/app/components/FilterSidebar";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { showNotification } from "@mantine/notifications";
+import { useRole } from "@/app/context/RoleContext";
 
 interface RowData {
   [key: string]: any;
@@ -63,9 +64,12 @@ const UploadedTemplatePage = () => {
     searchParams.get("resume") === "true"
   );
   const { data: session } = useSession();
+  const { userRole } = useRole();
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
+
+
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
     try {
@@ -103,7 +107,7 @@ const UploadedTemplatePage = () => {
     };
 
     const fetchUploadedData = async () => {
-      if (id && session?.user?.email) {
+      if (id && session?.user?.email && userRole) {
         try {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
@@ -112,6 +116,7 @@ const UploadedTemplatePage = () => {
                 pubTem_id: id,
                 email: session?.user?.email,
                 filterByUserScope: true, // Filtrar por ámbito del usuario
+                userRole: userRole, // Agregar rol del usuario
               },
             }
           );
@@ -181,7 +186,7 @@ const UploadedTemplatePage = () => {
         }
       }
     }
-  }, [id, session]);
+  }, [id, session, userRole]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
