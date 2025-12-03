@@ -121,11 +121,21 @@ const UploadedTemplatePage = () => {
                 email: session?.user?.email,
                 filterByUserScope: true, // Filtrar por ámbito del usuario
                 userRole: userRole, // Agregar rol del usuario
+                filterByUserDependency: userRole === 'Productor' || userRole === 'Responsable', // Solo filtrar por dependencia si es Productor o Responsable
               },
             }
           );
 
           const data = response.data.data;
+          console.log('📊 Data received for role:', userRole, 'Records:', data?.length || 0);
+          
+          // Mostrar información de debug sobre las dependencias encontradas
+          if (data?.length > 0) {
+            const uniqueDependencies = [...new Set(data.map((row: RowData) => row.Dependencia))];
+            console.log('🏢 Dependencies in data:', uniqueDependencies);
+            console.log('👤 User email:', session?.user?.email);
+            console.log('💼 User role:', userRole);
+          }
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -158,11 +168,40 @@ const UploadedTemplatePage = () => {
               }
               return stats;
             }, { withData: 0, withoutData: 0, samples: [] as any[] });
+              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
+            console.log('✅ Final data - Dependencies:', finalDependencies, 'Total records:', updatedData.length);
+            
+            // Notificar al usuario sobre el filtrado aplicado
+            if (userRole === 'Productor' || userRole === 'Responsable') {
+              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
+              if (finalDependencies.length === 1) {
+                showNotification({
+                  title: "Filtrado aplicado",
+                  titles: "Información",
+                  message: `Mostrando datos de ${finalDependencies.length} dependencias. Si solo necesitas ver tu dependencia, contacta al administrador.`,
+                  color: "blue",
+                  autoClose: 5000,
+                });
+              } else if (finalDependencies.length === 1) {
+                showNotification({
+                  title: "✅ Filtrado aplicado",
+                  message: `Mostrando datos de: ${finalDependencies[0]}`,
+                  color: "green",
+                  autoClose: 3000,
+                });
+              }
+            }
             
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
             console.error("Invalid data format received from API.");
+         
+            showNotification({
+              title: "Sin datos",
+              message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
+              color: "orange",
+            });
           }
         } catch (error: any) {
           console.error('Error fetching uploaded data:', error);
