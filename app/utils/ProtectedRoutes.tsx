@@ -23,12 +23,16 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const templateRoutes = /^\/templates/;
     const reportRoutes = /^\/reports/;
     const templatesWithFiltersRoute = /^\/templates-with-filters/;
+    const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/; // Ruta específica para detalles de template
 
     if (
       (adminRoutes.test(pathname) && userRole !== "Administrador") ||
       (responsibleRoutes.test(pathname) && userRole !== "Responsable") ||
       (producerRoutes.test(pathname) && userRole !== "Productor") ||
-      (templateRoutes.test(pathname) && !templatesWithFiltersRoute.test(pathname) && !["Administrador", "Responsable"].includes(userRole)) ||
+      (templateRoutes.test(pathname) && 
+       !templatesWithFiltersRoute.test(pathname) && 
+       !templateDetailRoute.test(pathname) && 
+       !["Administrador", "Responsable"].includes(userRole)) ||
       (reportRoutes.test(pathname) && !["Administrador", "Responsable"].includes(userRole))
     ) {
       showNotification({

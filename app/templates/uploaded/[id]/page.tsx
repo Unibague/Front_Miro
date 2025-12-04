@@ -28,6 +28,7 @@ import FilterSidebar from "@/app/components/FilterSidebar";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { showNotification } from "@mantine/notifications";
+import { useRole } from "@/app/context/RoleContext";
 
 interface RowData {
   [key: string]: any;
@@ -63,9 +64,12 @@ const UploadedTemplatePage = () => {
     searchParams.get("resume") === "true"
   );
   const { data: session } = useSession();
+  const { userRole } = useRole();
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
+
+
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
     try {
@@ -88,7 +92,6 @@ const UploadedTemplatePage = () => {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${id}`
         );
-        console.log(response.data)
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
@@ -97,13 +100,18 @@ const UploadedTemplatePage = () => {
         })
         setResumeData(sentDepedencies)
         setDependencies(response.data.publishedTemplate.template.producers)
-      } catch (error) {
-        console.error("Error fetching template name:", error);
+      } catch (error: any) {
+        console.error('Error fetching template name:', error);
+        
+        if (error.response?.status === 403) {
+          router.push('/dashboard');
+          return;
+        }
       }
     };
 
     const fetchUploadedData = async () => {
-      if (id && session?.user?.email) {
+      if (id && session?.user?.email && userRole) {
         try {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
@@ -112,13 +120,22 @@ const UploadedTemplatePage = () => {
                 pubTem_id: id,
                 email: session?.user?.email,
                 filterByUserScope: true, // Filtrar por ámbito del usuario
+                userRole: userRole, // Agregar rol del usuario
+                filterByUserDependency: userRole === 'Productor' || userRole === 'Responsable', // Solo filtrar por dependencia si es Productor o Responsable
               },
             }
           );
 
           const data = response.data.data;
-          console.log('Raw data from API:', response.data);
-          console.log('Processed data:', data);
+          console.log('📊 Data received for role:', userRole, 'Records:', data?.length || 0);
+          
+          // Mostrar información de debug sobre las dependencias encontradas
+          if (data?.length > 0) {
+            const uniqueDependencies = [...new Set(data.map((row: RowData) => row.Dependencia))];
+            console.log('🏢 Dependencies in data:', uniqueDependencies);
+            console.log('👤 User email:', session?.user?.email);
+            console.log('💼 User role:', userRole);
+          }
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -137,9 +154,7 @@ const UploadedTemplatePage = () => {
               };
             });
 
-            console.log('Final table data:', updatedData);
-            console.log('Sample row keys:', updatedData[0] ? Object.keys(updatedData[0]) : 'No data');
-            
+ 
             // Analizar datos de evidencias
             const evidenciasStats = updatedData.reduce((stats, row) => {
               const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
@@ -153,15 +168,43 @@ const UploadedTemplatePage = () => {
               }
               return stats;
             }, { withData: 0, withoutData: 0, samples: [] as any[] });
+              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
+            console.log('✅ Final data - Dependencies:', finalDependencies, 'Total records:', updatedData.length);
             
-            console.log('Evidencias analysis:', evidenciasStats);
+            // Notificar al usuario sobre el filtrado aplicado
+            if (userRole === 'Productor' || userRole === 'Responsable') {
+              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
+              if (finalDependencies.length === 1) {
+                showNotification({
+                  title: "Filtrado aplicado",
+                  titles: "Información",
+                  message: `Mostrando datos de ${finalDependencies.length} dependencias. Si solo necesitas ver tu dependencia, contacta al administrador.`,
+                  color: "blue",
+                  autoClose: 5000,
+                });
+              } else if (finalDependencies.length === 1) {
+                showNotification({
+                  title: "✅ Filtrado aplicado",
+                  message: `Mostrando datos de: ${finalDependencies[0]}`,
+                  color: "green",
+                  autoClose: 3000,
+                });
+              }
+            }
+            
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
             console.error("Invalid data format received from API.");
+         
+            showNotification({
+              title: "Sin datos",
+              message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
+              color: "orange",
+            });
           }
-        } catch (error) {
-          console.error("Error fetching uploaded data:", error);
+        } catch (error: any) {
+          console.error('Error fetching uploaded data:', error);
         }
       }
     };
@@ -181,7 +224,7 @@ const UploadedTemplatePage = () => {
         }
       }
     }
-  }, [id, session]);
+  }, [id, session, userRole]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -547,7 +590,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
     
     Object.entries(filters).forEach(([filterName, values]) => {
       if (values.length > 0) {
-        console.log('Aplicando filtro:', filterName, 'con valores:', values);
+
         filteredData = filteredData.filter(row => {
           // Buscar el campo correspondiente en la fila
           const fieldNames = Object.keys(row);
@@ -578,11 +621,11 @@ const renderCellContent = (value: any, fieldName?: string) => {
           }
           
           if (!matchingField) {
-            console.log('CAMPO NO ENCONTRADO - Buscado:', filterName, 'Disponibles:', fieldNames.slice(0, 10));
+
             return true; // Si no encuentra el campo, no filtrar
           }
           
-          console.log('Campo buscado:', filterName, 'Campo encontrado:', matchingField);
+
           
           if (matchingField) {
             const fieldValue = row[matchingField];
@@ -646,13 +689,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
               
               // Para filtros de fecha, hacer comparación especial
               if (filterName.includes('fecha') || filterName.includes('date')) {
-                console.log('DATE FILTER COMPARISON:', {
-                  filterName,
-                  searchValue,
-                  cellValue,
-                  fieldValue,
-                  matchingField
-                });
+
                 
                 // Si el valor de búsqueda es una fecha (YYYY-MM-DD)
                 if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -673,11 +710,11 @@ const renderCellContent = (value: any, fieldName?: string) => {
                     const searchDateStr = searchDate.toISOString().split('T')[0];
                     const cellDateStr = cellDate.toISOString().split('T')[0];
                     
-                    console.log('Date comparison:', { searchDateStr, cellDateStr, match: searchDateStr === cellDateStr });
+
                     
                     return searchDateStr === cellDateStr;
                   } catch (error) {
-                    console.log('Date parsing error:', error);
+
                     return false;
                   }
                 }

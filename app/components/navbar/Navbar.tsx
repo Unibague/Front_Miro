@@ -66,6 +66,7 @@ const linksByRole: Record<Roles, LinkItem[]> = {
   Productor: [
     { link: "/dashboard", label: "Inicio" },
     { link: "/producer/templates", label: "Plantillas pendientes" },
+    { link: "/templates-with-filters", label: "Plantillas con filtros" },
   ],
 };
 
