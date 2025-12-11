@@ -68,6 +68,7 @@ const UploadedTemplatePage = () => {
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
+  const [fieldComments, setFieldComments] = useState<Record<string, string>>({});
 
 
 
@@ -100,6 +101,17 @@ const UploadedTemplatePage = () => {
         })
         setResumeData(sentDepedencies)
         setDependencies(response.data.publishedTemplate.template.producers)
+        
+        // Obtener comentarios de los campos
+        if (response.data.publishedTemplate?.template?.fields) {
+          const comments: Record<string, string> = {};
+          response.data.publishedTemplate.template.fields.forEach((field: any) => {
+            if (field.comment && field.comment.trim()) {
+              comments[field.name] = field.comment;
+            }
+          });
+          setFieldComments(comments);
+        }
       } catch (error: any) {
         console.error('Error fetching template name:', error);
         
@@ -923,12 +935,28 @@ const renderCellContent = (value: any, fieldName?: string) => {
                           padding: "12px 8px",
                           backgroundColor: '#f8f9fa',
                           border: '1px solid #dee2e6',
-                          borderBottom: '2px solid #dee2e6'
+                          borderBottom: '2px solid #dee2e6',
+                          cursor: fieldComments[fieldName] ? 'help' : 'default'
                         }}
                       >
-                        <Text size="xs" fw={700} ta="center" c="dark">
-                          {fieldName.replace(/_/g, ' ')}
-                        </Text>
+                        {fieldComments[fieldName] ? (
+                          <Tooltip 
+                            label={fieldComments[fieldName]} 
+                            multiline 
+                            maw={300}
+                            position="top"
+                            withArrow
+                            transitionProps={{ transition: 'fade', duration: 200 }}
+                          >
+                            <Text size="xs" fw={700} ta="center" c="dark">
+                              {fieldName.replace(/_/g, ' ')}
+                            </Text>
+                          </Tooltip>
+                        ) : (
+                          <Text size="xs" fw={700} ta="center" c="dark">
+                            {fieldName.replace(/_/g, ' ')}
+                          </Text>
+                        )}
                       </Table.Th>
                     ))}
                   </Table.Tr>
