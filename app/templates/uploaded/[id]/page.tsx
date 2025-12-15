@@ -105,11 +105,18 @@ const UploadedTemplatePage = () => {
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
           const comments: Record<string, string> = {};
+          console.log('🔍 Template fields with comments:', response.data.publishedTemplate.template.fields);
+          
           response.data.publishedTemplate.template.fields.forEach((field: any) => {
             if (field.comment && field.comment.trim()) {
               comments[field.name] = field.comment;
+              console.log(`✅ Comment found for field '${field.name}':`, field.comment);
+            } else {
+              console.log(`❌ No comment for field '${field.name}'`);
             }
           });
+          
+          console.log('📝 Final field comments mapping:', comments);
           setFieldComments(comments);
         }
       } catch (error: any) {
@@ -203,6 +210,15 @@ const UploadedTemplatePage = () => {
                 });
               }
             }
+            
+            // Debug: comparar campos de datos vs campos de plantilla
+            const dataFields = Object.keys(updatedData[0]);
+            const templateFields = Object.keys(fieldComments);
+            
+            console.log('📊 Data fields (columns in table):', dataFields);
+            console.log('📋 Template fields (with comments):', templateFields);
+            console.log('🔍 Fields in data but not in template:', dataFields.filter(f => !templateFields.includes(f)));
+            console.log('🔍 Fields in template but not in data:', templateFields.filter(f => !dataFields.includes(f)));
             
             setTableData(updatedData);
             setOriginalTableData(updatedData);
@@ -936,27 +952,46 @@ const renderCellContent = (value: any, fieldName?: string) => {
                           backgroundColor: '#f8f9fa',
                           border: '1px solid #dee2e6',
                           borderBottom: '2px solid #dee2e6',
-                          cursor: fieldComments[fieldName] ? 'help' : 'default'
+                          cursor: 'help'
                         }}
                       >
-                        {fieldComments[fieldName] ? (
-                          <Tooltip 
-                            label={fieldComments[fieldName]} 
-                            multiline 
-                            maw={300}
-                            position="top"
-                            withArrow
-                            transitionProps={{ transition: 'fade', duration: 200 }}
-                          >
-                            <Text size="xs" fw={700} ta="center" c="dark">
-                              {fieldName.replace(/_/g, ' ')}
-                            </Text>
-                          </Tooltip>
-                        ) : (
-                          <Text size="xs" fw={700} ta="center" c="dark">
-                            {fieldName.replace(/_/g, ' ')}
-                          </Text>
-                        )}
+                        {(() => {
+                          // Buscar comentario por coincidencia exacta o aproximada
+                          let comment = fieldComments[fieldName];
+                          
+                          // Si no hay coincidencia exacta, buscar por coincidencias aproximadas
+                          if (!comment) {
+                            const fieldKeys = Object.keys(fieldComments);
+                            
+                            // Buscar coincidencia sin espacios ni guiones bajos
+                            const normalizedFieldName = fieldName.replace(/[_\s-]/g, '').toLowerCase();
+                            const matchingKey = fieldKeys.find(key => 
+                              key.replace(/[_\s-]/g, '').toLowerCase() === normalizedFieldName
+                            );
+                            
+                            if (matchingKey) {
+                              comment = fieldComments[matchingKey];
+                              console.log(`🔄 Field mapping: '${fieldName}' -> '${matchingKey}' (comment found)`);
+                            }
+                          }
+                          
+                          const tooltipLabel = comment || "Campo vacío - Sin PISTA";
+                          
+                          return (
+                            <Tooltip 
+                              label={tooltipLabel} 
+                              multiline 
+                              maw={300}
+                              position="top"
+                              withArrow
+                              transitionProps={{ transition: 'fade', duration: 200 }}
+                            >
+                              <Text size="xs" fw={700} ta="center" c="dark">
+                                {fieldName.replace(/_/g, ' ')}
+                              </Text>
+                            </Tooltip>
+                          );
+                        })()}
                       </Table.Th>
                     ))}
                   </Table.Tr>
