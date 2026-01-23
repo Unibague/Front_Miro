@@ -694,7 +694,7 @@ useEffect(() => {
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Center><IconClipboardData size={80}/></Center>
             <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestionar Informes</Text>
+              <Text ta={"center"} w={500}>Informe de gestión de productor</Text>
             </Group>
             <Text ta={"center"} size="sm" color="dimmed">
               Revisa los informes que debes entregar, carga los informes y haz los ajustes de acuerdo a las observaciones
