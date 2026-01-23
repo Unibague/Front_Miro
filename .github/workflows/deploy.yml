@@ -41,11 +41,6 @@ jobs:
           --servercert pin-sha256:+4XOhCB4GmaXr8/TMWL09EayWRbrz3X8WWAWgu79f9U= \
           "$VPN_HOST" -b
 
-      env:
-        VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
-        VPN_USER: ${{ secrets.VPN_USER }}
-        VPN_HOST: ${{ secrets.VPN_HOST }}
-
     - name: Verify VPN connection
       run: ip a
 
