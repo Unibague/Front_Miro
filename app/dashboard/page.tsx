@@ -387,7 +387,7 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Configurar Informes de Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes que generarán las ámbitos.
+                Crea, edita y asigna los informes que generarán los ámbitos.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
                 Ir a Configuración de Informes

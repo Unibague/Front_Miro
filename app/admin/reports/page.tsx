@@ -22,6 +22,7 @@ import {
   Pill,
   Checkbox,
 } from "@mantine/core";
+import { modals } from "@mantine/modals";
 import {
   IconArrowBigDownFilled,
   IconArrowBigUpFilled,
@@ -197,24 +198,44 @@ const AdminReportsPage = () => {
     setOpened(true);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/reports/delete/${id}`);
-      showNotification({
-        title: "Eliminado",
-        message: "Informe eliminado exitosamente",
-        color: "teal",
-      });
-      fetchReports(page, search);
-    } catch (error) {
-      console.error("Error eliminando informe:", error);
-      showNotification({
-        title: "Error",
-        message: "Hubo un error al eliminar el informe",
-        color: "red",
-      });
-    }
-  };
+const confirmDelete = (id: string) => {
+  modals.openConfirmModal({
+    title: "Confirmar eliminación",
+    centered: true,
+    children: (
+      <Text size="sm">
+        ¿Estás seguro de que deseas eliminar este informe?
+        <br />
+        <strong>Esta acción no se puede deshacer.</strong>
+      </Text>
+    ),
+    labels: { confirm: "Eliminar", cancel: "Cancelar" },
+    confirmProps: { color: "red" },
+    onConfirm: async () => {
+      try {
+        await axios.delete(
+          `${process.env.NEXT_PUBLIC_API_URL}/reports/delete/${id}`
+        );
+
+        showNotification({
+          title: "Eliminado",
+          message: "Informe eliminado exitosamente",
+          color: "teal",
+        });
+
+        fetchReports(page, search);
+      } catch (error) {
+        console.error("Error eliminando informe:", error);
+        showNotification({
+          title: "Error",
+          message: "Hubo un error al eliminar el informe",
+          color: "red",
+        });
+      }
+    },
+  });
+};
+
 
   const handlePublishModalClose = () => {
     setSelectedReport(null);
@@ -291,7 +312,8 @@ const AdminReportsPage = () => {
               <Button
                 color="red"
                 variant="outline"
-                onClick={() => handleDelete(report._id)}
+                onClick={() => confirmDelete(report._id)}
+
               >
                 <IconTrash size={16} />
               </Button>

@@ -12,6 +12,8 @@ import { RoleProvider } from "./context/RoleContext";
 import { AppInitializer } from "./context/AppInitializer";
 import ClientLayout from "./ClientLayout";
 import { PeriodProvider } from "./context/PeriodContext";
+import { ModalsProvider } from "@mantine/modals";
+
 
 export const metadata: Metadata = {
   title: "MIRÓ",
@@ -31,14 +33,16 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body>
         <Providers>
           <MantineProvider>
-            <RoleProvider initialRole="Usuario">
-              <PeriodProvider>
-                <AppInitializer>
-                  <Notifications />
-                  <ClientLayout>{children}</ClientLayout>
-                </AppInitializer>
-              </PeriodProvider>
-            </RoleProvider>
+            <ModalsProvider>
+              <RoleProvider initialRole="Usuario">
+                <PeriodProvider>
+                  <AppInitializer>
+                    <Notifications />
+                    <ClientLayout>{children}</ClientLayout>
+                  </AppInitializer>
+                </PeriodProvider>
+              </RoleProvider>
+            </ModalsProvider>
           </MantineProvider>
         </Providers>
       </body>
