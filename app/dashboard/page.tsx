@@ -345,7 +345,7 @@ useEffect(() => {
                 <IconClipboardData size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes Productores</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Productores</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes que generarán los productores.
@@ -384,7 +384,7 @@ useEffect(() => {
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes Ámbitos</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes que generarán las ámbitos.
@@ -418,7 +418,7 @@ useEffect(() => {
                 <IconChartBarPopular size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes de Gestión</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Responsables</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes de gestión.
