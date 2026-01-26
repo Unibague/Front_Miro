@@ -617,7 +617,7 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
              <Center><IconClipboardData size={80}/></Center>
              <Group mt="md" mb="xs">
-               <Text ta={"center"} w={500}>Gestionar Informes Productores</Text>
+               <Text ta={"center"} w={500}>Informe de gestión de responsables</Text>
              </Group>
              <Text ta={"center"} size="sm" color="dimmed">
               Haz seguimiento y descarga los informes de tus productores 
@@ -634,7 +634,7 @@ useEffect(() => {
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
                 </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Informes Ámbito</Text>
+                <Text ta={"center"} w={500}>Informe de ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
               Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
@@ -658,6 +658,33 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
+  <Card shadow="sm" padding="lg" radius="md" withBorder>
+    <Center>
+      <IconChartBarPopular size={80} />
+    </Center>
+
+    <Group mt="md" mb="xs">
+      <Text ta="center" w={500}>
+        Visualizar informes de gestión de productores
+      </Text>
+    </Group>
+
+    <Text ta="center" size="sm" color="dimmed">
+      Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito.
+    </Text>
+
+    <Button
+      variant="light"
+      fullWidth
+      mt="md"
+      radius="md"
+      onClick={() => router.push('/responsible/producer-management-reports')}
+    >
+      Ver Informes de Gestión
+    </Button>
+  </Card>
+</Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconFilter size={80}/></Center>

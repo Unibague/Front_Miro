@@ -69,19 +69,16 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-
-          echo "=== FIXING PERMISSIONS ===";
-          sudo chown -R $USER:$USER .
-          rm -rf .next
-
           echo "=== FIXING ENV FILE FORMAT ===";
           sed -i "s/ = /=/g" .env;
-          export $(grep -v "^#" .env | xargs);
-
+          echo "=== FIXED ENV FILE ===";
+          cat .env | grep -E "(API|NODE_TLS)";
+          echo "=== TESTING VARIABLE LOADING ===";
+          export $(cat .env | grep -v "^#" | xargs);
+          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
           npm install;
-          npm run build
-        '
-
+          echo "=== BUILD OUTPUT ===";
+          npm run build'
 
     - name: Start PM2 process
       run: |
