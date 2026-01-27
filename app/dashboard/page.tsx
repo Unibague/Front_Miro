@@ -31,6 +31,7 @@ const DashboardPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
+  const showResponsibleScopeCards = false;
 
   const params = useParams();
 const { id } = params ?? {};
@@ -421,10 +422,10 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Configurar Informes de Gestión de Responsables</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes de gestión.
+                Crea, edita y asigna los informes de gestión de responsables.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
-                Ir a Configuración de Informes de gestión
+                Ir a Configuración de Informes.
               </Button>
             </Card>
           </Grid.Col>,
@@ -617,16 +618,17 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
              <Center><IconClipboardData size={80}/></Center>
              <Group mt="md" mb="xs">
-               <Text ta={"center"} w={500}>Informe de gestión de responsables</Text>
+               <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
              </Group>
              <Text ta={"center"} size="sm" color="dimmed">
-              Haz seguimiento y descarga los informes de tus productores 
+              Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito
              </Text>
              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reports')}>
-               Ir a Informes de Productores
+               Ir a Informes de Gestión de Productores
              </Button>
             </Card>
          </Grid.Col>,
+          showResponsibleScopeCards && (
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="dimension-reports">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Center style={{ position: "relative" }}>
@@ -634,7 +636,7 @@ useEffect(() => {
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
                 </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Informe de ámbito</Text>
+                <Text ta={"center"} w={500}>Informe de Ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
               Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
@@ -643,7 +645,9 @@ useEffect(() => {
                 Ir a Informes de Ámbito
               </Button>
             </Card>
-          </Grid.Col>,
+          </Grid.Col>
+          ),
+          showResponsibleScopeCards && (
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconHexagon3d size={80}/></Center>
@@ -657,7 +661,8 @@ useEffect(() => {
                 Ir a Gestión de Mi Dimensión
               </Button>
             </Card>
-          </Grid.Col>,
+          </Grid.Col>
+          ),
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
   <Card shadow="sm" padding="lg" radius="md" withBorder>
     <Center>
@@ -666,12 +671,12 @@ useEffect(() => {
 
     <Group mt="md" mb="xs">
       <Text ta="center" w={500}>
-        Visualizar informes de gestión de productores
+        Informe de Gestión de Responsables
       </Text>
     </Group>
 
     <Text ta="center" size="sm" color="dimmed">
-      Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito.
+      Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
     </Text>
 
     <Button
@@ -679,9 +684,9 @@ useEffect(() => {
       fullWidth
       mt="md"
       radius="md"
-      onClick={() => router.push('/responsible/producer-management-reports')}
+      onClick={() => router.push('/responsible/reports')}
     >
-      Ver Informes de Gestión
+       Ir a Informes de Gestión de Responsables
     </Button>
   </Card>
 </Grid.Col>,

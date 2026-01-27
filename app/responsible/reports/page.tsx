@@ -269,7 +269,7 @@ label={validPeriod[pRep.period._id] === false ? "Plazo terminado para acceder a 
   return (
     <Container size="xl">
       <Title ta="center" mb="md">
-        Gestión de Informes
+        Gestión de Informes de Responsables
       </Title>
 
       <Text ta="center" mt="sm" mb="md">
