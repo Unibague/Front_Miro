@@ -4,7 +4,7 @@ import { useEffect, useState, FormEvent } from "react";
 import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Select, Tooltip, Text, Checkbox } from "@mantine/core";
 import axios,{ AxiosError } from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy, IconHistory } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy, IconHistory, IconFileSpreadsheet } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
@@ -13,7 +13,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { useSort } from "../../hooks/useSort";
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { DatePickerInput } from "@mantine/dates";
-import { shouldAddWorksheet, sanitizeSheetName } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet, sanitizeSheetName } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
 
@@ -88,6 +88,7 @@ const AdminTemplatesPage = () => {
   const [publicationName, setPublicationName] = useState<string>('');
   const [deadline, setDeadline] = useState<Date | null>();
   const [customDeadline, setCustomDeadline] = useState<boolean>(false);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<Template>(templates, { key: null, direction: "asc" });
 
@@ -173,27 +174,135 @@ const AdminTemplatesPage = () => {
     }
   };
 
-  const handleDownload = async (template: Template, validators = template.validators) => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(template.name);
-    const helpWorksheet = workbook.addWorksheet("Guía");
+  const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string): string => {
+    const base = sanitizeSheetName(rawName || fallback) || fallback;
+    let candidate = base;
+    let counter = 1;
 
-    helpWorksheet.columns = [{ width: 30 }, { width: 120 }];
-    const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-    helpHeaderRow.eachCell((cell) => {
-      cell.font = { bold: true };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFFF00" },
+    while (workbook.getWorksheet(candidate)) {
+      const suffix = `_${counter}`;
+      candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+      counter += 1;
+    }
+
+    return candidate;
+  };
+
+  const applyFieldValidationByDatatype = (cell: ExcelJS.Cell, field: Field) => {
+    switch (field.datatype) {
+      case 'Entero':
+        cell.dataValidation = {
+          type: 'whole',
+          operator: 'between',
+          formulae: [1, 9999999999999999999999999999999],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un numero entero.'
+        };
+        break;
+      case 'Decimal':
+        cell.dataValidation = {
+          type: 'decimal',
+          operator: 'between',
+          formulae: [0.0, 9999999999999999999999999999999],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un numero decimal.'
+        };
+        break;
+      case 'Porcentaje':
+        cell.dataValidation = {
+          type: 'decimal',
+          operator: 'between',
+          formulae: [0.0, 100.0],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un numero decimal entre 0.0 y 100.0.'
+        };
+        break;
+      case 'Texto Corto':
+        cell.dataValidation = {
+          type: 'textLength',
+          operator: 'lessThanOrEqual',
+          formulae: [60],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un texto de hasta 60 caracteres.'
+        };
+        break;
+      case 'Texto Largo':
+        cell.dataValidation = {
+          type: 'textLength',
+          operator: 'lessThanOrEqual',
+          formulae: [500],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un texto de hasta 500 caracteres.'
+        };
+        break;
+      case 'True/False':
+        cell.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Si,No"'],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, selecciona Si o No.'
+        };
+        break;
+      case 'Fecha':
+      case 'Fecha Inicial / Fecha Final':
+        cell.dataValidation = {
+          type: 'date',
+          operator: 'between',
+          formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce una fecha valida en el formato DD/MM/AAAA.'
+        };
+        cell.numFmt = 'DD/MM/YYYY';
+        break;
+      case 'Link':
+        cell.dataValidation = {
+          type: 'textLength',
+          operator: 'greaterThan',
+          formulae: [0],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Por favor, introduce un enlace valido.'
+        };
+        break;
+      default:
+        break;
+    }
+
+    if (field.comment && cell.dataValidation) {
+      const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+      const promptBase = normalizedComment.slice(0, 220);
+      const promptText = normalizedComment.length > 220
+        ? `${promptBase}... (ver hoja Guia)`
+        : promptBase;
+      cell.dataValidation = {
+        ...cell.dataValidation,
+        showInputMessage: true,
+        promptTitle: field.name.slice(0, 32),
+        prompt: promptText,
       };
-    });
-    template.fields.forEach((field) => {
-      const commentText = field.comment ? field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : "";
-      const helpRow = helpWorksheet.addRow([field.name, commentText]);
-      helpRow.getCell(2).alignment = { wrapText: true };
-    });
+    }
+  };
 
+  const populateTemplateWorksheet = (
+    workbook: ExcelJS.Workbook,
+    template: Template,
+    worksheetName: string,
+    includeHelpSheet = false,
+    validators = template.validators
+  ) => {
+    if (includeHelpSheet) {
+      buildStyledHelpWorksheet(workbook, template.fields);
+    }
+
+    const worksheet = workbook.addWorksheet(worksheetName);
 
     const headerRow = worksheet.addRow(template.fields.map(field => field.name));
     headerRow.eachCell((cell, colNumber) => {
@@ -212,170 +321,259 @@ const AdminTemplatesPage = () => {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
 
       const field = template.fields[colNumber - 1];
-      if (field.comment) {
-        const commentText = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        cell.note = {
-          texts: [
-            { font: { size: 12, color: { argb: 'FF0000' } }, text: commentText }
-          ],
-          editAs: 'oneCells',
-        };
-        
-      }
+      applyFieldCommentNote(cell, field.comment);
     });
 
     worksheet.columns.forEach(column => {
       column.width = 20;
     });
 
-    worksheet.getRow(1000);
+    const maxRows = 1000;
+    worksheet.getRow(maxRows);
 
     template.fields.forEach((field, index) => {
       const colNumber = index + 1;
-      const maxRows = 1000;
-      for (let i = 2; i <= maxRows; i++) {
-        const row = worksheet.getRow(i);
+      for (let rowNumber = 2; rowNumber <= maxRows; rowNumber++) {
+        const row = worksheet.getRow(rowNumber);
         const cell = row.getCell(colNumber);
-    
-        switch (field.datatype) {
-          case 'Entero':
-            cell.dataValidation = {
-              type: 'whole',
-              operator: 'between',
-              formulae: [1, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número entero.'
-            };
-            break;
-          case 'Decimal':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal.'
-            };
-            break;
-          case 'Porcentaje':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 100.0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal entre 0.0 y 100.0.'
-            };
-            break;
-          case 'Texto Corto':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [60],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 60 caracteres.'
-            };
-            break;
-          case 'Texto Largo':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [500],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 500 caracteres.'
-            };
-            break;
-          case 'True/False':
-            cell.dataValidation = {
-              type: 'list',
-              allowBlank: true,
-              formulae: ['"Si,No"'],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, selecciona Si o No.'
-            };
-            break;
-          case 'Fecha':
-          case 'Fecha Inicial / Fecha Final':
-            cell.dataValidation = {
-              type: 'date',
-              operator: 'between',
-              formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce una fecha válida en el formato DD/MM/AAAA.'
-            };
-            cell.numFmt = 'DD/MM/YYYY';
-            break;
-          case 'Link':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'greaterThan',
-              formulae: [0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un enlace válido.'
-            };
-            break;
-          default:
-            break;
-        }
+        applyFieldValidationByDatatype(cell, field);
       }
     });
 
-    validators.forEach((validator) => {
-      const sanitizedName = sanitizeSheetName(validator.name);
-      if (!shouldAddWorksheet(workbook, sanitizedName)) {
-        return;
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields: template.fields,
+      validators,
+      startRow: 2,
+      endRow: maxRows,
+    });
+  };
+
+  const addSummaryWorksheets = (workbook: ExcelJS.Workbook, allTemplates: Template[]) => {
+    const summary = workbook.addWorksheet('Plantillas');
+    const fieldsDetail = workbook.addWorksheet('Campos Plantillas');
+
+    summary.addRow(['Plantilla', 'Creado Por', 'Ambitos', 'Campos', 'Publicada']);
+    allTemplates.forEach((template) => {
+      summary.addRow([
+        template.name,
+        template.created_by?.full_name || '',
+        template.dimensions?.map((dim) => dim.name).join(', ') || '',
+        template.fields?.length || 0,
+        template.published ? 'Si' : 'No',
+      ]);
+    });
+
+    fieldsDetail.addRow(['Plantilla', 'Campo', 'Tipo de dato', 'Requerido', 'Validador', 'Respuesta posible', 'Comentario']);
+
+    const normalizeToken = (value: string): string =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toUpperCase();
+
+    const toOptionText = (value: unknown): string => {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'string') return value.trim();
+      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+      if (typeof value === 'object' && '$numberInt' in (value as Record<string, unknown>)) {
+        return String((value as Record<string, unknown>).$numberInt ?? '').trim();
       }
-      
-      const validatorSheet = workbook.addWorksheet(sanitizedName);
-      // Agregarr encabezados basados en las claves del primer objeto de "values"
-      const header = Object.keys(validator.values[0]);
-      const validatorHeaderRow = validatorSheet.addRow(header);
-  
-      // Estilizar la fila de encabezado
-      validatorHeaderRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: '0f1f39' },
-        };
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' },
-        };
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      });
-  
-      // Agregar las filas con los valores
-      validator.values.forEach((value: any) => {
-        const row = validatorSheet.addRow(Object.values(value));
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' },
-          };
+      return String(value).trim();
+    };
+
+    const buildOptionsForField = (template: Template, validateWith?: string): string[] => {
+      if (!validateWith) return [];
+      const parts = validateWith.split(' - ');
+      const validatorName = parts[0]?.trim();
+      const preferredColumn = parts.slice(1).join(' - ').trim();
+      if (!validatorName) return [];
+
+      const validator = (template.validators || []).find(
+        (item) => normalizeToken(item.name) === normalizeToken(validatorName)
+      );
+      if (!validator || !Array.isArray(validator.values)) return [];
+
+      const result: string[] = [];
+      const seen = new Set<string>();
+
+      validator.values.forEach((row: Record<string, unknown>) => {
+        const keys = Object.keys(row || {});
+        if (!keys.length) return;
+
+        const valueKey = preferredColumn
+          ? keys.find((key) => normalizeToken(key) === normalizeToken(preferredColumn))
+          : keys[0];
+        const mainKey = valueKey || keys[0];
+        const mainValue = row[mainKey];
+        const mainText = toOptionText(mainValue);
+        if (!mainText) return;
+
+        const descKey = keys.find((key) => {
+          if (key === mainKey) return false;
+          const normalized = normalizeToken(key);
+          return normalized.includes('DESCRIPCION') || normalized.includes('NOMBRE') || normalized.startsWith('DESC');
         });
+        const descText = descKey ? toOptionText(row[descKey]) : '';
+        const option = descText ? `${mainText} - ${descText}` : mainText;
+        if (!option || seen.has(option)) return;
+        seen.add(option);
+        result.push(option);
       });
-  
-      // Ajustar el ancho de las columnas
-      validatorSheet.columns.forEach((column) => {
-        column.width = 20;
+
+      return result;
+    };
+
+    const optionsByValidator = new Map<string, string[]>();
+    const rowValidatorKey = new Map<number, string>();
+
+    allTemplates.forEach((template) => {
+      template.fields.forEach((field) => {
+        const validateWith = (field.validate_with || '').trim();
+        const detailRow = fieldsDetail.addRow([
+          template.name,
+          field.name,
+          field.datatype,
+          field.required ? 'Si' : 'No',
+          validateWith,
+          '',
+          field.comment || '',
+        ]);
+
+        if (!validateWith) return;
+        rowValidatorKey.set(detailRow.number, validateWith);
+        if (!optionsByValidator.has(validateWith)) {
+          optionsByValidator.set(validateWith, buildOptionsForField(template, validateWith));
+        }
       });
     });
-  
+
+    if (optionsByValidator.size > 0) {
+      const optionsSheet = workbook.addWorksheet('_OpcionesValidador');
+      optionsSheet.state = 'veryHidden';
+
+      const validatorColumns = new Map<string, { col: number; total: number }>();
+      let col = 1;
+      Array.from(optionsByValidator.entries())
+        .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+        .forEach(([validatorKey, options]) => {
+          optionsSheet.getCell(1, col).value = validatorKey;
+          options.forEach((option, idx) => {
+            optionsSheet.getCell(idx + 2, col).value = option;
+          });
+          validatorColumns.set(validatorKey, { col, total: options.length });
+          col += 1;
+        });
+
+      const toColLetter = (index: number): string => {
+        let n = index;
+        let letters = '';
+        while (n > 0) {
+          const rem = (n - 1) % 26;
+          letters = String.fromCharCode(65 + rem) + letters;
+          n = Math.floor((n - 1) / 26);
+        }
+        return letters;
+      };
+
+      rowValidatorKey.forEach((validatorKey, row) => {
+        const info = validatorColumns.get(validatorKey);
+        if (!info || info.total === 0) return;
+        const colLetter = toColLetter(info.col);
+        const listRange = `'_OpcionesValidador'!$${colLetter}$2:$${colLetter}$${info.total + 1}`;
+        fieldsDetail.getCell(row, 6).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [listRange],
+          showErrorMessage: true,
+          errorTitle: 'Valor no valido',
+          error: 'Selecciona una respuesta posible de la lista.',
+        };
+      });
+    }
+
+    [summary, fieldsDetail].forEach((sheet) => {
+      sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      sheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F1F39' },
+      };
+      sheet.columns.forEach((column) => {
+        column.width = 30;
+      });
+    });
+  };
+
+  const fetchAllTemplatesForExport = async () => {
+    const allTemplates: Template[] = [];
+    let currentPage = 1;
+    let pages = 1;
+    const limit = 100;
+
+    do {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, {
+        params: { page: currentPage, limit, search: '', periodId: selectedPeriodId },
+      });
+
+      allTemplates.push(...(response.data?.templates || []));
+      pages = response.data?.pages || 1;
+      currentPage += 1;
+    } while (currentPage <= pages);
+
+    return allTemplates;
+  };
+
+  const handleDownload = async (template: Template) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheetName = resolveUniqueSheetName(workbook, template.name, 'Plantilla_1');
+    populateTemplateWorksheet(workbook, template, worksheetName, true);
+
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    const blob = new Blob([buffer], { type: 'application/octet-stream' });
     saveAs(blob, `${template.file_name}.xlsx`);
+  };
+
+  const handleDownloadAllTemplates = async () => {
+    setDownloadingAll(true);
+    try {
+      const allTemplates = await fetchAllTemplatesForExport();
+
+      if (!allTemplates.length) {
+        showNotification({
+          title: 'Sin datos',
+          message: 'No hay plantillas para exportar en este periodo.',
+          color: 'yellow',
+        });
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      addSummaryWorksheets(workbook, allTemplates);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const dateTag = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `plantillas_consolidadas_${dateTag}.xlsx`);
+
+      showNotification({
+        title: 'Exportacion completada',
+        message: 'Se descargo el Excel con las hojas Plantillas y Campos Plantillas.',
+        color: 'teal',
+      });
+    } catch (error) {
+      console.error('Error exporting templates:', error);
+      showNotification({
+        title: 'Error',
+        message: 'No fue posible descargar el consolidado de plantillas.',
+        color: 'red',
+      });
+    } finally {
+      setDownloadingAll(false);
+    }
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -506,6 +704,15 @@ const AdminTemplatesPage = () => {
   >
     Categorizar Plantillas
   </Button>
+
+        <Button
+          onClick={handleDownloadAllTemplates}
+          variant="light"
+          leftSection={<IconFileSpreadsheet size={16} />}
+          loading={downloadingAll}
+        >
+          Descargar Todas las Plantillas
+        </Button>
 
         <Button 
           ml={"auto"} 

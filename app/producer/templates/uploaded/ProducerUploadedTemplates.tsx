@@ -36,7 +36,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils"; 
+import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils"; 
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -189,23 +189,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     const { template, validators } = publishedTemplate;
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(template.name);
-    const helpWorksheet = workbook.addWorksheet("Guía");
-
-    helpWorksheet.columns = [{ width: 30 }, { width: 150 }];
-    const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-    helpHeaderRow.eachCell((cell) => {
-      cell.font = { bold: true };
-      cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFFF00" },
-      };
-    });
-    template.fields.forEach((field) => {
-      const commentText = field.comment ? field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : "";
-      const helpRow = helpWorksheet.addRow([field.name, commentText]);
-      helpRow.getCell(2).alignment = { wrapText: true };
-    });
+    buildStyledHelpWorksheet(workbook, template.fields);
 
     // Campos de tipo fecha para formatear correctamente
     const dateFields = new Set(
@@ -252,15 +236,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
       cell.alignment = { vertical: "middle", horizontal: "center" };
 
       const field = template.fields[colNumber - 1];
-      if (field.comment) {
-        const commentText = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        cell.note = {
-          texts: [
-            { font: { size: 12, color: { argb: 'FF0000' } }, text: commentText }
-          ],
-          editAs: 'oneCells',
-        };
-      }
+      applyFieldCommentNote(cell, field.comment);
     });
 
     worksheet.columns.forEach((column) => {
@@ -476,48 +452,30 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
           default:
             break;
         }
+
+        if (field.comment && cell.dataValidation) {
+          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+          const promptBase = normalizedComment.slice(0, 220);
+          const promptText = normalizedComment.length > 220
+            ? `${promptBase}... (ver hoja Guía)`
+            : promptBase;
+          cell.dataValidation = {
+            ...cell.dataValidation,
+            showInputMessage: true,
+            promptTitle: field.name.slice(0, 32),
+            prompt: promptText,
+          };
+        }
       }
     });
 
-    // Crear una hoja por cada validador en el array
-    validators.forEach((validator) => {
-      const sanitizedName = sanitizeSheetName(validator.name);
-      if (!shouldAddWorksheet(workbook, sanitizedName)) return;
-      const validatorSheet = workbook.addWorksheet(sanitizedName);
-
-      const header = Object.keys(validator.values[0]);
-      const validatorHeaderRow = validatorSheet.addRow(header);
-      validatorHeaderRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: "FFFFFF" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "0f1f39" },
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-      });
-
-      validator.values.forEach((value) => {
-        const row = validatorSheet.addRow(Object.values(value));
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-        });
-      });
-
-      validatorSheet.columns.forEach((column) => {
-        column.width = 20;
-      });
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields: template.fields,
+      validators,
+      startRow: 2,
+      endRow: 1000,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
