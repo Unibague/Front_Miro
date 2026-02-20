@@ -145,7 +145,7 @@ const AdminDependenciesPage = () => {
       // Establecer cookie para el middleware
       document.cookie = `userEmail=${session.user.email}; path=/`;
       
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`, payload, { headers });
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/updateAll`, payload, { headers });
       
       showNotification({
         title: "Sincronizado",
