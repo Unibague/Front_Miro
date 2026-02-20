@@ -89,6 +89,7 @@ const AdminUsersPage = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [migrateModalOpened, setMigrateModalOpened] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [historyChanges, setHistoryChanges] = useState<PendingChange[]>([]);
@@ -101,6 +102,7 @@ const AdminUsersPage = () => {
     action: "approve" | "reject" | null;
     count: number;
   }>({ open: false, action: null, count: 0 });
+
   const {
     sortedItems: sortedUsers,
     handleSort,
@@ -136,6 +138,20 @@ const AdminUsersPage = () => {
     } catch (error) {
       console.error("Error fetching dependencies:", error);
       setDependencies([]);
+    }
+  };
+
+  const fetchAvailableRoles = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/available-roles`
+      );
+      if (response.data) {
+        setAvailableRoles(response.data.roles || []);
+      }
+    } catch (error) {
+      console.error("Error fetching available roles:", error);
+      setAvailableRoles(["Usuario", "Administrador", "Responsable", "Productor"]);
     }
   };
 
@@ -198,6 +214,7 @@ const AdminUsersPage = () => {
     setRoles(
       user.roles.filter((role) => role !== "Productor" && role !== "Usuario")
     );
+    fetchAvailableRoles();
     setModalOpened(true);
   };
 
@@ -207,6 +224,7 @@ const AdminUsersPage = () => {
         await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateRole`, {
           email: selectedUser.email,
           roles,
+          adminEmail: session?.user?.email
         });
         showNotification({
           title: "Actualizado",
@@ -254,11 +272,14 @@ const AdminUsersPage = () => {
     }
   };
 
+
+
   const handleToggleActive = async (userId: string, isActive: boolean) => {
     try {
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateStatus`, {
         userId,
         isActive,
+        adminEmail: session?.user?.email
       });
       showNotification({
         title: "Actualizado",
@@ -300,8 +321,15 @@ const AdminUsersPage = () => {
 
   const handleImpersonateUser = async (userId: string) => {
     try {
+      console.log('🔍 Impersonating user with adminEmail:', session?.user?.email);
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate?id=${userId}`
+        `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate`,
+        {
+          params: {
+            id: userId,
+            adminEmail: session?.user?.email
+          }
+        }
       );
 
       const { _id, email, full_name } = response.data || {};
@@ -441,6 +469,8 @@ const AdminUsersPage = () => {
               <IconSwitch3 size={16} />
             </Button>
           </Tooltip>
+          
+
 
           {session?.user?.image ? (
             <Tooltip
@@ -796,7 +826,7 @@ const AdminUsersPage = () => {
         <MultiSelect
           label="Roles"
           placeholder="Selecciona roles"
-          data={["Usuario", "Administrador", "Responsable"]}
+          data={["Usuario", "Administrador", "Responsable", "Productor"]}
           value={roles}
           onChange={setRoles}
         />
@@ -827,10 +857,15 @@ const AdminUsersPage = () => {
         <Select
           label="Dependencia Nueva"
           placeholder="Selecciona una dependencia"
-          data={dependencies.map((dep) => ({
-            value: dep.dep_code,
-            label: dep.name,
-          }))}
+          data={dependencies
+            .filter((dep, index, self) => 
+              index === self.findIndex(d => d.dep_code === dep.dep_code)
+            )
+            .map((dep) => ({
+              value: dep.dep_code,
+              label: dep.name,
+            }))
+          }
           onChange={(value) =>
             setNewDependency(dependencies.find((dep) => dep.dep_code === value))
           }

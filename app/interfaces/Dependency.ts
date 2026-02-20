@@ -5,7 +5,7 @@ interface Dependency {
   dep_father: string;
   members: string[];
   name: string;
-  responsible: string;
+  responsible?: string;
   visualizers: string[]
 }
 

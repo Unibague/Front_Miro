@@ -7,8 +7,12 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconDownload } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
 
 interface Field {
   name: string;
@@ -50,6 +54,11 @@ interface ValidatorOption {
   type: string;
 }
 
+interface Validator { 
+  name: string;
+  values: any[];
+}
+
 const UpdateTemplatePage = () => {
   const [name, setName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -62,7 +71,9 @@ const UpdateTemplatePage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
+  const [validators, setValidators] = useState<Validator[]>([]);
   const [loading, setLoading] = useState(true);
+  const [originalTemplate, setOriginalTemplate] = useState<any>(null);
   const router = useRouter();
   const { id } = useParams();
   const { data: session } = useSession();
@@ -82,6 +93,15 @@ const UpdateTemplatePage = () => {
             setActive(response.data.active);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
+            
+            // Guardar estado original para comparar cambios
+            setOriginalTemplate({
+              name: response.data.name,
+              file_description: response.data.file_description,
+              fields: response.data.fields,
+              dimensions: response.data.dimensions,
+              producers: response.data.producers
+            });
           }
         } catch (error) {
           console.error("Error fetching template:", error);
@@ -140,10 +160,22 @@ const UpdateTemplatePage = () => {
       }
     };
 
+    const fetchValidators = async () => {
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`);
+        if (response.data?.validators) {
+          setValidators(response.data.validators);
+        }
+      } catch (error) {
+        console.error("Error fetching validators:", error);
+      }
+    };
+
     fetchDependencies();
     fetchDimensions();
     fetchTemplate();
     fetchValidatorOptions();
+    fetchValidators();
   }, [id, session, userRole]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
@@ -198,6 +230,11 @@ const UpdateTemplatePage = () => {
 
     try {
       const response = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/templates/${id}`, templateData);
+      
+      // Registrar cambios en auditoría
+      if (originalTemplate && session?.user?.email) {
+        await logAuditChanges(originalTemplate, templateData, session.user.email);
+      }
 
 if (response.data.warning) {
   showNotification({
@@ -248,6 +285,149 @@ router.back();
     
   };
 
+  const logAuditChanges = async (oldTemplate: any, newTemplate: any, userEmail: string) => {
+    // Comparar nombre
+    if (oldTemplate.name !== newTemplate.name) {
+      await logTemplateChange(
+        id as string,
+        newTemplate.name,
+        'update',
+        userEmail,
+        {
+          field: 'name',
+          oldValue: oldTemplate.name,
+          newValue: newTemplate.name,
+          action: `Cambió el nombre de "${oldTemplate.name}" a "${newTemplate.name}"`
+        }
+      );
+    }
+
+    // Comparar descripción
+    if (oldTemplate.file_description !== newTemplate.file_description) {
+      await logTemplateChange(
+        id as string,
+        newTemplate.name,
+        'update',
+        userEmail,
+        {
+          field: 'description',
+          oldValue: oldTemplate.file_description,
+          newValue: newTemplate.file_description,
+          action: `Cambió la descripción de la plantilla "${newTemplate.name}"`
+        }
+      );
+    }
+
+    // Comparar campos
+    const oldFields = oldTemplate.fields || [];
+    const newFields = newTemplate.fields || [];
+
+    // Campos agregados
+    newFields.forEach((newField: Field) => {
+      const oldField = oldFields.find((f: Field) => f.name === newField.name);
+      if (!oldField) {
+        logFieldChange(
+          newTemplate.name,
+          newField.name,
+          'create',
+          userEmail,
+          { fieldType: newField.datatype, required: newField.required }
+        );
+      } else if (JSON.stringify(oldField) !== JSON.stringify(newField)) {
+        // Campo modificado
+        logFieldChange(
+          newTemplate.name,
+          newField.name,
+          'update',
+          userEmail,
+          { oldField, newField }
+        );
+      }
+    });
+
+    // Campos eliminados
+    oldFields.forEach((oldField: Field) => {
+      const newField = newFields.find((f: Field) => f.name === oldField.name);
+      if (!newField) {
+        logFieldChange(
+          newTemplate.name,
+          oldField.name,
+          'delete',
+          userEmail,
+          { fieldType: oldField.datatype }
+        );
+      }
+    });
+
+    // Comparar productores
+    const oldProducers = oldTemplate.producers || [];
+    const newProducers = newTemplate.producers || [];
+
+    // Productores agregados
+    newProducers.forEach((producerId: string) => {
+      if (!oldProducers.includes(producerId)) {
+        const producer = dependencies.find(d => d._id === producerId);
+        if (producer) {
+          logProducerChange(
+            newTemplate.name,
+            producer.name,
+            'create',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Productores eliminados
+    oldProducers.forEach((producerId: string) => {
+      if (!newProducers.includes(producerId)) {
+        const producer = dependencies.find(d => d._id === producerId);
+        if (producer) {
+          logProducerChange(
+            newTemplate.name,
+            producer.name,
+            'delete',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Comparar dimensiones
+    const oldDimensions = oldTemplate.dimensions || [];
+    const newDimensions = newTemplate.dimensions || [];
+
+    // Dimensiones agregadas
+    newDimensions.forEach((dimensionId: string) => {
+      if (!oldDimensions.includes(dimensionId)) {
+        const dimension = dimensions.find(d => d._id === dimensionId);
+        if (dimension) {
+          logDimensionChange(
+            newTemplate.name,
+            dimension.name,
+            'create',
+            userEmail
+          );
+        }
+      }
+    });
+
+    // Dimensiones eliminadas
+    oldDimensions.forEach((dimensionId: string) => {
+      if (!newDimensions.includes(dimensionId)) {
+        const dimension = dimensions.find(d => d._id === dimensionId);
+        if (dimension) {
+          logDimensionChange(
+            newTemplate.name,
+            dimension.name,
+            'delete',
+            userEmail
+          );
+        }
+      }
+    });
+  };
+
   const onDragEnd = (result: DropResult) => {
     const { destination, source } = result;
 
@@ -267,6 +447,173 @@ router.back();
     newFields.splice(destination.index, 0, removed);
 
     setFields(newFields);
+  };
+
+  const handleDownloadTemplate = async () => {
+    const templateData = {
+      name,
+      file_name: fileName,
+      fields,
+      validators
+    };
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(templateData.name);
+    buildStyledHelpWorksheet(workbook, templateData.fields);
+
+    // Crear encabezados principales
+    const headerRow = worksheet.addRow(templateData.fields.map(field => field.name));
+    headerRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: '0f1f39' },
+      };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const field = templateData.fields[colNumber - 1];
+      applyFieldCommentNote(cell, field.comment);
+    });
+
+    worksheet.columns.forEach(column => {
+      column.width = 20;
+    });
+
+    // Agregar validaciones de datos
+    templateData.fields.forEach((field, index) => {
+      const colNumber = index + 1;
+      const maxRows = 1000;
+      for (let i = 2; i <= maxRows; i++) {
+        const row = worksheet.getRow(i);
+        const cell = row.getCell(colNumber);
+    
+        switch (field.datatype) {
+          case 'Entero':
+            cell.dataValidation = {
+              type: 'whole',
+              operator: 'between',
+              formulae: [1, 9999999999999999999999999999999],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un número entero.'
+            };
+            break;
+          case 'Decimal':
+            cell.dataValidation = {
+              type: 'decimal',
+              operator: 'between',
+              formulae: [0.0, 9999999999999999999999999999999],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un número decimal.'
+            };
+            break;
+          case 'Porcentaje':
+            cell.dataValidation = {
+              type: 'decimal',
+              operator: 'between',
+              formulae: [0.0, 100.0],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un número decimal entre 0.0 y 100.0.'
+            };
+            break;
+          case 'Texto Corto':
+            cell.dataValidation = {
+              type: 'textLength',
+              operator: 'lessThanOrEqual',
+              formulae: [60],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un texto de hasta 60 caracteres.'
+            };
+            break;
+          case 'Texto Largo':
+            cell.dataValidation = {
+              type: 'textLength',
+              operator: 'lessThanOrEqual',
+              formulae: [500],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un texto de hasta 500 caracteres.'
+            };
+            break;
+          case 'True/False':
+            cell.dataValidation = {
+              type: 'list',
+              allowBlank: true,
+              formulae: ['"Si,No"'],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, selecciona Si o No.'
+            };
+            break;
+          case 'Fecha':
+          case 'Fecha Inicial / Fecha Final':
+            cell.dataValidation = {
+              type: 'date',
+              operator: 'between',
+              formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce una fecha válida en el formato DD/MM/AAAA.'
+            };
+            cell.numFmt = 'DD/MM/YYYY';
+            break;
+          case 'Link':
+            cell.dataValidation = {
+              type: 'textLength',
+              operator: 'greaterThan',
+              formulae: [0],
+              showErrorMessage: true,
+              errorTitle: 'Valor no válido',
+              error: 'Por favor, introduce un enlace válido.'
+            };
+            break;
+        }
+
+        if (field.comment && cell.dataValidation) {
+          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+          const promptBase = normalizedComment.slice(0, 220);
+          const promptText = normalizedComment.length > 220
+            ? `${promptBase}... (ver hoja Guia)`
+            : promptBase;
+          cell.dataValidation = {
+            ...cell.dataValidation,
+            showInputMessage: true,
+            promptTitle: field.name.slice(0, 32),
+            prompt: promptText,
+          };
+        }
+
+      }
+    });
+
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields,
+      validators,
+      startRow: 2,
+      endRow: 1000,
+    });
+  
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    saveAs(blob, `${templateData.file_name}.xlsx`);
+    
+    showNotification({
+      title: "Éxito",
+      message: "Plantilla descargada exitosamente con las validaciones actualizadas",
+      color: "green",
+    });
   };
 
   if (loading) {
@@ -326,7 +673,16 @@ router.back();
         onChange={(event) => setActive(event.currentTarget.checked)}
         mb="md"
       />
-              <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
+              <Group>
+                <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
+                <Button 
+                  variant="outline" 
+                  onClick={handleDownloadTemplate} 
+                  leftSection={<IconDownload />}
+                >
+                  Descargar Plantilla Actualizada
+                </Button>
+              </Group>
 
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="fields">

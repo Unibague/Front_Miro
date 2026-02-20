@@ -177,7 +177,6 @@ const ProducerReportCreatePage = () => {
           title: "Error",
           message: "Para este informe ya han realizado cargues de información en el periodo en curso, no es posible modificarlo",
           color: "red",
-          timeout: 10000
         });
       }
       showNotification({

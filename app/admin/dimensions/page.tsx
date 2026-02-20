@@ -27,7 +27,7 @@ interface Dependency {
   dep_code: string;
   name: string;
   responsible: string;
-  visualizers: string[]
+  visualizers?: string[]
 }
 
 const AdminDimensionsPage = () => {
@@ -43,17 +43,34 @@ const AdminDimensionsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [selectedDependencyFilter, setSelectedDependencyFilter] = useState<string | null>(null);
   const router = useRouter();
   const { sortedItems: sortedDimensions, handleSort, sortConfig } = useSort<Dimension>(dimensions, { key: null, direction: "asc" });
 
-  const fetchDimensions = async (page: number, search: string) => {
+  const fetchDimensions = async (page: number, search: string, dependencyFilter?: string) => {
     try {
+      const params: any = { page, limit: 10, search, _t: Date.now() };
+      if (dependencyFilter) {
+        const selectedDep = allDependencies.find(dep => dep._id === dependencyFilter);
+        console.log('Selected dependency:', selectedDep);
+        if (selectedDep?.visualizers && selectedDep.visualizers.length > 0) {
+          params.email = selectedDep.visualizers[0];
+          console.log('Using email:', params.email);
+        } else {
+          console.log('No visualizers found, using session email');
+          params.email = session?.user?.email;
+        }
+      } else {
+        params.email = session?.user?.email;
+      }
+      console.log('API params:', params);
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/all`, {
-        params: { page, limit: 10, search },
+        params,
       });
       if (response.data) {
         const dimensions = response.data.dimensions || [];
-        setDimensions(dimensions);
+        console.log('Setting dimensions:', dimensions.length);
+        setDimensions([...dimensions]);
         setTotalPages(response.data.pages || 1);
       }
     } catch (error) {
@@ -65,25 +82,42 @@ const AdminDimensionsPage = () => {
   const fetchDependencies = async () => {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${session?.user?.email}`)
+      console.log('Dependencies loaded:', response.data);
       setAllDependencies(response.data);
-      setTotalPages(response.data.pages);
     } catch (error) {
       console.error("Error fetching dependencies:", error);
     }
   };
 
   useEffect(() => {
-    fetchDimensions(page, search);
-    fetchDependencies();
-  }, [page]);
+    if (session?.user?.email) {
+      fetchDependencies();
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
+    }
+  }, [page, session]);
+
+  useEffect(() => {
+    if (session?.user?.email) {
+      setPage(1);
+      fetchDimensions(1, search, selectedDependencyFilter || undefined);
+    }
+  }, [selectedDependencyFilter, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchDimensions(page, search);
-    }, 500);
+      if (session?.user?.email) {
+        setPage(1);
+        fetchDimensions(1, search, selectedDependencyFilter || undefined);
+      }
+    }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search]);
+  }, [search, session]);
 
   const handleCreateOrEdit = async () => {
     if (!name || !responsible) {
@@ -101,15 +135,19 @@ const AdminDimensionsPage = () => {
         responsible: responsible._id,
       };
 
+      const headers = {
+        'user-email': session?.user?.email || ''
+      };
+
       if (selectedDimension) {
-        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${selectedDimension._id}`, dimensionData);
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${selectedDimension._id}`, dimensionData, { headers });
         showNotification({
           title: "Actualizado",
           message: "Ámbito actualizado exitosamente",
           color: "teal",
         });
       } else {
-        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/create`, dimensionData);
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/create`, dimensionData, { headers });
         showNotification({
           title: "Creado",
           message: "Ámbito creado exitosamente",
@@ -118,7 +156,7 @@ const AdminDimensionsPage = () => {
       }
 
       handleModalClose();
-      fetchDimensions(page, search);
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
     } catch (error) {
       console.error("Error creando o actualizando ámbito:", error);
 
@@ -141,13 +179,17 @@ const AdminDimensionsPage = () => {
   const handleDelete = async (id: string) => {
     if (!dimensionToDelete) return;
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${id}`);
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/dimensions/${id}?email=${encodeURIComponent(session?.user?.email || '')}`, {
+        headers: {
+          'user-email': session?.user?.email || ''
+        }
+      });
       showNotification({
         title: "Eliminado",
         message: "Ámbito eliminado exitosamente",
         color: "teal",
       });
-      fetchDimensions(page, search);
+      fetchDimensions(page, search, selectedDependencyFilter || undefined);
       setConfirmDeleteModalOpened(false);
     } catch (error) {
       console.error("Error eliminando ámbito:", error);
@@ -185,12 +227,12 @@ const AdminDimensionsPage = () => {
       <Table.Td>{dimension.responsible?.name ?? "Sin dependencia asignada"}</Table.Td>
       <Table.Td>
         
- {dimension.responsible.visualizers?.length > 0 ? <Group gap={5}>
-    {dimension.responsible.visualizers?.slice(0, 1).map((v, index) => (
+ {dimension.responsible.visualizers && dimension.responsible.visualizers.length > 0 ? <Group gap={5}>
+    {dimension.responsible.visualizers.slice(0, 1).map((v, index) => (
       <Text key={index} > {v} </Text>
     ))}
-    {dimension.responsible.visualizers?.length > 1 && (
-      <Badge variant="outline">+{dimension.responsible.visualizers?.length - 1} más </Badge>
+    {dimension.responsible.visualizers.length > 1 && (
+      <Badge variant="outline">+{dimension.responsible.visualizers.length - 1} más </Badge>
     )}
   </Group> : <Text> No definido </Text> }
 
@@ -213,12 +255,29 @@ const AdminDimensionsPage = () => {
 
   return (
     <Container size="xl">
-      <TextInput
-        placeholder="Buscar en todas los ámbitos"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar en todas los ámbitos"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por dependencia"
+          data={[
+            { value: '', label: 'Todas las dependencias' },
+            ...allDependencies.map(dep => ({ value: dep._id, label: dep.name }))
+          ]}
+          value={selectedDependencyFilter || ''}
+          onChange={(value) => {
+            console.log('Dependency filter changed:', value);
+            setSelectedDependencyFilter(value || null);
+          }}
+          searchable
+          clearable
+          style={{ minWidth: 250 }}
+        />
+      </Group>
       <Group>
         <Button
           onClick={() => {

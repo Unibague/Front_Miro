@@ -14,6 +14,7 @@ import {
   Tooltip,
   Text,
   Badge,
+  Select,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -40,7 +41,7 @@ import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
@@ -144,6 +145,8 @@ const ProducerTemplatesPage = () => {
   );
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
+  const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
+  const [selectedDependency, setSelectedDependency] = useState<string>('');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   // const fetchPublishedTemplates = async () => {
@@ -161,19 +164,23 @@ const ProducerTemplatesPage = () => {
   //   fetchPublishedTemplates();
   // }, []);
   
-  const fetchTemplates = async (page?: number, search?: string) => {
+  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string) => {
     try {
+      const params: any = {
+        email: session?.user?.email,
+        page,
+        limit: 20,
+        search,
+        periodId: selectedPeriodId,
+      };
+      
+      if (filterByDependency) {
+        params.filterByDependency = filterByDependency;
+      }
+      
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/available`,
-        {
-          params: {
-            email: session?.user?.email,
-            page,
-            limit: 20,
-            search,
-            periodId: selectedPeriodId,
-          },
-        }
+        { params }
       );
       if (response.data) {
         setTemplates(response.data.templates || []);
@@ -186,6 +193,39 @@ const ProducerTemplatesPage = () => {
     }
   };
 
+  const fetchUserDependencies = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`
+      );
+      const userData = response.data.find((user: any) => user.email === session?.user?.email);
+      if (userData) {
+        const depsResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`
+        );
+        
+        // Separar dependencia principal de las adicionales
+        const mainDep = depsResponse.data.find((dep: any) => dep.dep_code === userData.dep_code);
+        const additionalDeps = depsResponse.data
+          .filter((dep: any) => (userData.additional_dependencies || []).includes(dep.dep_code))
+          .map((dep: any) => ({
+            value: dep.dep_code,
+            label: `${dep.dep_code} - ${dep.name}`
+          }));
+        
+        // Poner la dependencia principal primero
+        const availableDeps = [
+          { value: mainDep.dep_code, label: `${mainDep.dep_code} - ${mainDep.name}` },
+          ...additionalDeps
+        ];
+        
+        setUserDependencies(availableDeps);
+      }
+    } catch (error) {
+      console.error('Error fetching user dependencies:', error);
+    }
+  };
+
   useEffect(() => {
     console.log("Template con categoría:", PublishedTemplatesPage);  // Verifica que category esté poblado correctamente
   }, [PublishedTemplatesPage]);
@@ -194,37 +234,42 @@ const ProducerTemplatesPage = () => {
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
     if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
+      fetchUserDependencies();
     }
-  }, [page, search, session, selectedPeriodId]);  
+  }, [page, search, session, selectedPeriodId, selectedDependency]);  
 
   const refreshTemplates = () => {
     if (session?.user?.email) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
     }
+  };
+
+  const getCurrentDependencyTitle = () => {
+    if (!selectedDependency) {
+      // Mostrar la dependencia principal (siempre la primera en la lista)
+      const mainDependency = userDependencies[0];
+      return mainDependency ? mainDependency.label.split(' - ')[1] : 'Cargando...';
+    }
+    const dependency = userDependencies.find(dep => dep.value === selectedDependency);
+    return dependency ? dependency.label.split(' - ')[1] : selectedDependency;
   };
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search);
+      fetchTemplates(page, search, selectedDependency);
     }
   }, [page, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search);
+        fetchTemplates(page, search, selectedDependency);
       }
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [search]);
-
-  useEffect(() => {
-    if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search);
-    }
-  }, [page, search, session, selectedPeriodId]);
 
   useEffect(() => {
     if (templates.length === 0) {
@@ -250,24 +295,7 @@ const ProducerTemplatesPage = () => {
 
     // Crear la hoja principal basada en el template
     const worksheet = workbook.addWorksheet(template.name);
-    const helpWorksheet = workbook.addWorksheet("Guía");
-
-    helpWorksheet.columns = [{ width: 30 }, { width: 150 }];
-    const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-    helpHeaderRow.eachCell((cell) => {
-      cell.font = { bold: true };
-      cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFFF00" },
-      };
-    });
-    template.fields.forEach((field) => {
-      const commentText = field.comment ? field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : "";
-      const helpRow = helpWorksheet.addRow([field.name, commentText]);
-      helpRow.getCell(2).alignment = { wrapText: true };
-    });
-
+    buildStyledHelpWorksheet(workbook, template.fields);
 
     const headerRow = worksheet.addRow(
       template.fields.map((field) => field.name)
@@ -288,15 +316,7 @@ const ProducerTemplatesPage = () => {
       cell.alignment = { vertical: "middle", horizontal: "center" };
 
       const field = template.fields[colNumber - 1];
-      if (field.comment) {
-        const commentText = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        cell.note = {
-          texts: [
-            { font: { size: 12, color: { argb: 'FF0000' } }, text: commentText }
-          ],
-          editAs: 'oneCells',
-        };
-      }
+      applyFieldCommentNote(cell, field.comment);
     });
 
     template.fields.forEach((field, index) => {
@@ -402,6 +422,20 @@ if (field.multiple) {
           default:
             break;
         }
+
+        if (field.comment && cell.dataValidation) {
+          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+          const promptBase = normalizedComment.slice(0, 220);
+          const promptText = normalizedComment.length > 220
+            ? `${promptBase}... (ver hoja Guía)`
+            : promptBase;
+          cell.dataValidation = {
+            ...cell.dataValidation,
+            showInputMessage: true,
+            promptTitle: field.name.slice(0, 32),
+            prompt: promptText,
+          };
+        }
       }
     });
 
@@ -409,45 +443,13 @@ if (field.multiple) {
       column.width = 20;
     });
 
-    // Crear una hoja por cada validador en el array
-    validators.forEach((validator) => {
-      const sanitizedName = sanitizeSheetName(validator.name);
-      if (!shouldAddWorksheet(workbook, sanitizedName)) return;
-      const validatorSheet = workbook.addWorksheet(sanitizedName);
-
-      const header = Object.keys(validator.values[0]);
-      const validatorHeaderRow = validatorSheet.addRow(header);
-      validatorHeaderRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: "FFFFFF" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "0f1f39" },
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-      });
-
-      validator.values.forEach((value) => {
-        const row = validatorSheet.addRow(Object.values(value));
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-        });
-      });
-
-      validatorSheet.columns.forEach((column) => {
-        column.width = 20;
-      });
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields: template.fields,
+      validators,
+      startRow: 2,
+      endRow: 1000,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -644,6 +646,9 @@ if (field.multiple) {
       <Title ta="center" mb={"md"}>
         Plantillas Pendientes
       </Title>
+      <Title order={3} ta="center" mb={"md"} c="blue">
+        {getCurrentDependencyTitle()}
+      </Title>
       <Text ta="center" mt="sm" mb="md">
     Tienes <strong>{pendingCount}</strong> plantilla
     {pendingCount === 1 ? "" : "s"} pendiente
@@ -658,12 +663,26 @@ if (field.multiple) {
       <>No hay fecha de vencimiento próxima.</>
     )}
   </Text>
-      <TextInput
-        placeholder="Buscar plantillas  "
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar plantillas"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por dependencia"
+          data={[
+            { value: '', label: 'Todas las dependencias' },
+            ...userDependencies
+          ]}
+          value={selectedDependency}
+          onChange={(value) => setSelectedDependency(value || '')}
+          clearable
+          searchable
+          style={{ minWidth: 300 }}
+        />
+      </Group>
       <Table striped withTableBorder mt="md">
         <Table.Thead>
           <Table.Tr>
@@ -801,7 +820,11 @@ if (field.multiple) {
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage fetchTemp={fetchTemplates} />
+      <ProducerUploadedTemplatesPage 
+        fetchTemp={fetchTemplates} 
+        selectedDependency={selectedDependency}
+        userDependencies={userDependencies}
+      />
     </Container>
   );
 };

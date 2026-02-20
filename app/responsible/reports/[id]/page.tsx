@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group, Modal, Pill, rem, Select, Table, Text, TextInput, Title, Tooltip, useMantineTheme } from "@mantine/core";
@@ -87,7 +87,10 @@ const StatusColor: Record<string, string> = {
 
 const ResponsibleReportPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams()
   const { id } = useParams();
+ 
+  const dimension = searchParams.get('dimension')
   const { data: session } = useSession();
   const [publishedReport, setPublishedReport] = useState<PublishedReport>();
   const [sendsHistory, setSendsHistory] = useState<FilledReport[]>([]);
@@ -117,11 +120,13 @@ const ResponsibleReportPage = () => {
 
   const fetchReport = async () => {
     try {
+      console.log(dimension)
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pReports`, {
           params: {
             id,
-            email: session?.user?.email
+            email: session?.user?.email,
+            dimension
           }
         }
       )
@@ -177,6 +182,7 @@ if (response.data.report.dimensions.length === 1) {
       const formData = new FormData();
 
       formData.append("email", session?.user?.email ?? "");
+      formData.append("dimension", dimension ?? "");
       formData.append("publishedReportId", publishedReport?._id ?? "");
       formData.append("dimension", selectedDimension ?? "");
       formData.append("filledDraft", JSON.stringify(publishedReport?.filled_reports[0] ?? ""));

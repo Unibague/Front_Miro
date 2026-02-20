@@ -31,7 +31,7 @@ interface Field {
   name: string;
   datatype: string;
   required: boolean;
-  validate_with?: { id: string, name: string };
+  validate_with?: { id: string, name: string } | string;
   comment?: string;
   multiple?: boolean;
 }
@@ -69,6 +69,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
+  const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
 
   const fetchTemplate = async () => {
     try {
@@ -81,8 +82,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       const validatorCheckPromises = response.data.template.fields.map(async (field) => {
         if (field.validate_with) {
           try {
-            const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${field.validate_with.id}`);
-            return { [field.name]: !!validatorResponse.data.validator };
+            let validatorId = '';
+            if (typeof field.validate_with === 'string') {
+              const parts = field.validate_with.split(' - ');
+              validatorId = parts.length >= 2 ? parts[1].trim() : '';
+            } else {
+              validatorId = field.validate_with.id;
+            }
+            
+            if (validatorId) {
+              const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
+              return { [field.name]: !!validatorResponse.data.validator };
+            }
           } catch {
             return { [field.name]: false };
           }
@@ -98,9 +109,26 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       .filter(field => field.multiple && field.validate_with)
       .map(async (field) => {
         try {
-          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${field.validate_with?.id}`);
+          let validatorId = '';
+          let columnToValidate = '';
+          
+          if (typeof field.validate_with === 'string') {
+            const parts = field.validate_with.split(' - ');
+            if (parts.length >= 2) {
+              validatorId = parts[1].trim();
+              columnToValidate = parts[1].trim().toLowerCase();
+            }
+          } else if (field.validate_with?.id) {
+            validatorId = field.validate_with.id;
+            columnToValidate = field.validate_with.name.split(" - ")[1]?.trim().toLowerCase();
+          }
+          
+          if (!validatorId) {
+            return { [field.name]: [] as string[] };
+          }
+          
+          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
           const validatorColumns = validatorResponse.data.validator.columns || [];
-          const columnToValidate = field.validate_with?.name.split(" - ")[1]?.trim().toLowerCase();
           const validatorColumn = validatorColumns.find(
             (col: { is_validator: boolean; name: string }) =>
               col.is_validator && col.name.trim().toLowerCase() === columnToValidate
@@ -110,17 +138,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           } else {
             console.log("No se encontró una columna coincidente para:", columnToValidate);
           }
+          const values = validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : [];
+          const uniqueValues = Array.from(new Set(values));
           return {
-            [field.name]: validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : []
+            [field.name]: uniqueValues as string[]
           };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
-          return { [field.name]: [] };
+          return { [field.name]: [] as string[] };
         }
       });
 
     const multiSelectOptionsArray = await Promise.all(multiSelectOptionsPromises);
-    const multiSelectOptions = multiSelectOptionsArray.reduce((acc, curr) => ({ ...acc, ...curr }), {});
+    const multiSelectOptions = multiSelectOptionsArray.reduce((acc, curr) => ({ ...acc, ...curr }), {} as Record<string, string[]>);
     setMultiSelectOptions(multiSelectOptions);
 
 
@@ -163,7 +193,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const addRow = () => {
-    setRows([...rows, {}]);
+    const newRows = [...rows, {}];
+    setRows(newRows);
+    
+    // Auto-seleccionar el primer campo con validador de la nueva fila
+    const newRowIndex = newRows.length - 1;
+    const firstFieldWithValidator = template?.fields.find(f => f.validate_with);
+    
+    if (firstFieldWithValidator) {
+      setActiveRowIndex(newRowIndex);
+      setActiveFieldName(firstFieldWithValidator.name);
+    }
   };
 
   const removeRow = (index: number) => {
@@ -188,13 +228,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
+    console.log('handleValidatorOpen - validatorId:', validatorId, 'rowIndex:', rowIndex, 'fieldName:', fieldName);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
       setValidatorData(response.data.validator);
+      setCurrentValidatorId(validatorId);
       setActiveRowIndex(rowIndex);
       setActiveFieldName(fieldName);
+      console.log('Valores establecidos - activeRowIndex:', rowIndex, 'activeFieldName:', fieldName);
       setValidatorModalOpen(true);
     } catch (error) {
+      console.error('Error en handleValidatorOpen:', error);
       showNotification({
         title: "Error",
         message: "No se pudieron cargar los datos de validación",
@@ -235,6 +279,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         return formattedRow;
       });  
       console.log("Datos enviados al backend:", formattedRows);
+      console.log("Template fields con validate_with:", template?.fields.filter(f => f.validate_with));
 
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
         email: session?.user?.email,
@@ -295,7 +340,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       required: field.required,
       placeholder: field.comment,
       style: { minWidth: "280px", width: "100%" },
-      error: fieldError || undefined, // este es el truco
+      error: fieldError || undefined,
     };
   
     if (field.multiple && field.validate_with) {
@@ -303,7 +348,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-          data={multiSelectOptions[field.name] || []}
+          data={Array.from(new Set(multiSelectOptions[field.name] || [])).map(value => ({ value: String(value), label: String(value) }))}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}
@@ -398,16 +443,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                       <Group>
                         {field.name} {field.required && <Text span color="red">*</Text>}
-                        {field.validate_with && (
-                            <ActionIcon
-                            size={"lg"}
-                            onClick={() => handleValidatorOpen(field.validate_with?.id!, 0, field.name)}
-                            title="Ver valores aceptados"
-                            disabled={!validatorExists[field.name]}
-                          >
-                            <IconEye />
-                          </ActionIcon>
-                        )}
                       </Group>
                     </Table.Th>
                   ))}
@@ -421,6 +456,49 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                       <Table.Td key={field.name} style={{ minWidth: '250px' }}>
                         <Group align="center">
                           {renderInputField(field, row, rowIndex)}
+                          {field.validate_with && (
+                            <ActionIcon
+                              size={"sm"}
+                              onClick={() => {
+                                console.log('Botón ojo clickeado - field:', field.name);
+                                console.log('field.validate_with completo:', field.validate_with);
+                                
+                                // Extraer ID del validador del string
+                                let validatorId = '';
+                                if (typeof field.validate_with === 'string') {
+                                  // Formato esperado: "NOMBRE_VALIDADOR - ID_VALIDADOR"
+                                  const parts = field.validate_with.split(' - ');
+                                  if (parts.length >= 2) {
+                                    validatorId = parts[1].trim();
+                                  }
+                                } else if (field.validate_with?.id) {
+                                  validatorId = field.validate_with.id;
+                                }
+                                
+                                console.log('ID extraído:', validatorId);
+                                
+                                if (validatorId) {
+                                  setActiveRowIndex(rowIndex);
+                                  setActiveFieldName(field.name);
+                                  handleValidatorOpen(validatorId, rowIndex, field.name);
+                                } else {
+                                  console.error('No se pudo extraer ID del validador para campo:', field.name);
+                                  console.error('validate_with:', field.validate_with);
+                                  showNotification({
+                                    title: "Error",
+                                    message: `No se pudo obtener ID del validador para ${field.name}`,
+                                    color: "red",
+                                  });
+                                }
+                              }}
+                              title="Ver valores aceptados"
+                              color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
+                              variant={activeRowIndex === rowIndex && activeFieldName === field.name ? "filled" : "light"}
+                            >
+                              <IconEye />
+                            </ActionIcon>
+                          )}
+
                         </Group>
                       </Table.Td>
                     ))}
@@ -472,15 +550,24 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       </Group>
       <ValidatorModal
         opened={validatorModalOpen}
-        onClose={() => setValidatorModalOpen(false)}
-        validatorId={validatorData?._id || ""}
+        onClose={() => {
+          setValidatorModalOpen(false);
+          setActiveRowIndex(null);
+          setActiveFieldName(null);
+          setCurrentValidatorId("");
+        }}
+        validatorId={currentValidatorId}
         onCopy={(value: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
             const updatedRows = [...rows];
             updatedRows[activeRowIndex][activeFieldName] = value;
             setRows(updatedRows);
+            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName);
           }
           setValidatorModalOpen(false);
+          setActiveRowIndex(null);
+          setActiveFieldName(null);
+          setCurrentValidatorId("");
         }}
       />
     </Container>

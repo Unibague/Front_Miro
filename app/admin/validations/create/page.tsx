@@ -101,6 +101,21 @@ const AdminValidationCreatePage = () => {
   };
 
   const handleAddValue = () => {
+    // Verificar si hay valores duplicados en alguna columna
+    const hasDuplicates = columns.some(column => {
+      const values = column.values.filter(v => v !== "" && v !== null && v !== undefined);
+      return values.length !== new Set(values.map(v => String(v).toLowerCase())).size;
+    });
+
+    if (hasDuplicates) {
+      showNotification({
+        title: "Error",
+        message: "No se puede agregar una nueva fila mientras haya valores duplicados en las columnas",
+        color: "red",
+      });
+      return;
+    }
+
     const newColumns = columns.map(column => ({
       ...column,
       values: [...column.values, ""],
@@ -199,6 +214,14 @@ const AdminValidationCreatePage = () => {
             setIsFormValid(false);
             return;
           }
+        }
+        // Verificar duplicados en la columna
+        const nonEmptyValues = column.values.filter(v => v !== "" && v !== null && v !== undefined);
+        const uniqueValues = new Set(nonEmptyValues.map(v => String(v).toLowerCase()));
+        if (nonEmptyValues.length !== uniqueValues.size) {
+          setTooltipContent(`La columna "${column.name}" tiene valores duplicados.`);
+          setIsFormValid(false);
+          return;
         }
       }
       if (!hasValidator) {

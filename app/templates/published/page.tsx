@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { sanitizeSheetName, shouldAddWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
 
 interface Field {
   name: string;
@@ -93,6 +93,8 @@ const PublishedTemplatesPage = () => {
   const [search, setSearch] = useState("");
   const [opened, setOpened] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
+  const [recentlyViewed, setRecentlyViewed] = useState<string[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   const fetchTemplates = async (page: number, search: string) => {
@@ -106,6 +108,7 @@ const PublishedTemplatesPage = () => {
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
           },
         }
       );
@@ -126,10 +129,43 @@ const PublishedTemplatesPage = () => {
   };
 
   useEffect(() => {
-    if (session?.user?.email) {
+    // Cargar plantillas vistas recientemente
+    const viewed = localStorage.getItem('recentlyViewedTemplates');
+    if (viewed) {
+      setRecentlyViewed(JSON.parse(viewed));
+    }
+    // Cargar búsqueda guardada
+    const savedSearch = localStorage.getItem('publishedTemplatesSearch');
+    if (savedSearch) {
+      setSearch(savedSearch);
+    }
+    setIsInitialized(true);
+  }, []);
+
+  useEffect(() => {
+    if (session?.user?.email && isInitialized) {
       fetchTemplates(page, search);
     }
-  }, [page, search, session, selectedPeriodId]);
+  }, [page, search, session, selectedPeriodId, isInitialized]);
+
+  const markAsViewed = (templateId: string) => {
+    const updated = [templateId, ...recentlyViewed.filter(id => id !== templateId)].slice(0, 10);
+    setRecentlyViewed(updated);
+    localStorage.setItem('recentlyViewedTemplates', JSON.stringify(updated));
+  };
+
+  const sortTemplatesByRecent = (templates: PublishedTemplate[]) => {
+    return templates.sort((a, b) => {
+      const aIndex = recentlyViewed.indexOf(a._id);
+      const bIndex = recentlyViewed.indexOf(b._id);
+      
+      if (aIndex === -1 && bIndex === -1) return 0;
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      
+      return aIndex - bIndex;
+    });
+  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -169,6 +205,7 @@ const PublishedTemplatesPage = () => {
           params: {
             pubTem_id: publishedTemplate._id,
             email: session?.user?.email,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
           },
         }
       );
@@ -183,28 +220,20 @@ const dateFields = new Set(
     .map(f => f.name)
 );
 
-      console.log("Template: ", template);
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
-      const helpWorksheet = workbook.addWorksheet("Guía");
+    buildStyledHelpWorksheet(workbook, template.fields);
 
-      helpWorksheet.columns = [{ width: 30 }, { width: 150 }];
-      const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-      helpHeaderRow.eachCell((cell) => {
-        cell.font = { bold: true };
-        cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFFF00" },
-        };
+      // Usar las claves que realmente vienen del backend
+      const dataKeys = Object.keys(data[0]);
+      // Asegurar que Dependencia esté primero
+      const availableFields = dataKeys.sort((a, b) => {
+        if (a === 'Dependencia') return -1;
+        if (b === 'Dependencia') return 1;
+        return 0;
       });
-      template.fields.forEach((field) => {
-        const commentText = field.comment ? field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : "";
-        const helpRow = helpWorksheet.addRow([field.name, commentText]);
-        helpRow.getCell(2).alignment = { wrapText: true };
-      });
-
-      const headerRow = worksheet.addRow(Object.keys(data[0]));
+      
+      const headerRow = worksheet.addRow(availableFields);
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };
         cell.fill = {
@@ -225,10 +254,12 @@ const dateFields = new Set(
         column.width = 20;
       });
 
-      // Add the data to the worksheet starting from the second row
+      // Add the data to the worksheet using the same field order
       data.forEach((row: any) => {
-        const formattedRow = Object.entries(row).map(([key, value]) => {
-          if (value && dateFields.has(key)) {
+        const formattedRow = availableFields.map(fieldName => {
+          let value = row[fieldName];
+          
+          if (value && dateFields.has(fieldName)) {
             if (
               typeof value === 'string' ||
               typeof value === 'number' ||
@@ -246,45 +277,13 @@ const dateFields = new Set(
         worksheet.addRow(formattedRow);
       });
 
-      // Crear una hoja por cada validador en el array
-      validators.forEach((validator) => {
-        const sanitizedName = sanitizeSheetName(validator.name);
-        if (!shouldAddWorksheet(workbook, sanitizedName)) return;
-        const validatorSheet = workbook.addWorksheet(sanitizedName);
-
-        const header = Object.keys(validator.values[0]);
-        const validatorHeaderRow = validatorSheet.addRow(header);
-        validatorHeaderRow.eachCell((cell) => {
-          cell.font = { bold: true, color: { argb: "FFFFFF" } };
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "0f1f39" },
-          };
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-          cell.alignment = { vertical: "middle", horizontal: "center" };
-        });
-
-        validator.values.forEach((value) => {
-          const row = validatorSheet.addRow(Object.values(value));
-          row.eachCell((cell) => {
-            cell.border = {
-              top: { style: "thin" },
-              left: { style: "thin" },
-              bottom: { style: "thin" },
-              right: { style: "thin" },
-            };
-          });
-        });
-
-        validatorSheet.columns.forEach((column) => {
-          column.width = 20;
-        });
+      applyValidatorDropdowns({
+        workbook,
+        worksheet,
+        fields: template.fields,
+        validators,
+        startRow: 2,
+        endRow: 1000,
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -306,7 +305,10 @@ const dateFields = new Set(
     );
   };
 
-  const rows = sortedTemplates.map((publishedTemplate) => {
+  const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
+  
+  const rows = finalSortedTemplates.map((publishedTemplate) => {
+    const isRecentlyViewed = recentlyViewed.includes(publishedTemplate._id);
     let progress = {
       total: publishedTemplate.template.producers.length,
       value: publishedTemplate.loaded_data.length,
@@ -317,9 +319,24 @@ const dateFields = new Set(
     };
 
     return (
-      <Table.Tr key={publishedTemplate._id}>
+      <Table.Tr 
+        key={publishedTemplate._id}
+        style={{
+          backgroundColor: isRecentlyViewed ? '#f0f8ff' : undefined,
+          borderLeft: isRecentlyViewed ? '4px solid #228be6' : undefined
+        }}
+      >
         <Table.Td>{publishedTemplate.period.name}</Table.Td>
-        <Table.Td>{publishedTemplate.name}</Table.Td>
+        <Table.Td>
+          <Group gap="xs">
+            {publishedTemplate.name}
+            {isRecentlyViewed && (
+              <Tooltip label="Vista recientemente">
+                <IconEye size={16} color="#228be6" />
+              </Tooltip>
+            )}
+          </Group>
+        </Table.Td>
         <Table.Td>
           <Center>
             {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
@@ -370,6 +387,7 @@ const dateFields = new Set(
                 <Button
                   variant="outline"
                   onClick={() => {
+                    markAsViewed(publishedTemplate._id);
                     router.push(`/templates/uploaded/${publishedTemplate._id}?resume=false`);
                   }}
                   disabled={publishedTemplate.loaded_data.length === 0}
@@ -425,7 +443,11 @@ const dateFields = new Set(
       <TextInput
         placeholder="Buscar plantillas"
         value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
+        onChange={(event) => {
+          const newSearch = event.currentTarget.value;
+          setSearch(newSearch);
+          localStorage.setItem('publishedTemplatesSearch', newSearch);
+        }}
         mb="md"
       />
       <Group justify="space-between">

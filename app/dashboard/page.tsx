@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme} from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2,IconMail   } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -31,6 +31,7 @@ const DashboardPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
+  const showResponsibleScopeCards = false;
 
   const params = useParams();
 const { id } = params ?? {};
@@ -202,7 +203,7 @@ useEffect(() => {
             { params: { search: session.user.email } }
           );
           const userDependencies = response.data.dependencies.filter(
-            (dependency: any) => dependency.responsible === session.user?.email
+            (dependency: any) => dependency.visualizers?.includes(session.user?.email)
           );
           setIsResponsible(userDependencies.length > 0);
         } catch (error) {
@@ -306,6 +307,7 @@ useEffect(() => {
 
   const renderCards = () => {
     const cards = [];
+    console.log('DEBUG - Current userRole:', userRole);
 
     switch (userRole) {
       case "Administrador":
@@ -344,7 +346,7 @@ useEffect(() => {
                 <IconClipboardData size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes Productores</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Productores</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes que generarán los productores.
@@ -383,10 +385,10 @@ useEffect(() => {
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes Ámbitos</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes que generarán las ámbitos.
+                Crea, edita y asigna los informes que generarán los ámbitos.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
                 Ir a Configuración de Informes
@@ -417,13 +419,13 @@ useEffect(() => {
                 <IconChartBarPopular size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes de Gestión</Text>
+                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Responsables</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes de gestión.
+                Crea, edita y asigna los informes de gestión de responsables.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
-                Ir a Configuración de Informes de gestión
+                Ir a Configuración de Informes.
               </Button>
             </Card>
           </Grid.Col>,
@@ -562,25 +564,42 @@ useEffect(() => {
     </Button>
   </Card>
 </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-audit">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconChartHistogram size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Historial de Trazabilidad</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Consulta el historial de cambios en plantillas y ámbitos
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/audit')}>
+                  Ir a Historial
+                </Button>
+              </Card>
+            </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-management">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconFilter size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Gestiona plantillas con filtros avanzados y configuraciones administrativas
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-management')}>
+                  Ir a Plantillas con Filtros
+                </Button>
+              </Card>
+            </Grid.Col>,
+
+
+
 
         );
         break;
       case "Responsable":
         cards.push(
-          // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates">
-          //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-          //     <Center><IconFileAnalytics size={80}/></Center>
-          //     <Group mt="md" mb="xs">
-          //       <Text ta={"center"} w={500}>Crear | Asignar Plantillas</Text>
-          //     </Group>
-          //     <Text ta={"center"} size="sm" color="dimmed">
-          //       Crea y gestiona las plantillas que llenarán los usuarios.
-          //     </Text>
-          //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/templates')}>
-          //       Ir a Gestión de Plantillas
-          //     </Button>
-          //   </Card>
-          // </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-published-templates">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconChecklist size={80}></IconChecklist></Center>
@@ -599,16 +618,17 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
              <Center><IconClipboardData size={80}/></Center>
              <Group mt="md" mb="xs">
-               <Text ta={"center"} w={500}>Gestionar Informes Productores</Text>
+               <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
              </Group>
              <Text ta={"center"} size="sm" color="dimmed">
-              Haz seguimiento y descarga los informes de tus productores 
+              Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito
              </Text>
              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reports')}>
-               Ir a Informes de Productores
+               Ir a Informes de Gestión de Productores
              </Button>
             </Card>
          </Grid.Col>,
+          showResponsibleScopeCards && (
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="dimension-reports">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Center style={{ position: "relative" }}>
@@ -616,7 +636,7 @@ useEffect(() => {
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
                 </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Informes Ámbito</Text>
+                <Text ta={"center"} w={500}>Informe de Ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
               Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
@@ -625,21 +645,65 @@ useEffect(() => {
                 Ir a Informes de Ámbito
               </Button>
             </Card>
+          </Grid.Col>
+          ),
+          showResponsibleScopeCards && (
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconHexagon3d size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Gestiona la dimensión de la que eres responsable.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
+                Ir a Gestión de Mi Dimensión
+              </Button>
+            </Card>
+          </Grid.Col>
+          ),
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
+  <Card shadow="sm" padding="lg" radius="md" withBorder>
+    <Center>
+      <IconChartBarPopular size={80} />
+    </Center>
+
+    <Group mt="md" mb="xs">
+      <Text ta="center" w={500}>
+        Informe de Gestión de Responsables
+      </Text>
+    </Group>
+
+    <Text ta="center" size="sm" color="dimmed">
+      Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
+    </Text>
+
+    <Button
+      variant="light"
+      fullWidth
+      mt="md"
+      radius="md"
+      onClick={() => router.push('/responsible/reports')}
+    >
+       Ir a Informes de Gestión de Responsables
+    </Button>
+  </Card>
+</Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFilter size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
+                Ir a Plantillas con Filtros
+              </Button>
+            </Card>
           </Grid.Col>,
-        // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
-        //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-        //     <Center><IconHexagon3d size={80}/></Center>
-        //     <Group mt="md" mb="xs">
-        //       <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
-        //     </Group>
-        //     <Text ta={"center"} size="sm" color="dimmed">
-        //       Gestiona la dimensión de la que eres responsable.
-        //     </Text>
-        //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-        //       Ir a Gestión de Mi Dimensión
-        //     </Button>
-        //   </Card>
-        // </Grid.Col>,
         );
         break;
       case "Productor":
@@ -658,25 +722,11 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
-          // <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-send-info">
-          //   <Card shadow="sm" padding="lg" radius="md" withBorder>
-          //     <Center><IconFileUpload size={80}/></Center>
-          //     <Group mt="md" mb="xs">
-          //       <Text ta={"center"} w={500}>Plantillas Enviadas</Text>
-          //     </Group>
-          //     <Text ta={"center"} size="sm" color="dimmed">
-          //       Gestiona la información de tus plantillas cargadas.
-          //     </Text>
-          //     <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/producer/templates/uploaded')}>
-          //       Ir a Plantillas Enviadas
-          //     </Button>
-          //   </Card>
-          // </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-reports">
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Center><IconClipboardData size={80}/></Center>
             <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestionar Informes</Text>
+              <Text ta={"center"} w={500}>Informe de gestión de productor</Text>
             </Group>
             <Text ta={"center"} size="sm" color="dimmed">
               Revisa los informes que debes entregar, carga los informes y haz los ajustes de acuerdo a las observaciones
@@ -700,6 +750,20 @@ useEffect(() => {
             </Button>
           </Card>
         </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-templates-with-filters-all">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconFilter size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
+                Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         if (isVisualizer) {
 
@@ -714,7 +778,7 @@ useEffect(() => {
               </Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>
-                  Administrar Mi Dependencia
+                  Ver Mi Dependencia
                 </Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
@@ -791,7 +855,8 @@ useEffect(() => {
                   Ir a visualizador de reportes
                 </Button>
               </Card>
-            </Grid.Col>
+            </Grid.Col>,
+
           );
         }
   break;

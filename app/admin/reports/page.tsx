@@ -22,6 +22,7 @@ import {
   Pill,
   Checkbox,
 } from "@mantine/core";
+import { modals } from "@mantine/modals";
 import {
   IconArrowBigDownFilled,
   IconArrowBigUpFilled,
@@ -110,19 +111,23 @@ const AdminReportsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<string | null>(null);
+  const [userDimensions, setUserDimensions] = useState<Dimension[]>([]);
   const router = useRouter();
   const [customDeadline, setCustomDeadline] = useState(false);
   const [deadline, setDeadline] = useState<Date | null>(null);
   const [loadingPublishOptions, setLoadingPublishOptions] = useState(false);
   const { sortedItems: sortedReports, handleSort, sortConfig } = useSort<Report>(reports, { key: null, direction: "asc" });
 
-  const fetchReports = async (page: number, search: string) => {
+  const fetchReports = async (page: number, search: string, dimensionFilter?: string) => {
     try {
+      const params: any = { page, limit: 10, search, email: session?.user?.email };
+      if (dimensionFilter) {
+        params.dimensionId = dimensionFilter;
+      }
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/reports/all`,
-        {
-          params: { page, limit: 10, search, email: session?.user?.email },
-        }
+        { params }
       );
       if (response.data) {
         setReports(response.data.reports);
@@ -131,6 +136,18 @@ const AdminReportsPage = () => {
     } catch (error) {
       console.error("Error fetching reports:", error);
       setReports([]);
+    }
+  };
+
+  const fetchUserDimensions = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/dimensions/user/${session?.user?.email}`
+      );
+      setUserDimensions(response.data || []);
+    } catch (error) {
+      console.error("Error fetching user dimensions:", error);
+      setUserDimensions([]);
     }
   };
 
@@ -157,19 +174,20 @@ const AdminReportsPage = () => {
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchReports(page, search);
+      fetchReports(page, search, selectedDimensionFilter || undefined);
+      fetchUserDimensions();
     }
-  }, [page, session?.user?.email]);
+  }, [page, session?.user?.email, selectedDimensionFilter]);
 
   useEffect(() => {
     if (session?.user?.email) {
       const delayDebounceFn = setTimeout(() => {
-        fetchReports(page, search);
+        fetchReports(page, search, selectedDimensionFilter || undefined);
       }, 500);
 
       return () => clearTimeout(delayDebounceFn);
     }
-  }, [search, session?.user?.email, page]);
+  }, [search, session?.user?.email]);
 
   const handleEdit = (report: Report) => {
     setSelectedReport(report);
@@ -180,24 +198,44 @@ const AdminReportsPage = () => {
     setOpened(true);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/reports/delete/${id}`);
-      showNotification({
-        title: "Eliminado",
-        message: "Informe eliminado exitosamente",
-        color: "teal",
-      });
-      fetchReports(page, search);
-    } catch (error) {
-      console.error("Error eliminando informe:", error);
-      showNotification({
-        title: "Error",
-        message: "Hubo un error al eliminar el informe",
-        color: "red",
-      });
-    }
-  };
+const confirmDelete = (id: string) => {
+  modals.openConfirmModal({
+    title: "Confirmar eliminación",
+    centered: true,
+    children: (
+      <Text size="sm">
+        ¿Estás seguro de que deseas eliminar este informe?
+        <br />
+        <strong>Esta acción no se puede deshacer.</strong>
+      </Text>
+    ),
+    labels: { confirm: "Eliminar", cancel: "Cancelar" },
+    confirmProps: { color: "red" },
+    onConfirm: async () => {
+      try {
+        await axios.delete(
+          `${process.env.NEXT_PUBLIC_API_URL}/reports/delete/${id}`
+        );
+
+        showNotification({
+          title: "Eliminado",
+          message: "Informe eliminado exitosamente",
+          color: "teal",
+        });
+
+        fetchReports(page, search);
+      } catch (error) {
+        console.error("Error eliminando informe:", error);
+        showNotification({
+          title: "Error",
+          message: "Hubo un error al eliminar el informe",
+          color: "red",
+        });
+      }
+    },
+  });
+};
+
 
   const handlePublishModalClose = () => {
     setSelectedReport(null);
@@ -274,7 +312,8 @@ const AdminReportsPage = () => {
               <Button
                 color="red"
                 variant="outline"
-                onClick={() => handleDelete(report._id)}
+                onClick={() => confirmDelete(report._id)}
+
               >
                 <IconTrash size={16} />
               </Button>
@@ -325,12 +364,25 @@ const AdminReportsPage = () => {
     <Container size="xl">
       <DateConfig />
       <Title mb={'md'} ta={'center'}>Configuración Informes de Ámbitos</Title>
-      <TextInput
-        placeholder="Buscar en todos los informes"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar en todos los informes"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Filtrar por ámbito"
+          data={[
+            { value: '', label: 'Todos mis ámbitos' },
+            ...userDimensions.map(dim => ({ value: dim._id, label: dim.name }))
+          ]}
+          value={selectedDimensionFilter}
+          onChange={setSelectedDimensionFilter}
+          clearable
+          style={{ minWidth: 250 }}
+        />
+      </Group>
       <Group>
         <Button
           onClick={() => {

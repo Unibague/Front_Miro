@@ -92,6 +92,7 @@ const UpdatePublishedTemplatesDeadlinePage = () => {
             limit:100,
             search,
             periodId: selectedPeriodId,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
           },
         }
       );

@@ -8,6 +8,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
+import { modals } from "@mantine/modals";
 
 interface Report {
   _id: string;
@@ -98,6 +99,46 @@ const ProducerReportPage = () => {
       });
     }
   }
+  const confirmDeleteProducer = (report: Report) => {
+  modals.openConfirmModal({
+    title: "Confirmar eliminación",
+    centered: true,
+    children: (
+      <Text size="sm">
+        ¿Estás seguro de que deseas eliminar el informe{" "}
+        <strong>{report.name}</strong>?
+        <br />
+        <strong>Esta acción no se puede deshacer.</strong>
+      </Text>
+    ),
+    labels: { confirm: "Eliminar", cancel: "Cancelar" },
+    confirmProps: { color: "red" },
+    onConfirm: async () => {
+      try {
+        await axios.delete(
+          `${process.env.NEXT_PUBLIC_API_URL}/producerReports/${report._id}`
+        );
+
+        showNotification({
+          title: "Eliminado",
+          message: "Informe eliminado correctamente.",
+          color: "green",
+        });
+
+        fetchReports();
+      } catch (error: any) {
+        const msg =
+          error.response?.data?.message || "Error inesperado.";
+        showNotification({
+          title: "Error",
+          message: msg,
+          color: "red",
+        });
+      }
+    },
+  });
+};
+
 
   const handlePublish = async (reportId: string) => {
     try {
@@ -201,30 +242,12 @@ const ProducerReportPage = () => {
   <Button
     color="red"
     variant="outline"
-    onClick={async () => {
-      if (!window.confirm("¿Estás seguro de eliminar este informe? Esta acción no se puede deshacer.")) return;
-
-      try {
-        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/producerReports/${report._id}`);
-        showNotification({
-          title: "Eliminado",
-          message: "Informe eliminado correctamente.",
-          color: "green"
-        });
-        fetchReports();
-      } catch (error: any) {
-  const msg = error.response?.data?.message || "Error inesperado.";
-  showNotification({
-    title: "Error",
-    message: msg,
-    color: "red"
-  });
-}
-    }}
+    onClick={() => confirmDeleteProducer(report)}
   >
     <IconTrash size={16} />
   </Button>
 </Tooltip>
+
           </Group>
         </Center>
       </Table.Td>
