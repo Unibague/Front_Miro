@@ -4,6 +4,8 @@
   background-color: var(--mantine-color-body);
   border-bottom: rem(1px) solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
   margin-bottom: rem(50px);
+  position: relative;
+  z-index: 100;
 }
 
 .inner {

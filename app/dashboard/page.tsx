@@ -592,6 +592,20 @@ useEffect(() => {
                 </Button>
               </Card>
             </Grid.Col>,
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-date-review">
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconCalendarMonth size={80}/></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Revision de fechas</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Consulta las fechas corte y horarios de reuniones con respecto al registro calificado y acreditacion en torno a la dependencia.
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/date-review')}>
+                  Ir a revision de fechas
+                </Button>
+              </Card>
+            </Grid.Col>,
 
 
 
@@ -863,9 +877,20 @@ useEffect(() => {
       case "Usuario":
       default:
         cards.push(
-          <Container key="default-message">
-            <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menú superior.</Text>
-          </Container>
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="usuario-date-review">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconCalendarMonth size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Revision de fechas</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta las fechas corte y horarios de reuniones con respecto al registro calificado y acreditacion en torno a la dependencia.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/date-review')}>
+                Ir a revision de fechas
+              </Button>
+            </Card>
+          </Grid.Col>
         );
         break;
     }
