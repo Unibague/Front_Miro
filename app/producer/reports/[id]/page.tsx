@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group, Modal, Pill, rem, Select, Table, Text, TextInput, Title, Tooltip, useMantineTheme } from "@mantine/core";
 import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, IconCloudUpload, IconDownload, IconEdit, IconEye, IconSend, IconX } from "@tabler/icons-react";
 import classes from "../../../responsible/reports/ResponsibleReportsPage.module.css";
@@ -143,6 +144,51 @@ const ResponsibleReportPage = () => {
   }, []);
 
   const loadDraft = async () => {
+    // Verificar si ya tiene un informe cargado
+    const hasExistingReport = publishedReport?.filled_reports[0]?.report_file || reportFile;
+    const hasExistingAttachments = (publishedReport?.filled_reports[0]?.attachments?.length || 0) > 0 || attachments.length > 0;
+    
+    if (hasExistingReport || hasExistingAttachments) {
+      modals.openConfirmModal({
+        title: "Confirmar guardado de borrador",
+        centered: true,
+        children: (
+          <Text size="sm">
+            ¿Estás seguro de que deseas guardar este borrador?
+            <br /><br />
+            {hasExistingReport && "Se actualizará el archivo de informe existente."}
+            {hasExistingAttachments && "Se actualizarán los anexos existentes."}
+            <br /><br />
+            <strong>Esta acción guardará los cambios realizados.</strong>
+          </Text>
+        ),
+        labels: { confirm: "Sí, guardar borrador", cancel: "Cancelar" },
+        confirmProps: { color: "blue" },
+        onConfirm: async () => {
+          await performLoadDraft();
+        },
+      });
+    } else {
+      modals.openConfirmModal({
+        title: "Confirmar guardado de borrador",
+        centered: true,
+        children: (
+          <Text size="sm">
+            ¿Estás seguro de que deseas guardar este borrador?
+            <br /><br />
+            Asegúrate de haber cargado el archivo de informe y los anexos necesarios.
+          </Text>
+        ),
+        labels: { confirm: "Sí, guardar borrador", cancel: "Cancelar" },
+        confirmProps: { color: "blue" },
+        onConfirm: async () => {
+          await performLoadDraft();
+        },
+      });
+    }
+  };
+
+  const performLoadDraft = async () => {
     setSaving(true);
     try {
       const formData = new FormData();
@@ -196,7 +242,7 @@ const ResponsibleReportPage = () => {
         color: "red",
       });
     }
-  }
+  };
 
   const sendReport = async () => {
     if (!publishedReport) {
@@ -236,7 +282,28 @@ const ResponsibleReportPage = () => {
       }
     }
 
-    try {
+    // Modal de confirmación para envío
+    modals.openConfirmModal({
+      title: "⚠️ Confirmar envío de informe",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas enviar este informe?
+          <br /><br />
+          <strong>Una vez enviado, el informe pasará a estado "En Revisión" y no podrás realizar modificaciones hasta que sea evaluado.</strong>
+          <br /><br />
+          Asegúrate de que toda la información esté completa y correcta antes de continuar.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar informe", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        await performSendReport();
+      },
+    });
+  };
+
+  const performSendReport = async () => {
       setSending(true)
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/producer/send`, {
         email: session?.user?.email,

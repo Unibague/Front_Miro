@@ -144,32 +144,54 @@ const ProducerReportPage = () => {
 
 
   const handlePublish = async (reportId: string) => {
-    try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
-        reportId,
-        deadline: customDeadline ? deadline : selectedPeriod ?
-          new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
-        period: selectedPeriod,
-        email: session?.user?.email
-      });
-      showNotification({
-        title: "Éxito",
-        message: "Informe publicado correctamente",
-        color: "green",
-      });
-      setOpened(false);
-      setSelectedReport(null);
-      setDeadline(null);
-      setCustomDeadline(false);
-      await fetchReports();
-    } catch (error) {
-      console.error("Error publishing report:", error);
+    if (!selectedPeriod) {
       showNotification({
         title: "Error",
-        message: "Hubo un error al publicar el informe",
+        message: "Por favor selecciona un período",
         color: "red",
       });
+      return;
     }
+    
+    modals.openConfirmModal({
+      title: 'Confirmar asignación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas asignar el informe "{selectedReport?.name}" 
+          al período seleccionado? Los productores podrán acceder a este informe.
+        </Text>
+      ),
+      labels: { confirm: 'Asignar', cancel: 'Cancelar' },
+      confirmProps: { color: 'blue' },
+      onConfirm: async () => {
+        try {
+          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
+            reportId,
+            deadline: customDeadline ? deadline : selectedPeriod ?
+              new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
+            period: selectedPeriod,
+            email: session?.user?.email
+          });
+          showNotification({
+            title: "Éxito",
+            message: "Informe publicado correctamente",
+            color: "green",
+          });
+          setOpened(false);
+          setSelectedReport(null);
+          setDeadline(null);
+          setCustomDeadline(false);
+          await fetchReports();
+        } catch (error) {
+          console.error("Error publishing report:", error);
+          showNotification({
+            title: "Error",
+            message: "Hubo un error al publicar el informe",
+            color: "red",
+          });
+        }
+      },
+    });
   }
 
   useEffect(() => {

@@ -34,6 +34,7 @@ import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useDisclosure } from "@mantine/hooks";
+import { modals } from "@mantine/modals";
 import { format } from "fecha";
 import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
@@ -484,7 +485,7 @@ if (field.multiple) {
     return categoryColors[hashCode(categoryName) % categoryColors.length];
   };
 
-  const handleUploadClick = (publishedTemplate: PublishedTemplate) => {
+  const handleUploadClick = async (publishedTemplate: PublishedTemplate) => {
     if(handleDisableUpload(publishedTemplate)) {
       showNotification({
         title: "Error",
@@ -493,29 +494,164 @@ if (field.multiple) {
       })
       return;
     }
-    setSelectedTemplateId(publishedTemplate._id);
-    openUploadModal();
+    
+    // Verificar si ya tiene información cargada
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/hasData/${publishedTemplate._id}`);
+      const hasData = response.data.hasData;
+      
+      if (hasData) {
+        // Mostrar modal de advertencia si ya tiene datos
+        modals.openConfirmModal({
+          title: "⚠️ Plantilla con información existente",
+          centered: true,
+          children: (
+            <Text size="sm">
+              Esta plantilla ya contiene información cargada previamente.
+              <br /><br />
+              <strong>¿Estás seguro de que deseas reemplazar la información existente?</strong>
+              <br /><br />
+              Esta acción <strong>eliminará todos los datos actuales</strong> y los reemplazará con la nueva información que subas.
+            </Text>
+          ),
+          labels: { confirm: "Sí, reemplazar información", cancel: "Cancelar" },
+          confirmProps: { color: "red" },
+          onConfirm: () => {
+            setSelectedTemplateId(publishedTemplate._id);
+            openUploadModal();
+          },
+        });
+      } else {
+        // Mostrar modal de confirmación normal si no tiene datos
+        modals.openConfirmModal({
+          title: "Confirmar carga de información",
+          centered: true,
+          children: (
+            <Text size="sm">
+              ¿Estás seguro de que deseas cargar información en la plantilla <strong>"{publishedTemplate.name}"</strong>?
+              <br /><br />
+              Asegúrate de que el archivo Excel tenga el formato correcto y contenga toda la información necesaria.
+            </Text>
+          ),
+          labels: { confirm: "Sí, cargar información", cancel: "Cancelar" },
+          confirmProps: { color: "blue" },
+          onConfirm: () => {
+            setSelectedTemplateId(publishedTemplate._id);
+            openUploadModal();
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error verificando datos:", error);
+      // En caso de error, proceder normalmente
+      setSelectedTemplateId(publishedTemplate._id);
+      openUploadModal();
+    }
   };
 
   const handleEmptySubmit = async (pubTemId: string) => {
+    // Verificar si ya tiene información cargada
     try {
-      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/submitEmpty`, {
-        pubTemId,
-        email: session?.user?.email
-      });
-      showNotification({
-        title: "Enviado",
-        message: "Se ha enviado la información en ceros",
-        color: "teal",
-      });
-      refreshTemplates();
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/hasData/${pubTemId}`);
+      const hasData = response.data.hasData;
+      
+      if (hasData) {
+        // Mostrar modal de advertencia si ya tiene datos
+        modals.openConfirmModal({
+          title: "⚠️ Reemplazar información existente",
+          centered: true,
+          children: (
+            <Text size="sm">
+              Esta plantilla ya contiene información cargada previamente.
+              <br /><br />
+              <strong>¿Estás seguro de que deseas enviar en ceros?</strong>
+              <br /><br />
+              Esta acción <strong>eliminará todos los datos actuales</strong> y los reemplazará con ceros.
+            </Text>
+          ),
+          labels: { confirm: "Sí, enviar en ceros", cancel: "Cancelar" },
+          confirmProps: { color: "red" },
+          onConfirm: async () => {
+            try {
+              await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/submitEmpty`, {
+                pubTemId,
+                email: session?.user?.email
+              });
+              showNotification({
+                title: "Enviado",
+                message: "Se ha enviado la información en ceros",
+                color: "teal",
+              });
+              refreshTemplates();
+            } catch (error) {
+              console.error("Error enviando en ceros:", error);
+              showNotification({
+                title: "Error",
+                message: "Hubo un error al enviar en ceros",
+                color: "red",
+              });
+            }
+          },
+        });
+      } else {
+        // Mostrar confirmación normal si no tiene datos
+        modals.openConfirmModal({
+          title: "Confirmar envío en ceros",
+          centered: true,
+          children: (
+            <Text size="sm">
+              ¿Estás seguro de que deseas enviar esta plantilla con información en ceros?
+              <br /><br />
+              Esto significa que reportarás que no tienes datos para esta plantilla en este periodo.
+            </Text>
+          ),
+          labels: { confirm: "Sí, enviar en ceros", cancel: "Cancelar" },
+          confirmProps: { color: "orange" },
+          onConfirm: async () => {
+            try {
+              await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/submitEmpty`, {
+                pubTemId,
+                email: session?.user?.email
+              });
+              showNotification({
+                title: "Enviado",
+                message: "Se ha enviado la información en ceros",
+                color: "teal",
+              });
+              refreshTemplates();
+            } catch (error) {
+              console.error("Error enviando en ceros:", error);
+              showNotification({
+                title: "Error",
+                message: "Hubo un error al enviar en ceros",
+                color: "red",
+              });
+            }
+          },
+        });
+      }
     } catch (error) {
-      console.error("Error enviando en ceros:", error);
-      showNotification({
-        title: "Error",
-        message: "Hubo un error al enviar en ceros",
-        color: "red",
-      });
+      console.error("Error verificando datos:", error);
+      // En caso de error, proceder normalmente
+      try {
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/submitEmpty`, {
+          pubTemId,
+          email: session?.user?.email
+        });
+        showNotification({
+          title: "Enviado",
+          message: "Se ha enviado la información en ceros",
+          color: "teal",
+        });
+        refreshTemplates();
+      } catch (error) {
+        console.error("Error enviando en ceros:", error);
+        showNotification({
+          title: "Error",
+          message: "Hubo un error al enviar en ceros",
+          color: "red",
+        });
+      }
     }
   }
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {

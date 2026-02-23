@@ -32,6 +32,7 @@ import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { modals } from "@mantine/modals";
 
 interface Field {
   name: string;
@@ -168,30 +169,45 @@ const PublishedTemplatesPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try {
-      const response = await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/delete`,
-        {
-          params: { id, email: session?.user?.email },
-        }
-      );
+    const templateToDelete = templates.find(t => t._id === id);
+    
+    modals.openConfirmModal({
+      title: 'Confirmar eliminación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas eliminar la plantilla publicada "{templateToDelete?.name}"? 
+          Esta acción no se puede deshacer y los productores ya no podrán acceder a ella.
+        </Text>
+      ),
+      labels: { confirm: 'Eliminar', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const response = await axios.delete(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/delete`,
+            {
+              params: { id, email: session?.user?.email },
+            }
+          );
 
-      if (response.data) {
-        showNotification({
-          title: "Éxito",
-          message: "Plantilla eliminada exitosamente",
-          color: "green",
-        });
-        fetchTemplates(page, search);
-      }
-    } catch (error) {
-      console.error("Error deleting template:", error);
-      showNotification({
-        title: "Error",
-        message: "Hubo un error al eliminar la plantilla",
-        color: "red",
-      });
-    }
+          if (response.data) {
+            showNotification({
+              title: "Éxito",
+              message: "Plantilla eliminada exitosamente",
+              color: "green",
+            });
+            fetchTemplates(page, search);
+          }
+        } catch (error) {
+          console.error("Error deleting template:", error);
+          showNotification({
+            title: "Error",
+            message: "Hubo un error al eliminar la plantilla",
+            color: "red",
+          });
+        }
+      },
+    });
   }
 
   const handleDownload = async (

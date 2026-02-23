@@ -249,40 +249,55 @@ const AdminPubReportsPage = () => {
   };
 
   const handleDeletePubReport = async (reportId: string) => {
-    try {
-      const response = await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/${reportId}`,
-        {
-          params: {
-            email: session?.user?.email,
-          },
+    const reportToDelete = pubReports.find(r => r._id === reportId);
+    
+    modals.openConfirmModal({
+      title: 'Confirmar eliminación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas eliminar el informe publicado "{reportToDelete?.report.name}"? 
+          Esta acción no se puede deshacer y los productores ya no podrán acceder a él.
+        </Text>
+      ),
+      labels: { confirm: 'Eliminar', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const response = await axios.delete(
+            `${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/${reportId}`,
+            {
+              params: {
+                email: session?.user?.email,
+              },
+            }
+          );
+          if (response.data) {
+            showNotification({
+              title: "Éxito",
+              message: "Informe eliminado correctamente",
+              color: "green",
+            });
+            fetchReports(page, search);
+          }
+        } catch (error: any) {
+          if (error.response.status === 400) {
+            showNotification({
+              title: "Error",
+              message: "Ocurrió un error al eliminar el informe",
+              color: "red",
+              autoClose: 1200,
+            });
+            showNotification({
+              title: "Error",
+              message:
+                "El informe que intentas borrar tiene borradores de envío de los responsables",
+              color: "red",
+              autoClose: 4000,
+            });
+          }
         }
-      );
-      if (response.data) {
-        showNotification({
-          title: "Éxito",
-          message: "Informe eliminado correctamente",
-          color: "green",
-        });
-        fetchReports(page, search);
-      }
-    } catch (error: any) {
-      if (error.response.status === 400) {
-        showNotification({
-          title: "Error",
-          message: "Ocurrió un error al eliminar el informe",
-          color: "red",
-          autoClose: 1200,
-        });
-        showNotification({
-          title: "Error",
-          message:
-            "El informe que intentas borrar tiene borradores de envío de los responsables",
-          color: "red",
-          autoClose: 4000,
-        });
-      }
-    }
+      },
+    });
   };
 
   const rows = pubReports?.length ? (

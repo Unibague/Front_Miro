@@ -17,6 +17,7 @@ import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorkshee
 import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
 import ConfigAuditModal from "@/app/components/ConfigAuditModal";
+import { modals } from "@mantine/modals";
 
 interface Field {
   name: string;
@@ -168,45 +169,59 @@ const AdminTemplatesPage = () => {
   }, [modalOpen, session, selectedTemplate]);
 
   const handleDelete = async (id: string) => {
-    try {
-      const templateToDelete = templates.find(t => t._id === id);
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/templates/delete`, { 
-        data: { 
-          id,
-          userEmail: session?.user?.email,
-          userName: session?.user?.name
-        } 
-      });
-      
-      // Registrar en auditoría
-      if (templateToDelete && session?.user?.email) {
-        await logTemplateChange(
-          id,
-          templateToDelete.name,
-          'delete',
-          session.user.email,
-          {
-            templateId: id,
-            templateName: templateToDelete.name,
-            action: 'Eliminó la plantilla'
+    const templateToDelete = templates.find(t => t._id === id);
+    
+    modals.openConfirmModal({
+      title: 'Confirmar eliminación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas eliminar la plantilla "{templateToDelete?.name}"? 
+          Esta acción no se puede deshacer.
+        </Text>
+      ),
+      labels: { confirm: 'Eliminar', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/templates/delete`, { 
+            data: { 
+              id,
+              userEmail: session?.user?.email,
+              userName: session?.user?.name
+            } 
+          });
+          
+          // Registrar en auditoría
+          if (templateToDelete && session?.user?.email) {
+            await logTemplateChange(
+              id,
+              templateToDelete.name,
+              'delete',
+              session.user.email,
+              {
+                templateId: id,
+                templateName: templateToDelete.name,
+                action: 'Eliminó la plantilla'
+              }
+            );
           }
-        );
-      }
-      
-      showNotification({
-        title: "Eliminado",
-        message: "Plantilla eliminada exitosamente",
-        color: "teal",
-      });
-      fetchTemplates(page, search);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-    const mensaje = error.response?.data?.mensaje || "Hubo un error al eliminar la plantilla";
-    showNotification({ title: "Error borrando plantilla", message: mensaje, color: "red" });
-  } else {
-    showNotification({ title: "Error borrando plantilla", message: "Error inesperado", color: "red" });
-  }
-    }
+          
+          showNotification({
+            title: "Eliminado",
+            message: "Plantilla eliminada exitosamente",
+            color: "teal",
+          });
+          fetchTemplates(page, search);
+        } catch (error) {
+          if (axios.isAxiosError(error)) {
+            const mensaje = error.response?.data?.mensaje || "Hubo un error al eliminar la plantilla";
+            showNotification({ title: "Error borrando plantilla", message: mensaje, color: "red" });
+          } else {
+            showNotification({ title: "Error borrando plantilla", message: "Error inesperado", color: "red" });
+          }
+        }
+      },
+    });
   };
 
   const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string): string => {
@@ -613,29 +628,52 @@ const AdminTemplatesPage = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/publish`, {
-        name: publicationName,
-        template_id: selectedTemplate?._id,
-        period_id: selectedPeriod,
-        user_email: session?.user?.email,
-        deadline: customDeadline ? deadline : periods.find(period => period._id === selectedPeriod)?.producer_end_date,
-      });
-      console.log('Template successfully pubished');
-      showNotification({
-        title: "Publicación Exitosa",
-        message: "La plantilla ha sido publicada exitosamente",
-        color: "teal",
-      });
-      close();
-    } catch (error) {
-      console.error('Error publishing template:', error);
+    
+    if (!publicationName || !selectedPeriod) {
       showNotification({
         title: "Error",
-        message: "Hubo un error al publicar la plantilla",
+        message: "Por favor completa todos los campos requeridos",
         color: "red",
       });
+      return;
     }
+    
+    modals.openConfirmModal({
+      title: 'Confirmar asignación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas asignar la plantilla "{selectedTemplate?.name}" 
+          al período seleccionado? Los productores podrán acceder a esta plantilla.
+        </Text>
+      ),
+      labels: { confirm: 'Asignar', cancel: 'Cancelar' },
+      confirmProps: { color: 'blue' },
+      onConfirm: async () => {
+        try {
+          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/publish`, {
+            name: publicationName,
+            template_id: selectedTemplate?._id,
+            period_id: selectedPeriod,
+            user_email: session?.user?.email,
+            deadline: customDeadline ? deadline : periods.find(period => period._id === selectedPeriod)?.producer_end_date,
+          });
+          console.log('Template successfully pubished');
+          showNotification({
+            title: "Publicación Exitosa",
+            message: "La plantilla ha sido publicada exitosamente",
+            color: "teal",
+          });
+          close();
+        } catch (error) {
+          console.error('Error publishing template:', error);
+          showNotification({
+            title: "Error",
+            message: "Hubo un error al publicar la plantilla",
+            color: "red",
+          });
+        }
+      },
+    });
   };
 
   const rows = sortedTemplates.map((template) => (
