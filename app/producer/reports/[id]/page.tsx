@@ -304,6 +304,7 @@ const ResponsibleReportPage = () => {
   };
 
   const performSendReport = async () => {
+    try {
       setSending(true)
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/producer/send`, {
         email: session?.user?.email,
@@ -325,15 +326,15 @@ const ResponsibleReportPage = () => {
         color: "green",
       });
 
-    } catch (error) {
+    } catch(error) {
       setSending(false);
       console.error(error);
       showNotification({
         title: "Error",
         message: "No se pudo enviar el informe",
         color: "red",
-      });
-    } 
+      })
+    }
   }
 
   const onHistoryChange = (value: string | null) => {
