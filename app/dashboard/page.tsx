@@ -704,6 +704,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-traceability">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconChartHistogram size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Historial de Cambios</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta los cambios realizados en plantillas e informes de tus dependencias
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
+                Ir a Historial de Cambios
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -761,6 +775,20 @@ useEffect(() => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
                 Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-traceability">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconChartHistogram size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Historial de Cambios</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta los cambios realizados en plantillas e informes de tus dependencias
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
+                Ir a Historial de Cambios
               </Button>
             </Card>
           </Grid.Col>,

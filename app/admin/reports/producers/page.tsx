@@ -1,9 +1,10 @@
 "use client"
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { Button, Center, Checkbox, Container, FileInput, Group, Modal, MultiSelect, Pagination, rem, Select, Switch, Table, Text, Textarea, TextInput, Title, Tooltip } from "@mantine/core";
 import { DateInput, DatePickerInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
-import { IconArrowRight, IconCancel, IconCheck, IconCirclePlus, IconDeviceFloppy, IconEdit, IconEye, IconSend, IconTrash, IconUser, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconCancel, IconCheck, IconCirclePlus, IconDeviceFloppy, IconEdit, IconEye, IconHistory, IconSend, IconTrash, IconUser, IconX } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -60,6 +61,8 @@ const ProducerReportPage = () => {
   const [customDeadline, setCustomDeadline] = useState(false);
 
   const [opened, setOpened] = useState(false);
+  const [auditModalOpened, setAuditModalOpened] = useState(false);
+  const [selectedReportForAudit, setSelectedReportForAudit] = useState<Report | null>(null);
 
 
 
@@ -238,6 +241,24 @@ const ProducerReportPage = () => {
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
+            <Tooltip
+              label="Trazabilidad"
+              position="top"
+              withArrow
+              transitionProps={{ transition: 'fade-up', duration: 300 }}
+            >
+              <Button
+                onClick={() => {
+                  setSelectedReportForAudit(report);
+                  setAuditModalOpened(true);
+                }}
+                variant="outline"
+                color="teal"
+              >
+                <IconHistory size={16} />
+              </Button>
+            </Tooltip>
+            
 <Tooltip label="Borrar informe">
   <Button
     color="red"
@@ -403,6 +424,17 @@ const ProducerReportPage = () => {
           </Button>
         </Group>
       </Modal>
+      
+      <ConfigAuditModal
+        opened={auditModalOpened}
+        onClose={() => {
+          setAuditModalOpened(false);
+          setSelectedReportForAudit(null);
+        }}
+        entityType="producer-report"
+        entityId={selectedReportForAudit?._id || ''}
+        entityName={selectedReportForAudit?.name || ''}
+      />
     </Container>
     );
 }

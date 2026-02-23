@@ -16,6 +16,7 @@ import { DatePickerInput } from "@mantine/dates";
 import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet, sanitizeSheetName } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
+import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 
 interface Field {
   name: string;
@@ -57,6 +58,10 @@ interface Template {
   };
   validators: Validator[]
   published: boolean;
+  lastModified?: {
+    user: string;
+    date: string;
+  };
 }
 
 interface Period {
@@ -89,6 +94,8 @@ const AdminTemplatesPage = () => {
   const [deadline, setDeadline] = useState<Date | null>();
   const [customDeadline, setCustomDeadline] = useState<boolean>(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [auditModalOpened, setAuditModalOpened] = useState(false);
+  const [selectedTemplateForAudit, setSelectedTemplateForAudit] = useState<Template | null>(null);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<Template>(templates, { key: null, direction: "asc" });
 
@@ -99,7 +106,24 @@ const AdminTemplatesPage = () => {
       });
       if (response.data) {
         console.log(response.data.templates);
-        setTemplates(response.data.templates || []);
+        const templatesWithAudit = await Promise.all(
+          (response.data.templates || []).map(async (template: Template) => {
+            try {
+              const auditResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/config-audit/template/${template._id}`);
+              const lastAudit = auditResponse.data.audits?.[0]; // Más reciente
+              return {
+                ...template,
+                lastModified: lastAudit ? {
+                  user: lastAudit.user.full_name,
+                  date: new Date(lastAudit.timestamp).toLocaleDateString('es-ES')
+                } : undefined
+              };
+            } catch {
+              return template;
+            }
+          })
+        );
+        setTemplates(templatesWithAudit);
         setTotalPages(response.data.pages || 1);
       }
     } catch (error) {
@@ -141,7 +165,13 @@ const AdminTemplatesPage = () => {
   const handleDelete = async (id: string) => {
     try {
       const templateToDelete = templates.find(t => t._id === id);
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/templates/delete`, { data: { id } });
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/templates/delete`, { 
+        data: { 
+          id,
+          userEmail: session?.user?.email,
+          userName: session?.user?.name
+        } 
+      });
       
       // Registrar en auditoría
       if (templateToDelete && session?.user?.email) {
@@ -613,6 +643,16 @@ const AdminTemplatesPage = () => {
         <Text size="sm">{template?.dimensions?.map(dim => dim.name).join(", ")}</Text>
       </Table.Td>
       <Table.Td>
+        {template.lastModified ? (
+          <div>
+            <Text size="sm" fw={500}>{template.lastModified.user}</Text>
+            <Text size="xs" c="dimmed">{template.lastModified.date}</Text>
+          </div>
+        ) : (
+          <Text size="sm" c="dimmed">Sin modificaciones</Text>
+        )}
+      </Table.Td>
+      <Table.Td>
         <Center>
           <Group gap={3}>
             <Tooltip
@@ -644,6 +684,22 @@ const AdminTemplatesPage = () => {
                 onClick={() => router.push(`/templates/update/${template._id}`)}
               >
                 <IconEdit size={16} />
+              </Button>
+            </Tooltip>
+
+            <Tooltip
+              label="Trazabilidad"
+              transitionProps={{ transition: 'fade-up', duration: 300 }}
+            >
+              <Button
+                variant="outline"
+                color="teal"
+                onClick={() => {
+                  setSelectedTemplateForAudit(template);
+                  setAuditModalOpened(true);
+                }}
+              >
+                <IconHistory size={16} />
               </Button>
             </Tooltip>
 
@@ -753,6 +809,8 @@ const AdminTemplatesPage = () => {
             </Center>
           </Table.Th>
 
+
+
           <Table.Th onClick={() => handleSort("file_description")} style={{ cursor: "pointer" }}>
             <Center inline>
               Ámbitos
@@ -765,6 +823,9 @@ const AdminTemplatesPage = () => {
                 <IconArrowsTransferDown size={16} style={{ marginLeft: '5px' }} />
               )}
             </Center>
+          </Table.Th>
+          <Table.Th>
+            <Center>Última Modificación</Center>
           </Table.Th>
           <Table.Th>
             <Center>Acciones</Center>
@@ -849,6 +910,17 @@ const AdminTemplatesPage = () => {
           </Group>
         </form>
       </Modal>
+      
+      <ConfigAuditModal
+        opened={auditModalOpened}
+        onClose={() => {
+          setAuditModalOpened(false);
+          setSelectedTemplateForAudit(null);
+        }}
+        entityType="template"
+        entityId={selectedTemplateForAudit?._id || ''}
+        entityName={selectedTemplateForAudit?.name || ''}
+      />
     </Container>
   );
 };

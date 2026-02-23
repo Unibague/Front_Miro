@@ -225,7 +225,9 @@ const UpdateTemplatePage = () => {
       fields,
       active,
       dimensions: selectedDimensions,
-      producers: selectedDependencies
+      producers: selectedDependencies,
+      email: session?.user?.email,
+      full_name: session?.user?.name
     };
 
     try {
