@@ -476,12 +476,12 @@ useEffect(() => {
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-dependencies">
             <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconBuilding size={80}/></Center>
+              <Center><IconHierarchy2 size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Dependencias</Text>
+                <Text ta={"center"} w={500}>Gestionar Jerarquía de Dependencias</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Administra las dependencias y sus responsables.
+                Administra la estructura jerárquica de dependencias padre-hijo y sus responsables.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies')}>
                 Ir a Gestión de Dependencias
