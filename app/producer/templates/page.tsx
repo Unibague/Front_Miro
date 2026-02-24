@@ -497,7 +497,9 @@ if (field.multiple) {
     
     // Verificar si ya tiene información cargada
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/hasData/${publishedTemplate._id}`);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/hasData/${publishedTemplate._id}`, {
+        params: { email: session?.user?.email },
+      });
       const hasData = response.data.hasData;
       
       if (hasData) {
