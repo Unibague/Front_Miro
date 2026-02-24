@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Loader, Table, ScrollArea, Modal, TextInput, Stack, Notification } from "@mantine/core";
+import { Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Loader, Table, ScrollArea, Modal, TextInput, Stack, Notification, Divider, Badge } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
 import axios from "axios";
 
@@ -28,9 +28,19 @@ type Program = {
   estado_acreditacion: string | null;
   estado_registro_calificado: string | null;
   estado_plan_mejoramiento: string | null;
-  fase_acreditacion: number | null;
-  fase_registro_calificado: number | null;
-  fase_plan_mejoramiento: number | null;
+};
+
+type Process = {
+  _id: string;
+  name: string;
+  program_code: string;
+  tipo_proceso: "RC" | "AV" | "PM";
+  fase_actual: number;
+  fecha_inicio: string | null;
+  fecha_documento_par: string | null;
+  fecha_digitacion_saces: string | null;
+  fecha_radicado_men: string | null;
+  fecha_vencimiento: string | null;
 };
 
 /* ── Fases 0‑6 ── */
@@ -102,52 +112,79 @@ const estadoColor: Record<string, string> = {
   "Fecha Límite":                    "#ff6b6b",
 };
 
-const EstadoBadge = ({ estado }: { estado: string | null }) => {
-  if (!estado) return <Text size="xs" c="dimmed">—</Text>;
-  const color = estadoColor[estado] ?? "#ced4da";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: color, flexShrink: 0 }} />
-      <Text size="xs">{estado}</Text>
-    </div>
-  );
+const FaseBadge = ({ fase }: { fase: number | null }) => {
+  if (fase === null || fase === undefined) return <Text size="xs" c="dimmed" ta="center">—</Text>;
+  return <Text size="xs" fw={600} ta="center">Fase {fase}</Text>;
 };
 
-const ProcesoTable = ({ title, rows }: { title: string; rows: { nombre: string; acreditacion: string | null; registro: string | null; plan: string | null }[] }) => (
-  <Paper withBorder radius="md" p="md" mb="lg">
-    <Text fw={700} ta="center" mb="md" size="sm">{title}</Text>
-    <ScrollArea>
-      <Table withTableBorder withColumnBorders>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th style={{ minWidth: 160 }}> </Table.Th>
-            <Table.Th>Acreditación voluntaria</Table.Th>
-            <Table.Th>Registro calificado</Table.Th>
-            <Table.Th>Plan de mejoramiento</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.length === 0 ? (
+type ProcesoRow = {
+  programa: Program;
+  acreditacion: number | null;
+  registro: number | null;
+  plan: number | null;
+};
+
+const COLS_9 = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro, onRowClick }: {
+  title: string;
+  rows: ProcesoRow[];
+  tipoProceso: string;
+  programaFiltro: string;
+  onRowClick: (p: Program) => void;
+}) => {
+  const modoPrograma = programaFiltro !== "Todos";
+  const mostrarRC    = !modoPrograma && (tipoProceso === "Todos" || tipoProceso === "Registro calificado");
+  const mostrarAV    = !modoPrograma && (tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria");
+  const mostrarPM    = !modoPrograma && (tipoProceso === "Todos" || tipoProceso === "Plan de mejoramiento");
+  const colSpan      = modoPrograma ? 10 : 1 + (mostrarRC ? 1 : 0) + (mostrarAV ? 1 : 0) + (mostrarPM ? 1 : 0);
+
+  return (
+    <Paper withBorder radius="md" p="md" mb="lg">
+      <Text fw={700} ta="center" mb="md" size="sm">{title}</Text>
+      <ScrollArea>
+        <Table withTableBorder withColumnBorders highlightOnHover>
+          <Table.Thead>
             <Table.Tr>
-              <Table.Td colSpan={4}>
-                <Text ta="center" c="dimmed" size="sm">Sin datos para el filtro seleccionado</Text>
-              </Table.Td>
+              <Table.Th style={{ minWidth: 180 }}> </Table.Th>
+              {modoPrograma
+                ? COLS_9.map((n) => <Table.Th key={n} ta="center">{n}</Table.Th>)
+                : <>
+                    {mostrarRC && <Table.Th ta="center">Registro calificado</Table.Th>}
+                    {mostrarAV && <Table.Th ta="center">Acreditación voluntaria</Table.Th>}
+                    {mostrarPM && <Table.Th ta="center">Plan de mejoramiento</Table.Th>}
+                  </>
+              }
             </Table.Tr>
-          ) : (
-            rows.map((row, i) => (
-              <Table.Tr key={i}>
-                <Table.Td><Text size="xs" fw={600}>{row.nombre}</Text></Table.Td>
-                <Table.Td><EstadoBadge estado={row.acreditacion} /></Table.Td>
-                <Table.Td><EstadoBadge estado={row.registro} /></Table.Td>
-                <Table.Td><EstadoBadge estado={row.plan} /></Table.Td>
+          </Table.Thead>
+          <Table.Tbody>
+            {rows.length === 0 ? (
+              <Table.Tr>
+                <Table.Td colSpan={colSpan}>
+                  <Text ta="center" c="dimmed" size="sm">Sin datos para el filtro seleccionado</Text>
+                </Table.Td>
               </Table.Tr>
-            ))
-          )}
-        </Table.Tbody>
-      </Table>
-    </ScrollArea>
-  </Paper>
-);
+            ) : (
+              rows.map((row, i) => (
+                <Table.Tr key={i} style={{ cursor: "pointer" }} onClick={() => onRowClick(row.programa)}>
+                  <Table.Td><Text size="xs" fw={600}>{row.programa.nombre}</Text></Table.Td>
+                  {modoPrograma
+                    ? COLS_9.map((n) => <Table.Td key={n} ta="center"><Text size="xs" c="dimmed">—</Text></Table.Td>)
+                    : <>
+                        {mostrarRC && <Table.Td><FaseBadge fase={row.registro} /></Table.Td>}
+                        {mostrarAV && <Table.Td><FaseBadge fase={row.acreditacion} /></Table.Td>}
+                        {mostrarPM && <Table.Td><FaseBadge fase={row.plan} /></Table.Td>}
+                      </>
+                  }
+                </Table.Tr>
+              ))
+            )}
+          </Table.Tbody>
+        </Table>
+      </ScrollArea>
+    </Paper>
+  );
+};
 
 const selectorStyle = {
   root: {
@@ -189,8 +226,10 @@ const DateReviewPage = () => {
 
   const [facultades, setFacultades]         = useState<Dependency[]>([]);
   const [programas, setProgramas]           = useState<Program[]>([]);
+  const [procesos, setProcesos]             = useState<Process[]>([]);
   const [loadingFacultades, setLoadingFacultades] = useState(true);
   const [loadingProgramas, setLoadingProgramas]   = useState(true);
+  const [loadingProcesos, setLoadingProcesos]     = useState(true);
 
 
   /* Modal agregar programa */
@@ -202,6 +241,7 @@ const DateReviewPage = () => {
   const [newNivelForm, setNewNivelForm]   = useState<string | null>(null);
   const [saving, setSaving]               = useState(false);
   const [saveError, setSaveError]         = useState<string | null>(null);
+  const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
 
   /* Carga facultades desde /dependencies/all */
   useEffect(() => {
@@ -230,6 +270,18 @@ const DateReviewPage = () => {
       .finally(() => setLoadingProgramas(false));
   }, []);
 
+  /* Carga procesos desde /processes */
+  useEffect(() => {
+    axios
+      .get(`${process.env.NEXT_PUBLIC_API_URL}/processes`)
+      .then((res) => {
+        const raw = res.data;
+        setProcesos(Array.isArray(raw) ? raw : []);
+      })
+      .catch((err) => console.error("Error cargando procesos:", err))
+      .finally(() => setLoadingProcesos(false));
+  }, []);
+
 
   /* Cuando cambia la facultad, resetea el programa */
   const handleFacultadChange = (val: string | null) => {
@@ -246,8 +298,12 @@ const DateReviewPage = () => {
       ? programas
       : programas.filter((p) => p.dep_code_facultad === facultadSeleccionada?.dep_code);
 
+  /* Helper: busca el proceso de un programa por tipo */
+  const getProceso = (dep_code_programa: string, tipo: "RC" | "AV" | "PM"): Process | undefined =>
+    procesos.find((p) => p.program_code === dep_code_programa && p.tipo_proceso === tipo);
+
   /* Opciones para los Select */
-  const loadingFilters        = loadingFacultades || loadingProgramas;
+  const loadingFilters        = loadingFacultades || loadingProgramas || loadingProcesos;
   const opcionesFacultad      = ["Todos", ...facultades.map((f) => f.name)];
   const opcionesPrograma      = ["Todos", ...programasFiltrados.map((p) => p.nombre)];
   const opcionesNivelAcademico = ["Todos", "Pregrado", "Posgrado"];
@@ -284,9 +340,8 @@ const DateReviewPage = () => {
   const pctAcreditados     = totalProgramas > 0 ? Math.round((conAcreditacion / totalProgramas) * 100) : 0;
 
   /* Cada barra = una facultad; segmentos = cantidad de programas en cada fase.
-     Programas sin fase asignada cuentan en fase_0. */
-  const buildBarData = (campo: "fase_acreditacion" | "fase_registro_calificado" | "fase_plan_mejoramiento"): BarRow[] => {
-    /* Inicializa una fila por cada facultad que tenga programas */
+     Programas sin proceso registrado cuentan en fase_0. */
+  const buildBarData = (tipo: "RC" | "AV" | "PM"): BarRow[] => {
     const grupos: Record<string, BarRow> = {};
     facultades.forEach((f) => {
       const tienePrograms = programas.some((p) => p.dep_code_facultad === f.dep_code);
@@ -294,31 +349,29 @@ const DateReviewPage = () => {
         grupos[f.dep_code] = { nombre: f.name, fase_0: 0, fase_1: 0, fase_2: 0, fase_3: 0, fase_4: 0, fase_5: 0, fase_6: 0 };
       }
     });
-    /* Cuenta programas por fase; sin fase → fase_0 */
     programas.forEach((p) => {
       if (!grupos[p.dep_code_facultad]) return;
-      const fase = p[campo] ?? 0;
+      const proceso = getProceso(p.dep_code_programa, tipo);
+      const fase = proceso?.fase_actual ?? 0;
       const key = `fase_${fase}` as keyof BarRow;
       (grupos[p.dep_code_facultad][key] as number) += 1;
     });
     return Object.values(grupos);
   };
 
-  const barAcreditacion     = buildBarData("fase_acreditacion");
-  const barRegistro         = buildBarData("fase_registro_calificado");
-  const barPlanMejoramiento = buildBarData("fase_plan_mejoramiento");
+  const barAcreditacion     = buildBarData("AV");
+  const barRegistro         = buildBarData("RC");
+  const barPlanMejoramiento = buildBarData("PM");
 
-  /* Filas para la tabla de procesos */
-  const procesoRows = programasFiltradosCompleto.map((p) => ({
-    nombre: p.nombre,
-    acreditacion: p.estado_acreditacion ?? null,
-    registro: p.estado_registro_calificado ?? null,
-    plan: p.estado_plan_mejoramiento ?? null,
+  /* Filas para la tabla de procesos — fases leídas desde la colección processes */
+  const procesoRows: ProcesoRow[] = programasFiltradosCompleto.map((p) => ({
+    programa: p,
+    acreditacion: getProceso(p.dep_code_programa, "AV")?.fase_actual ?? null,
+    registro:     getProceso(p.dep_code_programa, "RC")?.fase_actual ?? null,
+    plan:         getProceso(p.dep_code_programa, "PM")?.fase_actual ?? null,
   }));
 
-  const tituloTabla = facultad === "Todos"
-    ? "Estado general de procesos de todos los programas"
-    : `Estado general de procesos de programas de ${facultad.toLowerCase().replace("facultad", "facultad de").trim()}`;
+  const tituloTabla = `Fase de procesos de programas de ${facultad}`;
 
   const handleGuardarPrograma = async () => {
     if (!newNombre.trim() || !newFacultad) {
@@ -363,7 +416,7 @@ const DateReviewPage = () => {
         width: "200px",
         borderRight: "1px solid #dee2e6",
         padding: "20px 12px",
-        paddingTop: "76px",
+        paddingTop: "100px",
         paddingBottom: "140px",
         display: "flex",
         flexDirection: "column",
@@ -371,7 +424,7 @@ const DateReviewPage = () => {
         zIndex: 50,
       }}>
         {/* Filtros centrados verticalmente */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", flex: 1, justifyContent: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1, justifyContent: "center" }}>
           {loadingFilters ? (
             <Loader size="sm" mx="auto" />
           ) : (
@@ -499,75 +552,98 @@ const DateReviewPage = () => {
               </SimpleGrid>
             </Paper>
 
-            {/* Tabla resumen de programas */}
-            <Paper withBorder radius="md" p="md" mb="lg">
-              <Text fw={700} ta="center" mb="md" size="sm">Resumen de programas</Text>
-              {loadingFilters ? (
-                <Loader size="sm" mx="auto" display="block" />
-              ) : (
-                <ScrollArea>
-                  <Table striped highlightOnHover withTableBorder withColumnBorders>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Programa</Table.Th>
-                        <Table.Th>Facultad</Table.Th>
-                        <Table.Th>Modalidad</Table.Th>
-                        <Table.Th>Nivel académico</Table.Th>
-                        <Table.Th>Nivel de formación</Table.Th>
-                        <Table.Th>Créditos</Table.Th>
-                        <Table.Th>Semestres</Table.Th>
-                        <Table.Th>Fecha reg. calificado</Table.Th>
-                        <Table.Th>Fecha acreditación</Table.Th>
-                        <Table.Th>Estado</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {tablaBase.length === 0 ? (
-                        <Table.Tr>
-                          <Table.Td colSpan={10}>
-                            <Text ta="center" c="dimmed" size="sm">Sin datos para el filtro seleccionado</Text>
-                          </Table.Td>
-                        </Table.Tr>
-                      ) : (
-                        tablaBase.map((row) => (
-                          <Table.Tr key={row._id}>
-                            <Table.Td>{row.programa}</Table.Td>
-                            <Table.Td>{row.dependencia}</Table.Td>
-                            <Table.Td>{row.modalidad}</Table.Td>
-                            <Table.Td>{row.nivel_academico}</Table.Td>
-                            <Table.Td>{row.nivel_formacion}</Table.Td>
-                            <Table.Td>{row.num_creditos}</Table.Td>
-                            <Table.Td>{row.num_semestres}</Table.Td>
-                            <Table.Td>{row.fecha_registro_calificado}</Table.Td>
-                            <Table.Td>{row.fecha_acreditacion}</Table.Td>
-                            <Table.Td>{row.estado}</Table.Td>
-                          </Table.Tr>
-                        ))
-                      )}
-                    </Table.Tbody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </Paper>
+            {/* Modal con info del programa seleccionado */}
+            <Modal
+              opened={selectedProgram !== null}
+              onClose={() => setSelectedProgram(null)}
+              title={
+                <Group gap="sm">
+                  <Text fw={700} size="lg">{selectedProgram?.nombre}</Text>
+                  {selectedProgram && (
+                    <Badge color={selectedProgram.estado === "Activo" ? "green" : "red"} variant="light">
+                      {selectedProgram.estado}
+                    </Badge>
+                  )}
+                </Group>
+              }
+              size="lg"
+              centered
+              radius="md"
+            >
+              {selectedProgram && (
+                <Stack gap="md">
+                  <Divider />
 
-            {loadingProgramas ? (
+                  {/* Información general */}
+                  <Text fw={600} size="sm" c="dimmed">INFORMACIÓN GENERAL</Text>
+                  <SimpleGrid cols={2} spacing="md">
+                    {[
+                      { label: "Facultad",          value: facultades.find(f => f.dep_code === selectedProgram.dep_code_facultad)?.name ?? selectedProgram.dep_code_facultad },
+                      { label: "Modalidad",          value: selectedProgram.modalidad },
+                      { label: "Nivel académico",    value: selectedProgram.nivel_academico },
+                      { label: "Nivel de formación", value: selectedProgram.nivel_formacion },
+                      { label: "Créditos",           value: selectedProgram.num_creditos },
+                      { label: "Semestres",          value: selectedProgram.num_semestres },
+                    ].map(({ label, value }) => (
+                      <Paper key={label} withBorder radius="sm" p="sm">
+                        <Text size="xs" c="dimmed" mb={2}>{label}</Text>
+                        <Text size="sm" fw={600}>{value ?? "—"}</Text>
+                      </Paper>
+                    ))}
+                  </SimpleGrid>
+
+                  <Divider />
+
+                  {/* Fechas y fases por proceso — leídas desde la colección processes */}
+                  <Text fw={600} size="sm" c="dimmed">PROCESOS</Text>
+                  <SimpleGrid cols={3} spacing="md">
+                    {(["RC", "AV", "PM"] as const).map((tipo) => {
+                      const labels: Record<string, string> = {
+                        RC: "Registro calificado",
+                        AV: "Acreditación voluntaria",
+                        PM: "Plan de mejoramiento",
+                      };
+                      const proc = getProceso(selectedProgram.dep_code_programa, tipo);
+                      return (
+                        <Paper key={tipo} withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
+                          <Text size="xs" fw={700} c="var(--mantine-color-blue-light-color)" mb={6}>{labels[tipo]}</Text>
+                          {proc ? (
+                            <>
+                              <Text size="xs" c="dimmed">Fase actual</Text>
+                              <Text size="sm" fw={600} mb={4}>Fase {proc.fase_actual}</Text>
+                              <Text size="xs" c="dimmed">Fecha vencimiento</Text>
+                              <Text size="sm" fw={500} mb={4}>{proc.fecha_vencimiento ?? "—"}</Text>
+                              <Text size="xs" c="dimmed">Fecha radicado MEN</Text>
+                              <Text size="sm" fw={500}>{proc.fecha_radicado_men ?? "—"}</Text>
+                            </>
+                          ) : (
+                            <Text size="xs" c="dimmed" mt={4}>Sin proceso registrado</Text>
+                          )}
+                        </Paper>
+                      );
+                    })}
+                  </SimpleGrid>
+                </Stack>
+              )}
+            </Modal>
+
+            {facultad !== "Todos" && (loadingProgramas ? (
               <Loader size="sm" mx="auto" display="block" my="lg" />
             ) : (
-              <ProcesoTable title={tituloTabla} rows={procesoRows} />
-            )}
+              <ProcesoTable title={tituloTabla} rows={procesoRows} tipoProceso={tipoProceso} programaFiltro={programa} onRowClick={setSelectedProgram} />
+            ))}
 
-            <BarTable
-              title="Estado general de fases — Acreditación voluntaria"
-              data={barAcreditacion}
-            />
-            <BarTable
-              title="Estado general de fases — Registro calificado"
-              data={barRegistro}
-            />
-            <BarTable
-              title="Estado general de fases — Plan de mejoramiento"
-              data={barPlanMejoramiento}
-            />
+            {facultad === "Todos" && <>
+              {(tipoProceso === "Todos" || tipoProceso === "Registro calificado") && (
+                <BarTable title="Estado general de fases — Registro calificado" data={barRegistro} />
+              )}
+              {(tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria") && (
+                <BarTable title="Estado general de fases — Acreditación voluntaria" data={barAcreditacion} />
+              )}
+              {(tipoProceso === "Todos" || tipoProceso === "Plan de mejoramiento") && (
+                <BarTable title="Estado general de fases — Plan de mejoramiento" data={barPlanMejoramiento} />
+              )}
+            </>}
           </>
         )}
 
