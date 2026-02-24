@@ -55,8 +55,12 @@ const handleFileDrop = async (files: File[]) => {
     // 🧠 Obtener tipos desde el template en backend
     const templateResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${pubTemId}`);
     const fieldTypeMap: Record<string, string> = {};
+    const fieldValidatorMap: Record<string, boolean> = {};
     templateResponse.data.template.fields.forEach((field: any) => {
       fieldTypeMap[field.name] = field.datatype;
+      if (field.validate_with && !field.multiple) {
+        fieldValidatorMap[field.name] = true;
+      }
     });
 
 sheet.eachRow((row, rowNumber) => {
@@ -179,6 +183,12 @@ const multiple = templateResponse.data.template.fields.find((f: { name: string; 
         parsedValue = typeof cell.value === 'object' && cell.value !== null ? 
           JSON.stringify(cell.value) : cell.value;
     }
+  }
+
+  // 🔑 Si el campo usa validador (lista desplegable), extraer solo el código
+  // Ejemplo: "CC - Cédula de ciudadanía" → "CC"
+  if (fieldValidatorMap[key] && typeof parsedValue === 'string' && parsedValue.includes(' - ')) {
+    parsedValue = parsedValue.split(' - ')[0].trim();
   }
 
   rowData[key] = parsedValue;

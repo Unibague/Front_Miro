@@ -49,10 +49,14 @@ const handleFileDrop = async (files: File[]) => {
     
     const fieldTypes: Record<string, string> = {};
     const fieldMultiples: Record<string, boolean> = {};
+    const fieldValidators: Record<string, boolean> = {};
 
     templateMeta.data.template.fields.forEach((f: any) => {
       fieldTypes[f.name] = f.datatype;
       fieldMultiples[f.name] = !!f.multiple;
+      if (f.validate_with && !f.multiple) {
+        fieldValidators[f.name] = true;
+      }
     });
 
     const sheet = workbook.worksheets[0];
@@ -179,6 +183,12 @@ const handleFileDrop = async (files: File[]) => {
                   parsedValue = typeof cell.value === 'object' && cell.value !== null ? 
                     JSON.stringify(cell.value) : cell.value;
               }
+            }
+
+            // 🔑 Si el campo usa validador (lista desplegable), extraer solo el código
+            // Ejemplo: "CC - Cédula de ciudadanía" → "CC"
+            if (fieldValidators[key] && typeof parsedValue === 'string' && parsedValue.includes(' - ')) {
+              parsedValue = parsedValue.split(' - ')[0].trim();
             }
 
             rowData[key] = parsedValue;
