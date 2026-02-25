@@ -488,7 +488,7 @@ const AdminDependenciesPage = () => {
           <Text c="dimmed">No definido</Text>
         )}
       </Table.Td>
-      {/* <Table.Td>{dependency.dep_father}</Table.Td> */}
+      {/* <Table.Td>{dependency.dep_fathe}</Table.Td> */}
       <Table.Td>
         <Center>
           <Group gap={5}>
