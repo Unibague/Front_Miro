@@ -601,7 +601,7 @@ useEffect(() => {
                 <Text ta={"center"} size="sm" color="dimmed">
                   Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.
                 </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies')}>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies-hierarchy')}>
                   Ir a Jerarquía de Dependencias
                 </Button>
               </Card>
