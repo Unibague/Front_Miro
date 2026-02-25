@@ -101,13 +101,15 @@ const AdminDependenciesPage = () => {
       if (response.data) {
         const memberOptions = response.data
           .filter((member: any) => member.email && member.email.includes('@') && member.email.split('@')[0].length > 0)
-          .map((member: any) => ({
-            value: member.email,
-            label: `${member.full_name} (${member.email})`,
-          }))
-          .filter((option: any, index: number, self: any[]) => 
-            index === self.findIndex(o => o.value === option.value)
-          );
+          .reduce((acc: any[], member: any) => {
+            if (!acc.find(item => item.value === member.email)) {
+              acc.push({
+                value: member.email,
+                label: `${member.full_name} (${member.email})`,
+              });
+            }
+            return acc;
+          }, []);
         setMembers(memberOptions);
       }
     } catch (error) {
@@ -321,13 +323,15 @@ const AdminDependenciesPage = () => {
       
       setUsersWithDependencies(usersData);
       const uniqueDeps = depsData
-        .map((dep: any) => ({
-          value: dep.dep_code,
-          label: `${dep.name}`
-        }))
-        .filter((option: any, index: number, self: any[]) => 
-          index === self.findIndex(o => o.value === option.value)
-        );
+        .reduce((acc: any[], dep: any) => {
+          if (!acc.find(item => item.value === dep.dep_code)) {
+            acc.push({
+              value: dep.dep_code,
+              label: `${dep.name}`
+            });
+          }
+          return acc;
+        }, []);
       setAvailableDependencies(uniqueDeps);
       
       // Limpiar estado anterior
@@ -355,13 +359,15 @@ const AdminDependenciesPage = () => {
       
       setAllUsersStatus(usersData);
       const uniqueDeps = depsData
-        .map((dep: any) => ({
-          value: dep.dep_code,
-          label: `${dep.name}`
-        }))
-        .filter((option: any, index: number, self: any[]) => 
-          index === self.findIndex(o => o.value === option.value)
-        );
+        .reduce((acc: any[], dep: any) => {
+          if (!acc.find(item => item.value === dep.dep_code)) {
+            acc.push({
+              value: dep.dep_code,
+              label: `${dep.name}`
+            });
+          }
+          return acc;
+        }, []);
       setAvailableDependencies(uniqueDeps);
       setUserStatusModalOpened(true);
     } catch (error) {
@@ -669,13 +675,15 @@ const AdminDependenciesPage = () => {
             label="Seleccionar usuario"
             placeholder="Buscar usuario..."
             data={usersWithDependencies
-              .map(user => ({
-                value: user.email,
-                label: `${user.full_name} (${user.email})`
-              }))
-              .filter((option, index, self) => 
-                index === self.findIndex(o => o.value === option.value)
-              )}
+              .reduce((acc: any[], user) => {
+                if (!acc.find(item => item.value === user.email)) {
+                  acc.push({
+                    value: user.email,
+                    label: `${user.full_name} (${user.email})`
+                  });
+                }
+                return acc;
+              }, [])}
             searchable
             value={selectedUser?.email || null}
             onChange={(email) => {
