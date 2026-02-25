@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
 import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
+import { modals } from '@mantine/modals';
 import axios from "axios";
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -138,6 +139,20 @@ const AdminDependenciesPage = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [page, search]);
 
+  const handleSyncConfirmation = () => {
+    modals.openConfirmModal({
+      title: 'Confirmar Sincronización',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas sincronizar todas las dependencias? Esta acción actualizará la información desde el sistema externo.
+        </Text>
+      ),
+      labels: { confirm: 'Sincronizar', cancel: 'Cancelar' },
+      confirmProps: { color: 'blue' },
+      onConfirm: handleSyncDependencies,
+    });
+  };
+
   const handleSyncDependencies = async () => {
     setIsLoading(true);
     
@@ -208,11 +223,6 @@ const AdminDependenciesPage = () => {
       });
       return;
     }
-
-    console.log('=== SAVE DEBUG ===');
-    console.log('Session:', session);
-    console.log('User email:', session?.user?.email);
-    console.log('Selected dependency ID:', selectedDependency?._id);
     
     if (!session?.user?.email) {
       showNotification({
@@ -521,7 +531,7 @@ const AdminDependenciesPage = () => {
         </Button>
         <Button
           variant="light"
-          onClick={handleSyncDependencies}
+          onClick={handleSyncConfirmation}
           className={styles.syncButton} 
           loading={isLoading}
           leftSection={<IconRefresh/>}
