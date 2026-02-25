@@ -73,6 +73,18 @@ const AdminDependenciesPage = () => {
         params: { page, limit: 10, search },
       });
       if (response.data) {
+        console.log('=== DEPENDENCIES DATA ===');
+        console.log('Response:', response.data);
+        console.log('Dependencies:', response.data.dependencies);
+        response.data.dependencies?.forEach((dep: any, index: number) => {
+          console.log(`Dependency ${index}:`, {
+            _id: dep._id,
+            dep_code: dep.dep_code,
+            name: dep.name,
+            responsible: dep.responsible,
+            members: dep.members
+          });
+        });
         setDependencies(response.data.dependencies || []);
         setTotalPages(response.data.pages || 1);
       }
@@ -114,6 +126,18 @@ const AdminDependenciesPage = () => {
     return () => clearTimeout(delayDebounceFn);
   }, [search]);
 
+  // Refresh data when returning to this page
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchDependencies(page, search);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [page, search]);
+
   const handleSyncDependencies = async () => {
     setIsLoading(true);
     
@@ -147,12 +171,14 @@ const AdminDependenciesPage = () => {
       
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/updateAll`, payload, { headers });
       
+      // Recargar los datos después de la sincronización exitosa
+      await fetchDependencies(page, search);
+      
       showNotification({
         title: "Sincronizado",
         message: "Dependencias sincronizadas exitosamente",
         color: "teal",
       });
-      fetchDependencies(page, search);
     } catch (error) {
       console.error("Error syncing dependencies:", error);
       showNotification({
@@ -446,16 +472,12 @@ const AdminDependenciesPage = () => {
       <Table.Td>{dependency.dep_code}</Table.Td>
       <Table.Td>{dependency.name}</Table.Td>
       <Table.Td>
-        {dependency.visualizers.length > 0 ? <Group gap={5}>
-    {dependency.visualizers.slice(0, 1).map((v, index) => (
-      <Text key={index} > {v} </Text>
-    ))}
-    {dependency.visualizers.length > 1 && (
-      <Badge variant="outline">+{dependency.visualizers.length - 1} más</Badge>
-    )}
-  </Group> : <Text> No definido </Text> }
-  
-</Table.Td>
+        {dependency.responsible ? (
+          <Text>{dependency.responsible}</Text>
+        ) : (
+          <Text c="dimmed">No definido</Text>
+        )}
+      </Table.Td>
       {/* <Table.Td>{dependency.dep_father}</Table.Td> */}
       <Table.Td>
         <Center>
@@ -538,10 +560,10 @@ const AdminDependenciesPage = () => {
                 )}
               </Center>
             </Table.Th>
-            <Table.Th onClick={() => handleSort("visualizers")} style={{ cursor: "pointer" }}>
+            <Table.Th onClick={() => handleSort("responsible")} style={{ cursor: "pointer" }}>
               <Center inline>
                 Líder(es)
-                {sortConfig.key === "visualizers" ? (
+                {sortConfig.key === "responsible" ? (
                   sortConfig.direction === "asc" ? (
                     <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
                   ) : (
