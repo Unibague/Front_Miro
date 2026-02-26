@@ -341,7 +341,6 @@ export default function AdminReportsAmbitosPage() {
       },
     });
   };
-
   const fetchPublishOptions = async () => {
     setLoadingPublishOptions(true);
     try {

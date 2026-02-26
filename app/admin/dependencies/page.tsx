@@ -11,7 +11,6 @@ import { showNotification } from "@mantine/notifications";
 import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
-import { normalizeText, searchInText } from "@/app/utils/textUtils";
 
 interface Dependency {
   _id: string;
