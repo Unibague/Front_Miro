@@ -107,7 +107,7 @@ const AdminUpdateDependencyPage = () => {
         `${process.env.NEXT_PUBLIC_API_URL}/dependencies/setResponsible`,
         {
           dep_code: dependency.dep_code,
-          email: dependency.responsible,
+          email: dependency.visualizers && dependency.visualizers.length > 0 ? dependency.visualizers[0] : null,
           adminEmail: session.user.email
         },
         { headers }
