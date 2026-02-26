@@ -395,11 +395,11 @@ router.back();
       }
     });
 
-    // Comparar dimensiones
+    // Comparar ?mbitos
     const oldDimensions = oldTemplate.dimensions || [];
     const newDimensions = newTemplate.dimensions || [];
 
-    // Dimensiones agregadas
+    // ?mbitos agregadas
     newDimensions.forEach((dimensionId: string) => {
       if (!oldDimensions.includes(dimensionId)) {
         const dimension = dimensions.find(d => d._id === dimensionId);
@@ -414,7 +414,7 @@ router.back();
       }
     });
 
-    // Dimensiones eliminadas
+    // ?mbitos eliminadas
     oldDimensions.forEach((dimensionId: string) => {
       if (!newDimensions.includes(dimensionId)) {
         const dimension = dimensions.find(d => d._id === dimensionId);

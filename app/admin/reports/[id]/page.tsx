@@ -175,7 +175,7 @@ const ProducerReportCreatePage = () => {
 
   return (
     <Container size={'lg'}>
-      <Title ta={'center'}>Edición de Informe para Dimension(es)</Title>
+      <Title ta={'center'}>Edición de Informe para Ámbito(s)</Title>
       <Divider m={'md'}/>
 
       <TextInput
