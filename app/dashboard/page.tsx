@@ -390,7 +390,7 @@ useEffect(() => {
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes que generarán los ámbitos.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos')}>
                 Ir a Configuración de Informes
               </Button>
             </Card>
@@ -435,7 +435,7 @@ useEffect(() => {
                 <IconReportSearch size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Administrar Informes de Gestión</Text>
+                <Text ta={"center"} w={500}>Gestionar informes Responsables</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Adminsitra el proceso de cargue de los informes de gestión.
@@ -652,13 +652,13 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconHexagon3d size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
+                <Text ta={"center"} w={500}>Gestionar Mi Ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona la dimensión de la que eres responsable.
+                Gestiona el ámbito del que eres responsable.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-                Ir a Gestión de Mi Dimensión
+                Ir a Gestión de Mi Ámbito
               </Button>
             </Card>
           </Grid.Col>
