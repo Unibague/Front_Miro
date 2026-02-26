@@ -19,6 +19,7 @@ import {
   Tooltip,
   rem,
   MultiSelect,
+  Select,
 } from "@mantine/core";
 import { IconPlus, IconTrash, IconEye, IconCancel, IconSend2 } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
@@ -67,6 +68,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [loading, setLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
+  const [selectOptions, setSelectOptions] = useState<Record<string, Array<{value: string, label: string}>>>({});
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
   const [displayValues, setDisplayValues] = useState<Record<string, Record<string, string>>>({});
@@ -106,8 +108,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       const validatorCheckResults = validatorChecks.reduce((acc, curr) => ({ ...acc, ...curr }), {});
       setValidatorExists(validatorCheckResults);
 
-      const multiSelectOptionsPromises = response.data.template.fields
-      .filter(field => field.multiple && field.validate_with)
+      // Cargar opciones para campos con validador (tanto múltiples como simples)
+      const allValidatorOptionsPromises = response.data.template.fields
+      .filter(field => field.validate_with)
       .map(async (field) => {
         try {
           let validatorId = '';
@@ -117,42 +120,61 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             const parts = field.validate_with.split(' - ');
             if (parts.length >= 2) {
               validatorId = parts[1].trim();
-              columnToValidate = parts[1].trim().toLowerCase();
+              columnToValidate = parts[0].trim().toLowerCase();
             }
           } else if (field.validate_with?.id) {
             validatorId = field.validate_with.id;
-            columnToValidate = field.validate_with.name.split(" - ")[1]?.trim().toLowerCase();
+            columnToValidate = field.validate_with.name.split(" - ")[0]?.trim().toLowerCase();
           }
           
           if (!validatorId) {
-            return { [field.name]: [] as string[] };
+            return { fieldName: field.name, options: [], isMultiple: field.multiple };
           }
           
           const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
-          const validatorColumns = validatorResponse.data.validator.columns || [];
-          const validatorColumn = validatorColumns.find(
-            (col: { is_validator: boolean; name: string }) =>
-              col.is_validator && col.name.trim().toLowerCase() === columnToValidate
-          );
-          if (validatorColumn) {
-            console.log("Columna encontrada para validación:", validatorColumn.name);
-          } else {
-            console.log("No se encontró una columna coincidente para:", columnToValidate);
+          const validatorData = validatorResponse.data.validator;
+          
+          // Buscar columna de valores y columna de descripciones
+          const valueColumn = validatorData.columns.find((col: any) => col.is_validator);
+          const descColumn = validatorData.columns.find((col: any) => !col.is_validator);
+          
+          if (valueColumn) {
+            const options = valueColumn.values.map((value: any, index: number) => ({
+              value: String(value),
+              label: descColumn?.values[index] ? String(descColumn.values[index]) : String(value)
+            }));
+            
+            // Eliminar duplicados
+            const uniqueOptions = options.filter((option: any, index: number, self: any[]) => 
+              index === self.findIndex(o => o.value === option.value)
+            );
+            
+            return { fieldName: field.name, options: uniqueOptions, isMultiple: field.multiple };
           }
-          const values = validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : [];
-          const uniqueValues = Array.from(new Set(values));
-          return {
-            [field.name]: uniqueValues as string[]
-          };
+          
+          return { fieldName: field.name, options: [], isMultiple: field.multiple };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
-          return { [field.name]: [] as string[] };
+          return { fieldName: field.name, options: [], isMultiple: field.multiple };
         }
       });
 
-    const multiSelectOptionsArray = await Promise.all(multiSelectOptionsPromises);
-    const multiSelectOptions = multiSelectOptionsArray.reduce((acc, curr) => ({ ...acc, ...curr }), {} as Record<string, string[]>);
-    setMultiSelectOptions(multiSelectOptions);
+    const allValidatorOptions = await Promise.all(allValidatorOptionsPromises);
+    
+    // Separar opciones para MultiSelect y Select
+    const multiSelectOpts: Record<string, string[]> = {};
+    const selectOpts: Record<string, Array<{value: string, label: string}>> = {};
+    
+    allValidatorOptions.forEach(({ fieldName, options, isMultiple }) => {
+      if (isMultiple) {
+        multiSelectOpts[fieldName] = options.map((opt: any) => opt.value);
+      } else {
+        selectOpts[fieldName] = options;
+      }
+    });
+    
+    setMultiSelectOptions(multiSelectOpts);
+    setSelectOptions(selectOpts);
 
 
     } catch (error) {
@@ -357,6 +379,31 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         />
       );
     }
+    
+    // Si el campo tiene validador pero NO es múltiple, usar Select
+    if (field.validate_with && !field.multiple && selectOptions[field.name]) {
+      const selectDisplayValue = displayValues[rowIndex]?.[field.name] 
+        ? selectOptions[field.name].find(opt => opt.label === displayValues[rowIndex][field.name])?.value || row[field.name]
+        : row[field.name];
+        
+      return wrapWithTooltip(
+        <Select
+          {...commonProps}
+          value={selectDisplayValue ? String(selectDisplayValue) : null}
+          onChange={(value) => {
+            if (displayValues[rowIndex]?.[field.name]) {
+              const updatedDisplayValues = { ...displayValues };
+              delete updatedDisplayValues[rowIndex][field.name];
+              setDisplayValues(updatedDisplayValues);
+            }
+            handleInputChange(rowIndex, field.name, value);
+          }}
+          data={selectOptions[field.name] || []}
+          searchable
+          placeholder={field.comment || "Seleccione una opción"}
+        />
+      );
+    }
   
     switch (field.datatype) {
       case "Entero":
@@ -385,14 +432,25 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         );
   
       case "Texto Largo":
+        const textareaDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? displayValues[rowIndex][field.name] 
+          : (row[field.name] === null ? "" : row[field.name]);
+          
         return wrapWithTooltip(
           <Textarea
             {...commonProps}
             autosize
             minRows={2}
             maxRows={6}
-            value={row[field.name] === null ? "" : row[field.name]}
-            onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
+            value={textareaDisplayValue}
+            onChange={(e) => {
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              handleInputChange(rowIndex, field.name, e.target.value);
+            }}
           />
         );
   
@@ -420,21 +478,43 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         );
   
       case "True/False":
+        const switchDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? displayValues[rowIndex][field.name] 
+          : row[field.name];
+          
         return wrapWithTooltip(
           <Switch
-            checked={row[field.name] === true}
-            onChange={(event) => handleInputChange(rowIndex, field.name, event.currentTarget.checked)}
+            checked={switchDisplayValue === true || switchDisplayValue === "Si"}
+            onChange={(event) => {
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              handleInputChange(rowIndex, field.name, event.currentTarget.checked);
+            }}
           />
         );
   
       case "Fecha":
+        const dateDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? new Date(displayValues[rowIndex][field.name]) 
+          : (row[field.name] ? new Date(row[field.name]) : null);
+          
         return wrapWithTooltip(
           <DateInput
             {...commonProps}
-            value={row[field.name] ? new Date(row[field.name]) : null}
+            value={dateDisplayValue}
             locale="es"
             valueFormat="DD/MM/YYYY"
-            onChange={(date) => handleInputChange(rowIndex, field.name, date)}
+            onChange={(date) => {
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              handleInputChange(rowIndex, field.name, date);
+            }}
           />
         );
   
