@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
 import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
 import { modals } from '@mantine/modals';
-import axios from "axios";
+import axios from "../config/axios";
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { showNotification } from "@mantine/notifications";
 import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
+import { normalizeText, searchInText } from "@/app/utils/textUtils";
 
 interface Dependency {
   _id: string;
@@ -114,6 +115,7 @@ const AdminDependenciesPage = () => {
       }
     } catch (error) {
       console.error("Error fetching members:", error);
+      setMembers([]);
     }
   };
 
@@ -314,12 +316,12 @@ const AdminDependenciesPage = () => {
   const handlePermissionsModal = async () => {
     try {
       const [usersResponse, depsResponse] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
       ]);
       
-      const usersData = await usersResponse.json();
-      const depsData = await depsResponse.json();
+      const usersData = usersResponse.data;
+      const depsData = depsResponse.data;
       
       setUsersWithDependencies(usersData);
       const uniqueDeps = depsData
@@ -350,12 +352,12 @@ const AdminDependenciesPage = () => {
   const handleUserStatusModal = async () => {
     try {
       const [usersResponse, depsResponse] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
       ]);
       
-      const usersData = await usersResponse.json();
-      const depsData = await depsResponse.json();
+      const usersData = usersResponse.data;
+      const depsData = depsResponse.data;
       
       setAllUsersStatus(usersData);
       const uniqueDeps = depsData
