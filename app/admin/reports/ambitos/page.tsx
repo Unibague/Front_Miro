@@ -341,7 +341,6 @@ export default function AdminReportsAmbitosPage() {
       },
     });
   };
-//comenatrio
   const fetchPublishOptions = async () => {
     setLoadingPublishOptions(true);
     try {
@@ -675,8 +674,6 @@ export default function AdminReportsAmbitosPage() {
             />
           </>
         )}
-
-        //
 
         {customDeadline && (
           <DatePickerInput

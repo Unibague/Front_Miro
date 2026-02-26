@@ -17,7 +17,7 @@ interface ValidatorModalProps {
   opened: boolean;
   onClose: () => void;
   validatorId: string;
-  onCopy: (value: string) => void;
+  onCopy: (value: string, description?: string) => void;
 }
 
 interface ValidatorData {
@@ -55,20 +55,20 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
     }
   }, [validatorId]);
 
-  const handleCopy = (value: string) => {
-    console.log('handleCopy ejecutado con valor:', value);
+  const handleCopy = (value: string, description?: string) => {
+    console.log('handleCopy ejecutado con valor:', value, 'descripción:', description);
     navigator.clipboard.writeText(value);
   
     if (onCopy) {
-      console.log('Llamando a onCopy con valor:', value);
-      onCopy(value); 
+      console.log('Llamando a onCopy con valor:', value, 'y descripción:', description);
+      onCopy(value, description); 
     } else {
       console.log('onCopy no está definido');
     }
   
     showNotification({
-      title: "Valor copiado",
-      message: `"${value}" ha sido copiado al portapapeles y agregado al campo`,
+      title: "Valor seleccionado",
+      message: `"${description || value}" ha sido seleccionado`,
       color: "teal",
     });
   };
@@ -119,7 +119,7 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
                             <Table.Td>{description}</Table.Td>
                             <Table.Td>
                               <Center>
-                                <ActionIcon onClick={() => handleCopy(value)}>
+                                <ActionIcon onClick={() => handleCopy(value, description)}>
                                   <IconCopy size={16} />
                                 </ActionIcon>
                               </Center>

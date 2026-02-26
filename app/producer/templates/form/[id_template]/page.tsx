@@ -69,6 +69,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
+  const [displayValues, setDisplayValues] = useState<Record<string, Record<string, string>>>({});
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
 
   const fetchTemplate = async () => {
@@ -361,16 +362,26 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Entero":
       case "Decimal":
       case "Porcentaje":
+        // Si el campo tiene validador y hay una descripción guardada, mostrarla
+        const numericDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? displayValues[rowIndex][field.name] 
+          : (typeof row[field.name] === 'number' ? row[field.name] : "");
+          
         return wrapWithTooltip(
-          <NumberInput
-          {...commonProps}
-          value={typeof row[field.name] === 'number' ? row[field.name] : ""}
-          min={0}
-          step={1}
-          hideControls
-          onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-        />
-
+          <TextInput
+            {...commonProps}
+            value={String(numericDisplayValue)}
+            onChange={(e) => {
+              // Si el usuario edita manualmente, limpiar la descripción guardada
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              const numValue = parseFloat(e.target.value);
+              handleInputChange(rowIndex, field.name, isNaN(numValue) ? null : numValue);
+            }}
+          />
         );
   
       case "Texto Largo":
@@ -387,11 +398,24 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   
       case "Texto Corto":
       case "Link":
+        // Si el campo tiene validador y hay una descripción guardada, mostrarla
+        const displayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? displayValues[rowIndex][field.name] 
+          : (row[field.name] === null ? "" : row[field.name]);
+          
         return wrapWithTooltip(
           <TextInput
             {...commonProps}
-            value={row[field.name] === null ? "" : row[field.name]}
-            onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
+            value={displayValue}
+            onChange={(e) => {
+              // Si el usuario edita manualmente, limpiar la descripción guardada
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              handleInputChange(rowIndex, field.name, e.target.value);
+            }}
           />
         );
   
@@ -415,11 +439,24 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         );
   
       default:
+        // Si el campo tiene validador y hay una descripción guardada, mostrarla
+        const defaultDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
+          ? displayValues[rowIndex][field.name] 
+          : (row[field.name] === null ? "" : row[field.name]);
+          
         return wrapWithTooltip(
           <TextInput
             {...commonProps}
-            value={row[field.name] === null ? "" : row[field.name]}
-            onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
+            value={defaultDisplayValue}
+            onChange={(e) => {
+              // Si el usuario edita manualmente, limpiar la descripción guardada
+              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
+                const updatedDisplayValues = { ...displayValues };
+                delete updatedDisplayValues[rowIndex][field.name];
+                setDisplayValues(updatedDisplayValues);
+              }
+              handleInputChange(rowIndex, field.name, e.target.value);
+            }}
           />
         );
     }
@@ -557,12 +594,23 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           setCurrentValidatorId("");
         }}
         validatorId={currentValidatorId}
-        onCopy={(value: string) => {
+        onCopy={(value: string, description?: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
             const updatedRows = [...rows];
             updatedRows[activeRowIndex][activeFieldName] = value;
             setRows(updatedRows);
-            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName);
+            
+            // Guardar la descripción para mostrar en el campo
+            if (description) {
+              const updatedDisplayValues = { ...displayValues };
+              if (!updatedDisplayValues[activeRowIndex]) {
+                updatedDisplayValues[activeRowIndex] = {};
+              }
+              updatedDisplayValues[activeRowIndex][activeFieldName] = description;
+              setDisplayValues(updatedDisplayValues);
+            }
+            
+            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName, 'valor:', value, 'descripción:', description);
           }
           setValidatorModalOpen(false);
           setActiveRowIndex(null);
