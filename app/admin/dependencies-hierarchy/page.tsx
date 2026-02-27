@@ -52,7 +52,6 @@ const AdminDependenciesPage = () => {
   const [editingDependency, setEditingDependency] = useState<Dependency | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   
-  // Form states
   const [formData, setFormData] = useState({
     dep_code: "",
     name: "",
