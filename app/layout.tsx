@@ -19,7 +19,6 @@ export const metadata: Metadata = {
   title: "MIRÓ",
   description: "Miró",
 };
-
 interface RootLayoutProps {
   children: React.ReactNode;
 }
