@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, TextInput, Button, ScrollArea, Text, Group, ActionIcon, Paper, Loader } from '@mantine/core';
 import { IconSend, IconRobot } from '@tabler/icons-react';
 import axios from 'axios';
@@ -17,15 +17,40 @@ interface AIChatProps {
 }
 
 const AIChat = ({ opened, onClose }: AIChatProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: '¡Hola! Soy Ardi, tu asistente de IA. ¿En qué puedo ayudarte con la aplicación?',
-      timestamp: new Date()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+
+  // Verificar estado del servicio al abrir el chat
+  useEffect(() => {
+    if (opened) {
+      checkHealth();
+    }
+  }, [opened]);
+
+  const checkHealth = async () => {
+    try {
+      await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/health`, {
+        timeout: 5000
+      });
+      setHealthStatus('online');
+      if (messages.length === 0) {
+        setMessages([{
+          role: 'assistant',
+          content: '¡Hola! Soy Ardi, tu asistente de IA. ¿En qué puedo ayudarte con la aplicación?',
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      setHealthStatus('offline');
+      setMessages([{
+        role: 'assistant',
+        content: 'Lo siento, el servicio de IA no está disponible en este momento. Por favor contacta al administrador.',
+        timestamp: new Date()
+      }]);
+    }
+  };
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -37,15 +62,22 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setLoading(true);
 
     try {
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/ai/chat`, {
-        message: input,
-        context: 'application_help'
+      // Preparar historial para el backend
+      const history = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/chat`, {
+        message: currentInput,
+        history: history
       }, {
-        timeout: 30000 // 30 segundos timeout
+        timeout: 30000
       });
 
       const assistantMessage: Message = {
@@ -95,6 +127,9 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
         <Group gap="xs">
           <IconRobot size={20} />
           <Text fw={500}>Ardi - Asistente IA</Text>
+          {healthStatus === 'online' && <Text size="xs" c="green">• En línea</Text>}
+          {healthStatus === 'offline' && <Text size="xs" c="red">• Desconectado</Text>}
+          {healthStatus === 'checking' && <Text size="xs" c="yellow">• Verificando...</Text>}
         </Group>
       }
       size="md"
@@ -146,7 +181,7 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
           variant="filled"
           color="blue"
           onClick={sendMessage}
-          disabled={loading || !input.trim()}
+          disabled={loading || !input.trim() || healthStatus === 'offline'}
         >
           <IconSend size={16} />
         </ActionIcon>
