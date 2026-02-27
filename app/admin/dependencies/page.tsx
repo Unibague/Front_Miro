@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
 import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
-import axios from "axios";
+import { modals } from '@mantine/modals';
+import axios from "../config/axios";
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { showNotification } from "@mantine/notifications";
@@ -100,17 +101,20 @@ const AdminDependenciesPage = () => {
       if (response.data) {
         const memberOptions = response.data
           .filter((member: any) => member.email && member.email.includes('@') && member.email.split('@')[0].length > 0)
-          .map((member: any) => ({
-            value: member.email,
-            label: `${member.full_name} (${member.email})`,
-          }))
-          .filter((option: any, index: number, self: any[]) => 
-            index === self.findIndex(o => o.value === option.value)
-          );
+          .reduce((acc: any[], member: any) => {
+            if (!acc.find(item => item.value === member.email)) {
+              acc.push({
+                value: member.email,
+                label: `${member.full_name} (${member.email})`,
+              });
+            }
+            return acc;
+          }, []);
         setMembers(memberOptions);
       }
     } catch (error) {
       console.error("Error fetching members:", error);
+      setMembers([]);
     }
   };
 
@@ -137,6 +141,20 @@ const AdminDependenciesPage = () => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [page, search]);
+
+  const handleSyncConfirmation = () => {
+    modals.openConfirmModal({
+      title: 'Confirmar Sincronización',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas sincronizar todas las dependencias? Esta acción actualizará la información desde el sistema externo.
+        </Text>
+      ),
+      labels: { confirm: 'Sincronizar', cancel: 'Cancelar' },
+      confirmProps: { color: 'blue' },
+      onConfirm: handleSyncDependencies,
+    });
+  };
 
   const handleSyncDependencies = async () => {
     setIsLoading(true);
@@ -208,11 +226,6 @@ const AdminDependenciesPage = () => {
       });
       return;
     }
-
-    console.log('=== SAVE DEBUG ===');
-    console.log('Session:', session);
-    console.log('User email:', session?.user?.email);
-    console.log('Selected dependency ID:', selectedDependency?._id);
     
     if (!session?.user?.email) {
       showNotification({
@@ -302,22 +315,24 @@ const AdminDependenciesPage = () => {
   const handlePermissionsModal = async () => {
     try {
       const [usersResponse, depsResponse] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
       ]);
       
-      const usersData = await usersResponse.json();
-      const depsData = await depsResponse.json();
+      const usersData = usersResponse.data;
+      const depsData = depsResponse.data;
       
       setUsersWithDependencies(usersData);
       const uniqueDeps = depsData
-        .map((dep: any) => ({
-          value: dep.dep_code,
-          label: `${dep.name}`
-        }))
-        .filter((option: any, index: number, self: any[]) => 
-          index === self.findIndex(o => o.value === option.value)
-        );
+        .reduce((acc: any[], dep: any) => {
+          if (!acc.find(item => item.value === dep.dep_code)) {
+            acc.push({
+              value: dep.dep_code,
+              label: `${dep.name}`
+            });
+          }
+          return acc;
+        }, []);
       setAvailableDependencies(uniqueDeps);
       
       // Limpiar estado anterior
@@ -336,22 +351,24 @@ const AdminDependenciesPage = () => {
   const handleUserStatusModal = async () => {
     try {
       const [usersResponse, depsResponse] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`)
       ]);
       
-      const usersData = await usersResponse.json();
-      const depsData = await depsResponse.json();
+      const usersData = usersResponse.data;
+      const depsData = depsResponse.data;
       
       setAllUsersStatus(usersData);
       const uniqueDeps = depsData
-        .map((dep: any) => ({
-          value: dep.dep_code,
-          label: `${dep.name}`
-        }))
-        .filter((option: any, index: number, self: any[]) => 
-          index === self.findIndex(o => o.value === option.value)
-        );
+        .reduce((acc: any[], dep: any) => {
+          if (!acc.find(item => item.value === dep.dep_code)) {
+            acc.push({
+              value: dep.dep_code,
+              label: `${dep.name}`
+            });
+          }
+          return acc;
+        }, []);
       setAvailableDependencies(uniqueDeps);
       setUserStatusModalOpened(true);
     } catch (error) {
@@ -478,7 +495,7 @@ const AdminDependenciesPage = () => {
           <Text c="dimmed">No definido</Text>
         )}
       </Table.Td>
-      {/* <Table.Td>{dependency.dep_father}</Table.Td> */}
+      {/* <Table.Td>{dependency.dep_fathe}</Table.Td> */}
       <Table.Td>
         <Center>
           <Group gap={5}>
@@ -521,7 +538,7 @@ const AdminDependenciesPage = () => {
         </Button>
         <Button
           variant="light"
-          onClick={handleSyncDependencies}
+          onClick={handleSyncConfirmation}
           className={styles.syncButton} 
           loading={isLoading}
           leftSection={<IconRefresh/>}
@@ -659,13 +676,15 @@ const AdminDependenciesPage = () => {
             label="Seleccionar usuario"
             placeholder="Buscar usuario..."
             data={usersWithDependencies
-              .map(user => ({
-                value: user.email,
-                label: `${user.full_name} (${user.email})`
-              }))
-              .filter((option, index, self) => 
-                index === self.findIndex(o => o.value === option.value)
-              )}
+              .reduce((acc: any[], user) => {
+                if (!acc.find(item => item.value === user.email)) {
+                  acc.push({
+                    value: user.email,
+                    label: `${user.full_name} (${user.email})`
+                  });
+                }
+                return acc;
+              }, [])}
             searchable
             value={selectedUser?.email || null}
             onChange={(email) => {

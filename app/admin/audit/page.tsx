@@ -204,7 +204,7 @@ const AuditPage = () => {
         return parsed.action;
       }
       
-      // Manejo para cambios de dimensiones
+      // Manejo para cambios de ?mbitos
       if (parsed.dimensionName && parsed.action) {
         return parsed.action;
       }
@@ -226,7 +226,7 @@ const AuditPage = () => {
         return `Actualizó los roles del usuario ${parsed.userEmail} a: ${roles}`;
       }
       
-      // Manejo para dimensiones
+      // Manejo para ?mbitos
       if (parsed.dimensionName && parsed.responsibleDependency) {
         const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
         return `${actionText} el ámbito "${parsed.dimensionName}" asignado a ${parsed.responsibleDependency}`;

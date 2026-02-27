@@ -340,7 +340,7 @@ const confirmDelete = (id: string) => {
       <Table.Td>
         <Center>
           <Tooltip
-            label="Asignar a dimension(es)"
+            label="Asignar a Ámbito(s)"
             transitionProps={{ transition: 'fade-up', duration: 300 }}
           >
             <Button
@@ -363,7 +363,7 @@ const confirmDelete = (id: string) => {
   return (
     <Container size="xl">
       <DateConfig />
-      <Title mb={'md'} ta={'center'}>Configuración Informes de Ámbitos</Title>
+      <Title mb={'md'} ta={'center'}>Configuración Informes de Responsables</Title>
       <Group mb="md">
         <TextInput
           placeholder="Buscar en todos los informes"
@@ -459,7 +459,7 @@ const confirmDelete = (id: string) => {
           blur: 3,
         }}
         onClose={handlePublishModalClose}
-        title="Asignar Informe a Dimension(es)"
+        title="Asignar Informe a Ámbito(s)"
       >
         {periods.length > 0 ? (
           <Select

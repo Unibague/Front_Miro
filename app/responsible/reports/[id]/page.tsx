@@ -146,7 +146,7 @@ if (response.data.report.dimensions.length === 1) {
 
           {availableDimensions.length > 1 && (
   <Select
-    label="Selecciona una dimensión"
+    label="Selecciona un ámbito"
     placeholder="Selecciona una opción"
     data={availableDimensions.map((d) => ({
       value: d._id,
@@ -274,8 +274,8 @@ if (response.data.report.dimensions.length === 1) {
 
     if (!selectedDimension) {
   showNotification({
-    title: "Falta seleccionar dimensión",
-    message: "Por favor selecciona una dimensión antes de continuar",
+    title: "Falta seleccionar ámbito",
+    message: "Por favor selecciona un ámbito antes de continuar",
     color: "red",
   });
   return;
