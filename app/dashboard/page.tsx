@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme} from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -12,6 +12,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import { useParams } from "next/navigation";
+import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
@@ -32,6 +33,7 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
+  const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const params = useParams();
 const { id } = params ?? {};
@@ -943,7 +945,27 @@ useEffect(() => {
         <Grid justify="center" align="center">
           {renderCards()}
         </Grid>
+        
+        {/* AI Assistant Button */}
+        <Button
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            borderRadius: '50px',
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
+          size="lg"
+          leftSection={<IconRobot size={20} />}
+          onClick={() => setAiChatOpened(true)}
+        >
+          Hablar con Ardi
+        </Button>
       </Container>
+      
+      <AIChat opened={aiChatOpened} onClose={() => setAiChatOpened(false)} />
+      
       <Modal
         opened={opened}
         onClose={() => {}}
