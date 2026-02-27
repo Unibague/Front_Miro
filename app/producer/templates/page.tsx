@@ -660,7 +660,7 @@ if (field.multiple) {
     const now = new Date();
     const deadline = new Date(publishedTemplate.deadline);
     
-    // Establecer la hora del deadline al final del día (23:59:59)
+    // Establecer la hora del deadline al final del día (23:59:59
     deadline.setHours(23, 59, 59, 999);
     
     return now > deadline;
