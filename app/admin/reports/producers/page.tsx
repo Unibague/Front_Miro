@@ -165,30 +165,42 @@ const ProducerReportPage = () => {
       confirmProps: { color: 'blue' },
       onConfirm: async () => {
         try {
-          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
+          const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
             reportId,
             deadline: customDeadline ? deadline : selectedPeriod ?
               new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
             period: selectedPeriod,
             email: session?.user?.email
           });
-          showNotification({
-            title: "Éxito",
-            message: "Informe publicado correctamente",
-            color: "green",
-          });
-          setOpened(false);
-          setSelectedReport(null);
-          setDeadline(null);
-          setCustomDeadline(false);
-          await fetchReports();
-        } catch (error) {
+          
+          // Validar si la asignación fue exitosa
+          if (response.data && response.status === 200) {
+            showNotification({
+              title: "Éxito",
+              message: "Informe publicado correctamente",
+              color: "green",
+            });
+            setOpened(false);
+            setSelectedReport(null);
+            setDeadline(null);
+            setCustomDeadline(false);
+            await fetchReports();
+          } else {
+            // Si la respuesta no es válida, permitir reasignación
+            showNotification({
+              title: "Advertencia",
+              message: "La asignación puede no haberse completado correctamente. Verifica en Informes Publicados.",
+              color: "yellow",
+            });
+          }
+        } catch (error: any) {
           console.error("Error publishing report:", error);
           showNotification({
             title: "Error",
-            message: "Hubo un error al publicar el informe",
+            message: error.response?.data?.message || "Hubo un error al publicar el informe",
             color: "red",
           });
+          // No cerrar el modal para permitir reintento
         }
       },
     });
@@ -221,7 +233,9 @@ const ProducerReportPage = () => {
   fetchActivePeriod();
 }, []);
 
-  const rows = reports?.map((report: Report) => (
+  const rows = reports?.map((report: Report) => {
+    console.log(`Report: ${report.name}, Published: ${report.published}`); // DEBUG
+    return (
     <Table.Tr key={report._id}>
       <Table.Td maw={rem(500)}>
         {report.name}
@@ -313,7 +327,8 @@ const ProducerReportPage = () => {
         </Center>
       </Table.Td>
     </Table.Tr>
-  ));
+    );
+  });
 
   return (
     <Container size="xl">
