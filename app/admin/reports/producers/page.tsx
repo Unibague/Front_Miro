@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { modals } from "@mantine/modals";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Report {
   _id: string;
@@ -49,6 +50,7 @@ const StatusColor: Record<string, string> = {
 const ProducerReportPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -74,7 +76,7 @@ const ProducerReportPage = () => {
           email: session?.user?.email,
           page: page,
           search: search,
-          periodId: selectedPeriod
+          periodId: selectedPeriodId
         },
       });
       setReports(response.data);
@@ -165,30 +167,42 @@ const ProducerReportPage = () => {
       confirmProps: { color: 'blue' },
       onConfirm: async () => {
         try {
-          await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
+          const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
             reportId,
             deadline: customDeadline ? deadline : selectedPeriod ?
               new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
             period: selectedPeriod,
             email: session?.user?.email
           });
-          showNotification({
-            title: "Éxito",
-            message: "Informe publicado correctamente",
-            color: "green",
-          });
-          setOpened(false);
-          setSelectedReport(null);
-          setDeadline(null);
-          setCustomDeadline(false);
-          await fetchReports();
-        } catch (error) {
+          
+          // Validar si la asignación fue exitosa
+          if (response.data && response.status === 200) {
+            showNotification({
+              title: "Éxito",
+              message: "Informe publicado correctamente",
+              color: "green",
+            });
+            setOpened(false);
+            setSelectedReport(null);
+            setDeadline(null);
+            setCustomDeadline(false);
+            await fetchReports();
+          } else {
+            // Si la respuesta no es válida, permitir reasignación
+            showNotification({
+              title: "Advertencia",
+              message: "La asignación puede no haberse completado correctamente. Verifica en Informes Publicados.",
+              color: "yellow",
+            });
+          }
+        } catch (error: any) {
           console.error("Error publishing report:", error);
           showNotification({
             title: "Error",
-            message: "Hubo un error al publicar el informe",
+            message: error.response?.data?.message || "Hubo un error al publicar el informe",
             color: "red",
           });
+          // No cerrar el modal para permitir reintento
         }
       },
     });
@@ -196,32 +210,38 @@ const ProducerReportPage = () => {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchReports();
+      if (session?.user?.email && selectedPeriodId) {
+        fetchReports();
+      }
     }, 200);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search, selectedPeriod]);
+  }, [search, selectedPeriodId, session?.user?.email]);
 
   useEffect(() => {
     fetchPeriods();
   }, [selectedReport]);
 
   useEffect(() => {
-  const fetchActivePeriod = async () => {
-    try {
-      const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/active`);
-      console.log(data);
-      if (data.length > 0) {
-        setSelectedPeriod(data[0]._id); // Aquí lo estableces como valor por defecto
-      }
-    } catch (error) {
-      console.error("Error fetching active period:", error);
-    }
-  };
-  fetchActivePeriod();
-}, []);
+    if (!periods.length) return;
 
-  const rows = reports?.map((report: Report) => (
+    const hasSelectedGlobalPeriod =
+      !!selectedPeriodId && periods.some((period) => period._id === selectedPeriodId);
+
+    if (hasSelectedGlobalPeriod) {
+      setSelectedPeriod(selectedPeriodId);
+      const period = periods.find((p) => p._id === selectedPeriodId);
+      setDeadline(period ? new Date(period.producer_end_date) : null);
+      return;
+    }
+
+    setSelectedPeriod(periods[0]._id);
+    setDeadline(periods[0]?.producer_end_date ? new Date(periods[0].producer_end_date) : null);
+  }, [periods, selectedPeriodId]);
+
+  const rows = reports?.map((report: Report) => {
+    console.log(`Report: ${report.name}, Published: ${report.published}`); // DEBUG
+    return (
     <Table.Tr key={report._id}>
       <Table.Td maw={rem(500)}>
         {report.name}
@@ -313,7 +333,8 @@ const ProducerReportPage = () => {
         </Center>
       </Table.Td>
     </Table.Tr>
-  ));
+    );
+  });
 
   return (
     <Container size="xl">
