@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { modals } from "@mantine/modals";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Report {
   _id: string;
@@ -49,6 +50,7 @@ const StatusColor: Record<string, string> = {
 const ProducerReportPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -74,7 +76,7 @@ const ProducerReportPage = () => {
           email: session?.user?.email,
           page: page,
           search: search,
-          periodId: selectedPeriod
+          periodId: selectedPeriodId
         },
       });
       setReports(response.data);
@@ -208,30 +210,34 @@ const ProducerReportPage = () => {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchReports();
+      if (session?.user?.email && selectedPeriodId) {
+        fetchReports();
+      }
     }, 200);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search, selectedPeriod]);
+  }, [search, selectedPeriodId, session?.user?.email]);
 
   useEffect(() => {
     fetchPeriods();
   }, [selectedReport]);
 
   useEffect(() => {
-  const fetchActivePeriod = async () => {
-    try {
-      const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/active`);
-      console.log(data);
-      if (data.length > 0) {
-        setSelectedPeriod(data[0]._id); // Aquí lo estableces como valor por defecto
-      }
-    } catch (error) {
-      console.error("Error fetching active period:", error);
+    if (!periods.length) return;
+
+    const hasSelectedGlobalPeriod =
+      !!selectedPeriodId && periods.some((period) => period._id === selectedPeriodId);
+
+    if (hasSelectedGlobalPeriod) {
+      setSelectedPeriod(selectedPeriodId);
+      const period = periods.find((p) => p._id === selectedPeriodId);
+      setDeadline(period ? new Date(period.producer_end_date) : null);
+      return;
     }
-  };
-  fetchActivePeriod();
-}, []);
+
+    setSelectedPeriod(periods[0]._id);
+    setDeadline(periods[0]?.producer_end_date ? new Date(periods[0].producer_end_date) : null);
+  }, [periods, selectedPeriodId]);
 
   const rows = reports?.map((report: Report) => {
     console.log(`Report: ${report.name}, Published: ${report.published}`); // DEBUG
