@@ -283,6 +283,8 @@ export default function AdminReportsAmbitosPage() {
         description: ambitReportDescription.trim(),
         instructions: aiInstructions.trim(),
         email: session?.user?.email,
+      }, {
+        timeout: 300000, // 5 minutos
       });
 
       showNotification({
