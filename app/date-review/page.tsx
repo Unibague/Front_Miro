@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Loader, Table, ScrollArea, Modal, TextInput, Stack, Notification, Divider, Badge, Anchor } from "@mantine/core";
+import { Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Loader, Table, ScrollArea, Modal, TextInput, Stack, Notification, Divider, Badge, Anchor, Tooltip } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
 import { useRole } from "@/app/context/RoleContext";
@@ -20,6 +20,7 @@ type Program = {
   nombre: string;
   dep_code_facultad: string;
   dep_code_programa: string;
+  codigo_snies: string | null;
   modalidad: string | null;
   nivel_academico: string | null;
   nivel_formacion: string | null;
@@ -42,6 +43,8 @@ type Process = {
   name: string;
   program_code: string;
   tipo_proceso: "RC" | "AV" | "PM";
+  parent_process_id?: string | null;
+  parent_tipo_proceso?: "RC" | "AV" | null;
   fase_actual: number;
   observaciones: string;
   condicion: number | null;
@@ -50,16 +53,20 @@ type Process = {
   fecha_documento_par: string | null;
   fecha_digitacion_saces: string | null;
   fecha_radicado_men: string | null;
-  // Fechas extra AV
+  meses_inicio_antes_venc?: number | null;
+  meses_doc_par_antes_venc?: number | null;
+  meses_digitacion_antes_venc?: number | null;
+  meses_radicado_antes_venc?: number | null;
   fecha_envio_pm_vicerrectoria?: string | null;
   fecha_entrega_pm_cna?: string | null;
   fecha_envio_avance_vicerrectoria?: string | null;
   fecha_radicacion_avance_cna?: string | null;
 };
 
-type PhaseDocument = {
+type ProcessDocument = {
   _id: string;
-  phase_id: string;
+  phase_id: string | null;
+  process_id?: string | null;
   name: string;
   drive_id: string;
   view_link: string;
@@ -86,13 +93,13 @@ type Phase = {
 
 /* ── Fases 0‑6 ── */
 const faseColors = [
-  { fase: 0, color: "#ced4da", label: "Fase 0" },
-  { fase: 1, color: "#ff6b6b", label: "Fase 1" },
-  { fase: 2, color: "#ffa94d", label: "Fase 2" },
-  { fase: 3, color: "#ffd43b", label: "Fase 3" },
-  { fase: 4, color: "#74c0fc", label: "Fase 4" },
-  { fase: 5, color: "#a9e34b", label: "Fase 5" },
-  { fase: 6, color: "#69db7c", label: "Fase 6" },
+  { fase: 0, color: "#ced4da", label: "Fase 0", fullName: "Fase 0 - Apertura" },
+  { fase: 1, color: "#ff6b6b", label: "Fase 1", fullName: "Fase 1 - Preparación" },
+  { fase: 2, color: "#ffa94d", label: "Fase 2", fullName: "Fase 2 - Estructuración" },
+  { fase: 3, color: "#ffd43b", label: "Fase 3", fullName: "Fase 3 - Verificación y Formalización" },
+  { fase: 4, color: "#74c0fc", label: "Fase 4", fullName: "Fase 4 - Radicación" },
+  { fase: 5, color: "#a9e34b", label: "Fase 5", fullName: "Fase 5 - Evaluación" },
+  { fase: 6, color: "#69db7c", label: "Fase 6", fullName: "Fase 6 - Plan de Mejoramiento" },
 ];
 
 type BarRow = {
@@ -135,10 +142,12 @@ const BarTable = ({ title, data }: { title: string; data: BarRow[] }) => (
     </div>
     <Group gap="md" mt="md" justify="center" wrap="wrap">
       {faseColors.map((f) => (
-        <Group key={f.fase} gap={4}>
-          <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: f.color }} />
-          <Text size="xs">{f.label}</Text>
-        </Group>
+        <Tooltip key={f.fase} label={f.fullName} withArrow>
+          <Group gap={4}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: f.color }} />
+            <Text size="xs">{f.label}</Text>
+          </Group>
+        </Tooltip>
       ))}
     </Group>
   </Paper>
@@ -155,17 +164,21 @@ const estadoColor: Record<string, string> = {
 
 const FaseBadge = ({ fase }: { fase: number | null }) => {
   if (fase === null || fase === undefined) return <Text size="xs" c="dimmed" ta="center">—</Text>;
-  const color = faseColors[fase]?.color ?? "#ced4da";
+  const info = faseColors[fase];
+  const color = info?.color ?? "#ced4da";
+  const label = info?.fullName ?? `Fase ${fase}`;
   return (
-    <div style={{ display: "flex", justifyContent: "center" }}>
-      <div style={{
-        backgroundColor: color,
-        borderRadius: "6px",
-        padding: "2px 10px",
-      }}>
-        <Text size="xs" fw={600} c="#333">Fase {fase}</Text>
+    <Tooltip label={label} withArrow>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <div style={{
+          backgroundColor: color,
+          borderRadius: "6px",
+          padding: "2px 10px",
+        }}>
+          <Text size="xs" fw={600} c="#333">Fase {fase}</Text>
+        </div>
       </div>
-    </div>
+    </Tooltip>
   );
 };
 
@@ -276,14 +289,13 @@ const selectorStyle = {
 // Columnas de fechas para RC y PM
 const COLUMNAS_FECHA_RC_PM = [
   { key: "fecha_vencimiento",      label: "Fecha vencimiento",             sub: "calculada con duración resolución" },
-  { key: "fecha_inicio",           label: "Inicio proceso",                sub: "29 meses antes del vencimiento" },
-  { key: "fecha_documento_par",    label: "Documento para lectura del par", sub: "17 meses antes del vencimiento" },
-  { key: "fecha_digitacion_saces", label: "Digitación en el SACES",        sub: "15 meses antes del vencimiento" },
-  { key: "fecha_radicado_men",     label: "Fecha radicado en el MEN",      sub: "12 meses antes del vencimiento" },
+  { key: "fecha_inicio",           label: "Inicio proceso",                sub: "" },
+  { key: "fecha_documento_par",    label: "Documento para lectura del par", sub: "" },
+  { key: "fecha_digitacion_saces", label: "Digitación en el SACES",        sub: "" },
+  { key: "fecha_radicado_men",     label: "Fecha radicado en el MEN",      sub: "" },
 ] as const;
 
 // Columnas de fechas principales para Acreditación Voluntaria (AV)
-// (las fechas de envío PM y envío de avance se muestran abajo para no ensanchar la tabla)
 const COLUMNAS_FECHA_AV = [
   {
     key: "fecha_vencimiento",
@@ -291,34 +303,24 @@ const COLUMNAS_FECHA_AV = [
     sub: "resolución + duración (años)",
   },
   {
-    key: "fecha_entrega_pm_cna",
-    label: "Entrega Plan de mejoramiento al CNA",
-    sub: "≈ 6 meses después del acto administrativo",
-  },
-  {
-    key: "fecha_radicacion_avance_cna",
-    label: "Radicación ante CNA informe avance Plan de mejoramiento",
-    sub: "≈ mitad de la vigencia de la acreditación",
-  },
-  {
     key: "fecha_inicio",
     label: "Iniciación proceso A.V.",
-    sub: "≈ 33 meses antes del vencimiento",
+    sub: "",
   },
   {
     key: "fecha_documento_par",
     label: "Documento para lectura del par",
-    sub: "≈ 16 meses antes del vencimiento",
+    sub: "",
   },
   {
     key: "fecha_digitacion_saces",
     label: "Digitación en SACES-CNA",
-    sub: "≈ 15 meses antes del vencimiento",
+    sub: "",
   },
   {
     key: "fecha_radicado_men",
-    label: "Fecha radicación solicitud de AV",
-    sub: "≈ 12 meses antes del vencimiento",
+    label: "Fecha radicación solicitud AV",
+    sub: "",
   },
 ] as const;
 
@@ -352,6 +354,29 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
   const [resolucionOpen, setResolucionOpen] = useState(false);
   const [resForm, setResForm] = useState({ fecha: "", codigo: "", duracion: "" });
   const [savingRes, setSavingRes] = useState(false);
+
+  // PDF de resolución vigente (asociado al proceso)
+  const [resolucionDoc, setResolucionDoc] = useState<ProcessDocument | null>(null);
+  const [loadingResolucionDoc, setLoadingResolucionDoc] = useState(false);
+  const [resolucionDocModalOpen, setResolucionDocModalOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchResolucionDoc = async () => {
+      try {
+        setLoadingResolucionDoc(true);
+        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+          params: { process_id: proceso._id },
+        });
+        const data = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+        setResolucionDoc(data[0] ?? null);
+      } catch (e) {
+        console.error("Error cargando documento de resolución:", e);
+      } finally {
+        setLoadingResolucionDoc(false);
+      }
+    };
+    fetchResolucionDoc();
+  }, [proceso._id]);
 
   const abrirResolucion = () => {
     const sufijo = proceso.tipo_proceso.toLowerCase() as "rc" | "av" | "pm";
@@ -429,12 +454,103 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [editActividadId, setEditActividadId] = useState<string | null>(null);
   const [editActividadNombre, setEditActividadNombre] = useState("");
+  const [editActividadResponsables, setEditActividadResponsables] = useState("");
   const [nuevaActividad, setNuevaActividad] = useState("");
+  const [posicionActividad, setPosicionActividad] = useState<string>("0"); // índice 0-based: "0" = al inicio, "n" = al final
   const [savingActividad, setSavingActividad] = useState(false);
+
+  // Offsets de meses antes del vencimiento (editable)
+  const getDefaultOffsets = () => {
+    if (proceso.tipo_proceso === "AV") {
+      return { inicio: 33, docPar: 16, digitacion: 15, radicado: 12 };
+    }
+    return { inicio: 29, docPar: 17, digitacion: 15, radicado: 12 };
+  };
+  const [offsets, setOffsets] = useState(() => ({
+    inicio:     proceso.meses_inicio_antes_venc     ?? getDefaultOffsets().inicio,
+    docPar:     proceso.meses_doc_par_antes_venc    ?? getDefaultOffsets().docPar,
+    digitacion: proceso.meses_digitacion_antes_venc ?? getDefaultOffsets().digitacion,
+    radicado:   proceso.meses_radicado_antes_venc   ?? getDefaultOffsets().radicado,
+  }));
+  useEffect(() => {
+    const def = getDefaultOffsets();
+    setOffsets({
+      inicio:     proceso.meses_inicio_antes_venc     ?? def.inicio,
+      docPar:     proceso.meses_doc_par_antes_venc    ?? def.docPar,
+      digitacion: proceso.meses_digitacion_antes_venc ?? def.digitacion,
+      radicado:   proceso.meses_radicado_antes_venc   ?? def.radicado,
+    });
+  }, [proceso._id, proceso.tipo_proceso, proceso.meses_inicio_antes_venc, proceso.meses_doc_par_antes_venc, proceso.meses_digitacion_antes_venc, proceso.meses_radicado_antes_venc]);
+
+  const [savingOffsets, setSavingOffsets] = useState(false);
+  const guardarOffsets = async () => {
+    setSavingOffsets(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}`, {
+        meses_inicio_antes_venc:     offsets.inicio,
+        meses_doc_par_antes_venc:    offsets.docPar,
+        meses_digitacion_antes_venc: offsets.digitacion,
+        meses_radicado_antes_venc:   offsets.radicado,
+      });
+      onUpdateProceso(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingOffsets(false);
+    }
+  };
+
+  // Modal para editar meses de cálculo (offsets)
+  const [offsetsModalOpen, setOffsetsModalOpen] = useState(false);
+
+  // Plan de Mejoramiento ligado
+  const [pmProceso, setPmProceso] = useState<Process | null>(null);
+  const [loadingPM, setLoadingPM] = useState(false);
+  const [pmOffsets] = useState({
+    envioPlan: 5,
+    entregaCNA: 6,
+    envioAvance: 6,
+    radicacionAvance: 0,
+  });
+
+  const cargarPM = async () => {
+    if (proceso.tipo_proceso === "PM") return;
+    setLoadingPM(true);
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes`, {
+        params: { program_code: proceso.program_code, tipo_proceso: "PM" },
+      });
+      const data: Process[] = Array.isArray(res.data) ? res.data : [];
+      const pm = data.find(p => p.parent_process_id === proceso._id) ?? null;
+      setPmProceso(pm);
+    } catch (e) {
+      console.error("Error cargando PM ligado:", e);
+    } finally {
+      setLoadingPM(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarPM();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proceso._id]);
+
+  const activarPM = async () => {
+    try {
+      setLoadingPM(true);
+      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/activate-pm`);
+      const pm = res.data as Process;
+      setPmProceso(pm);
+    } catch (e) {
+      console.error("Error activando Plan de Mejoramiento:", e);
+    } finally {
+      setLoadingPM(false);
+    }
+  };
 
   /* Documentos por fase */
   const [docsOpen, setDocsOpen] = useState(false);
-  const [docs, setDocs] = useState<PhaseDocument[]>([]);
+  const [docs, setDocs] = useState<ProcessDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
@@ -467,10 +583,10 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
     if (!faseActual) return;
     setLoadingDocs(true);
     try {
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/phase-documents`, {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
         params: { phase_id: faseActual._id },
       });
-      const data = Array.isArray(res.data) ? res.data as PhaseDocument[] : [];
+      const data = Array.isArray(res.data) ? res.data as ProcessDocument[] : [];
       setDocs(data);
       setDocsOpen(true);
     } catch (e) {
@@ -488,11 +604,11 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
       const formData = new FormData();
       formData.append("file", file);
       const res = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/phase-documents/${faseActual._id}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/process-documents/${faseActual._id}`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
-      setDocs(prev => [res.data as PhaseDocument, ...prev]);
+      setDocs(prev => [res.data as ProcessDocument, ...prev]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -502,7 +618,7 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
 
   const eliminarDocumento = async (docId: string) => {
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/phase-documents/${docId}`);
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setDocs(prev => prev.filter(d => d._id !== docId));
     } catch (e) {
       console.error(e);
@@ -515,7 +631,7 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
     try {
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
-        { nombre: editActividadNombre.trim() }
+        { nombre: editActividadNombre.trim(), responsables: editActividadResponsables.trim() }
       );
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
       setEditActividadId(null);
@@ -534,14 +650,16 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
 
   const agregarActividad = async (fase: Phase) => {
     if (!nuevaActividad.trim()) return;
+    const pos = Math.min(Math.max(0, parseInt(posicionActividad, 10) || fase.actividades.length), fase.actividades.length);
     setSavingActividad(true);
     try {
       const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades`,
-        { nombre: nuevaActividad.trim() }
+        { nombre: nuevaActividad.trim(), position: pos }
       );
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
       setNuevaActividad("");
+      setPosicionActividad(String(fase.actividades.length + 1)); // siguiente posición por defecto
     } catch (e) { console.error(e); }
     finally { setSavingActividad(false); }
   };
@@ -565,28 +683,41 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
       {/* Header del proceso */}
       <div style={{ backgroundColor: color, padding: "10px 16px", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
         {/* Izquierda: botón actualizar */}
-        <div style={{ display: "flex", justifyContent: "flex-start" }}>
+        <div style={{ display: "flex", justifyContent: "flex-start", gap: 8 }}>
           <Button size="xs" variant="white" color="dark" onClick={abrirResolucion}>
             Actualizar resolución
+          </Button>
+          <Button
+            size="xs"
+            variant="white"
+            color="dark"
+            onClick={() => setOffsetsModalOpen(true)}
+          >
+            Editar meses del proceso
           </Button>
         </div>
         {/* Centro: título */}
         <Text fw={700} c="#333" size="md" ta="center">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
-        {/* Derecha: condición/factor */}
+        {/* Derecha: selector de tipo (Tipo 1–4) */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          {maxCondicion && (
-            <Select
-              data={condicionOpts}
-              value={proceso.condicion != null ? String(proceso.condicion) : null}
-              onChange={guardarCondicion}
-              placeholder={`Seleccionar ${condicionLabel}`}
-              size="xs"
-              disabled={savingCondicion}
-              clearable={false}
-              style={{ minWidth: 170 }}
-              styles={{ input: { caretColor: "transparent", cursor: "pointer", backgroundColor: "rgba(255,255,255,0.7)", fontWeight: 600 } }}
-            />
-          )}
+          <Select
+            data={[
+              { value: "tipo1", label: "Tipo 1" },
+              { value: "tipo2", label: "Tipo 2" },
+              { value: "tipo3", label: "Tipo 3" },
+              { value: "tipo4", label: "Tipo 4" },
+            ]}
+            placeholder="Seleccionar tipo"
+            size="xs"
+            styles={{
+              input: {
+                backgroundColor: "rgba(255,255,255,0.85)",
+                fontSize: "11px",
+                paddingInline: 6,
+                height: 24,
+              },
+            }}
+          />
         </div>
       </div>
 
@@ -599,36 +730,78 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
               <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
                 <Text size="xs" fw={700} ta="center">Resolución vigente</Text>
               </Table.Th>
-              {(proceso.tipo_proceso === "AV" ? COLUMNAS_FECHA_AV : COLUMNAS_FECHA_RC_PM).map(col => (
-                <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
-                  <Text size="xs" fw={700} ta="center">{col.label}</Text>
-                  <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
-                </Table.Th>
-              ))}
+              {(proceso.tipo_proceso === "AV" ? COLUMNAS_FECHA_AV : COLUMNAS_FECHA_RC_PM).map(col => {
+                const offsetValue =
+                  col.key === "fecha_inicio"
+                    ? offsets.inicio
+                    : col.key === "fecha_documento_par"
+                      ? offsets.docPar
+                      : col.key === "fecha_digitacion_saces"
+                        ? offsets.digitacion
+                        : col.key === "fecha_radicado_men"
+                          ? offsets.radicado
+                          : null;
+                return (
+                  <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
+                    <Text size="xs" fw={700} ta="center">{col.label}</Text>
+                    {col.key === "fecha_vencimiento" ? (
+                      <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
+                    ) : (
+                      <Text size="xs" c="dimmed" ta="center">
+                        {offsetValue != null
+                          ? `(${offsetValue} meses antes del vencimiento)`
+                          : ""}
+                      </Text>
+                    )}
+                  </Table.Th>
+                );
+              })}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             <Table.Tr>
               {/* Celda resolución */}
               <Table.Td style={{ verticalAlign: "top" }}>
-                {resolucionFecha ? (
-                  <Stack gap={2} align="center">
-                    <Text size="xs" fw={600} ta="center">{resolucionFecha}</Text>
-                    <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
-                  </Stack>
-                ) : (
-                  <Text size="xs" c="orange" fw={600} ta="center">Pendiente</Text>
-                )}
+                <Stack gap={4} align="center">
+                  {resolucionFecha ? (
+                    <>
+                      <Text size="xs" fw={600} ta="center">{resolucionFecha}</Text>
+                      <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
+                    </>
+                  ) : (
+                    <Text size="xs" c="orange" fw={600} ta="center">Pendiente</Text>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="blue"
+                    loading={loadingResolucionDoc}
+                    onClick={() => setResolucionDocModalOpen(true)}
+                  >
+                    {resolucionDoc ? "Ver / cambiar PDF resolución" : "Subir PDF resolución"}
+                  </Button>
+                  {resolucionDoc && (
+                    <Anchor
+                      size="xs"
+                      href={resolucionDoc.view_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Abrir PDF en nueva pestaña
+                    </Anchor>
+                  )}
+                </Stack>
               </Table.Td>
               {/* Celdas de fechas */}
               {(proceso.tipo_proceso === "AV" ? COLUMNAS_FECHA_AV : COLUMNAS_FECHA_RC_PM).map(col => {
                 const fecha = proceso[col.key as keyof Process] as string | null;
                 const isEditing = editingDateKey === col.key;
                 const dateVal = fecha ? new Date(fecha + "T12:00:00") : null;
+                const esSoloLectura = col.key === "fecha_vencimiento" || col.key === "fecha_radicado_men";
                 return (
                   <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
                     <Stack gap={4} align="center">
-                      {isEditing ? (
+                      {isEditing && !esSoloLectura ? (
                         <DateInput
                           value={dateVal}
                           onChange={(val) => saveDate(col.key, val)}
@@ -643,23 +816,25 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
                           styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
                         />
                       ) : (
-                      <Text
-                        size="xs"
-                        fw={600}
-                        ta="center"
-                        style={{
-                          cursor: "pointer",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          border: "1px dashed #4dabf7",
-                          backgroundColor: "#e7f5ff",
-                          color: fecha ? "#1c7ed6" : "#adb5bd",
-                        }}
-                        title="Clic para editar fecha"
-                        onClick={() => setEditingDateKey(col.key)}
-                      >
-                        {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-                      </Text>
+                        <Text
+                          size="xs"
+                          fw={600}
+                          ta="center"
+                          style={{
+                            cursor: esSoloLectura ? "default" : "pointer",
+                            padding: "2px 8px",
+                            borderRadius: 4,
+                            border: esSoloLectura ? "1px solid #dee2e6" : "1px dashed #4dabf7",
+                            backgroundColor: esSoloLectura ? "#f8f9fa" : "#e7f5ff",
+                            color: fecha ? "#1c7ed6" : "#adb5bd",
+                          }}
+                          title={esSoloLectura ? "Fecha calculada automáticamente" : "Clic para editar fecha"}
+                          onClick={() => {
+                            if (!esSoloLectura) setEditingDateKey(col.key);
+                          }}
+                        >
+                          {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+                        </Text>
                       )}
                       <Text
                         size="xs"
@@ -679,66 +854,154 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
         </Table>
       </ScrollArea>
 
-      {/* Bloque compacto para fechas de envío (solo AV) */}
-      {proceso.tipo_proceso === "AV" && (
+      {/* Plan de Mejoramiento ligado (para RC/AV) */}
+      {(proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && (
         <Box px="md" pt="sm" pb="sm">
-          <Divider label="Fechas de envío" labelPosition="center" mb="xs" />
-          <Group justify="center" gap="xl" wrap="wrap">
-            {[
-              {
-                key: "fecha_envio_pm_vicerrectoria" as const,
-                label: "Enviar a la Vicerrectoría informe Plan de mejoramiento",
-              },
-              {
-                key: "fecha_envio_avance_vicerrectoria" as const,
-                label: "Enviar a la Vicerrectoría informe de avance Plan de mejoramiento",
-              },
-            ].map((item) => {
-              const fecha = proceso[item.key] as string | null | undefined;
-              const isEditing = editingDateKey === item.key;
-              const dateVal = fecha ? new Date(fecha + "T12:00:00") : null;
-              return (
-                <Stack key={item.key} gap={4} align="center" style={{ minWidth: 220 }}>
-                  <Text size="xs" fw={600}>{item.label}</Text>
-                  {isEditing ? (
-                    <DateInput
-                      value={dateVal}
-                      onChange={(val) => saveDate(item.key, val)}
-                      valueFormat="YYYY-MM-DD"
-                      size="xs"
-                      autoFocus
-                      onBlur={() => setEditingDateKey(null)}
-                      style={{ width: 160 }}
-                      clearable
-                      disabled={savingDate}
-                      onKeyDown={(e) => e.preventDefault()}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
-                    />
-                  ) : (
-                    <Text
-                      size="xs"
-                      fw={600}
-                      ta="center"
-                      style={{
-                        cursor: "pointer",
-                        padding: "2px 8px",
-                        borderRadius: 4,
-                        border: "1px dashed #4dabf7",
-                        backgroundColor: "#e7f5ff",
-                        color: fecha ? "#1c7ed6" : "#adb5bd",
-                      }}
-                      title="Clic para editar fecha"
-                      onClick={() => setEditingDateKey(item.key)}
-                    >
-                      {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-                    </Text>
-                  )}
-                </Stack>
-              );
-            })}
+          <Group justify="space-between" mb="xs">
+            <Group gap="xs">
+              <Text size="sm" fw={600}>Plan de Mejoramiento ligado</Text>
+              {pmProceso && (
+                <Badge size="xs" color="green">Activo</Badge>
+              )}
+            </Group>
+            <Group gap="xs">
+              <Button
+                size="xs"
+                variant={pmProceso ? "outline" : "light"}
+                loading={loadingPM}
+                onClick={activarPM}
+              >
+                {pmProceso ? "Recalcular fechas del plan" : "Activar plan de mejoramiento"}
+              </Button>
+            </Group>
           </Group>
+          {pmProceso ? (
+            <ScrollArea>
+              <Table withTableBorder withColumnBorders style={{ minWidth: 800 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
+                      <Text size="xs" fw={700} ta="center">Hito del Plan</Text>
+                    </Table.Th>
+                    <Table.Th style={{ backgroundColor: "#f8f9fa" }}>
+                      <Text size="xs" fw={700} ta="center">Enviar a la Vicerrectoría informe Plan de mejoramiento</Text>
+                      <Text size="xs" c="dimmed" ta="center">5 meses después de la fecha de resolución</Text>
+                    </Table.Th>
+                    <Table.Th style={{ backgroundColor: "#f8f9fa" }}>
+                      <Text size="xs" fw={700} ta="center">Entrega Plan de mejoramiento al CNA</Text>
+                      <Text size="xs" c="dimmed" ta="center">6 meses después de la fecha de resolución</Text>
+                    </Table.Th>
+                    <Table.Th style={{ backgroundColor: "#f8f9fa" }}>
+                      <Text size="xs" fw={700} ta="center">Enviar a la Vicerrectoría informe de avance Plan de mejoramiento</Text>
+                      <Text size="xs" c="dimmed" ta="center">6 meses antes de la mitad de la vigencia</Text>
+                    </Table.Th>
+                    <Table.Th style={{ backgroundColor: "#f8f9fa" }}>
+                      <Text size="xs" fw={700} ta="center">Radicación ante CNA informe avance Plan de mejoramiento</Text>
+                      <Text size="xs" c="dimmed" ta="center">Mitad de la vigencia de la acreditación</Text>
+                    </Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  <Table.Tr>
+                    <Table.Td style={{ width: 140 }}>
+                      <Text size="xs" fw={600} ta="center">Fechas</Text>
+                    </Table.Td>
+                    {["fecha_envio_pm_vicerrectoria", "fecha_entrega_pm_cna", "fecha_envio_avance_vicerrectoria", "fecha_radicacion_avance_cna"].map(key => {
+                      const k = key as keyof Process;
+                      const fecha = pmProceso[k] as string | null | undefined;
+                      return (
+                        <Table.Td key={key} style={{ verticalAlign: "top", minWidth: 140 }}>
+                          <Stack gap={4} align="center">
+                            <Text
+                              size="xs"
+                              fw={600}
+                              ta="center"
+                              style={{
+                                cursor: "pointer",
+                                padding: "2px 8px",
+                                borderRadius: 4,
+                                border: "1px dashed #4dabf7",
+                                backgroundColor: "#e7f5ff",
+                                color: fecha ? "#1c7ed6" : "#adb5bd",
+                              }}
+                            >
+                              {fecha ?? "Sin fecha (se calcula automáticamente)"}
+                            </Text>
+                            <Text
+                              size="xs"
+                              c={pmProceso.observaciones ? "#1971c2" : "#74c0fc"}
+                              td="underline"
+                              style={{ cursor: "pointer" }}
+                              onClick={abrirObs}
+                            >
+                              {pmProceso.observaciones ? "Ver observaciones" : "Observaciones"}
+                            </Text>
+                          </Stack>
+                        </Table.Td>
+                      );
+                    })}
+                  </Table.Tr>
+                </Table.Tbody>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <Text size="xs" c="dimmed">Aún no se ha activado el Plan de Mejoramiento para este proceso.</Text>
+          )}
         </Box>
       )}
+
+      {/* Modal para editar meses de cálculo del proceso */}
+      <Modal
+        opened={offsetsModalOpen}
+        onClose={() => setOffsetsModalOpen(false)}
+        title="Meses de cálculo de fechas"
+        centered
+        size="md"
+        radius="md"
+      >
+        <Stack>
+          <Text size="xs" c="dimmed">
+            Ajusta los meses que se usan para calcular las fechas del proceso. Al guardar, se recalcularán automáticamente.
+          </Text>
+          <SimpleGrid cols={2} spacing="sm">
+            <TextInput
+              label="Inicio proceso (meses antes del venc.)"
+              type="number"
+              value={offsets.inicio}
+              onChange={(e) => setOffsets(prev => ({ ...prev, inicio: Number(e.currentTarget.value || 0) }))}
+            />
+            <TextInput
+              label="Documento par (meses antes del venc.)"
+              type="number"
+              value={offsets.docPar}
+              onChange={(e) => setOffsets(prev => ({ ...prev, docPar: Number(e.currentTarget.value || 0) }))}
+            />
+            <TextInput
+              label="Digitación SACES (meses antes del venc.)"
+              type="number"
+              value={offsets.digitacion}
+              onChange={(e) => setOffsets(prev => ({ ...prev, digitacion: Number(e.currentTarget.value || 0) }))}
+            />
+            <TextInput
+              label="Radicado MEN (meses antes del venc.)"
+              type="number"
+              value={offsets.radicado}
+              onChange={(e) => setOffsets(prev => ({ ...prev, radicado: Number(e.currentTarget.value || 0) }))}
+            />
+          </SimpleGrid>
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" size="sm" onClick={() => setOffsetsModalOpen(false)}>Cancelar</Button>
+            <Button size="sm" loading={savingOffsets} onClick={async () => {
+              await guardarOffsets();
+              setOffsetsModalOpen(false);
+            }}>
+              Guardar y recalcular
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* (Fechas adicionales de envío AV eliminadas según nueva especificación) */}
 
       {/* Footer: fase actual + actividad + documentos */}
       <div style={{ padding: "12px 16px", borderTop: "1px solid #dee2e6", display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -753,20 +1016,37 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
             </div>
             {faseActual && <Text size="xs" c="dimmed">{faseActual.nombre}</Text>}
           </Group>
-          {ultimaActiva && (
-            <Group gap="xs" mt={6} align="center">
-              <Text size="xs" c="#555">
-                Actividad actual: <strong>{ultimaActiva.nombre}</strong>
-              </Text>
-              <Button size="xs" variant="light" onClick={() => setChecklistOpen(true)}>
-                Ver actividades
-              </Button>
+          {ultimaActiva && faseActual && (
+            <Group gap="xs" mt={6} align="center" justify="space-between">
+              <Group gap="xs" align="center">
+                <Text size="xs" c="#555">
+                  Actividad actual: <strong>{ultimaActiva.nombre}</strong>
+                </Text>
+                <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                  Ver actividades
+                </Button>
+              </Group>
+              {faseActual.numero === 2 &&
+                ultimaActiva.nombre === "Identificación de proyectos con viabilidad financiera" &&
+                maxCondicion && (
+                  <Select
+                    data={condicionOpts}
+                    value={proceso.condicion != null ? String(proceso.condicion) : null}
+                    onChange={guardarCondicion}
+                    placeholder={`Seleccionar ${condicionLabel}`}
+                    size="xs"
+                    disabled={savingCondicion}
+                    clearable={false}
+                    style={{ minWidth: 170 }}
+                    styles={{ input: { caretColor: "transparent", cursor: "pointer", backgroundColor: "rgba(255,255,255,0.7)", fontWeight: 600 } }}
+                  />
+                )}
             </Group>
           )}
           {!ultimaActiva && faseActual && (
             <Group gap="xs" mt={6}>
               <Text size="xs" c="green" fw={600}>✓ Todas las actividades completadas</Text>
-              <Button size="xs" variant="light" onClick={() => setChecklistOpen(true)}>
+              <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
                 Ver actividades
               </Button>
             </Group>
@@ -812,8 +1092,8 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
             onChange={(e) => setResForm(f => ({ ...f, codigo: e.currentTarget.value }))}
           />
           <TextInput
-            label="Duración de la resolución (meses)"
-            placeholder="Ej: 84"
+            label="Duración de la resolución (años)"
+            placeholder="Ej: 7"
             value={resForm.duracion}
             onChange={(e) => {
               const v = e.currentTarget.value.replace(/\D/g, "");
@@ -824,6 +1104,59 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
             <Button variant="default" size="sm" onClick={() => setResolucionOpen(false)}>Cancelar</Button>
             <Button size="sm" loading={savingRes} onClick={guardarResolucion}>Guardar y recalcular</Button>
           </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal PDF resolución vigente */}
+      <Modal
+        opened={resolucionDocModalOpen}
+        onClose={() => setResolucionDocModalOpen(false)}
+        title="PDF de resolución vigente"
+        centered
+        size="md"
+        radius="md"
+      >
+        <Stack>
+          {resolucionDoc && (
+            <Paper withBorder p="sm" radius="sm">
+              <Text size="xs" fw={600} mb={4}>Archivo actual</Text>
+              <Text size="xs" mb={4}>{resolucionDoc.name}</Text>
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  variant="light"
+                  component="a"
+                  href={resolucionDoc.view_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Ver PDF
+                </Button>
+              </Group>
+            </Paper>
+          )}
+          <DropzoneCustomComponent
+            text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra el PDF de la resolución"}
+            onDrop={async (files) => {
+              const file = files[0];
+              if (!file) return;
+              try {
+                setLoadingResolucionDoc(true);
+                const formData = new FormData();
+                formData.append("file", file);
+                const res = await axios.post(
+                  `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+                  formData,
+                  { headers: { "Content-Type": "multipart/form-data" } }
+                );
+                setResolucionDoc(res.data as ProcessDocument);
+              } catch (e) {
+                console.error("Error subiendo PDF de resolución:", e);
+              } finally {
+                setLoadingResolucionDoc(false);
+              }
+            }}
+          />
         </Stack>
       </Modal>
 
@@ -944,17 +1277,26 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
                       style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
                     />
                     {editActividadId === act._id ? (
-                      <Group gap="xs" style={{ flex: 1 }}>
+                      <Stack gap={4} style={{ flex: 1 }}>
                         <TextInput
                           size="xs"
+                          label="Nombre de la actividad"
                           value={editActividadNombre}
                           onChange={e => setEditActividadNombre(e.currentTarget.value)}
-                          style={{ flex: 1 }}
                           autoFocus
                         />
-                        <Button size="xs" loading={savingActividad} onClick={() => guardarNombreActividad(faseActual, act)}>OK</Button>
-                        <Button size="xs" variant="default" onClick={() => setEditActividadId(null)}>✕</Button>
-                      </Group>
+                        <TextInput
+                          size="xs"
+                          label="Responsables"
+                          placeholder="Opcional"
+                          value={editActividadResponsables}
+                          onChange={e => setEditActividadResponsables(e.currentTarget.value)}
+                        />
+                        <Group gap="xs" justify="flex-end">
+                          <Button size="xs" variant="default" onClick={() => setEditActividadId(null)}>Cancelar</Button>
+                          <Button size="xs" loading={savingActividad} onClick={() => guardarNombreActividad(faseActual, act)}>Guardar</Button>
+                        </Group>
+                      </Stack>
                     ) : (
                       <div style={{ flex: 1 }}>
                         <Text size="sm" td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : "#000"}>
@@ -964,10 +1306,14 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
                       </div>
                     )}
                   </Group>
-                  {editActividadId !== act._id && (
+                    {editActividadId !== act._id && (
                     <Group gap={4}>
                       <Button size="xs" variant="subtle" color="blue"
-                        onClick={() => { setEditActividadId(act._id); setEditActividadNombre(act.nombre); }}>
+                        onClick={() => {
+                          setEditActividadId(act._id);
+                          setEditActividadNombre(act.nombre);
+                          setEditActividadResponsables(act.responsables ?? "");
+                        }}>
                         ✏
                       </Button>
                       <Button size="xs" variant="subtle" color="red"
@@ -981,6 +1327,27 @@ const ProcesoDetalleCard = ({ proceso, programa, fases, onUpdateProceso, onUpdat
             )})}
 
             <Divider label="Agregar actividad" labelPosition="center" />
+            {faseActual && (
+            <Select
+              size="xs"
+              label="Insertar en posición"
+              placeholder="Al final"
+              data={
+                faseActual.actividades.length === 0
+                  ? [{ value: "0", label: "Al inicio (única posición)" }]
+                  : [
+                      { value: "0", label: "Al inicio" },
+                      ...faseActual.actividades.map((a, i) => ({
+                        value: String(i + 1),
+                        label: `Después de: ${a.nombre.length > 45 ? a.nombre.slice(0, 45) + "…" : a.nombre}`,
+                      })),
+                    ]
+              }
+              value={posicionActividad}
+              onChange={(v) => setPosicionActividad(v ?? "0")}
+              styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+            />
+            )}
             <Group gap="xs">
               <TextInput
                 size="xs"
@@ -1022,6 +1389,7 @@ const DateReviewPage = () => {
   /* Modal agregar programa */
   const [modalOpen, setModalOpen]     = useState(false);
   const [newNombre, setNewNombre]     = useState("");
+  const [newCodigoSnies, setNewCodigoSnies] = useState("");
   const [newFacultad, setNewFacultad] = useState<string | null>(null);
   const [newModalidad, setNewModalidad]   = useState<string | null>(null);
   const [newNivelAcad, setNewNivelAcad]   = useState<string | null>(null);
@@ -1037,6 +1405,7 @@ const DateReviewPage = () => {
     if (!selectedProgram) return;
     setEditForm({
       nombre:          selectedProgram.nombre,
+      codigo_snies:    selectedProgram.codigo_snies,
       dep_code_facultad: selectedProgram.dep_code_facultad,
       modalidad:       selectedProgram.modalidad,
       nivel_academico: selectedProgram.nivel_academico,
@@ -1155,6 +1524,7 @@ const DateReviewPage = () => {
     .map((p) => ({
       _id: p._id,
       programa: p.nombre,
+      codigo_snies: p.codigo_snies ?? "—",
       dependencia: facultades.find((f) => f.dep_code === p.dep_code_facultad)?.name ?? p.dep_code_facultad,
       modalidad: p.modalidad ?? "—",
       nivel_academico: p.nivel_academico ?? "—",
@@ -1223,6 +1593,7 @@ const DateReviewPage = () => {
       const facultadObj = facultades.find((f) => f.name === newFacultad);
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/programs`, {
         nombre: newNombre.trim(),
+        codigo_snies: newCodigoSnies.trim() || undefined,
         dep_code_facultad: facultadObj?.dep_code,
         dep_code_programa: `PROG_${Date.now()}`,
         modalidad: newModalidad,
@@ -1233,7 +1604,7 @@ const DateReviewPage = () => {
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs`);
       setProgramas(Array.isArray(res.data) ? res.data : []);
       /* Limpiar modal */
-      setNewNombre(""); setNewFacultad(null); setNewModalidad(null);
+      setNewNombre(""); setNewCodigoSnies(""); setNewFacultad(null); setNewModalidad(null);
       setNewNivelAcad(null); setNewNivelForm(null);
       setModalOpen(false);
     } catch (err: any) {
@@ -1316,10 +1687,12 @@ const DateReviewPage = () => {
           )}
         </div>
 
-        {/* Botón fijo en la parte baja pero visible */}
-        <Button variant="light" size="sm" fullWidth style={{ marginTop: 20 }} onClick={() => setModalOpen(true)}>
-          Agregar programa
-        </Button>
+        {/* Botón Agregar programa solo cuando no hay un programa concreto seleccionado */}
+        {programa === "Todos" && (
+          <Button variant="light" size="sm" fullWidth style={{ marginTop: 20 }} onClick={() => setModalOpen(true)}>
+            Agregar programa
+          </Button>
+        )}
       </Box>
 
       {/* Modal agregar programa */}
@@ -1331,6 +1704,12 @@ const DateReviewPage = () => {
             value={newNombre}
             onChange={(e) => setNewNombre(e.currentTarget.value)}
             required
+          />
+          <TextInput
+            label="Código SNIES"
+            placeholder="Ej: 12345"
+            value={newCodigoSnies}
+            onChange={(e) => setNewCodigoSnies(e.currentTarget.value)}
           />
           <Select
             label="Facultad"
@@ -1440,6 +1819,12 @@ const DateReviewPage = () => {
                         value={editForm.nombre ?? ""}
                         onChange={(e) => setEditForm(f => ({ ...f, nombre: e.currentTarget.value }))}
                       />
+                      <TextInput
+                        label="Código SNIES"
+                        placeholder="Opcional"
+                        value={editForm.codigo_snies ?? ""}
+                        onChange={(e) => setEditForm(f => ({ ...f, codigo_snies: e.currentTarget.value || null }))}
+                      />
                       <Select
                         label="Facultad"
                         data={facultades.map(f => ({ value: f.dep_code, label: f.name }))}
@@ -1485,6 +1870,7 @@ const DateReviewPage = () => {
                   ) : (
                     <SimpleGrid cols={2} spacing="md">
                       {[
+                        { label: "Código SNIES",      value: selectedProgram.codigo_snies },
                         { label: "Facultad",          value: facultades.find(f => f.dep_code === selectedProgram.dep_code_facultad)?.name ?? selectedProgram.dep_code_facultad },
                         { label: "Modalidad",          value: selectedProgram.modalidad },
                         { label: "Nivel académico",    value: selectedProgram.nivel_academico },
@@ -1544,11 +1930,10 @@ const DateReviewPage = () => {
               return (
                 <>
                   <Title order={4} ta="center" mb="md">{progObj.nombre}</Title>
-                  {(["RC", "AV", "PM"] as const)
+                  {(["RC", "AV"] as const)
                     .filter(t => tipoProceso === "Todos"
                       || (tipoProceso === "Registro calificado" && t === "RC")
-                      || (tipoProceso === "Acreditación voluntaria" && t === "AV")
-                      || (tipoProceso === "Plan de mejoramiento" && t === "PM"))
+                      || (tipoProceso === "Acreditación voluntaria" && t === "AV"))
                     .map(tipo => {
                       const proc = procesosDelProg.find(p => p.tipo_proceso === tipo);
                       if (!proc) return null;
