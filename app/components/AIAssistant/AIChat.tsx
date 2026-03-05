@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Modal, TextInput, Button, ScrollArea, Text, Group, ActionIcon, Paper, Loader } from '@mantine/core';
 import { IconSend, IconRobot } from '@tabler/icons-react';
 import axios from 'axios';
+import DocumentUploader from './DocumentUploader';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -50,6 +51,24 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
         timestamp: new Date()
       }]);
     }
+  };
+
+  const handleDocumentUploading = (filename: string) => {
+    const uploadingMessage: Message = {
+      role: 'assistant',
+      content: `📄 Procesando el documento "${filename}"... Por favor espera mientras analizo su contenido.`,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, uploadingMessage]);
+  };
+
+  const handleDocumentAnalyzed = (analysis: string, filename: string) => {
+    const documentMessage: Message = {
+      role: 'assistant',
+      content: `📄 **Análisis completo del documento "${filename}":**\n\n${analysis}\n\n❓ **Ahora puedes hacerme preguntas específicas sobre este documento.**`,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, documentMessage]);
   };
 
   const sendMessage = async () => {
@@ -139,6 +158,11 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
       }}
     >
       <ScrollArea h={400} p="md">
+        <DocumentUploader 
+          onDocumentAnalyzed={handleDocumentAnalyzed}
+          onDocumentUploading={handleDocumentUploading}
+          disabled={healthStatus === 'offline' || loading}
+        />
         {messages.map((message, index) => (
           <Paper
             key={index}
