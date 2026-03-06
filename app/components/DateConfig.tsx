@@ -24,7 +24,7 @@ const dateToGMT = (date: Date | string | number, formatDate: string = "MMM D, YY
 
   if (isNaN(validDate.getTime())) {
     console.warn("Fecha inválida en dateToGMT:", date);
-    return ""; // o "Fecha inválida", o null
+    return ""; // o "Fecha inválida", o nul
   }
 
   return format(new Date(validDate.getTime() + 5 * 60 * 60 * 1000), formatDate);
