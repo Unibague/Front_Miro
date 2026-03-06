@@ -19,6 +19,7 @@ import {
   Stack,
   Modal,
   Badge,
+  Select,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
@@ -103,6 +104,11 @@ const PublishedTemplatesPage = () => {
   const [templateStatusModal, setTemplateStatusModal] = useState(false);
   const [templateStatusData, setTemplateStatusData] = useState<any[]>([]);
   const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
+  
+  // Filter states for template status
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [emailFilter, setEmailFilter] = useState<string>('');
+  const [dependencyFilter, setDependencyFilter] = useState<string>('all');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   const fetchTemplates = async (page: number, search: string) => {
@@ -380,7 +386,7 @@ const dateFields = new Set(
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       });
       
-      templateStatusData.forEach((item) => {
+      filteredTemplateStatusData.forEach((item) => {
         const userName = item.user_name || 'Sin usuario asignado';
         const userEmail = item.user_email || 'N/A';
         
@@ -417,6 +423,25 @@ const dateFields = new Set(
       });
     }
   };
+
+  // Filter template status data
+  const filteredTemplateStatusData = templateStatusData.filter(item => {
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'sent' && item.has_submitted) ||
+      (statusFilter === 'pending' && !item.has_submitted);
+    
+    const matchesEmail = !emailFilter || 
+      (item.user_email && item.user_email.toLowerCase().includes(emailFilter.toLowerCase())) ||
+      (item.user_name && item.user_name.toLowerCase().includes(emailFilter.toLowerCase()));
+    
+    const matchesDependency = dependencyFilter === 'all' || 
+      item.dependency === dependencyFilter;
+    
+    return matchesStatus && matchesEmail && matchesDependency;
+  });
+
+  // Get unique dependencies for filter
+  const uniqueDependencies = [...new Set(templateStatusData.map(item => item.dependency))].sort();
 
   const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
   
@@ -702,7 +727,7 @@ const dateFields = new Set(
       >
         <Group justify="space-between" mb="md">
           <Text size="sm" c="dimmed">
-            Total de registros: {templateStatusData.length}
+            Mostrando {filteredTemplateStatusData.length} de {templateStatusData.length} registros
           </Text>
           <Button
             onClick={downloadTemplateStatusReport}
@@ -711,6 +736,38 @@ const dateFields = new Set(
           >
             Descargar Reporte
           </Button>
+        </Group>
+        
+        {/* Filters */}
+        <Group mb="md">
+          <Select
+            placeholder="Estado"
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value || 'all')}
+            data={[
+              { value: 'all', label: 'Todos' },
+              { value: 'sent', label: 'Enviados' },
+              { value: 'pending', label: 'Pendientes' }
+            ]}
+            w={120}
+          />
+          <TextInput
+            placeholder="Buscar por email o usuario"
+            value={emailFilter}
+            onChange={(e) => setEmailFilter(e.currentTarget.value)}
+            w={250}
+          />
+          <Select
+            placeholder="Dependencia"
+            value={dependencyFilter}
+            onChange={(value) => setDependencyFilter(value || 'all')}
+            data={[
+              { value: 'all', label: 'Todas' },
+              ...uniqueDependencies.map(dep => ({ value: dep, label: dep }))
+            ]}
+            w={250}
+            searchable
+          />
         </Group>
         
         <Table striped withTableBorder>
@@ -726,15 +783,15 @@ const dateFields = new Set(
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {templateStatusData.map((item, index) => {
-              const userName = item.user_name || 'Sin usuario asignado';
+            {filteredTemplateStatusData.map((item, index) => {
+              const userName = item.user_name || 'Sin Permiso a la Dependencia';
               const userEmail = item.user_email || 'N/A';
               
               return (
                 <Table.Tr key={index}>
                   <Table.Td>{item.template_name}</Table.Td>
                   <Table.Td>
-                    <Text size="sm" c={userName === 'Sin usuario asignado' ? 'orange' : undefined}>
+                    <Text size="sm" c={userName === 'Sin Permiso a la Dependencia' ? 'orange' : undefined}>
                       {userName}
                     </Text>
                   </Table.Td>
