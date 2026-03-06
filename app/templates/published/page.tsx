@@ -17,10 +17,12 @@ import {
   Progress,
   rem,
   Stack,
+  Modal,
+  Badge,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
-import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight } from "@tabler/icons-react";
+import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFileSearch } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -96,6 +98,11 @@ const PublishedTemplatesPage = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   const [recentlyViewed, setRecentlyViewed] = useState<string[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Template status states
+  const [templateStatusModal, setTemplateStatusModal] = useState(false);
+  const [templateStatusData, setTemplateStatusData] = useState<any[]>([]);
+  const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   const fetchTemplates = async (page: number, search: string) => {
@@ -321,6 +328,92 @@ const dateFields = new Set(
     );
   };
 
+  const fetchTemplateStatus = async () => {
+    setLoadingTemplateStatus(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/template-status/submission-status`, {
+        params: {
+          periodId: selectedPeriodId
+        },
+        headers: {
+          'user-email': session?.user?.email,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+      setTemplateStatusData(response.data || []);
+      setTemplateStatusModal(true);
+    } catch (error) {
+      console.error('Error fetching template status:', error);
+      showNotification({
+        title: 'Error',
+        message: 'Error al obtener el estado de las plantillas',
+        color: 'red'
+      });
+    } finally {
+      setLoadingTemplateStatus(false);
+    }
+  };
+
+  const downloadTemplateStatusReport = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Estado Plantillas');
+      
+      const headers = ['Plantilla', 'Usuario', 'Email', 'Dependencia', 'Estado', 'Fecha Envío', 'Fecha Límite'];
+      const headerRow = worksheet.addRow(headers);
+      
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '0f1f39' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      
+      templateStatusData.forEach((item) => {
+        worksheet.addRow([
+          item.template_name,
+          item.user_name,
+          item.user_email,
+          item.dependency,
+          item.has_submitted ? 'Enviado' : 'Pendiente',
+          item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
+          item.deadline ? new Date(item.deadline).toLocaleDateString() : ''
+        ]);
+      });
+      
+      worksheet.columns.forEach((column) => {
+        column.width = 20;
+      });
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      saveAs(blob, `estado-plantillas-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      
+      showNotification({
+        title: 'Éxito',
+        message: 'Reporte descargado exitosamente',
+        color: 'green'
+      });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      showNotification({
+        title: 'Error',
+        message: 'Error al descargar el reporte',
+        color: 'red'
+      });
+    }
+  };
+
   const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
   
   const rows = finalSortedTemplates.map((publishedTemplate) => {
@@ -482,15 +575,26 @@ const dateFields = new Set(
               Ir a Configuración de Plantillas
             </Button>
 
-            <Button
-              onClick={() =>
-                router.push("/templates/published/update")
-              }
-              variant="outline"
-              leftSection={<IconArrowRight size={16} />}
-            >
-              Cambiar fechas de entrega plantillas
-            </Button>
+            <Group>
+              <Button
+                onClick={fetchTemplateStatus}
+                loading={loadingTemplateStatus}
+                variant="outline"
+                leftSection={<IconFileSearch size={16} />}
+              >
+                Estado de Plantillas
+              </Button>
+
+              <Button
+                onClick={() =>
+                  router.push("/templates/published/update")
+                }
+                variant="outline"
+                leftSection={<IconArrowRight size={16} />}
+              >
+                Cambiar fechas de entrega plantillas
+              </Button>
+            </Group>
 
             </>
           )
@@ -584,6 +688,65 @@ const dateFields = new Set(
           boundaries={3}
         />
       </Center>
+      
+      {/* Template Status Modal */}
+      <Modal
+        opened={templateStatusModal}
+        onClose={() => setTemplateStatusModal(false)}
+        title="Estado de Envío de Plantillas"
+        size="m"
+      >
+        <Group justify="space-between" mb="md">
+          <Text size="sm" c="dimmed">
+            Total de registros: {templateStatusData.length}
+          </Text>
+          <Button
+            onClick={downloadTemplateStatusReport}
+            leftSection={<IconDownload size={16} />}
+            variant="outline"
+          >
+            Descargar Reporte
+          </Button>
+        </Group>
+        
+        <Table striped withTableBorder>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Plantilla</Table.Th>
+              <Table.Th>Usuario</Table.Th>
+              <Table.Th>Email</Table.Th>
+              <Table.Th>Dependencia</Table.Th>
+              <Table.Th>Estado</Table.Th>
+              <Table.Th>Fecha Envío</Table.Th>
+              <Table.Th>Fecha Límite</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {templateStatusData.map((item, index) => (
+              <Table.Tr key={index}>
+                <Table.Td>{item.template_name}</Table.Td>
+                <Table.Td>{item.user_name}</Table.Td>
+                <Table.Td>{item.user_email}</Table.Td>
+                <Table.Td>{item.dependency}</Table.Td>
+                <Table.Td>
+                  <Badge 
+                    color={item.has_submitted ? 'green' : 'orange'}
+                    variant="light"
+                  >
+                    {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>
+                  {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
+                </Table.Td>
+                <Table.Td>
+                  {item.deadline ? new Date(item.deadline).toLocaleDateString() : ''}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Modal>
     </Container>
   );
 };
