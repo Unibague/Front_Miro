@@ -236,7 +236,7 @@ const PublishedTemplatesPage = () => {
       const data = response.data.data;
       const { template } = publishedTemplate;
 
-      // Campos de tipo fecha para formatear correctamente
+      // Campos de tipo fecha para formatear correctament
 const dateFields = new Set(
   template.fields
     .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
