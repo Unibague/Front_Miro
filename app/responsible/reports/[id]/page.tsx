@@ -131,34 +131,16 @@ const ResponsibleReportPage = () => {
         }
       )
       if (response.data) {
-
-          console.log(response.data);
-
-          
-if (response.data.report.dimensions.length === 1) {
-  setSelectedDimension(response.data.report.dimensions[0]._id);
-
-}
-
-          if(response.data.report.dimensions.length > 1) {
-          setAvailableDimensions(response.data.report.dimensions);
-
-
-          {availableDimensions.length > 1 && (
-  <Select
-    label="Selecciona un ámbito"
-    placeholder="Selecciona una opción"
-    data={availableDimensions.map((d) => ({
-      value: d._id,
-      label: d.name,
-    }))}
-    value={selectedDimension}
-    onChange={setSelectedDimension}
-    mb="md"
-    required
-  />
-)}
+        console.log(response.data);
+        
+        if (response.data.report.dimensions.length === 1) {
+          setSelectedDimension(response.data.report.dimensions[0]._id);
         }
+
+        if(response.data.report.dimensions.length > 1) {
+          setAvailableDimensions(response.data.report.dimensions);
+        }
+        
         setSendsHistory(response.data.filled_reports);
         setPublishedReport(response.data);
       }
@@ -182,9 +164,8 @@ if (response.data.report.dimensions.length === 1) {
       const formData = new FormData();
 
       formData.append("email", session?.user?.email ?? "");
-      formData.append("dimension", dimension ?? "");
       formData.append("publishedReportId", publishedReport?._id ?? "");
-      formData.append("dimension", selectedDimension ?? "");
+      formData.append("dimension", selectedDimension ?? dimension ?? "");
       formData.append("filledDraft", JSON.stringify(publishedReport?.filled_reports[0] ?? ""));
       if (reportFile) {
         formData.append("reportFile", reportFile);
@@ -200,7 +181,7 @@ if (response.data.report.dimensions.length === 1) {
         formData.append("deletedAttachments", attachment);
       });
       
-
+      console.log('Enviando datos al backend...');
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible/loadDraft`,
         formData,
         {
@@ -210,6 +191,7 @@ if (response.data.report.dimensions.length === 1) {
         }
       )
       
+      console.log('Borrador guardado exitosamente');
       setAttachments([]);
       setDeletedAttachments([]);
       setDeletedReport(undefined);
@@ -223,12 +205,15 @@ if (response.data.report.dimensions.length === 1) {
         message: "El borrador se ha guardado correctamente",
         color: "green",
       });
-    } catch (error) {
+    } catch (error: any) {
       setSaving(false);
-      console.error(error);
+      console.error('Error completo:', error);
+      console.error('Error response:', error.response?.data);
+      
+      const errorMessage = error.response?.data?.message || "No se pudo guardar el borrador";
       showNotification({
         title: "Error",
-        message: "No se pudo guardar el borrador",
+        message: errorMessage,
         color: "red",
       });
     }
