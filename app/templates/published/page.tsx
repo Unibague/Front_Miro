@@ -341,6 +341,7 @@ const dateFields = new Set(
         },
         withCredentials: true
       });
+      
       setTemplateStatusData(response.data || []);
       setTemplateStatusModal(true);
     } catch (error) {
@@ -380,10 +381,13 @@ const dateFields = new Set(
       });
       
       templateStatusData.forEach((item) => {
+        const userName = item.user_name || 'Sin usuario asignado';
+        const userEmail = item.user_email || 'N/A';
+        
         worksheet.addRow([
           item.template_name,
-          item.user_name,
-          item.user_email,
+          userName,
+          userEmail,
           item.dependency,
           item.has_submitted ? 'Enviado' : 'Pendiente',
           item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
@@ -722,28 +726,45 @@ const dateFields = new Set(
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {templateStatusData.map((item, index) => (
-              <Table.Tr key={index}>
-                <Table.Td>{item.template_name}</Table.Td>
-                <Table.Td>{item.user_name}</Table.Td>
-                <Table.Td>{item.user_email}</Table.Td>
-                <Table.Td>{item.dependency}</Table.Td>
-                <Table.Td>
-                  <Badge 
-                    color={item.has_submitted ? 'green' : 'orange'}
-                    variant="light"
-                  >
-                    {item.has_submitted ? 'Enviado' : 'Pendiente'}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
-                </Table.Td>
-                <Table.Td>
-                  {item.deadline ? new Date(item.deadline).toLocaleDateString() : ''}
-                </Table.Td>
-              </Table.Tr>
-            ))}
+            {templateStatusData.map((item, index) => {
+              const userName = item.user_name || 'Sin usuario asignado';
+              const userEmail = item.user_email || 'N/A';
+              
+              return (
+                <Table.Tr key={index}>
+                  <Table.Td>{item.template_name}</Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c={userName === 'Sin usuario asignado' ? 'orange' : undefined}>
+                      {userName}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c={userEmail === 'N/A' ? 'orange' : undefined}>
+                      {userEmail}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      {item.dependency}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge 
+                      color={item.has_submitted ? 'green' : 'orange'}
+                      variant="light"
+                    >
+                      {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
+                  </Table.Td>
+                  <Table.Td>
+                    {item.deadline ? new Date(item.deadline).toLocaleDateString() : ''}
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
           </Table.Tbody>
         </Table>
       </Modal>
