@@ -9,7 +9,7 @@ import classes from './DropzoneButton.module.css';
 import { showNotification } from '@mantine/notifications';
 import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
-import { dateNow } from '../DateConfig';
+import { endOfDayGMT5 } from '../DateConfig';
 
 interface DropzoneButtonProps {
   pubTemId: string;
@@ -28,7 +28,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
 
 const handleFileDrop = async (files: File[]) => {
-  if (endDate && new Date(endDate) < dateNow()) {
+  if (endDate && endOfDayGMT5(new Date(endDate)) < new Date()) {
     showNotification({
       title: 'Error',
       message: 'La fecha de carga de plantillas ha culminado.',

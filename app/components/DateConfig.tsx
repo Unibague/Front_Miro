@@ -39,5 +39,15 @@ const dateNow = () => {
   return new Date(new Date(dateWithOffset).toDateString());
 };
 
-export { dateToGMT, dateNow };
+/**
+ * Retorna la fecha al final del día (23:59:59) en hora GMT-5.
+ * Las fechas se almacenan como medianoche UTC representando el día local.
+ * Medianoche local (GMT-5) = UTC + 5h → fin del día local = UTC + 5h + 23h59m59s = UTC + 28h59m59s.
+ */
+const endOfDayGMT5 = (date: Date | string): Date => {
+  const d = new Date(date);
+  return new Date(d.getTime() + (28 * 3600 + 59 * 60 + 59) * 1000);
+};
+
+export { dateToGMT, dateNow, endOfDayGMT5 };
 export default DateConfig;

@@ -9,7 +9,7 @@ import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group,
 import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, IconCloudUpload, IconDownload, IconEdit, IconEye, IconSend, IconX } from "@tabler/icons-react";
 import classes from "../ResponsibleReportsPage.module.css";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 
 interface Report {
   _id: string;
@@ -109,10 +109,10 @@ const ResponsibleReportPage = () => {
   const [saving, setSaving] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
 
-  const now = dateNow();
+  const now = new Date();
   const isReportEditable = publishedReport &&
     new Date(publishedReport.period.responsible_start_date) <= now &&
-    new Date(publishedReport.period.responsible_end_date) >= now;
+    endOfDayGMT5(publishedReport.period.responsible_end_date) >= now;
 
   const clearSelect = () => {
     setSelectedHistoryReport(null);
@@ -444,12 +444,12 @@ if (response.data.report.dimensions.length === 1) {
             
           />
           <Tooltip
-            label={new Date(publishedReport?.deadline || "") < dateNow() 
+            label={endOfDayGMT5(publishedReport?.deadline || "") < new Date() 
               ? "El plazo para enviar el informe ha vencido"
               : "No puedes modificar el informe si ya fue aprobado o está en revisión"}
             transitionProps={{ transition: "fade-up", duration: 300 }}
             disabled={!sendsHistory.some((report) => report.status === "Aprobado" 
-              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow()) }
+              || report.status === "En Revisión") && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date()) }
           >
             <Button
               onClick={() => {
@@ -470,7 +470,7 @@ if (response.data.report.dimensions.length === 1) {
               mt={25}
               disabled={ !isReportEditable ||  sendsHistory.some(
               (report) => report.status === "Aprobado" || report.status === "En Revisión"
-              ) || (new Date(publishedReport?.deadline || "") < dateNow())}
+              ) || (endOfDayGMT5(publishedReport?.deadline || "") < new Date())}
             >
               {sendsHistory[0]?.status === "En Borrador"
               ? "Modificar borrador"
@@ -490,11 +490,11 @@ if (response.data.report.dimensions.length === 1) {
         <Collapse in={openedReportForm}>
           <Group grow gap={'xl'}>
             <Tooltip
-              label={(new Date(publishedReport?.deadline || "") < dateNow())
+              label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date())
                 ? "El plazo para enviar el informe ha vencido"
                 : "No has hecho cambios"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
-              disabled={!canSend && (new Date(publishedReport?.deadline || "") >= dateNow())}
+              disabled={!canSend && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date())}
             >
               <Button
                 leftSection={<IconCloudUpload/>}
@@ -511,12 +511,12 @@ if (response.data.report.dimensions.length === 1) {
               </Button>
             </Tooltip>
             <Tooltip
-              label={ (new Date(publishedReport?.deadline || "") < dateNow()) 
+              label={ (endOfDayGMT5(publishedReport?.deadline || "") < new Date()) 
                 ? "El plazo para enviar el informe ha vencido"
                 : publishedReport?.filled_reports[0]?.status !== "En Borrador" 
                 ? "Primero debes guardar el borrador" : "Este informe ya fue enviado"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
-              disabled={canSend && (new Date(publishedReport?.deadline || "") >= dateNow())}
+              disabled={canSend && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date())}
             >
               <Button
                 leftSection={<IconSend/>}
@@ -524,7 +524,7 @@ if (response.data.report.dimensions.length === 1) {
                 variant="outline"
                 color="blue"
                 disabled={!canSend || publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
-                  sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión" || (new Date(publishedReport?.deadline || "") < dateNow()))
+                  sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión" || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()))
                 }
                 onClick={sendReport}
                 loading={sending}

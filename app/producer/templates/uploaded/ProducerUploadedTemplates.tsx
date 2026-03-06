@@ -31,7 +31,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useDisclosure } from "@mantine/hooks";
 import { format } from "fecha";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
@@ -524,10 +524,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
-    return (
-      new Date(dateNow().toDateString()) >
-      new Date(publishedTemplate.period.producer_end_date)
-    );
+    return endOfDayGMT5(new Date(publishedTemplate.period.producer_end_date)) < new Date();
   };
 
   const truncateString = (str: string, maxLength: number = 20): string => {
