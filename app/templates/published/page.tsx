@@ -86,6 +86,23 @@ interface PublishedTemplate {
   deadline: Date;
 }
 
+interface TemplateStatusRow {
+  template_id: string;
+  template_name: string;
+  period: string;
+  deadline: string;
+  user_name: string;
+  user_email: string;
+  dependency: string;
+  has_submitted: boolean;
+  submitted_date: string | null;
+  total_assigned: number;
+  total_submitted: number;
+  total_pending: number;
+  completion_percentage: number;
+  pending_percentage: number;
+}
+
 const PublishedTemplatesPage = () => {
   const { userRole, setUserRole } = useRole();
   const router = useRouter();
@@ -102,7 +119,7 @@ const PublishedTemplatesPage = () => {
   
   // Template status states
   const [templateStatusModal, setTemplateStatusModal] = useState(false);
-  const [templateStatusData, setTemplateStatusData] = useState<any[]>([]);
+  const [templateStatusData, setTemplateStatusData] = useState<TemplateStatusRow[]>([]);
   const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
   
   // Filter states for template status
@@ -367,7 +384,7 @@ const dateFields = new Set(
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estado Plantillas');
       
-      const headers = ['Plantilla', 'Usuario', 'Email', 'Dependencia', 'Estado', 'Fecha Envío', 'Fecha Límite'];
+      const headers = ['Plantilla', 'Usuario', 'Email', 'Dependencia', 'Estado', 'Fecha Envío', 'Fecha Límite', 'Asignados', 'Enviados', 'Pendientes', '% Cumplimiento'];
       const headerRow = worksheet.addRow(headers);
       
       headerRow.eachCell((cell) => {
@@ -397,7 +414,11 @@ const dateFields = new Set(
           item.dependency,
           item.has_submitted ? 'Enviado' : 'Pendiente',
           item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
-          item.deadline ? new Date(item.deadline).toLocaleDateString() : ''
+          item.deadline ? new Date(item.deadline).toLocaleDateString() : '',
+          item.total_assigned ?? '',
+          item.total_submitted ?? '',
+          item.total_pending ?? '',
+          `${item.completion_percentage ?? 0}%`
         ]);
       });
       
@@ -442,6 +463,50 @@ const dateFields = new Set(
 
   // Get unique dependencies for filter
   const uniqueDependencies = [...new Set(templateStatusData.map(item => item.dependency))].sort();
+
+  const groupedTemplateStatus = filteredTemplateStatusData.reduce((acc, item) => {
+    const key = item.template_id;
+
+    if (!acc[key]) {
+      acc[key] = {
+        template_id: item.template_id,
+        template_name: item.template_name,
+        period: item.period,
+        deadline: item.deadline,
+        total_assigned: item.total_assigned,
+        total_submitted: item.total_submitted,
+        total_pending: item.total_pending,
+        completion_percentage: item.completion_percentage,
+        pending_percentage: item.pending_percentage,
+        sent: [] as TemplateStatusRow[],
+        pending: [] as TemplateStatusRow[],
+      };
+    }
+
+    if (item.has_submitted) {
+      acc[key].sent.push(item);
+    } else {
+      acc[key].pending.push(item);
+    }
+
+    return acc;
+  }, {} as Record<string, {
+    template_id: string;
+    template_name: string;
+    period: string;
+    deadline: string;
+    total_assigned: number;
+    total_submitted: number;
+    total_pending: number;
+    completion_percentage: number;
+    pending_percentage: number;
+    sent: TemplateStatusRow[];
+    pending: TemplateStatusRow[];
+  }>);
+
+  const templateStatusGroups = Object.values(groupedTemplateStatus).sort((a, b) =>
+    a.template_name.localeCompare(b.template_name)
+  );
 
   const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
   
@@ -723,11 +788,11 @@ const dateFields = new Set(
         opened={templateStatusModal}
         onClose={() => setTemplateStatusModal(false)}
         title="Estado de Envío de Plantillas"
-        size="m"
+        size="xl"
       >
         <Group justify="space-between" mb="md">
           <Text size="sm" c="dimmed">
-            Mostrando {filteredTemplateStatusData.length} de {templateStatusData.length} registros
+            Mostrando {templateStatusGroups.length} plantillas y {filteredTemplateStatusData.length} registros
           </Text>
           <Button
             onClick={downloadTemplateStatusReport}
@@ -737,8 +802,7 @@ const dateFields = new Set(
             Descargar Reporte
           </Button>
         </Group>
-        
-        {/* Filters */}
+
         <Group mb="md">
           <Select
             placeholder="Estado"
@@ -769,61 +833,123 @@ const dateFields = new Set(
             searchable
           />
         </Group>
-        
-        <Table striped withTableBorder>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Plantilla</Table.Th>
-              <Table.Th>Usuario</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Dependencia</Table.Th>
-              <Table.Th>Estado</Table.Th>
-              <Table.Th>Fecha Envío</Table.Th>
-              <Table.Th>Fecha Límite</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {filteredTemplateStatusData.map((item, index) => {
-              const userName = item.user_name || 'Sin Permiso a dependencia o Sin plantillas asignadas';
-              const userEmail = item.user_email || 'N/A';
-              
-              return (
-                <Table.Tr key={index}>
-                  <Table.Td>{item.template_name}</Table.Td>
-                  <Table.Td>
-                    <Text size="sm" c={userName === 'Sin Permiso a dependencia o Sin plantillas asignadas' ? 'orange' : undefined}>
-                      {userName}
+
+        <Stack gap="md">
+          {templateStatusGroups.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No hay resultados para los filtros seleccionados.
+            </Text>
+          ) : (
+            templateStatusGroups.map((group) => (
+              <Stack
+                key={group.template_id}
+                gap="md"
+                p="md"
+                style={{ border: '1px solid #e9ecef', borderRadius: rem(8) }}
+              >
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text fw={700}>{group.template_name}</Text>
+                    <Text size="sm" c="dimmed">
+                      Periodo: {group.period} | Fecha límite: {group.deadline ? new Date(group.deadline).toLocaleDateString() : 'N/A'}
                     </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" c={userEmail === 'N/A' ? 'orange' : undefined}>
-                      {userEmail}
+                  </div>
+                  <Badge color={group.total_pending === 0 ? 'green' : 'orange'} variant="light" size="lg">
+                    {group.completion_percentage}% completado
+                  </Badge>
+                </Group>
+
+                <Group grow>
+                  <Badge variant="outline" color="blue" size="lg">
+                    Asignados: {group.total_assigned}
+                  </Badge>
+                  <Badge variant="outline" color="green" size="lg">
+                    Enviados: {group.total_submitted}
+                  </Badge>
+                  <Badge variant="outline" color="orange" size="lg">
+                    Pendientes: {group.total_pending}
+                  </Badge>
+                </Group>
+
+                <Progress
+                  value={group.completion_percentage}
+                  color={group.total_pending === 0 ? 'green' : 'blue'}
+                  size="lg"
+                  radius="xl"
+                />
+
+                <Group grow align="flex-start">
+                  <Stack gap={6}>
+                    <Text fw={600} c="green">
+                      Responsables que enviaron
                     </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" fw={500}>
-                      {item.dependency}
+                    {group.sent.length === 0 ? (
+                      <Text size="sm" c="dimmed">Nadie ha enviado todavía.</Text>
+                    ) : (
+                      <List size="sm" spacing={4}>
+                        {group.sent.map((item, index) => (
+                          <List.Item key={`${group.template_id}-sent-${index}`}>
+                            {item.user_name || 'N/A'} - {item.dependency}
+                            {item.submitted_date ? ` (${new Date(item.submitted_date).toLocaleDateString()})` : ''}
+                          </List.Item>
+                        ))}
+                      </List>
+                    )}
+                  </Stack>
+
+                  <Stack gap={6}>
+                    <Text fw={600} c="orange">
+                      Responsables pendientes
                     </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge 
-                      color={item.has_submitted ? 'green' : 'orange'}
-                      variant="light"
-                    >
-                      {item.has_submitted ? 'Enviado' : 'Pendiente'}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
-                  </Table.Td>
-                  <Table.Td>
-                    {item.deadline ? new Date(item.deadline).toLocaleDateString() : ''}
-                  </Table.Td>
-                </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
+                    {group.pending.length === 0 ? (
+                      <Text size="sm" c="dimmed">No hay pendientes.</Text>
+                    ) : (
+                      <List size="sm" spacing={4}>
+                        {group.pending.map((item, index) => (
+                          <List.Item key={`${group.template_id}-pending-${index}`}>
+                            {item.user_name || 'Sin usuario asignado'} - {item.dependency}
+                          </List.Item>
+                        ))}
+                      </List>
+                    )}
+                  </Stack>
+                </Group>
+
+                <Table striped withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Usuario</Table.Th>
+                      <Table.Th>Email</Table.Th>
+                      <Table.Th>Dependencia</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                      <Table.Th>Fecha Envío</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {[...group.sent, ...group.pending].map((item, index) => (
+                      <Table.Tr key={`${group.template_id}-row-${index}`}>
+                        <Table.Td>{item.user_name || 'Sin usuario asignado'}</Table.Td>
+                        <Table.Td>{item.user_email || 'N/A'}</Table.Td>
+                        <Table.Td>{item.dependency}</Table.Td>
+                        <Table.Td>
+                          <Badge
+                            color={item.has_submitted ? 'green' : 'orange'}
+                            variant="light"
+                          >
+                            {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Stack>
+            ))
+          )}
+        </Stack>
       </Modal>
     </Container>
   );
