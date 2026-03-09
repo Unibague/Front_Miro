@@ -784,14 +784,14 @@ const dateFields = new Set(
           </Table.Thead>
           <Table.Tbody>
             {filteredTemplateStatusData.map((item, index) => {
-              const userName = item.user_name || 'Sin Permiso a la Dependencia';
+              const userName = item.user_name || 'Sin Permiso a dependencia o Sin plantillas asignadas';
               const userEmail = item.user_email || 'N/A';
               
               return (
                 <Table.Tr key={index}>
                   <Table.Td>{item.template_name}</Table.Td>
                   <Table.Td>
-                    <Text size="sm" c={userName === 'Sin Permiso a la Dependencia' ? 'orange' : undefined}>
+                    <Text size="sm" c={userName === 'Sin Permiso a dependencia o Sin plantillas asignadas' ? 'orange' : undefined}>
                       {userName}
                     </Text>
                   </Table.Td>
