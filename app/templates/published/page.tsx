@@ -122,6 +122,7 @@ const PublishedTemplatesPage = () => {
   const [templateStatusData, setTemplateStatusData] = useState<TemplateStatusRow[]>([]);
   const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
   const [showConsolidatedReport, setShowConsolidatedReport] = useState(false);
+  const [consolidatedStatusFilter, setConsolidatedStatusFilter] = useState<string>('all');
   
   // Filter states for template status
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -368,6 +369,7 @@ const dateFields = new Set(
       
       setTemplateStatusData(response.data || []);
       setShowConsolidatedReport(false);
+      setConsolidatedStatusFilter('all');
       setTemplateStatusModal(true);
     } catch (error) {
       console.error('Error fetching template status:', error);
@@ -509,6 +511,21 @@ const dateFields = new Set(
   const templateStatusGroups = Object.values(groupedTemplateStatus).sort((a, b) =>
     a.template_name.localeCompare(b.template_name)
   );
+  const visibleTemplateStatusGroups = templateStatusGroups.filter((group) => {
+    if (!showConsolidatedReport || consolidatedStatusFilter === 'all') {
+      return true;
+    }
+
+    if (consolidatedStatusFilter === 'completed') {
+      return group.total_pending === 0;
+    }
+
+    if (consolidatedStatusFilter === 'pending') {
+      return group.total_pending > 0;
+    }
+
+    return true;
+  });
 
   const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
   
@@ -791,6 +808,7 @@ const dateFields = new Set(
         onClose={() => {
           setTemplateStatusModal(false);
           setShowConsolidatedReport(false);
+          setConsolidatedStatusFilter('all');
         }}
         title="Estado de Envío de Plantillas"
         size="xl"
@@ -800,13 +818,21 @@ const dateFields = new Set(
             Mostrando {templateStatusGroups.length} plantillas y {filteredTemplateStatusData.length} registros
           </Text>
           {showConsolidatedReport ? (
-            <Button
-              onClick={downloadTemplateStatusReport}
-              leftSection={<IconDownload size={16} />}
-              variant="outline"
-            >
-              Descargar Reporte
-            </Button>
+            <Group>
+              <Button
+                onClick={() => setShowConsolidatedReport(false)}
+                variant="outline"
+              >
+                Volver al detalle
+              </Button>
+              <Button
+                onClick={downloadTemplateStatusReport}
+                leftSection={<IconDownload size={16} />}
+                variant="outline"
+              >
+                Descargar Reporte
+              </Button>
+            </Group>
           ) : (
             <Button
               onClick={() => setShowConsolidatedReport(true)}
@@ -850,13 +876,29 @@ const dateFields = new Set(
         </Group>
         )}
 
+        {showConsolidatedReport && (
+          <Group mb="md">
+            <Select
+              placeholder="Estado consolidado"
+              value={consolidatedStatusFilter}
+              onChange={(value) => setConsolidatedStatusFilter(value || 'all')}
+              data={[
+                { value: 'all', label: 'Todas' },
+                { value: 'completed', label: 'Completadas' },
+                { value: 'pending', label: 'Pendientes' }
+              ]}
+              w={180}
+            />
+          </Group>
+        )}
+
         <Stack gap="md">
-          {templateStatusGroups.length === 0 ? (
+          {visibleTemplateStatusGroups.length === 0 ? (
             <Text size="sm" c="dimmed">
               No hay resultados para los filtros seleccionados.
             </Text>
           ) : (
-            templateStatusGroups.map((group) => (
+            visibleTemplateStatusGroups.map((group) => (
               <Stack
                 key={group.template_id}
                 gap="md"
