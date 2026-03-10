@@ -121,6 +121,7 @@ const PublishedTemplatesPage = () => {
   const [templateStatusModal, setTemplateStatusModal] = useState(false);
   const [templateStatusData, setTemplateStatusData] = useState<TemplateStatusRow[]>([]);
   const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
+  const [showConsolidatedReport, setShowConsolidatedReport] = useState(false);
   
   // Filter states for template status
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -366,6 +367,7 @@ const dateFields = new Set(
       });
       
       setTemplateStatusData(response.data || []);
+      setShowConsolidatedReport(false);
       setTemplateStatusModal(true);
     } catch (error) {
       console.error('Error fetching template status:', error);
@@ -786,7 +788,10 @@ const dateFields = new Set(
       {/* Template Status Modal */}
       <Modal
         opened={templateStatusModal}
-        onClose={() => setTemplateStatusModal(false)}
+        onClose={() => {
+          setTemplateStatusModal(false);
+          setShowConsolidatedReport(false);
+        }}
         title="Estado de Envío de Plantillas"
         size="xl"
       >
@@ -794,15 +799,25 @@ const dateFields = new Set(
           <Text size="sm" c="dimmed">
             Mostrando {templateStatusGroups.length} plantillas y {filteredTemplateStatusData.length} registros
           </Text>
-          <Button
-            onClick={downloadTemplateStatusReport}
-            leftSection={<IconDownload size={16} />}
-            variant="outline"
-          >
-            Descargar Reporte
-          </Button>
+          {showConsolidatedReport ? (
+            <Button
+              onClick={downloadTemplateStatusReport}
+              leftSection={<IconDownload size={16} />}
+              variant="outline"
+            >
+              Descargar Reporte
+            </Button>
+          ) : (
+            <Button
+              onClick={() => setShowConsolidatedReport(true)}
+              variant="outline"
+            >
+              Reporte consolidado
+            </Button>
+          )}
         </Group>
 
+        {!showConsolidatedReport && (
         <Group mb="md">
           <Select
             placeholder="Estado"
@@ -833,6 +848,7 @@ const dateFields = new Set(
             searchable
           />
         </Group>
+        )}
 
         <Stack gap="md">
           {templateStatusGroups.length === 0 ? (
@@ -878,6 +894,8 @@ const dateFields = new Set(
                   radius="xl"
                 />
 
+                {!showConsolidatedReport && (
+                  <>
                 <Group grow align="flex-start">
                   <Stack gap={6}>
                     <Text fw={600} c="green">
@@ -946,6 +964,8 @@ const dateFields = new Set(
                     ))}
                   </Table.Tbody>
                 </Table>
+                  </>
+                )}
               </Stack>
             ))
           )}
