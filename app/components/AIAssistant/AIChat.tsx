@@ -100,7 +100,7 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
         message: currentInput,
         history: history
       }, {
-        timeout: 30000
+        timeout: 120000 // 2 minutos para chat normal
       });
 
       const assistantMessage: Message = {
@@ -148,19 +148,28 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
     setGeneratingFile(true);
     const generatingMessage: Message = {
       role: 'assistant',
-      content: `🔄 Generando archivo ${type.toUpperCase()}... Por favor espera.`,
+      content: `🔄 Generando archivo ${type.toUpperCase()}... Por favor espera, esto puede tomar varios minutos.`,
       timestamp: new Date()
     };
     setMessages(prev => [...prev, generatingMessage]);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutos
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/generate-${type}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() })
+        body: JSON.stringify({ prompt: prompt.trim() }),
+        signal: controller.signal
       });
 
-      if (!response.ok) throw new Error('Error en la generación');
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error en la generación: ${response.status} - ${errorText}`);
+      }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -176,13 +185,22 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
         timestamp: new Date()
       };
       setMessages(prev => [...prev, successMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
+    } catch (error: any) {
+      console.error('Error generating file:', error);
+      let errorMessage = `❌ Error al generar el archivo ${type.toUpperCase()}.`;
+      
+      if (error.name === 'AbortError') {
+        errorMessage = `⏱️ La generación del archivo ${type.toUpperCase()} tardó demasiado y fue cancelada. Intenta con un prompt más simple.`;
+      } else if (error.message.includes('500')) {
+        errorMessage = `🔧 Error interno del servidor al generar ${type.toUpperCase()}. El servicio podría estar ocupado.`;
+      }
+      
+      const errorMsg: Message = {
         role: 'assistant',
-        content: `❌ Error al generar el archivo ${type.toUpperCase()}. Intenta de nuevo.`,
+        content: errorMessage,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setGeneratingFile(false);
     }

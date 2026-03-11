@@ -76,6 +76,7 @@ const DocumentUploader = ({ onDocumentAnalyzed, onDocumentUploading, disabled }:
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          timeout: 300000, // 5 minutos para análisis de documentos
           onUploadProgress: (progressEvent) => {
             const percentCompleted = Math.round(
               (progressEvent.loaded * 100) / (progressEvent.total || 1)
@@ -86,9 +87,21 @@ const DocumentUploader = ({ onDocumentAnalyzed, onDocumentUploading, disabled }:
       );
 
       onDocumentAnalyzed(response.data.analysis, selectedFile.name);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error analyzing document:', error);
-      setError('Error al analizar el documento. Intenta de nuevo.');
+      let errorMessage = 'Error al analizar el documento. Intenta de nuevo.';
+      
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNABORTED') {
+          errorMessage = 'El análisis del documento tardó demasiado. Intenta con un archivo más pequeño.';
+        } else if (error.response?.status === 413) {
+          errorMessage = 'El archivo es demasiado grande. Intenta con un archivo más pequeño.';
+        } else if (error.response?.status === 500) {
+          errorMessage = 'Error interno del servidor. El servicio de IA podría estar ocupado.';
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setUploading(false);
       setProgress(0);
