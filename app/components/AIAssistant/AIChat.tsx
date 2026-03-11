@@ -154,29 +154,32 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
     setMessages(prev => [...prev, generatingMessage]);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutos
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/generate-${type}`,
+        { 
+          prompt: prompt.trim(),
+          returnBase64: true
+        },
+        {
+          timeout: 600000, // 10 minutos
+          responseType: 'blob' // Importante: manejar como blob
+        }
+      );
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/generate-${type}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
-        signal: controller.signal
+      // Crear blob y descargar
+      const blob = new Blob([response.data], {
+        type: type === 'pdf' ? 'application/pdf' : 
+              type === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error en la generación: ${response.status} - ${errorText}`);
-      }
-
-      const blob = await response.blob();
+      
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `informe-ia.${type === 'word' ? 'docx' : type === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       const successMessage: Message = {
@@ -189,10 +192,14 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
       console.error('Error generating file:', error);
       let errorMessage = `❌ Error al generar el archivo ${type.toUpperCase()}.`;
       
-      if (error.name === 'AbortError') {
-        errorMessage = `⏱️ La generación del archivo ${type.toUpperCase()} tardó demasiado y fue cancelada. Intenta con un prompt más simple.`;
-      } else if (error.message.includes('500')) {
-        errorMessage = `🔧 Error interno del servidor al generar ${type.toUpperCase()}. El servicio podría estar ocupado.`;
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNABORTED') {
+          errorMessage = `⏱️ La generación del archivo ${type.toUpperCase()} tardó demasiado y fue cancelada. Intenta con un prompt más simple.`;
+        } else if (error.response?.status === 500) {
+          errorMessage = `🔧 Error interno del servidor al generar ${type.toUpperCase()}. El servicio podría estar ocupado.`;
+        } else if (error.response?.status === 413) {
+          errorMessage = `📄 El contenido solicitado es demasiado grande. Intenta con un prompt más corto.`;
+        }
       }
       
       const errorMsg: Message = {
