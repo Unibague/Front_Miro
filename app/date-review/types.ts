@@ -60,12 +60,23 @@ export type Process = {
   fecha_entrega_pm_cna?: string | null;
   fecha_envio_avance_vicerrectoria?: string | null;
   fecha_radicacion_avance_cna?: string | null;
+  // Etiquetas personalizables de las fechas del PM (para RC)
+  label_envio_pm_vicerrectoria?: string | null;
+  label_entrega_pm_cna?: string | null;
+  label_envio_avance_vicerrectoria?: string | null;
+  label_radicacion_avance_cna?: string | null;
+  // Meses de cálculo guardados
+  meses_envio_pm?: number | null;
+  meses_entrega_pm_cna?: number | null;
+  meses_envio_avance?: number | null;
+  meses_radicacion_avance?: number | null;
 };
 
 export type ProcessDocument = {
   _id: string;
   phase_id: string | null;
   process_id?: string | null;
+  doc_type?: 'resolucion' | 'proceso';
   name: string;
   drive_id: string;
   view_link: string;
@@ -75,11 +86,22 @@ export type ProcessDocument = {
   createdAt?: string;
 };
 
+export type Subactividad = {
+  _id: string;
+  nombre: string;
+  completada: boolean;
+  fecha_completado: string | null;
+  observaciones: string;
+};
+
 export type Actividad = {
   _id: string;
   nombre: string;
   responsables: string;
   completada: boolean;
+  fecha_completado: string | null;
+  observaciones: string;
+  subactividades: Subactividad[];
 };
 
 export type Phase = {

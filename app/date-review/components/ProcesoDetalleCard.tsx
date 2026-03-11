@@ -4,15 +4,200 @@ import { useState, useEffect } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, Notification, SimpleGrid, Anchor, Divider, Loader,
+  ActionIcon,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
 import axios from "axios";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
-
-import type { Process, Program, Phase, ProcessDocument, Actividad, ProcesoDetalleProps } from "../types";
 import {
-  SUBTIPOS, LABEL_PROCESO, COLOR_PROCESO,
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps } from "../types";
+
+/* ── Fila sortable de actividad (drag & drop) con subactividades ── */
+const SortableActividad = ({
+  act, index, faseActual, editActividadId, editActividadNombre, editActividadResponsables,
+  savingActividad, canToggle,
+  onToggle, onEdit, onDelete, onSave, onCancel,
+  setEditActividadNombre, setEditActividadResponsables,
+  onAddSubactividad, onToggleSubactividad, onDeleteSubactividad,
+  onOpenDocsActividad, onOpenObsActividad,
+  onOpenDocsSubactividad, onOpenObsSubactividad,
+  actividadDocCount, subactividadDocCounts,
+}: {
+  act: Actividad;
+  index: number;
+  faseActual: Phase;
+  editActividadId: string | null;
+  editActividadNombre: string;
+  editActividadResponsables: string;
+  savingActividad: boolean;
+  canToggle: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  setEditActividadNombre: (v: string) => void;
+  setEditActividadResponsables: (v: string) => void;
+  onAddSubactividad: (nombre: string) => void;
+  onToggleSubactividad: (sub: Subactividad) => void;
+  onDeleteSubactividad: (subId: string) => void;
+  onOpenDocsActividad: () => void;
+  onOpenObsActividad: () => void;
+  onOpenDocsSubactividad: (sub: Subactividad) => void;
+  onOpenObsSubactividad: (sub: Subactividad) => void;
+  actividadDocCount: number;
+  subactividadDocCounts: Record<string, number>;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: act._id });
+  const [expandSubs, setExpandSubs] = useState(false);
+  const [nuevaSub, setNuevaSub]     = useState("");
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleAddSub = () => {
+    if (!nuevaSub.trim()) return;
+    onAddSubactividad(nuevaSub.trim());
+    setNuevaSub("");
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Paper withBorder radius="sm" p="sm">
+        {/* Fila principal de la actividad */}
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Group gap="sm" align="flex-start" style={{ flex: 1 }}>
+            <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 3, color: "#adb5bd", fontSize: 16, userSelect: "none" }}>
+              ⠿
+            </div>
+            <input type="checkbox" checked={act.completada}
+              onChange={() => canToggle && onToggle()}
+              disabled={!canToggle}
+              style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
+            />
+            {editActividadId === act._id ? (
+              <Stack gap={4} style={{ flex: 1 }}>
+                <TextInput size="xs" label="Nombre de la actividad" value={editActividadNombre}
+                  onChange={e => setEditActividadNombre(e.currentTarget.value)} autoFocus />
+                <TextInput size="xs" label="Responsables" placeholder="Opcional" value={editActividadResponsables}
+                  onChange={e => setEditActividadResponsables(e.currentTarget.value)} />
+                <Group gap="xs" justify="flex-end">
+                  <Button size="xs" variant="default" onClick={onCancel}>Cancelar</Button>
+                  <Button size="xs" loading={savingActividad} onClick={onSave}>Guardar</Button>
+                </Group>
+              </Stack>
+            ) : (
+              <div style={{ flex: 1 }}>
+                <Text size="sm" td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : "#000"}>{act.nombre}</Text>
+                <Text size="xs" c={act.responsables ? "dimmed" : "#bbb"} fs={act.responsables ? undefined : "italic"}>
+                  {act.responsables || "Sin encargado — clic en ✏ para asignar"}
+                </Text>
+                {act.fecha_completado && <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>}
+              </div>
+            )}
+          </Group>
+          {editActividadId !== act._id && (
+            <Group gap={4} wrap="nowrap">
+              <Button size="xs" variant="subtle" color="gray" title="Observaciones" onClick={onOpenObsActividad}>
+                📝{act.observaciones ? " ●" : ""}
+              </Button>
+              <Button size="xs" variant="subtle" color="gray" title="Documentos"
+                onClick={onOpenDocsActividad}>
+                📎{actividadDocCount > 0 ? ` ${actividadDocCount}` : ""}
+              </Button>
+              <Button size="xs" variant="subtle" color="blue" onClick={onEdit}>✏</Button>
+              <Button size="xs" variant="subtle" color="red" onClick={onDelete}>🗑</Button>
+            </Group>
+          )}
+        </Group>
+
+        {/* Botón expandir subactividades */}
+        {editActividadId !== act._id && (
+          <Box mt={6} ml={40}>
+            <Button
+              size="xs" variant="subtle" color="gray"
+              onClick={() => setExpandSubs(v => !v)}
+            >
+              {expandSubs ? "▾" : "▸"} Subactividades
+              {act.subactividades.length > 0 && (
+                <Badge size="xs" ml={4} color="gray" variant="outline">
+                  {act.subactividades.filter(s => s.completada).length}/{act.subactividades.length}
+                </Badge>
+              )}
+            </Button>
+
+            {expandSubs && (
+              <Stack gap={4} mt={6}>
+                {act.subactividades.map(sub => (
+                  <Paper key={sub._id} withBorder radius="xs" p={6}
+                    style={{ background: sub.completada ? "#f8f9fa" : undefined }}>
+                    <Group justify="space-between" wrap="nowrap">
+                      <Group gap="xs" style={{ flex: 1 }}>
+                        <input type="checkbox" checked={sub.completada}
+                          onChange={() => onToggleSubactividad(sub)}
+                          style={{ cursor: "pointer", width: 14, height: 14 }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <Text size="xs" td={sub.completada ? "line-through" : undefined}
+                            c={sub.completada ? "dimmed" : undefined}>{sub.nombre}</Text>
+                          {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
+                        </div>
+                      </Group>
+                      <Group gap={2} wrap="nowrap">
+                        <Button size="xs" variant="subtle" color="gray" title="Observaciones"
+                          onClick={() => onOpenObsSubactividad(sub)}>
+                          📝{sub.observaciones ? " ●" : ""}
+                        </Button>
+                        <Button size="xs" variant="subtle" color="gray" title="Documentos"
+                          onClick={() => onOpenDocsSubactividad(sub)}>
+                          📎{subactividadDocCounts[sub._id] > 0 ? ` ${subactividadDocCounts[sub._id]}` : ""}
+                        </Button>
+                        <Button size="xs" variant="subtle" color="red"
+                          onClick={() => onDeleteSubactividad(sub._id)}>🗑</Button>
+                      </Group>
+                    </Group>
+                  </Paper>
+                ))}
+
+                {/* Agregar subactividad */}
+                <Group gap="xs" mt={2}>
+                  <TextInput size="xs" placeholder="Nueva subactividad..." value={nuevaSub}
+                    onChange={e => setNuevaSub(e.currentTarget.value)}
+                    onKeyDown={e => e.key === "Enter" && handleAddSub()}
+                    style={{ flex: 1 }} />
+                  <Button size="xs" variant="light" onClick={handleAddSub}>+</Button>
+                </Group>
+              </Stack>
+            )}
+          </Box>
+        )}
+      </Paper>
+    </div>
+  );
+};
+import {
+  LABEL_PROCESO, COLOR_PROCESO,
   COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
   faseColors,
 } from "../constants";
@@ -30,28 +215,32 @@ const ProcesoDetalleCard = ({
   const [cerrarProcesoOpen, setCerrarProcesoOpen] = useState(false);
   const [cerrandoProceso, setCerrandoProceso] = useState(false);
 
-  /* ── PDF de resolución vigente ── */
+  /* ── PDF de resolución vigente / documentos de proceso ── */
   const [resolucionDoc, setResolucionDoc]                   = useState<ProcessDocument | null>(null);
+  const [procesoDocs, setProcesoDocs]                       = useState<ProcessDocument[]>([]);
   const [loadingResolucionDoc, setLoadingResolucionDoc]     = useState(false);
   const [resolucionDocModalOpen, setResolucionDocModalOpen] = useState(false);
+  const [fase7DocsOpen, setFase7DocsOpen]                   = useState(false);
+  const [deletingDocId, setDeletingDocId]                   = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchResolucionDoc = async () => {
-      try {
-        setLoadingResolucionDoc(true);
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
-          params: { process_id: proceso._id },
-        });
-        const data = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
-        setResolucionDoc(data[0] ?? null);
-      } catch (e) {
-        console.error("Error cargando documento de resolución:", e);
-      } finally {
-        setLoadingResolucionDoc(false);
-      }
-    };
-    fetchResolucionDoc();
-  }, [proceso._id]);
+  const fetchProcesoDocs = async () => {
+    try {
+      setLoadingResolucionDoc(true);
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+        params: { process_id: proceso._id },
+      });
+      const data = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+      // 'resolucion' va en la fila de info; todo lo demás va en la lista del proceso
+      setResolucionDoc(data.find(d => d.doc_type === 'resolucion') ?? null);
+      setProcesoDocs(data.filter(d => d.doc_type !== 'resolucion'));
+    } catch (e) {
+      console.error("Error cargando documentos del proceso:", e);
+    } finally {
+      setLoadingResolucionDoc(false);
+    }
+  };
+
+  useEffect(() => { fetchProcesoDocs(); }, [proceso._id]);
 
   const abrirResolucion = () => {
     setResForm({ fecha: "", codigo: "", duracion: "" });
@@ -206,6 +395,7 @@ const ProcesoDetalleCard = ({
   const [nuevaActividad, setNuevaActividad]             = useState("");
   const [posicionActividad, setPosicionActividad]       = useState<string>("0");
   const [savingActividad, setSavingActividad]           = useState(false);
+  const [finalizandoFase, setFinalizandoFase]           = useState(false);
 
   /* ── Offsets de meses ── */
   const getDefaultOffsets = () =>
@@ -234,7 +424,7 @@ const ProcesoDetalleCard = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proceso._id, proceso.tipo_proceso, proceso.meses_inicio_antes_venc, proceso.meses_doc_par_antes_venc, proceso.meses_digitacion_antes_venc, proceso.meses_radicado_antes_venc]);
 
-  const [savingOffsets, setSavingOffsets]   = useState(false);
+  const [savingOffsets, setSavingOffsets]       = useState(false);
   const [offsetsModalOpen, setOffsetsModalOpen] = useState(false);
 
   const guardarOffsets = async () => {
@@ -275,14 +465,53 @@ const ProcesoDetalleCard = ({
     }
   };
 
-  useEffect(() => { cargarPM(); }, [proceso._id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Recargar PM cuando cambia el proceso o su fase (para detectar el PM auto-creado al llegar a Fase 6 en AV)
+  useEffect(() => { cargarPM(); }, [proceso._id, proceso.fase_actual]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Modal de creación de PM para RC (con etiquetas y meses editables) ── */
+  const [crearPMModalOpen, setCrearPMModalOpen] = useState(false);
+  const [pmLabels, setPmLabels] = useState({
+    label_envio_pm_vicerrectoria:     "Enviar a Vicerrectoría informe Plan de mejoramiento",
+    label_entrega_pm_cna:             "Entrega Plan de mejoramiento al CNA",
+    label_envio_avance_vicerrectoria: "Enviar a Vicerrectoría informe de avance Plan de mejoramiento",
+    label_radicacion_avance_cna:      "Radicación ante CNA informe avance Plan de mejoramiento",
+  });
+  const [pmMeses, setPmMeses] = useState({
+    meses_envio_plan:       5,
+    meses_entrega_cna:      6,
+    meses_envio_avance:     6,
+    meses_radicacion_avance: 0,
+  });
+
+  const abrirCrearPM = () => {
+    // Si ya hay un PM, prellenar con sus valores guardados
+    if (pmProceso) {
+      setPmLabels({
+        label_envio_pm_vicerrectoria:     pmProceso.label_envio_pm_vicerrectoria     ?? "Enviar a Vicerrectoría informe Plan de mejoramiento",
+        label_entrega_pm_cna:             pmProceso.label_entrega_pm_cna             ?? "Entrega Plan de mejoramiento al CNA",
+        label_envio_avance_vicerrectoria: pmProceso.label_envio_avance_vicerrectoria ?? "Enviar a Vicerrectoría informe de avance Plan de mejoramiento",
+        label_radicacion_avance_cna:      pmProceso.label_radicacion_avance_cna      ?? "Radicación ante CNA informe avance Plan de mejoramiento",
+      });
+      setPmMeses({
+        meses_envio_plan:        pmProceso.meses_envio_pm       ?? 5,
+        meses_entrega_cna:       pmProceso.meses_entrega_pm_cna ?? 6,
+        meses_envio_avance:      pmProceso.meses_envio_avance   ?? 6,
+        meses_radicacion_avance: pmProceso.meses_radicacion_avance ?? 0,
+      });
+    }
+    setCrearPMModalOpen(true);
+  };
 
   const activarPM = async () => {
     setPmError(null);
     try {
       setLoadingPM(true);
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/activate-pm`);
+      const body = proceso.tipo_proceso === "RC"
+        ? { ...pmMeses, ...pmLabels }
+        : {};
+      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/activate-pm`, body);
       setPmProceso(res.data as Process);
+      setCrearPMModalOpen(false);
     } catch (e: any) {
       setPmError(e?.response?.data?.error ?? "Error activando Plan de Mejoramiento");
     } finally {
@@ -313,9 +542,10 @@ const ProcesoDetalleCard = ({
   const toggleCompletada = async (fase: Phase, act: Actividad) => {
     try {
       const nuevaCompletada = !act.completada;
+      const hoy = new Date().toISOString().split("T")[0];
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
-        { completada: nuevaCompletada }
+        { completada: nuevaCompletada, fecha_completado: nuevaCompletada ? hoy : null }
       );
       const faseActualizada: Phase = res.data;
       const fasesActualizadas = fases.map(f => f._id === fase._id ? faseActualizada : f);
@@ -331,6 +561,199 @@ const ProcesoDetalleCard = ({
         }
       }
     } catch (e) { console.error(e); }
+  };
+
+  /* ── Documentos y observaciones por actividad ── */
+  const [actDocsOpen, setActDocsOpen]             = useState(false);
+  const [actDocsTarget, setActDocsTarget]         = useState<{ fase: Phase; act: Actividad } | null>(null);
+  const [actDocs, setActDocs]                     = useState<ProcessDocument[]>([]);
+  const [loadingActDocs, setLoadingActDocs]       = useState(false);
+  const [uploadingActDoc, setUploadingActDoc]     = useState(false);
+  const [actDocCounts, setActDocCounts]           = useState<Record<string, number>>({});
+
+  const [actObsOpen, setActObsOpen]               = useState(false);
+  const [actObsTarget, setActObsTarget]           = useState<{ fase: Phase; act: Actividad } | null>(null);
+  const [actObsTexto, setActObsTexto]             = useState("");
+  const [savingActObs, setSavingActObs]           = useState(false);
+
+  /* ── Documentos y observaciones por subactividad ── */
+  const [subDocsOpen, setSubDocsOpen]             = useState(false);
+  const [subDocsTarget, setSubDocsTarget]         = useState<{ fase: Phase; act: Actividad; sub: Subactividad } | null>(null);
+  const [subDocs, setSubDocs]                     = useState<ProcessDocument[]>([]);
+  const [loadingSubDocs, setLoadingSubDocs]       = useState(false);
+  const [uploadingSubDoc, setUploadingSubDoc]     = useState(false);
+  const [subDocCounts, setSubDocCounts]           = useState<Record<string, number>>({});
+
+  const [subObsOpen, setSubObsOpen]               = useState(false);
+  const [subObsTarget, setSubObsTarget]           = useState<{ fase: Phase; act: Actividad; sub: Subactividad } | null>(null);
+  const [subObsTexto, setSubObsTexto]             = useState("");
+  const [savingSubObs, setSavingSubObs]           = useState(false);
+
+  /* ── Abrir documentos de actividad ── */
+  const abrirDocsActividad = async (fase: Phase, act: Actividad) => {
+    setActDocsTarget({ fase, act });
+    setLoadingActDocs(true);
+    setActDocsOpen(true);
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+        params: { phase_id: fase._id, actividad_id: act._id },
+      });
+      const data = Array.isArray(res.data) ? res.data as ProcessDocument[] : [];
+      setActDocs(data);
+      setActDocCounts(prev => ({ ...prev, [act._id]: data.length }));
+    } catch (e) { console.error(e); }
+    finally { setLoadingActDocs(false); }
+  };
+
+  const subirDocActividad = async (files: File[]) => {
+    if (!actDocsTarget || files.length === 0) return;
+    setUploadingActDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("actividad_id", actDocsTarget.act._id);
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/process-documents/${actDocsTarget.fase._id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      const newDoc = res.data as ProcessDocument;
+      setActDocs(prev => [newDoc, ...prev]);
+      setActDocCounts(prev => ({ ...prev, [actDocsTarget.act._id]: (prev[actDocsTarget.act._id] ?? 0) + 1 }));
+    } catch (e) { console.error(e); }
+    finally { setUploadingActDoc(false); }
+  };
+
+  const eliminarDocActividad = async (docId: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
+      setActDocs(prev => {
+        const updated = prev.filter(d => d._id !== docId);
+        if (actDocsTarget) setActDocCounts(c => ({ ...c, [actDocsTarget.act._id]: updated.length }));
+        return updated;
+      });
+    } catch (e) { console.error(e); }
+  };
+
+  /* ── Abrir observaciones de actividad ── */
+  const abrirObsActividad = (fase: Phase, act: Actividad) => {
+    setActObsTarget({ fase, act });
+    setActObsTexto(act.observaciones ?? "");
+    setActObsOpen(true);
+  };
+
+  const guardarObsActividad = async () => {
+    if (!actObsTarget) return;
+    setSavingActObs(true);
+    try {
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${actObsTarget.fase._id}/actividades/${actObsTarget.act._id}`,
+        { observaciones: actObsTexto }
+      );
+      onUpdateFases(fases.map(f => f._id === actObsTarget.fase._id ? res.data : f));
+      setActObsOpen(false);
+    } catch (e) { console.error(e); }
+    finally { setSavingActObs(false); }
+  };
+
+  /* ── Subactividades CRUD ── */
+  const agregarSubactividad = async (fase: Phase, act: Actividad, nombre: string) => {
+    try {
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades`,
+        { nombre }
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleSubactividad = async (fase: Phase, act: Actividad, sub: Subactividad) => {
+    try {
+      const nuevaCompletada = !sub.completada;
+      const hoy = new Date().toISOString().split("T")[0];
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${sub._id}`,
+        { completada: nuevaCompletada, fecha_completado: nuevaCompletada ? hoy : null }
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  const eliminarSubactividad = async (fase: Phase, act: Actividad, subId: string) => {
+    try {
+      const res = await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${subId}`
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  /* ── Abrir documentos de subactividad ── */
+  const abrirDocsSubactividad = async (fase: Phase, act: Actividad, sub: Subactividad) => {
+    setSubDocsTarget({ fase, act, sub });
+    setLoadingSubDocs(true);
+    setSubDocsOpen(true);
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+        params: { phase_id: fase._id, actividad_id: act._id, subactividad_id: sub._id },
+      });
+      const data = Array.isArray(res.data) ? res.data as ProcessDocument[] : [];
+      setSubDocs(data);
+      setSubDocCounts(prev => ({ ...prev, [sub._id]: data.length }));
+    } catch (e) { console.error(e); }
+    finally { setLoadingSubDocs(false); }
+  };
+
+  const subirDocSubactividad = async (files: File[]) => {
+    if (!subDocsTarget || files.length === 0) return;
+    setUploadingSubDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("actividad_id", subDocsTarget.act._id);
+      formData.append("subactividad_id", subDocsTarget.sub._id);
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/process-documents/${subDocsTarget.fase._id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      const newDoc = res.data as ProcessDocument;
+      setSubDocs(prev => [newDoc, ...prev]);
+      setSubDocCounts(prev => ({ ...prev, [subDocsTarget.sub._id]: (prev[subDocsTarget.sub._id] ?? 0) + 1 }));
+    } catch (e) { console.error(e); }
+    finally { setUploadingSubDoc(false); }
+  };
+
+  const eliminarDocSubactividad = async (docId: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
+      setSubDocs(prev => {
+        const updated = prev.filter(d => d._id !== docId);
+        if (subDocsTarget) setSubDocCounts(c => ({ ...c, [subDocsTarget.sub._id]: updated.length }));
+        return updated;
+      });
+    } catch (e) { console.error(e); }
+  };
+
+  /* ── Abrir observaciones de subactividad ── */
+  const abrirObsSubactividad = (fase: Phase, act: Actividad, sub: Subactividad) => {
+    setSubObsTarget({ fase, act, sub });
+    setSubObsTexto(sub.observaciones ?? "");
+    setSubObsOpen(true);
+  };
+
+  const guardarObsSubactividad = async () => {
+    if (!subObsTarget) return;
+    setSavingSubObs(true);
+    try {
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${subObsTarget.fase._id}/actividades/${subObsTarget.act._id}/subactividades/${subObsTarget.sub._id}`,
+        { observaciones: subObsTexto }
+      );
+      onUpdateFases(fases.map(f => f._id === subObsTarget.fase._id ? res.data : f));
+      setSubObsOpen(false);
+    } catch (e) { console.error(e); }
+    finally { setSavingSubObs(false); }
   };
 
   const cargarDocumentos = async () => {
@@ -406,6 +829,40 @@ const ProcesoDetalleCard = ({
     finally { setSavingActividad(false); }
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent, fase: Phase) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = fase.actividades.findIndex(a => a._id === active.id);
+    const newIndex = fase.actividades.findIndex(a => a._id === over.id);
+    const nuevasActividades = arrayMove(fase.actividades, oldIndex, newIndex);
+    // Actualizar el estado local inmediatamente para que se vea fluido
+    const faseActualizada = { ...fase, actividades: nuevasActividades };
+    onUpdateFases(fases.map(f => f._id === fase._id ? faseActualizada : f));
+    // Persistir en el backend
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/reorder`, {
+        orden: nuevasActividades.map(a => a._id),
+      });
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  const finalizarFase = async (fase: Phase) => {
+    setFinalizandoFase(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/complete-all`);
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
+      if (res.data.proceso) onUpdateProceso(res.data.proceso);
+      setChecklistOpen(false);
+    } catch (e) { console.error(e); }
+    finally { setFinalizandoFase(false); }
+  };
+
   /* ── Datos derivados ── */
   const color           = COLOR_PROCESO[proceso.tipo_proceso];
   const maxCondicion    = proceso.tipo_proceso === "RC" ? 9 : proceso.tipo_proceso === "AV" ? 12 : null;
@@ -416,8 +873,245 @@ const ProcesoDetalleCard = ({
     ? Array.from({ length: maxCondicion }, (_, i) => ({ value: String(i + 1), label: `${condicionLabel} ${i + 1}` }))
     : [];
 
-  /* ── Vista mínima sin resolución activa ── */
-  if (!resolucionFecha) {
+  /* ── Fase 7: No renovación (proceso permanente, solo documentos) ── */
+  if (proceso.fase_actual === 7) {
+    return (
+      <Paper withBorder radius="md" mb="md" style={{ overflow: "hidden" }}>
+
+        {/* Header — igual que la vista completa pero sin botón de editar meses */}
+        <div style={{ backgroundColor: color, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <Group gap="xs">
+            <Text fw={700} c="#333" size="md">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
+            <Badge color="gray" variant="filled" size="sm">No renovación</Badge>
+          </Group>
+          <Button size="xs" variant="white" color="red" onClick={() => setCerrarProcesoOpen(true)}>Cerrar proceso</Button>
+        </div>
+
+        {/* Fila de resolución + PDF */}
+        <Box px="md" pt="sm" pb="xs" style={{ borderBottom: "1px solid #dee2e6" }}>
+          <Group gap="xl" align="flex-start">
+            <div>
+              <Text size="xs" c="dimmed" fw={600}>Resolución vigente</Text>
+              <Text size="sm" fw={500}>{resolucionCodigo ?? "—"}</Text>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed" fw={600}>Fecha resolución</Text>
+              <Text size="sm" fw={500}>{resolucionFecha ?? "—"}</Text>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed" fw={600}>Fecha vencimiento</Text>
+              <Text size="sm" fw={500}>{proceso.fecha_vencimiento ?? "—"}</Text>
+            </div>
+            {/* PDF de resolución — al lado de fecha vencimiento */}
+            <div>
+              <Text size="xs" c="dimmed" fw={600}>PDF resolución</Text>
+              <Group gap={6} mt={2}>
+                {resolucionDoc && (
+                  <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
+                    📄 Ver PDF
+                  </Anchor>
+                )}
+                <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc}
+                  onClick={() => setResolucionDocModalOpen(true)}>
+                  {resolucionDoc ? "Cambiar" : "Subir PDF"}
+                </Button>
+              </Group>
+            </div>
+          </Group>
+        </Box>
+
+        {/* Fase 7 — como una sección de fase */}
+        <Box px="md" pt="sm" pb="md">
+          {/* Cabecera de fase */}
+          <Group gap="xs" mb="sm" align="center">
+            <Badge color="orange" variant="light" size="md">Fase 7 — Solo documentos</Badge>
+          </Group>
+
+          {/* Descripción — texto simple gris */}
+          <Text size="xs" c="dimmed" mb="sm">
+            Proceso de No renovación en Fase 7 permanente. No tiene actividades ni fechas de proceso.
+          </Text>
+
+          {/* Acciones */}
+          <Group gap="xs" mb="sm">
+            <Button size="xs" variant="light" onClick={() => setFase7DocsOpen(true)}>
+              📎 {procesoDocs.length > 0 ? `Documentos del proceso (${procesoDocs.length})` : "Subir documentos"}
+            </Button>
+            <Button size="xs" variant="light" onClick={abrirObs}>
+              {proceso.observaciones ? "✏ Observaciones" : "+ Observaciones"}
+            </Button>
+          </Group>
+
+          {/* Lista de documentos del proceso con botón eliminar */}
+          {procesoDocs.length > 0 && (
+            <Stack gap={4}>
+              {procesoDocs.map(doc => (
+                <Group key={doc._id} gap={6} align="center">
+                  <Anchor size="xs" href={doc.view_link} target="_blank" rel="noopener noreferrer">
+                    📄 {doc.name}
+                  </Anchor>
+                  <Button
+                    size="xs" variant="subtle" color="red" p={2}
+                    loading={deletingDocId === doc._id}
+                    onClick={async () => {
+                      try {
+                        setDeletingDocId(doc._id);
+                        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
+                        await fetchProcesoDocs();
+                      } catch (e) { console.error(e); }
+                      finally { setDeletingDocId(null); }
+                    }}>
+                    🗑
+                  </Button>
+                </Group>
+              ))}
+            </Stack>
+          )}
+
+          {/* Observaciones visibles */}
+          {proceso.observaciones && (
+            <Paper withBorder radius="sm" p="xs" mt="xs" style={{ backgroundColor: "#fff9db" }}>
+              <Text size="xs" c="dimmed" mb={2}>Observaciones</Text>
+              <Text size="sm">{proceso.observaciones}</Text>
+            </Paper>
+          )}
+        </Box>
+
+        {/* Modal PDF resolución vigente */}
+        <Modal opened={resolucionDocModalOpen} onClose={() => setResolucionDocModalOpen(false)}
+          title="PDF de resolución vigente" centered size="md" radius="md" zIndex={300}>
+          <Stack gap="md">
+            {resolucionDoc && (
+              <Paper withBorder p="sm" radius="sm">
+                <Group justify="space-between" align="center">
+                  <div>
+                    <Text size="xs" fw={600} mb={2}>Archivo actual</Text>
+                    <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
+                      📄 {resolucionDoc.name}
+                    </Anchor>
+                  </div>
+                  <Button
+                    size="xs" variant="subtle" color="red"
+                    loading={deletingDocId === resolucionDoc._id}
+                    onClick={async () => {
+                      try {
+                        setDeletingDocId(resolucionDoc._id);
+                        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${resolucionDoc._id}`);
+                        await fetchProcesoDocs();
+                      } catch (e) { console.error(e); }
+                      finally { setDeletingDocId(null); }
+                    }}>
+                    🗑 Eliminar
+                  </Button>
+                </Group>
+              </Paper>
+            )}
+            <DropzoneCustomComponent
+              text={loadingResolucionDoc ? "Subiendo PDF..." : "Haz clic o arrastra el PDF de la resolución"}
+              onDrop={async (files) => {
+                const file = files[0]; if (!file) return;
+                try {
+                  setLoadingResolucionDoc(true);
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  formData.append("doc_type", "resolucion");
+                  await axios.post(
+                    `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+                    formData, { headers: { "Content-Type": "multipart/form-data" } }
+                  );
+                  await fetchProcesoDocs();
+                  setResolucionDocModalOpen(false);
+                } catch (e) { console.error(e); }
+                finally { setLoadingResolucionDoc(false); }
+              }}
+            />
+          </Stack>
+        </Modal>
+
+        {/* Modal documentos del proceso (Fase 7) */}
+        <Modal opened={fase7DocsOpen} onClose={() => setFase7DocsOpen(false)}
+          title="Documentos del proceso" centered size="md" radius="md" zIndex={300}>
+          <Stack gap="md">
+            <DropzoneCustomComponent
+              text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo"}
+              onDrop={async (files) => {
+                const file = files[0]; if (!file) return;
+                try {
+                  setLoadingResolucionDoc(true);
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  formData.append("doc_type", "proceso");
+                  await axios.post(
+                    `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+                    formData, { headers: { "Content-Type": "multipart/form-data" } }
+                  );
+                  await fetchProcesoDocs();
+                } catch (e) { console.error(e); }
+                finally { setLoadingResolucionDoc(false); }
+              }}
+            />
+            {procesoDocs.length > 0 && (
+              <>
+                <Divider label="Documentos subidos" labelPosition="center" />
+                <Stack gap="xs">
+                  {procesoDocs.map(doc => (
+                    <Group key={doc._id} justify="space-between" align="center">
+                      <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">
+                        📄 {doc.name}
+                      </Anchor>
+                      <Button
+                        size="xs" variant="subtle" color="red" p={4}
+                        loading={deletingDocId === doc._id}
+                        onClick={async () => {
+                          try {
+                            setDeletingDocId(doc._id);
+                            await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
+                            await fetchProcesoDocs();
+                          } catch (e) { console.error(e); }
+                          finally { setDeletingDocId(null); }
+                        }}>
+                        🗑
+                      </Button>
+                    </Group>
+                  ))}
+                </Stack>
+              </>
+            )}
+          </Stack>
+        </Modal>
+
+        {/* Modal observaciones */}
+        <Modal opened={obsOpen} onClose={() => setObsOpen(false)}
+          title="Observaciones generales" centered size="sm" radius="md" zIndex={300}>
+          <Stack gap="sm">
+            <textarea value={obsTexto} onChange={e => setObsTexto(e.target.value)} rows={5}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+              placeholder="Escribe las observaciones del proceso..." />
+            <Group justify="flex-end">
+              <Button variant="default" size="sm" onClick={() => setObsOpen(false)}>Cancelar</Button>
+              <Button size="sm" loading={savingObs} onClick={guardarObs}>Guardar</Button>
+            </Group>
+          </Stack>
+        </Modal>
+
+        {/* Modal cerrar proceso */}
+        <Modal opened={cerrarProcesoOpen} onClose={() => setCerrarProcesoOpen(false)}
+          title="Cerrar proceso" centered size="sm" radius="md" zIndex={300}>
+          <Stack gap="sm">
+            <Text size="sm">¿Estás seguro de que deseas cerrar este proceso de No renovación? Se moverá al historial.</Text>
+            <Group justify="flex-end">
+              <Button variant="default" size="sm" onClick={() => setCerrarProcesoOpen(false)}>Cancelar</Button>
+              <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
+            </Group>
+          </Stack>
+        </Modal>
+      </Paper>
+    );
+  }
+
+  /* ── Vista mínima sin resolución activa (solo procesos legacy sin subtipo) ── */
+  const esSubtipoSinResolucion = ["Nuevo", "Primera vez", "Reforma curricular"].includes(proceso.subtipo ?? "");
+  if (!resolucionFecha && !esSubtipoSinResolucion) {
     return (
       <Paper withBorder radius="md" mb="md" style={{ overflow: "hidden" }}>
         <div style={{ backgroundColor: color, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
@@ -470,19 +1164,14 @@ const ProcesoDetalleCard = ({
         </div>
         <Text fw={700} c="#333" size="md" ta="center">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Select
-            data={SUBTIPOS[proceso.tipo_proceso].map(s => ({ value: s, label: s }))}
-            value={proceso.subtipo ?? null}
-            onChange={async (val) => {
-              try {
-                const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}`, { subtipo: val });
-                onUpdateProceso(res.data);
-              } catch (e) { console.error(e); }
-            }}
-            placeholder="Tipo de proceso"
-            clearable size="xs"
-            styles={{ input: { backgroundColor: "rgba(255,255,255,0.85)", fontSize: "11px", paddingInline: 6, height: 24, minWidth: 200 } }}
-          />
+          {proceso.subtipo ? (
+            <Badge variant="light" color="dark" size="sm"
+              style={{ backgroundColor: "rgba(255,255,255,0.85)", color: "#333", fontSize: 11 }}>
+              {proceso.subtipo}
+            </Badge>
+          ) : (
+            <Text size="xs" c="#555" fs="italic">Sin subtipo</Text>
+          )}
         </div>
       </div>
 
@@ -516,21 +1205,27 @@ const ProcesoDetalleCard = ({
             <Table.Tr>
               <Table.Td style={{ verticalAlign: "top" }}>
                 <Stack gap={4} align="center">
-                  {resolucionFecha ? (
-                    <>
-                      <Text size="xs" fw={600} ta="center">{resolucionFecha}</Text>
-                      <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
-                    </>
+                  {proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez" ? (
+                    <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
                   ) : (
-                    <Text size="xs" c="orange" fw={600} ta="center">Pendiente</Text>
-                  )}
-                  <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc} onClick={() => setResolucionDocModalOpen(true)}>
-                    {resolucionDoc ? "Ver / cambiar PDF resolución" : "Subir PDF resolución"}
-                  </Button>
-                  {resolucionDoc && (
-                    <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                      Abrir PDF en nueva pestaña
-                    </Anchor>
+                    <>
+                      {resolucionFecha ? (
+                        <>
+                          <Text size="xs" fw={600} ta="center">{resolucionFecha}</Text>
+                          <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
+                        </>
+                      ) : (
+                        <Text size="xs" c="orange" fw={600} ta="center">Pendiente</Text>
+                      )}
+                      <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc} onClick={() => setResolucionDocModalOpen(true)}>
+                        {resolucionDoc ? "Ver / cambiar PDF resolución" : "Subir PDF resolución"}
+                      </Button>
+                      {resolucionDoc && (
+                        <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
+                          Abrir PDF en nueva pestaña
+                        </Anchor>
+                      )}
+                    </>
                   )}
                 </Stack>
               </Table.Td>
@@ -538,12 +1233,17 @@ const ProcesoDetalleCard = ({
                 const fecha        = proceso[col.key as keyof Process] as string | null;
                 const isEditing    = editingDateKey === col.key;
                 const dateVal      = fecha ? new Date(fecha + "T12:00:00") : null;
-                const esSoloLectura = col.key === "fecha_vencimiento" || col.key === "fecha_radicado_men";
+                // fecha_radicado_men es editable para RC Nuevo (no hay resolución ni auto-cálculo)
+                const esSoloLectura = col.key === "fecha_vencimiento" ||
+                  (col.key === "fecha_radicado_men" && proceso.subtipo !== "Nuevo");
                 const obsValor     = proceso[col.obsKey as keyof Process] as string ?? "";
                 return (
                   <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
                     <Stack gap={4} align="center">
-                      {isEditing && !esSoloLectura ? (
+                      {/* Fecha vencimiento inexistente para Nuevo / Primera vez */}
+                      {col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez") ? (
+                        <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
+                      ) : isEditing && !esSoloLectura ? (
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
                           valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
                           style={{ width: 130 }} clearable disabled={savingDate}
@@ -557,16 +1257,18 @@ const ProcesoDetalleCard = ({
                           backgroundColor: esSoloLectura ? "#f8f9fa" : "#e7f5ff",
                           color: fecha ? "#1c7ed6" : "#adb5bd",
                         }}
-                          title={esSoloLectura ? "Fecha calculada automáticamente" : "Clic para editar fecha"}
+                          title={esSoloLectura ? (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente") : "Clic para editar fecha"}
                           onClick={() => { if (!esSoloLectura) setEditingDateKey(col.key); }}
                         >
                           {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
                         </Text>
                       )}
-                      <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
-                        style={{ cursor: "pointer" }} onClick={() => abrirObsFecha(col.obsKey, col.label)}>
-                        {obsValor ? "Ver observaciones" : "Observaciones"}
-                      </Text>
+                      {!(col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez")) && (
+                        <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
+                          style={{ cursor: "pointer" }} onClick={() => abrirObsFecha(col.obsKey, col.label)}>
+                          {obsValor ? "Ver observaciones" : "Observaciones"}
+                        </Text>
+                      )}
                     </Stack>
                   </Table.Td>
                 );
@@ -586,15 +1288,23 @@ const ProcesoDetalleCard = ({
               {pmProceso?.subtipo && <Badge size="sm" color="gray" variant="outline">{pmProceso.subtipo}</Badge>}
             </Group>
             <Group gap="xs">
-              {pmProceso && (
+              {/* Solo RC puede quitar el PM manualmente; en AV es permanente */}
+              {pmProceso && proceso.tipo_proceso === "RC" && (
                 <Button size="xs" variant="subtle" color="red" onClick={() => setConfirmarEliminarPM(true)}>
                   Quitar plan
                 </Button>
               )}
-              {!pmProceso && (
-                <Button size="xs" variant="light" loading={loadingPM} onClick={activarPM}>
-                  Activar plan de mejoramiento
+              {/* Para RC: botón manual con modal de configuración. Para AV: se crea automáticamente al llegar a Fase 6 */}
+              {proceso.tipo_proceso === "RC" && (
+                <Button size="xs" variant={pmProceso ? "subtle" : "light"} color={pmProceso ? "gray" : undefined}
+                  loading={loadingPM} onClick={abrirCrearPM}>
+                  {pmProceso ? "⚙ Editar configuración" : "Activar plan de mejoramiento"}
                 </Button>
+              )}
+              {!pmProceso && proceso.tipo_proceso === "AV" && (
+                <Text size="xs" c="dimmed" fs="italic">
+                  {proceso.fase_actual >= 6 ? "Creando..." : "Se genera automáticamente al llegar a Fase 6"}
+                </Text>
               )}
             </Group>
           </Group>
@@ -610,6 +1320,72 @@ const ProcesoDetalleCard = ({
             </Stack>
           </Modal>
 
+          {/* Modal: crear / editar configuración del PM para RC */}
+          {proceso.tipo_proceso === "RC" && (
+            <Modal opened={crearPMModalOpen} onClose={() => setCrearPMModalOpen(false)}
+              title={pmProceso ? "Editar configuración del Plan de Mejoramiento" : "Crear Plan de Mejoramiento"}
+              centered size="lg" radius="md">
+              <Stack gap="md">
+                <Text size="sm" c="dimmed">
+                  Las fechas se calculan automáticamente a partir de la resolución vigente y los meses que configures.
+                </Text>
+                <Divider label="Nombres de las fechas" labelPosition="center" />
+                <Stack gap="xs">
+                  <TextInput label="Fecha 1 — nombre" size="xs"
+                    value={pmLabels.label_envio_pm_vicerrectoria}
+                    onChange={e => setPmLabels(p => ({ ...p, label_envio_pm_vicerrectoria: e.currentTarget.value }))} />
+                  <TextInput label="Fecha 2 — nombre" size="xs"
+                    value={pmLabels.label_entrega_pm_cna}
+                    onChange={e => setPmLabels(p => ({ ...p, label_entrega_pm_cna: e.currentTarget.value }))} />
+                  <TextInput label="Fecha 3 — nombre" size="xs"
+                    value={pmLabels.label_envio_avance_vicerrectoria}
+                    onChange={e => setPmLabels(p => ({ ...p, label_envio_avance_vicerrectoria: e.currentTarget.value }))} />
+                  <TextInput label="Fecha 4 — nombre" size="xs"
+                    value={pmLabels.label_radicacion_avance_cna}
+                    onChange={e => setPmLabels(p => ({ ...p, label_radicacion_avance_cna: e.currentTarget.value }))} />
+                </Stack>
+                <Divider label="Meses de cálculo" labelPosition="center" />
+                <Text size="xs" c="dimmed">
+                  La <strong>mitad de vigencia</strong> = fecha de resolución + (duración total ÷ 2).
+                  Ej: resolución de 7 años → mitad = resolución + 42 meses.
+                </Text>
+                <SimpleGrid cols={2} spacing="sm">
+                  <TextInput
+                    label="Fecha 1 — meses DESPUÉS de la resolución"
+                    description="Resolución + N meses → fecha resultante"
+                    type="number" size="xs"
+                    value={pmMeses.meses_envio_plan}
+                    onChange={e => setPmMeses(p => ({ ...p, meses_envio_plan: Number(e.currentTarget.value || 0) }))} />
+                  <TextInput
+                    label="Fecha 2 — meses DESPUÉS de la resolución"
+                    description="Resolución + N meses → fecha resultante"
+                    type="number" size="xs"
+                    value={pmMeses.meses_entrega_cna}
+                    onChange={e => setPmMeses(p => ({ ...p, meses_entrega_cna: Number(e.currentTarget.value || 0) }))} />
+                  <TextInput
+                    label="Fecha 3 — meses ANTES de la mitad de vigencia"
+                    description="Mitad de vigencia − N meses → fecha resultante"
+                    type="number" size="xs"
+                    value={pmMeses.meses_envio_avance}
+                    onChange={e => setPmMeses(p => ({ ...p, meses_envio_avance: Number(e.currentTarget.value || 0) }))} />
+                  <TextInput
+                    label="Fecha 4 — meses DESPUÉS de la mitad de vigencia"
+                    description="Mitad de vigencia + N meses (0 = exactamente en la mitad)"
+                    type="number" size="xs"
+                    value={pmMeses.meses_radicacion_avance}
+                    onChange={e => setPmMeses(p => ({ ...p, meses_radicacion_avance: Number(e.currentTarget.value || 0) }))} />
+                </SimpleGrid>
+                {pmError && <Notification color="red" withCloseButton onClose={() => setPmError(null)}>{pmError}</Notification>}
+                <Group justify="flex-end" mt="xs">
+                  <Button variant="default" size="sm" onClick={() => setCrearPMModalOpen(false)}>Cancelar</Button>
+                  <Button size="sm" loading={loadingPM} onClick={activarPM}>
+                    {pmProceso ? "Guardar y recalcular" : "Crear Plan de Mejoramiento"}
+                  </Button>
+                </Group>
+              </Stack>
+            </Modal>
+          )}
+
           {pmError && (
             <Notification color="red" withCloseButton onClose={() => setPmError(null)} mb="xs">{pmError}</Notification>
           )}
@@ -622,12 +1398,18 @@ const ProcesoDetalleCard = ({
                     <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
                       <Text size="xs" fw={700} ta="center">Hito del Plan</Text>
                     </Table.Th>
-                    {COLUMNAS_FECHA_PM.map(col => (
-                      <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
-                        <Text size="xs" fw={700} ta="center">{col.label}</Text>
-                        {col.sub && <Text size="xs" c="dimmed" ta="center">{col.sub}</Text>}
-                      </Table.Th>
-                    ))}
+                    {COLUMNAS_FECHA_PM.map(col => {
+                      // Para RC, usar la etiqueta personalizada guardada en el PM si existe
+                      const labelKey = col.key.replace("fecha_", "label_") as keyof Process;
+                      const labelPersonalizado = pmProceso[labelKey] as string | null | undefined;
+                      const labelFinal = labelPersonalizado ?? col.label;
+                      return (
+                        <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
+                          <Text size="xs" fw={700} ta="center">{labelFinal}</Text>
+                          {!labelPersonalizado && col.sub && <Text size="xs" c="dimmed" ta="center">{col.sub}</Text>}
+                        </Table.Th>
+                      );
+                    })}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -636,10 +1418,12 @@ const ProcesoDetalleCard = ({
                       <Text size="xs" fw={600} ta="center">Fechas</Text>
                     </Table.Td>
                     {COLUMNAS_FECHA_PM.map(col => {
-                      const fecha    = pmProceso[col.key as keyof Process] as string | null | undefined;
+                      const fecha     = pmProceso[col.key as keyof Process] as string | null | undefined;
                       const isEditing = editingPmDateKey === col.key;
-                      const dateVal  = fecha ? new Date(fecha + "T12:00:00") : null;
-                      const obsValor = pmProceso[col.obsKey as keyof Process] as string ?? "";
+                      const dateVal   = fecha ? new Date(fecha + "T12:00:00") : null;
+                      const obsValor  = pmProceso[col.obsKey as keyof Process] as string ?? "";
+                      const labelKey  = col.key.replace("fecha_", "label_") as keyof Process;
+                      const labelFinal = (pmProceso[labelKey] as string | null | undefined) ?? col.label;
                       return (
                         <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
                           <Stack gap={4} align="center">
@@ -661,7 +1445,7 @@ const ProcesoDetalleCard = ({
                               </Text>
                             )}
                             <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
-                              style={{ cursor: "pointer" }} onClick={() => abrirObsPmFecha(col.obsKey, col.label)}>
+                              style={{ cursor: "pointer" }} onClick={() => abrirObsPmFecha(col.obsKey, labelFinal)}>
                               {obsValor ? "Ver observaciones" : "Observaciones"}
                             </Text>
                           </Stack>
@@ -753,11 +1537,13 @@ const ProcesoDetalleCard = ({
                 setLoadingResolucionDoc(true);
                 const formData = new FormData();
                 formData.append("file", file);
-                const res = await axios.post(
+                formData.append("doc_type", "resolucion");
+                await axios.post(
                   `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
                   formData, { headers: { "Content-Type": "multipart/form-data" } }
                 );
-                setResolucionDoc(res.data as ProcessDocument);
+                await fetchProcesoDocs();
+                setResolucionDocModalOpen(false);
               } catch (e) { console.error(e); }
               finally { setLoadingResolucionDoc(false); }
             }}
@@ -864,68 +1650,159 @@ const ProcesoDetalleCard = ({
         )}
       </Modal>
 
+      {/* Modal: observaciones de actividad — zIndex alto para quedar encima del checklist */}
+      <Modal opened={actObsOpen} onClose={() => setActObsOpen(false)}
+        title={`Observaciones — ${actObsTarget?.act.nombre ?? ""}`} centered size="md" radius="md" zIndex={400}>
+        <Stack>
+          <textarea value={actObsTexto} onChange={e => setActObsTexto(e.target.value)} rows={5}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            placeholder="Escribe observaciones para esta actividad..." />
+          <Group justify="flex-end">
+            <Button variant="default" size="sm" onClick={() => setActObsOpen(false)}>Cancelar</Button>
+            <Button size="sm" loading={savingActObs} onClick={guardarObsActividad}>Guardar</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal: documentos de actividad — zIndex alto para quedar encima del checklist */}
+      <Modal opened={actDocsOpen} onClose={() => setActDocsOpen(false)}
+        title={`Documentos — ${actDocsTarget?.act.nombre ?? ""}`} centered size="lg" radius="md" zIndex={400}>
+        <Stack gap="md">
+          <DropzoneCustomComponent
+            text={uploadingActDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta actividad"}
+            onDrop={subirDocActividad}
+          />
+          <Divider label="Documentos de esta actividad" labelPosition="center" />
+          {loadingActDocs ? (
+            <Group justify="center"><Loader size="sm" /></Group>
+          ) : actDocs.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center">No hay documentos para esta actividad.</Text>
+          ) : (
+            <ScrollArea style={{ maxHeight: 240 }}>
+              <Stack gap="xs">
+                {actDocs.map(doc => (
+                  <Group key={doc._id} justify="space-between" align="center">
+                    <div style={{ maxWidth: "70%" }}>
+                      <Text size="sm" fw={500} truncate="end">{doc.name}</Text>
+                      {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
+                    </div>
+                    <Group gap="xs">
+                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocActividad(doc._id)}>Eliminar</Button>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
+        </Stack>
+      </Modal>
+
+      {/* Modal: observaciones de subactividad — zIndex alto para quedar encima del checklist */}
+      <Modal opened={subObsOpen} onClose={() => setSubObsOpen(false)}
+        title={`Observaciones — ${subObsTarget?.sub.nombre ?? ""}`} centered size="md" radius="md" zIndex={400}>
+        <Stack>
+          <textarea value={subObsTexto} onChange={e => setSubObsTexto(e.target.value)} rows={5}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            placeholder="Escribe observaciones para esta subactividad..." />
+          <Group justify="flex-end">
+            <Button variant="default" size="sm" onClick={() => setSubObsOpen(false)}>Cancelar</Button>
+            <Button size="sm" loading={savingSubObs} onClick={guardarObsSubactividad}>Guardar</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Modal: documentos de subactividad — zIndex alto para quedar encima del checklist */}
+      <Modal opened={subDocsOpen} onClose={() => setSubDocsOpen(false)}
+        title={`Documentos — ${subDocsTarget?.sub.nombre ?? ""}`} centered size="lg" radius="md" zIndex={400}>
+        <Stack gap="md">
+          <DropzoneCustomComponent
+            text={uploadingSubDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta subactividad"}
+            onDrop={subirDocSubactividad}
+          />
+          <Divider label="Documentos de esta subactividad" labelPosition="center" />
+          {loadingSubDocs ? (
+            <Group justify="center"><Loader size="sm" /></Group>
+          ) : subDocs.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center">No hay documentos para esta subactividad.</Text>
+          ) : (
+            <ScrollArea style={{ maxHeight: 240 }}>
+              <Stack gap="xs">
+                {subDocs.map(doc => (
+                  <Group key={doc._id} justify="space-between" align="center">
+                    <div style={{ maxWidth: "70%" }}>
+                      <Text size="sm" fw={500} truncate="end">{doc.name}</Text>
+                      {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
+                    </div>
+                    <Group gap="xs">
+                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocSubactividad(doc._id)}>Eliminar</Button>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
+        </Stack>
+      </Modal>
+
       <Modal opened={checklistOpen}
         onClose={() => { setChecklistOpen(false); setEditActividadId(null); setNuevaActividad(""); }}
         title={faseActual ? `${faseActual.nombre} — Fase ${proceso.fase_actual}` : "Actividades"}
         centered size="lg" radius="md">
         {faseActual && (
           <Stack gap="sm">
-            {faseActual.actividades.map((act, index) => {
-              const firstIncompleteIndex = faseActual.actividades.findIndex(a => !a.completada);
-              const isFirstIncomplete    = !act.completada && index === firstIncompleteIndex;
-              const canToggle            = act.completada || isFirstIncomplete;
-              return (
-                <Paper key={act._id} withBorder radius="sm" p="sm">
-                  <Group justify="space-between" align="flex-start" wrap="nowrap">
-                    <Group gap="sm" align="flex-start" style={{ flex: 1 }}>
-                      <input type="checkbox" checked={act.completada}
-                        onChange={() => canToggle && toggleCompletada(faseActual, act)}
-                        disabled={!canToggle}
-                        style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
-                      />
-                      {editActividadId === act._id ? (
-                        <Stack gap={4} style={{ flex: 1 }}>
-                          <TextInput size="xs" label="Nombre de la actividad" value={editActividadNombre}
-                            onChange={e => setEditActividadNombre(e.currentTarget.value)} autoFocus />
-                          <TextInput size="xs" label="Responsables" placeholder="Opcional" value={editActividadResponsables}
-                            onChange={e => setEditActividadResponsables(e.currentTarget.value)} />
-                          <Group gap="xs" justify="flex-end">
-                            <Button size="xs" variant="default" onClick={() => setEditActividadId(null)}>Cancelar</Button>
-                            <Button size="xs" loading={savingActividad} onClick={() => guardarNombreActividad(faseActual, act)}>Guardar</Button>
-                          </Group>
-                        </Stack>
-                      ) : (
-                        <div style={{ flex: 1 }}>
-                          <Text size="sm" td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : "#000"}>{act.nombre}</Text>
-                          {act.responsables && <Text size="xs" c="dimmed">{act.responsables}</Text>}
-                        </div>
-                      )}
-                    </Group>
-                    {editActividadId !== act._id && (
-                      <Group gap={4}>
-                        <Button size="xs" variant="subtle" color="blue" onClick={() => { setEditActividadId(act._id); setEditActividadNombre(act.nombre); setEditActividadResponsables(act.responsables ?? ""); }}>✏</Button>
-                        <Button size="xs" variant="subtle" color="red" onClick={() => eliminarActividad(faseActual, act._id)}>🗑</Button>
-                      </Group>
-                    )}
-                  </Group>
-                </Paper>
-              );
-            })}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, faseActual)}>
+              <SortableContext items={faseActual.actividades.map(a => a._id)} strategy={verticalListSortingStrategy}>
+                {faseActual.actividades.map((act, index) => {
+                  const firstIncompleteIndex = faseActual.actividades.findIndex(a => !a.completada);
+                  const isFirstIncomplete    = !act.completada && index === firstIncompleteIndex;
+                  const canToggle            = act.completada || isFirstIncomplete;
+                  return (
+                    <SortableActividad
+                      key={act._id}
+                      act={act}
+                      index={index}
+                      faseActual={faseActual}
+                      editActividadId={editActividadId}
+                      editActividadNombre={editActividadNombre}
+                      editActividadResponsables={editActividadResponsables}
+                      savingActividad={savingActividad}
+                      canToggle={canToggle}
+                      onToggle={() => toggleCompletada(faseActual, act)}
+                      onEdit={() => { setEditActividadId(act._id); setEditActividadNombre(act.nombre); setEditActividadResponsables(act.responsables ?? ""); }}
+                      onDelete={() => eliminarActividad(faseActual, act._id)}
+                      onSave={() => guardarNombreActividad(faseActual, act)}
+                      onCancel={() => setEditActividadId(null)}
+                      setEditActividadNombre={setEditActividadNombre}
+                      setEditActividadResponsables={setEditActividadResponsables}
+                      onAddSubactividad={(nombre) => agregarSubactividad(faseActual, act, nombre)}
+                      onToggleSubactividad={(sub) => toggleSubactividad(faseActual, act, sub)}
+                      onDeleteSubactividad={(subId) => eliminarSubactividad(faseActual, act, subId)}
+                      onOpenDocsActividad={() => abrirDocsActividad(faseActual, act)}
+                      onOpenObsActividad={() => abrirObsActividad(faseActual, act)}
+                      onOpenDocsSubactividad={(sub) => abrirDocsSubactividad(faseActual, act, sub)}
+                      onOpenObsSubactividad={(sub) => abrirObsSubactividad(faseActual, act, sub)}
+                      actividadDocCount={actDocCounts[act._id] ?? 0}
+                      subactividadDocCounts={subDocCounts}
+                    />
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
+            <Group justify="flex-end" mt="xs">
+              <Button
+                size="xs"
+                color="green"
+                variant="light"
+                loading={finalizandoFase}
+                onClick={() => finalizarFase(faseActual)}
+              >
+                ✓ Finalizar fase
+              </Button>
+            </Group>
+
             <Divider label="Agregar actividad" labelPosition="center" />
-            <Select size="xs" label="Insertar en posición" placeholder="Al final"
-              data={faseActual.actividades.length === 0
-                ? [{ value: "0", label: "Al inicio (única posición)" }]
-                : [
-                    { value: "0", label: "Al inicio" },
-                    ...faseActual.actividades.map((a, i) => ({
-                      value: String(i + 1),
-                      label: `Después de: ${a.nombre.length > 45 ? a.nombre.slice(0, 45) + "…" : a.nombre}`,
-                    })),
-                  ]
-              }
-              value={posicionActividad} onChange={(v) => setPosicionActividad(v ?? "0")}
-              styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
-            />
             <Group gap="xs">
               <TextInput size="xs" placeholder="Nombre de la nueva actividad..." value={nuevaActividad}
                 onChange={e => setNuevaActividad(e.currentTarget.value)}

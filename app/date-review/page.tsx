@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Title, Select, Button, Text, Paper, Box, SimpleGrid, Group,
-  Loader, Modal, TextInput, Stack, Notification, Divider, Badge, Anchor, ScrollArea,
+  Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea,
 } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
 import axios from "axios";
@@ -14,6 +14,7 @@ import FaseBadge from "./components/FaseBadge";
 import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
+import AgregarProcesoModal from "./components/AgregarProcesoModal";
 
 const DateReviewPage = () => {
   const { userRole } = useRole();
@@ -53,20 +54,8 @@ const DateReviewPage = () => {
     }
   };
 
-  /* ── Modal agregar programa ── */
-  const [modalOpen, setModalOpen]           = useState(false);
-  const [newNombre, setNewNombre]           = useState("");
-  const [newCodigoSnies, setNewCodigoSnies] = useState("");
-  const [newFacultad, setNewFacultad]       = useState<string | null>(null);
-  const [newModalidad, setNewModalidad]     = useState<string | null>(null);
-  const [newNivelAcad, setNewNivelAcad]     = useState<string | null>(null);
-  const [newNivelForm, setNewNivelForm]     = useState<string | null>(null);
-  const [newNumCreditos, setNewNumCreditos] = useState("");
-  const [newNumSemestres, setNewNumSemestres] = useState("");
-  const [newAdmision, setNewAdmision]       = useState("");
-  const [newNumEstudSaces, setNewNumEstudSaces] = useState("");
-  const [saving, setSaving]                 = useState(false);
-  const [saveError, setSaveError]           = useState<string | null>(null);
+  /* ── Modal agregar proceso ── */
+  const [agregarProcesoOpen, setAgregarProcesoOpen] = useState(false);
 
   /* ── Programa seleccionado (modal detalle) ── */
   const [selectedProgram, setSelectedProgram]   = useState<Program | null>(null);
@@ -205,55 +194,31 @@ const DateReviewPage = () => {
   const barRegistro     = buildBarData("RC");
 
   const procesoRows: ProcesoRow[] = programasFiltradosCompleto.map((p) => {
-    const procRC     = getProceso(p.dep_code_programa, "RC");
-    const procAV     = getProceso(p.dep_code_programa, "AV");
-    const pmProc     = getProceso(p.dep_code_programa, "PM");
+    const procRC  = getProceso(p.dep_code_programa, "RC");
+    const procAV  = getProceso(p.dep_code_programa, "AV");
+    // Puede haber un PM por RC y otro por AV; tomamos el primero activo para la columna
+    const allPMs  = procesos.filter(pr => pr.program_code === p.dep_code_programa && pr.tipo_proceso === "PM" && pr.parent_process_id != null);
+    const pmProc  = allPMs[0] ?? null;
     const parentTipo = pmProc?.parent_tipo_proceso ?? null;
     return {
       programa:     p,
-      registro:     procRC?.fecha_vencimiento ? procRC.fase_actual : null,
-      acreditacion: procAV?.fecha_vencimiento ? procAV.fase_actual : null,
-      pmFase:       pmProc?.parent_process_id ? pmProc.fase_actual : null,
+      registro:     procRC ? procRC.fase_actual : null,
+      acreditacion: procAV ? procAV.fase_actual : null,
+      pmFase:       pmProc ? pmProc.fase_actual : null,
       pmLigadoA:    parentTipo,
-      pmSubtipo:    pmProc?.parent_process_id ? (pmProc.subtipo ?? null) : null,
+      pmSubtipo:    pmProc?.subtipo ?? null,
     };
   });
 
   const tituloTabla = `Fase de procesos de programas de ${facultad}`;
 
-  const handleGuardarPrograma = async () => {
-    if (!newNombre.trim() || !newFacultad) {
-      setSaveError("El nombre y la facultad son obligatorios.");
-      return;
-    }
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const facultadObj = facultades.find((f) => f.name === newFacultad);
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/programs`, {
-        nombre:                newNombre.trim(),
-        codigo_snies:          newCodigoSnies.trim() || undefined,
-        dep_code_facultad:     facultadObj?.dep_code,
-        dep_code_programa:     `PROG_${Date.now()}`,
-        modalidad:             newModalidad,
-        nivel_academico:       newNivelAcad,
-        nivel_formacion:       newNivelForm,
-        num_creditos:          newNumCreditos ? parseInt(newNumCreditos) : undefined,
-        num_semestres:         newNumSemestres ? parseInt(newNumSemestres) : undefined,
-        admision_estudiantes:  newAdmision.trim() || undefined,
-        num_estudiantes_saces: newNumEstudSaces ? parseInt(newNumEstudSaces) : undefined,
-      });
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs`);
-      setProgramas(Array.isArray(res.data) ? res.data : []);
-      setNewNombre(""); setNewCodigoSnies(""); setNewFacultad(null); setNewModalidad(null);
-      setNewNivelAcad(null); setNewNivelForm(null);
-      setNewNumCreditos(""); setNewNumSemestres(""); setNewAdmision(""); setNewNumEstudSaces("");
-      setModalOpen(false);
-    } catch (err: any) {
-      setSaveError(err?.response?.data?.error || "Error al guardar el programa.");
-    } finally {
-      setSaving(false);
-    }
+  const handleProcesoCreado = async () => {
+    const [resProg, resProc] = await Promise.all([
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs`),
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes`),
+    ]);
+    setProgramas(Array.isArray(resProg.data) ? resProg.data : []);
+    setProcesos(Array.isArray(resProc.data) ? resProc.data : []);
   };
 
   return (
@@ -291,43 +256,20 @@ const DateReviewPage = () => {
           )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          {programa === "Todos" && (
-            <Button variant="light" size="sm" fullWidth onClick={() => setModalOpen(true)}>Agregar programa</Button>
-          )}
+          <Button variant="light" size="sm" fullWidth onClick={() => setAgregarProcesoOpen(true)}>+ Agregar proceso</Button>
           <Button variant="subtle" size="sm" fullWidth onClick={abrirHistorial}>Ver historial</Button>
         </div>
       </Box>
 
-      {/* ── Modal agregar programa ── */}
-      <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Agregar programa" centered size="lg">
-        <Stack>
-          <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
-            value={newNombre} onChange={(e) => setNewNombre(e.currentTarget.value)} required />
-          <TextInput label="Código SNIES" placeholder="Ej: 12345"
-            value={newCodigoSnies} onChange={(e) => setNewCodigoSnies(e.currentTarget.value)} />
-          <Select label="Facultad" placeholder="Selecciona una facultad"
-            data={facultades.map((f) => f.name)} value={newFacultad} onChange={setNewFacultad} searchable required />
-          <SimpleGrid cols={2} spacing="sm">
-            <Select label="Modalidad" placeholder="Selecciona" data={["Presencial", "Virtual", "Híbrido"]}
-              value={newModalidad} onChange={setNewModalidad} />
-            <Select label="Nivel académico" placeholder="Selecciona" data={["Pregrado", "Posgrado"]}
-              value={newNivelAcad} onChange={setNewNivelAcad} />
-            <Select label="Nivel de formación" placeholder="Selecciona"
-              data={["Profesional", "Tecnológico", "Técnico", "Especialización", "Maestría", "Doctorado"]}
-              value={newNivelForm} onChange={setNewNivelForm} />
-            <TextInput label="Admisión de estudiantes" placeholder="Ej: Semestral"
-              value={newAdmision} onChange={(e) => setNewAdmision(e.currentTarget.value)} />
-            <TextInput label="Créditos" type="number" placeholder="Ej: 173"
-              value={newNumCreditos} onChange={(e) => setNewNumCreditos(e.currentTarget.value)} />
-            <TextInput label="Semestres" type="number" placeholder="Ej: 10"
-              value={newNumSemestres} onChange={(e) => setNewNumSemestres(e.currentTarget.value)} />
-            <TextInput label="Nro. estudiantes en SACES" type="number" placeholder="Ej: 250"
-              value={newNumEstudSaces} onChange={(e) => setNewNumEstudSaces(e.currentTarget.value)} />
-          </SimpleGrid>
-          {saveError && <Notification color="red" withCloseButton={false}>{saveError}</Notification>}
-          <Button onClick={handleGuardarPrograma} loading={saving} fullWidth>Guardar programa</Button>
-        </Stack>
-      </Modal>
+      {/* ── Modal agregar proceso ── */}
+      <AgregarProcesoModal
+        opened={agregarProcesoOpen}
+        onClose={() => setAgregarProcesoOpen(false)}
+        programas={programas}
+        facultades={facultades}
+        procesos={procesos}
+        onCreated={handleProcesoCreado}
+      />
 
       {/* ── CONTENIDO PRINCIPAL ── */}
       <div style={{ marginLeft: "201px", flex: 1, padding: "20px", paddingTop: "70px", minHeight: "calc(100vh - 194px)" }}>
@@ -397,7 +339,7 @@ const DateReviewPage = () => {
                           value={editForm.nivel_academico ?? null} onChange={(v) => setEditForm(f => ({ ...f, nivel_academico: v }))}
                           searchable={false} styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
                         <Select label="Nivel de formación"
-                          data={["Profesional", "Tecnológico", "Técnico", "Especialización", "Maestría", "Doctorado"]}
+                          data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
                           value={editForm.nivel_formacion ?? null} onChange={(v) => setEditForm(f => ({ ...f, nivel_formacion: v }))}
                           searchable={false} styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
                         <Select label="Estado" data={["Activo", "Inactivo"]}
@@ -409,7 +351,7 @@ const DateReviewPage = () => {
                           onChange={(e) => { const v = e.currentTarget.value; setEditForm(f => ({ ...f, num_semestres: Number(v) })); }} />
                         <TextInput label="Admisión de estudiantes" placeholder="Ej: Semestral" value={editForm.admision_estudiantes ?? ""}
                           onChange={(e) => { const v = e.currentTarget.value; setEditForm(f => ({ ...f, admision_estudiantes: v || null })); }} />
-                        <TextInput label="Nro. estudiantes en SACES" type="number" value={editForm.num_estudiantes_saces ?? ""}
+                        <TextInput label="Nro. estudiantes a ingresar (SACES)" type="number" value={editForm.num_estudiantes_saces ?? ""}
                           onChange={(e) => { const v = e.currentTarget.value; setEditForm(f => ({ ...f, num_estudiantes_saces: Number(v || 0) })); }} />
                       </SimpleGrid>
                       <Group justify="flex-end" gap="sm">
@@ -428,7 +370,7 @@ const DateReviewPage = () => {
                         { label: "Créditos",                  value: selectedProgram.num_creditos },
                         { label: "Semestres",                 value: selectedProgram.num_semestres },
                         { label: "Admisión de estudiantes",   value: selectedProgram.admision_estudiantes },
-                        { label: "Nro. estudiantes en SACES", value: selectedProgram.num_estudiantes_saces },
+                        { label: "Nro. estudiantes a ingresar (SACES)", value: selectedProgram.num_estudiantes_saces },
                       ].map(({ label, value }) => (
                         <Paper key={label} withBorder radius="sm" p="sm">
                           <Text size="xs" c="dimmed" mb={2}>{label}</Text>
@@ -464,26 +406,33 @@ const DateReviewPage = () => {
                       );
                     })}
                     {(() => {
-                      const allPMs    = procesos.filter(p => p.program_code === selectedProgram.dep_code_programa && p.tipo_proceso === "PM");
-                      const pmActivo  = allPMs.find(p => p.parent_process_id != null) ?? allPMs[0] ?? null;
-                      const parentProc = pmActivo ? procesos.find(p => p._id === pmActivo.parent_process_id) : null;
-                      return (
-                        <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
-                          <Text size="xs" fw={700} c="var(--mantine-color-blue-light-color)" mb={6}>Plan de mejoramiento</Text>
-                          {pmActivo ? (
-                            <>
-                              <Text size="xs" fw={700} c="#000">Ligado a</Text>
-                              <Text size="sm" c="#000" fw={400} mb={4}>{parentProc ? LABEL_PROCESO[parentProc.tipo_proceso] : "—"}</Text>
-                              <Text size="xs" fw={700} c="#000">Entrega plan al CNA</Text>
-                              <Text size="sm" c="#000" fw={400} mb={4}>{pmActivo.fecha_entrega_pm_cna ?? "—"}</Text>
-                              <Text size="xs" fw={700} c="#000">Radicación ante CNA</Text>
-                              <Text size="sm" c="#000" fw={400}>{pmActivo.fecha_radicacion_avance_cna ?? "—"}</Text>
-                            </>
-                          ) : (
-                            <Text size="xs" c="dimmed" mt={4}>No hay plan de mejoramiento activo</Text>
-                          )}
-                        </Paper>
+                      const allPMs = procesos.filter(p =>
+                        p.program_code === selectedProgram.dep_code_programa &&
+                        p.tipo_proceso === "PM" &&
+                        p.parent_process_id != null
                       );
+                      if (allPMs.length === 0) {
+                        return (
+                          <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
+                            <Text size="xs" fw={700} c="var(--mantine-color-blue-light-color)" mb={6}>Plan de mejoramiento</Text>
+                            <Text size="xs" c="dimmed" mt={4}>No hay plan de mejoramiento activo</Text>
+                          </Paper>
+                        );
+                      }
+                      return allPMs.map(pmActivo => {
+                        const parentProc = procesos.find(p => p._id === pmActivo.parent_process_id);
+                        return (
+                          <Paper key={pmActivo._id} withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
+                            <Text size="xs" fw={700} c="var(--mantine-color-blue-light-color)" mb={6}>
+                              Plan de mejoramiento — {parentProc ? LABEL_PROCESO[parentProc.tipo_proceso] : ""}
+                            </Text>
+                            <Text size="xs" fw={700} c="#000">Entrega plan al CNA</Text>
+                            <Text size="sm" c="#000" fw={400} mb={4}>{pmActivo.fecha_entrega_pm_cna ?? "—"}</Text>
+                            <Text size="xs" fw={700} c="#000">Radicación ante CNA</Text>
+                            <Text size="sm" c="#000" fw={400}>{pmActivo.fecha_radicacion_avance_cna ?? "—"}</Text>
+                          </Paper>
+                        );
+                      });
                     })()}
                   </SimpleGrid>
                 </Stack>

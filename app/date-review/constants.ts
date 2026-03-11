@@ -17,7 +17,7 @@ export const estadoColor: Record<string, string> = {
 };
 
 export const SUBTIPOS: Record<"RC" | "AV" | "PM", string[]> = {
-  RC: ["Nuevo", "Renovación", "No renovación", "Reforma/actualización curricular"],
+  RC: ["Nuevo", "Renovación", "No renovación", "Renovación + reforma", "Reforma curricular"],
   AV: ["Primera vez", "Renovación"],
   PM: ["Autoevaluación Registro calificado", "Autoevaluación Acreditación"],
 };
@@ -37,7 +37,7 @@ export const COLOR_PROCESO: Record<string, string> = {
 export const COLUMNAS_FECHA_RC_PM = [
   { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha vencimiento",              sub: "calculada con duración resolución" },
   { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Inicio proceso",                 sub: "" },
-  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura del par", sub: "" },
+  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura de vicerrectoría", sub: "" },
   { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en el SACES",         sub: "" },
   { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Fecha radicado en el MEN",       sub: "" },
 ] as const;
@@ -45,7 +45,7 @@ export const COLUMNAS_FECHA_RC_PM = [
 export const COLUMNAS_FECHA_AV = [
   { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha de la resolución AV / vencimiento", sub: "resolución + duración (años)" },
   { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Iniciación proceso A.V.",                 sub: "" },
-  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura del par",          sub: "" },
+  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura de vicerrectoría",  sub: "" },
   { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en SACES-CNA",                 sub: "" },
   { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Fecha radicación solicitud AV",           sub: "" },
 ] as const;
