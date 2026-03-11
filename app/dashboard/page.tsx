@@ -947,7 +947,7 @@ useEffect(() => {
         </Grid>
         
         {/* AI Assistant Button */}
-        <Button
+        {/*<Button
           style={{
             position: 'fixed',
             bottom: '20px',
@@ -961,7 +961,7 @@ useEffect(() => {
           onClick={() => setAiChatOpened(true)}
         >
           Hablar con Ardi
-        </Button>
+        </Button>*/}
       </Container>
       
       <AIChat opened={aiChatOpened} onClose={() => setAiChatOpened(false)} />

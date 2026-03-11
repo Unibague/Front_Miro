@@ -17,10 +17,13 @@ import {
   Progress,
   rem,
   Stack,
+  Modal,
+  Badge,
+  Select,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
-import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight } from "@tabler/icons-react";
+import { IconArrowLeft, IconDownload, IconEye, IconTable, IconTableFilled, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFileSearch } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -83,6 +86,23 @@ interface PublishedTemplate {
   deadline: Date;
 }
 
+interface TemplateStatusRow {
+  template_id: string;
+  template_name: string;
+  period: string;
+  deadline: string;
+  user_name: string;
+  user_email: string;
+  dependency: string;
+  has_submitted: boolean;
+  submitted_date: string | null;
+  total_assigned: number;
+  total_submitted: number;
+  total_pending: number;
+  completion_percentage: number;
+  pending_percentage: number;
+}
+
 const PublishedTemplatesPage = () => {
   const { userRole, setUserRole } = useRole();
   const router = useRouter();
@@ -96,6 +116,18 @@ const PublishedTemplatesPage = () => {
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   const [recentlyViewed, setRecentlyViewed] = useState<string[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Template status states
+  const [templateStatusModal, setTemplateStatusModal] = useState(false);
+  const [templateStatusData, setTemplateStatusData] = useState<TemplateStatusRow[]>([]);
+  const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
+  const [showConsolidatedReport, setShowConsolidatedReport] = useState(false);
+  const [consolidatedStatusFilter, setConsolidatedStatusFilter] = useState<string>('all');
+  
+  // Filter states for template status
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [emailFilter, setEmailFilter] = useState<string>('');
+  const [dependencyFilter, setDependencyFilter] = useState<string>('all');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   const fetchTemplates = async (page: number, search: string) => {
@@ -229,7 +261,7 @@ const PublishedTemplatesPage = () => {
       const data = response.data.data;
       const { template } = publishedTemplate;
 
-      // Campos de tipo fecha para formatear correctamente
+      // Campos de tipo fecha para formatear correctament
 const dateFields = new Set(
   template.fields
     .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
@@ -320,6 +352,180 @@ const dateFields = new Set(
       (pTemplate.loaded_data.length / pTemplate.producers_dep_code.length) * 100
     );
   };
+
+  const fetchTemplateStatus = async () => {
+    setLoadingTemplateStatus(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/template-status/submission-status`, {
+        params: {
+          periodId: selectedPeriodId
+        },
+        headers: {
+          'user-email': session?.user?.email,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
+      });
+      
+      setTemplateStatusData(response.data || []);
+      setShowConsolidatedReport(false);
+      setConsolidatedStatusFilter('all');
+      setTemplateStatusModal(true);
+    } catch (error) {
+      console.error('Error fetching template status:', error);
+      showNotification({
+        title: 'Error',
+        message: 'Error al obtener el estado de las plantillas',
+        color: 'red'
+      });
+    } finally {
+      setLoadingTemplateStatus(false);
+    }
+  };
+
+  const downloadTemplateStatusReport = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Estado Plantillas');
+      
+      const headers = ['Plantilla', 'Usuario', 'Email', 'Dependencia', 'Estado', 'Fecha Envío', 'Fecha Límite', 'Asignados', 'Enviados', 'Pendientes', '% Cumplimiento'];
+      const headerRow = worksheet.addRow(headers);
+      
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFF' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: '0f1f39' }
+        };
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      
+      filteredTemplateStatusData.forEach((item) => {
+        const userName = item.user_name || 'Sin usuario asignado';
+        const userEmail = item.user_email || 'N/A';
+        
+        worksheet.addRow([
+          item.template_name,
+          userName,
+          userEmail,
+          item.dependency,
+          item.has_submitted ? 'Enviado' : 'Pendiente',
+          item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
+          item.deadline ? new Date(item.deadline).toLocaleDateString() : '',
+          item.total_assigned ?? '',
+          item.total_submitted ?? '',
+          item.total_pending ?? '',
+          `${item.completion_percentage ?? 0}%`
+        ]);
+      });
+      
+      worksheet.columns.forEach((column) => {
+        column.width = 20;
+      });
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      saveAs(blob, `estado-plantillas-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      
+      showNotification({
+        title: 'Éxito',
+        message: 'Reporte descargado exitosamente',
+        color: 'green'
+      });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      showNotification({
+        title: 'Error',
+        message: 'Error al descargar el reporte',
+        color: 'red'
+      });
+    }
+  };
+
+  // Filter template status dat
+  const filteredTemplateStatusData = templateStatusData.filter(item => {
+    const matchesStatus = statusFilter === 'all' || 
+      (statusFilter === 'sent' && item.has_submitted) ||
+      (statusFilter === 'pending' && !item.has_submitted);
+    
+    const matchesEmail = !emailFilter || 
+      (item.user_email && item.user_email.toLowerCase().includes(emailFilter.toLowerCase())) ||
+      (item.user_name && item.user_name.toLowerCase().includes(emailFilter.toLowerCase()));
+    
+    const matchesDependency = dependencyFilter === 'all' || 
+      item.dependency === dependencyFilter;
+    
+    return matchesStatus && matchesEmail && matchesDependency;
+  });
+
+  // Get unique dependencies for filter
+  const uniqueDependencies = [...new Set(templateStatusData.map(item => item.dependency))].sort();
+
+  const groupedTemplateStatus = filteredTemplateStatusData.reduce((acc, item) => {
+    const key = item.template_id;
+
+    if (!acc[key]) {
+      acc[key] = {
+        template_id: item.template_id,
+        template_name: item.template_name,
+        period: item.period,
+        deadline: item.deadline,
+        total_assigned: item.total_assigned,
+        total_submitted: item.total_submitted,
+        total_pending: item.total_pending,
+        completion_percentage: item.completion_percentage,
+        pending_percentage: item.pending_percentage,
+        sent: [] as TemplateStatusRow[],
+        pending: [] as TemplateStatusRow[],
+      };
+    }
+
+    if (item.has_submitted) {
+      acc[key].sent.push(item);
+    } else {
+      acc[key].pending.push(item);
+    }
+
+    return acc;
+  }, {} as Record<string, {
+    template_id: string;
+    template_name: string;
+    period: string;
+    deadline: string;
+    total_assigned: number;
+    total_submitted: number;
+    total_pending: number;
+    completion_percentage: number;
+    pending_percentage: number;
+    sent: TemplateStatusRow[];
+    pending: TemplateStatusRow[];
+  }>);
+
+  const templateStatusGroups = Object.values(groupedTemplateStatus).sort((a, b) =>
+    a.template_name.localeCompare(b.template_name)
+  );
+  const visibleTemplateStatusGroups = templateStatusGroups.filter((group) => {
+    if (!showConsolidatedReport || consolidatedStatusFilter === 'all') {
+      return true;
+    }
+
+    if (consolidatedStatusFilter === 'completed') {
+      return group.total_pending === 0;
+    }
+
+    if (consolidatedStatusFilter === 'pending') {
+      return group.total_pending > 0;
+    }
+
+    return true;
+  });
 
   const finalSortedTemplates = recentlyViewed.length > 0 ? sortTemplatesByRecent(sortedTemplates) : sortedTemplates;
   
@@ -482,15 +688,26 @@ const dateFields = new Set(
               Ir a Configuración de Plantillas
             </Button>
 
-            <Button
-              onClick={() =>
-                router.push("/templates/published/update")
-              }
-              variant="outline"
-              leftSection={<IconArrowRight size={16} />}
-            >
-              Cambiar fechas de entrega plantillas
-            </Button>
+            <Group>
+              <Button
+                onClick={fetchTemplateStatus}
+                loading={loadingTemplateStatus}
+                variant="outline"
+                leftSection={<IconFileSearch size={16} />}
+              >
+                Estado de Plantillas
+              </Button>
+
+              <Button
+                onClick={() =>
+                  router.push("/templates/published/update")
+                }
+                variant="outline"
+                leftSection={<IconArrowRight size={16} />}
+              >
+                Cambiar fechas de entrega plantillas
+              </Button>
+            </Group>
 
             </>
           )
@@ -584,6 +801,218 @@ const dateFields = new Set(
           boundaries={3}
         />
       </Center>
+      
+      {/* Template Status Modal */}
+      <Modal
+        opened={templateStatusModal}
+        onClose={() => {
+          setTemplateStatusModal(false);
+          setShowConsolidatedReport(false);
+          setConsolidatedStatusFilter('all');
+        }}
+        title="Estado de Envío de Plantillas"
+        size="xl"
+      >
+        <Group justify="space-between" mb="md">
+          <Text size="sm" c="dimmed">
+            Mostrando {templateStatusGroups.length} plantillas y {filteredTemplateStatusData.length} registros
+          </Text>
+          {showConsolidatedReport ? (
+            <Group>
+              <Button
+                onClick={() => setShowConsolidatedReport(false)}
+                variant="outline"
+              >
+                Volver al detalle
+              </Button>
+              <Button
+                onClick={downloadTemplateStatusReport}
+                leftSection={<IconDownload size={16} />}
+                variant="outline"
+              >
+                Descargar Reporte
+              </Button>
+            </Group>
+          ) : (
+            <Button
+              onClick={() => setShowConsolidatedReport(true)}
+              variant="outline"
+            >
+              Reporte consolidado
+            </Button>
+          )}
+        </Group>
+
+        {!showConsolidatedReport && (
+        <Group mb="md">
+          <Select
+            placeholder="Estado"
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value || 'all')}
+            data={[
+              { value: 'all', label: 'Todos' },
+              { value: 'sent', label: 'Enviados' },
+              { value: 'pending', label: 'Pendientes' }
+            ]}
+            w={120}
+          />
+          <TextInput
+            placeholder="Buscar por email o usuario"
+            value={emailFilter}
+            onChange={(e) => setEmailFilter(e.currentTarget.value)}
+            w={250}
+          />
+          <Select
+            placeholder="Dependencia"
+            value={dependencyFilter}
+            onChange={(value) => setDependencyFilter(value || 'all')}
+            data={[
+              { value: 'all', label: 'Todas' },
+              ...uniqueDependencies.map(dep => ({ value: dep, label: dep }))
+            ]}
+            w={250}
+            searchable
+          />
+        </Group>
+        )}
+
+        {showConsolidatedReport && (
+          <Group mb="md">
+            <Select
+              placeholder="Estado consolidado"
+              value={consolidatedStatusFilter}
+              onChange={(value) => setConsolidatedStatusFilter(value || 'all')}
+              data={[
+                { value: 'all', label: 'Todas' },
+                { value: 'completed', label: 'Completadas' },
+                { value: 'pending', label: 'Pendientes' }
+              ]}
+              w={180}
+            />
+          </Group>
+        )}
+
+        <Stack gap="md">
+          {visibleTemplateStatusGroups.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No hay resultados para los filtros seleccionados.
+            </Text>
+          ) : (
+            visibleTemplateStatusGroups.map((group) => (
+              <Stack
+                key={group.template_id}
+                gap="md"
+                p="md"
+                style={{ border: '1px solid #e9ecef', borderRadius: rem(8) }}
+              >
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text fw={700}>{group.template_name}</Text>
+                    <Text size="sm" c="dimmed">
+                      Periodo: {group.period} | Fecha límite: {group.deadline ? new Date(group.deadline).toLocaleDateString() : 'N/A'}
+                    </Text>
+                  </div>
+                  <Badge color={group.total_pending === 0 ? 'green' : 'orange'} variant="light" size="lg">
+                    {group.completion_percentage}% completado
+                  </Badge>
+                </Group>
+
+                <Group grow>
+                  <Badge variant="outline" color="blue" size="lg">
+                    Asignados: {group.total_assigned}
+                  </Badge>
+                  <Badge variant="outline" color="green" size="lg">
+                    Enviados: {group.total_submitted}
+                  </Badge>
+                  <Badge variant="outline" color="orange" size="lg">
+                    Pendientes: {group.total_pending}
+                  </Badge>
+                </Group>
+
+                <Progress
+                  value={group.completion_percentage}
+                  color={group.total_pending === 0 ? 'green' : 'blue'}
+                  size="lg"
+                  radius="xl"
+                />
+
+                {!showConsolidatedReport && (
+                  <>
+                <Group grow align="flex-start">
+                  <Stack gap={6}>
+                    <Text fw={600} c="green">
+                      Responsables que enviaron
+                    </Text>
+                    {group.sent.length === 0 ? (
+                      <Text size="sm" c="dimmed">Nadie ha enviado todavía.</Text>
+                    ) : (
+                      <List size="sm" spacing={4}>
+                        {group.sent.map((item, index) => (
+                          <List.Item key={`${group.template_id}-sent-${index}`}>
+                            {item.user_name || 'N/A'} - {item.dependency}
+                            {item.submitted_date ? ` (${new Date(item.submitted_date).toLocaleDateString()})` : ''}
+                          </List.Item>
+                        ))}
+                      </List>
+                    )}
+                  </Stack>
+
+                  <Stack gap={6}>
+                    <Text fw={600} c="orange">
+                      Responsables pendientes
+                    </Text>
+                    {group.pending.length === 0 ? (
+                      <Text size="sm" c="dimmed">No hay pendientes.</Text>
+                    ) : (
+                      <List size="sm" spacing={4}>
+                        {group.pending.map((item, index) => (
+                          <List.Item key={`${group.template_id}-pending-${index}`}>
+                            {item.user_name || 'Sin usuario asignado'} - {item.dependency}
+                          </List.Item>
+                        ))}
+                      </List>
+                    )}
+                  </Stack>
+                </Group>
+
+                <Table striped withTableBorder>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Usuario</Table.Th>
+                      <Table.Th>Email</Table.Th>
+                      <Table.Th>Dependencia</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                      <Table.Th>Fecha Envío</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {[...group.sent, ...group.pending].map((item, index) => (
+                      <Table.Tr key={`${group.template_id}-row-${index}`}>
+                        <Table.Td>{item.user_name || 'Sin usuario asignado'}</Table.Td>
+                        <Table.Td>{item.user_email || 'N/A'}</Table.Td>
+                        <Table.Td>{item.dependency}</Table.Td>
+                        <Table.Td>
+                          <Badge
+                            color={item.has_submitted ? 'green' : 'orange'}
+                            variant="light"
+                          >
+                            {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          {item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : ''}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+                  </>
+                )}
+              </Stack>
+            ))
+          )}
+        </Stack>
+      </Modal>
     </Container>
   );
 };

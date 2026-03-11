@@ -10,7 +10,7 @@ import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group,
 import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, IconCloudUpload, IconDownload, IconEdit, IconEye, IconSend, IconX } from "@tabler/icons-react";
 import classes from "../../../responsible/reports/ResponsibleReportsPage.module.css";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 
 interface Report {
   _id: string;
@@ -109,9 +109,9 @@ const ResponsibleReportPage = () => {
   };
 
   const isWithinProducerDateWindow = (): boolean => {
-  const now = dateNow();
+  const now = new Date();
   const start = new Date(publishedReport?.period?.producer_report_start_date ?? "");
-  const end = new Date(publishedReport?.period?.producer_report_end_date ?? "");
+  const end = endOfDayGMT5(publishedReport?.period?.producer_report_end_date ?? "");
   return now >= start && now <= end;
 };
 
@@ -464,12 +464,12 @@ const ResponsibleReportPage = () => {
             
           />
           <Tooltip
-            label={(new Date(publishedReport?.deadline || "") < dateNow()) ?
+            label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date()) ?
               "El plazo para enviar el informe ha expirado" :
               "No puedes modificar el informe si ya fue aprobado o está en revisión"}
             transitionProps={{ transition: "fade-up", duration: 300 }}
             disabled={!isWithinProducerDateWindow() || !sendsHistory.some((report) => report.status === "Aprobado" 
-              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow()) } 
+              || report.status === "En Revisión") && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date()) } 
           >
             <Button
               onClick={() => {
@@ -491,7 +491,7 @@ const ResponsibleReportPage = () => {
               mt={25}
               disabled={sendsHistory.some(
                 (report) => report.status === "Aprobado" || report.status === "En Revisión"
-              ) || (new Date(publishedReport?.deadline || "") < dateNow()) || !isWithinProducerDateWindow()}
+              ) || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()) || !isWithinProducerDateWindow()}
             >
               {sendsHistory[0]?.status === "En Borrador"
                 ? "Modificar borrador"
@@ -511,7 +511,7 @@ const ResponsibleReportPage = () => {
         <Collapse in={openedReportForm}>
           <Group grow gap={'xl'}>
             <Tooltip
-              label={(new Date(publishedReport?.deadline || "") < dateNow()) ? 
+              label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date()) ? 
                 "El plazo para enviar el informe ha expirado" :
                 "No has hecho cambios"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
@@ -523,7 +523,7 @@ const ResponsibleReportPage = () => {
                 variant="outline"
                 disabled={publishedReport?.filled_reports[0]?.status === "Rechazado" ||
                   sendsHistory.some((report) => report.status === "Aprobado" 
-                  || report.status === "En Revisión" || (new Date(publishedReport?.deadline || "") < dateNow()))
+                  || report.status === "En Revisión" || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()))
                 }
                 onClick={loadDraft}
                 loading={saving}
@@ -543,7 +543,7 @@ const ResponsibleReportPage = () => {
                 color="blue"
                 disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
                   sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión")
-                  || (new Date(publishedReport?.deadline || "") < dateNow())
+                  || (endOfDayGMT5(publishedReport?.deadline || "") < new Date())
                 }
                 onClick={sendReport}
                 loading={sending}

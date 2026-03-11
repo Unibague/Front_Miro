@@ -16,7 +16,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { dateToGMT } from "@/app/components/DateConfig";
+import { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 import { IconBulb, IconReportAnalytics } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
@@ -122,7 +122,7 @@ const ResponsibleReportsPage = () => {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/byId/${periodId}`);
       const { responsible_start_date, responsible_end_date } = response.data;
       const today = new Date();
-      const isValid = today <= new Date(responsible_end_date);
+      const isValid = today <= endOfDayGMT5(responsible_end_date);
       setValidPeriod(prev => ({ ...prev, [periodId]: isValid }));
     } catch (error) {
       console.error("Error validating period", error);
