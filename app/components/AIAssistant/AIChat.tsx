@@ -157,12 +157,12 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/generate-${type}`,
         { 
-          prompt: prompt.trim(),
-          returnBase64: true
+          prompt: prompt.trim()
+          // NO enviamos returnBase64: true porque queremos respuesta binaria
         },
         {
           timeout: 600000, // 10 minutos
-          responseType: 'blob' // Importante: manejar como blob
+          responseType: 'blob' // Recibir como blob binario
         }
       );
 
