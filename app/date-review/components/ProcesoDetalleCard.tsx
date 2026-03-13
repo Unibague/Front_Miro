@@ -36,7 +36,7 @@ const SortableActividad = ({
   savingActividad, canToggle,
   onToggle, onEdit, onDelete, onSave, onCancel,
   setEditActividadNombre, setEditActividadResponsables,
-  onAddSubactividad, onToggleSubactividad, onDeleteSubactividad,
+  onAddSubactividad, onToggleSubactividad, onDeleteSubactividad, onReorderSubactividades,
   onOpenDocsActividad, onOpenObsActividad,
   onOpenDocsSubactividad, onOpenObsSubactividad,
   actividadDocCount, subactividadDocCounts,
@@ -63,6 +63,7 @@ const SortableActividad = ({
   onOpenObsActividad: () => void;
   onOpenDocsSubactividad: (sub: Subactividad) => void;
   onOpenObsSubactividad: (sub: Subactividad) => void;
+  onReorderSubactividades: (newOrder: string[]) => void;
   actividadDocCount: number;
   subactividadDocCounts: Record<string, number>;
 }) => {
@@ -149,7 +150,7 @@ const SortableActividad = ({
 
             {expandSubs && (
               <Stack gap={4} mt={6}>
-                {act.subactividades.map(sub => (
+                {act.subactividades.map((sub, subIdx) => (
                   <Paper key={sub._id} withBorder radius="xs" p={6}
                     style={{ background: sub.completada ? "#f8f9fa" : undefined }}>
                     <Group justify="space-between" wrap="nowrap">
@@ -165,6 +166,23 @@ const SortableActividad = ({
                         </div>
                       </Group>
                       <Group gap={2} wrap="nowrap">
+                        {/* Botones de reorden ↑/↓ */}
+                        <Button size="xs" variant="subtle" color="gray" p={2}
+                          disabled={subIdx === 0}
+                          title="Mover arriba"
+                          onClick={() => {
+                            const ids = act.subactividades.map(s => s._id);
+                            const tmp = ids[subIdx - 1]; ids[subIdx - 1] = ids[subIdx]; ids[subIdx] = tmp;
+                            onReorderSubactividades(ids);
+                          }}>↑</Button>
+                        <Button size="xs" variant="subtle" color="gray" p={2}
+                          disabled={subIdx === act.subactividades.length - 1}
+                          title="Mover abajo"
+                          onClick={() => {
+                            const ids = act.subactividades.map(s => s._id);
+                            const tmp = ids[subIdx + 1]; ids[subIdx + 1] = ids[subIdx]; ids[subIdx] = tmp;
+                            onReorderSubactividades(ids);
+                          }}>↓</Button>
                         <Button size="xs" variant="subtle" color="gray" title="Observaciones"
                           onClick={() => onOpenObsSubactividad(sub)}>
                           📝{sub.observaciones ? " ●" : ""}
@@ -683,6 +701,21 @@ const ProcesoDetalleCard = ({
     try {
       const res = await axios.delete(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${subId}`
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  const reorderSubactividades = async (fase: Phase, act: Actividad, newOrder: string[]) => {
+    // Actualización optimista local
+    const newSubs = newOrder.map(id => act.subactividades.find(s => s._id === id)).filter(Boolean) as Subactividad[];
+    const updatedAct  = { ...act, subactividades: newSubs };
+    const updatedFase = { ...fase, actividades: fase.actividades.map(a => a._id === act._id ? updatedAct : a) };
+    onUpdateFases(fases.map(f => f._id === fase._id ? updatedFase : f));
+    try {
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/reorder`,
+        { orden: newOrder }
       );
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
     } catch (e) { console.error(e); }
@@ -1233,9 +1266,9 @@ const ProcesoDetalleCard = ({
                 const fecha        = proceso[col.key as keyof Process] as string | null;
                 const isEditing    = editingDateKey === col.key;
                 const dateVal      = fecha ? new Date(fecha + "T12:00:00") : null;
-                // fecha_radicado_men es editable para RC Nuevo (no hay resolución ni auto-cálculo)
+                // fecha_radicado_men es editable para RC Nuevo y AV Primera vez
                 const esSoloLectura = col.key === "fecha_vencimiento" ||
-                  (col.key === "fecha_radicado_men" && proceso.subtipo !== "Nuevo");
+                  (col.key === "fecha_radicado_men" && proceso.subtipo !== "Nuevo" && proceso.subtipo !== "Primera vez");
                 const obsValor     = proceso[col.obsKey as keyof Process] as string ?? "";
                 return (
                   <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
@@ -1779,6 +1812,7 @@ const ProcesoDetalleCard = ({
                       onAddSubactividad={(nombre) => agregarSubactividad(faseActual, act, nombre)}
                       onToggleSubactividad={(sub) => toggleSubactividad(faseActual, act, sub)}
                       onDeleteSubactividad={(subId) => eliminarSubactividad(faseActual, act, subId)}
+                      onReorderSubactividades={(newOrder) => reorderSubactividades(faseActual, act, newOrder)}
                       onOpenDocsActividad={() => abrirDocsActividad(faseActual, act)}
                       onOpenObsActividad={() => abrirObsActividad(faseActual, act)}
                       onOpenDocsSubactividad={(sub) => abrirDocsSubactividad(faseActual, act, sub)}
