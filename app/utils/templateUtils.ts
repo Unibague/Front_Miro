@@ -64,8 +64,8 @@ const toOptionText = (value: unknown): string => {
 const getValidatorOptions = (
   validator: ValidatorOptionSource,
   preferredColumnName?: string
-): string[] => {
-  const options: string[] = [];
+): { value: string; displayLabel: string }[] => {
+  const options: { value: string; displayLabel: string }[] = [];
   const seen = new Set<string>();
 
   validator.values.forEach((row) => {
@@ -95,11 +95,11 @@ const getValidatorOptions = (
 
     const descValue = descKey ? resolveValueByKey(row, descKey) : undefined;
     const descText = toOptionText(descValue);
-    const text = descText ? `${idText} - ${descText}` : idText;
+    const displayLabel = descText ? `${idText} - ${descText}` : idText;
 
-    if (!text || seen.has(text)) return;
-    seen.add(text);
-    options.push(text);
+    if (seen.has(idText)) return;
+    seen.add(idText);
+    options.push({ value: idText, displayLabel });
   });
 
   return options;
@@ -141,8 +141,9 @@ export const applyValidatorDropdowns = ({
     const options = getValidatorOptions(validator, validatorColumnName);
     if (options.length === 0) return;
 
+    // Store the full display label ("CC - Cédula de ciudadanía") in the dropdown list
     options.forEach((option, optionIndex) => {
-      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option;
+      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.displayLabel;
     });
 
     const colLetter = toColumnLetter(sourceCol);
@@ -154,11 +155,11 @@ export const applyValidatorDropdowns = ({
           .replace(/\r/g, "\n")
           .trim()
       : "";
-    const promptBase = normalizedComment.slice(0, 220);
+
     const promptText =
       normalizedComment.length > 220
-        ? `${promptBase}... (ver hoja Guia)`
-        : promptBase;
+        ? `${normalizedComment.slice(0, 217)}... (ver hoja Guia)`
+        : normalizedComment;
 
     for (let row = startRow; row <= endRow; row++) {
       const cell = worksheet.getCell(row, templateCol);

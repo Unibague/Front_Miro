@@ -9,7 +9,7 @@ import classes from './DropzoneButton.module.css';
 import { showNotification } from '@mantine/notifications';
 import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
-import { dateNow } from '../DateConfig';
+import { endOfDayGMT5 } from '../DateConfig';
 
 interface DropzoneButtonProps {
   pubTemId: string;
@@ -28,7 +28,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
 
 const handleFileDrop = async (files: File[]) => {
-  if (endDate && new Date(endDate) < dateNow()) {
+  if (endDate && endOfDayGMT5(new Date(endDate)) < new Date()) {
     showNotification({
       title: 'Error',
       message: 'La fecha de carga de plantillas ha culminado.',
@@ -52,11 +52,69 @@ const handleFileDrop = async (files: File[]) => {
     const data: Record<string, any>[] = [];
     let hasInvalidColumns = false;
 
-    // 🧠 Obtener tipos desde el template en backend
+    // 🧠 Obtener tipos y validadores desde el template en backend
     const templateResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${pubTemId}`);
     const fieldTypeMap: Record<string, string> = {};
+    const fieldValidatorLookup: Record<string, Map<string, string>> = {};
+
+    const _vNorm = (s: string) =>
+      String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+    const _vStr = (v: unknown): string => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string') return v.trim();
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+      if (typeof v === 'object' && '$numberInt' in (v as any)) return String((v as any).$numberInt ?? '').trim();
+      return String(v).trim();
+    };
+
+    const validators: any[] = templateResponse.data.template.validators || [];
+
     templateResponse.data.template.fields.forEach((field: any) => {
       fieldTypeMap[field.name] = field.datatype;
+      if (!field.validate_with || field.multiple) return;
+      const validateWithStr = typeof field.validate_with === 'string'
+        ? field.validate_with
+        : (field.validate_with as any)?.name ?? '';
+      if (!validateWithStr) return;
+
+      const parts = validateWithStr.split(' - ');
+      const validatorName = parts[0]?.trim();
+      const preferredColumn = parts.slice(1).join(' - ').trim();
+      if (!validatorName) return;
+
+      const validator = validators.find((v: any) => _vNorm(v.name) === _vNorm(validatorName));
+      if (!validator || !Array.isArray(validator.values)) return;
+
+      const lookup = new Map<string, string>();
+      validator.values.forEach((row: any) => {
+        const keys = Object.keys(row || {});
+        if (!keys.length) return;
+
+        const idKey = preferredColumn
+          ? keys.find(k => _vNorm(k) === _vNorm(preferredColumn))
+          : keys[0];
+        const mainKey = idKey || keys[0];
+        const idText = _vStr(row[mainKey]);
+        if (!idText) return;
+
+        const descKey = keys.find(k => {
+          if (k === mainKey) return false;
+          const n = _vNorm(k);
+          return n.includes('DESCRIPCION') || n.includes('NOMBRE') || n.startsWith('DESC');
+        });
+        const descText = descKey ? _vStr(row[descKey]) : '';
+
+        // Map: código solo → código (para valores ya correctos)
+        lookup.set(_vNorm(idText), idText);
+        if (descText) {
+          // Map: "código - descripción" → código (selección del dropdown)
+          lookup.set(_vNorm(`${idText} - ${descText}`), idText);
+          // Map: descripción sola → código (archivos legados)
+          lookup.set(_vNorm(descText), idText);
+        }
+      });
+
+      if (lookup.size > 0) fieldValidatorLookup[field.name] = lookup;
     });
 
 sheet.eachRow((row, rowNumber) => {
@@ -118,66 +176,75 @@ const multiple = templateResponse.data.template.fields.find((f: { name: string; 
     const raw = String(rawValue ?? "").trim();
     parsedValue = raw.split(",").map(v => v.trim()).filter(Boolean);
   } else {
+    // 🔑 Resolver código del validador ANTES de convertir el tipo
+    // Soporta: "CC - Cédula de ciudadanía" → "CC", "1 - Financiero" → "1", "FINANCIERO" → "1"
+    if (fieldValidatorLookup[key]) {
+      const rawStr = _vStr(cell.value);
+      if (rawStr) {
+        const found = fieldValidatorLookup[key].get(_vNorm(rawStr));
+        if (found !== undefined) parsedValue = found;
+      }
+    }
+
     switch (tipo) {
       case "Entero":
-        if (typeof cell.value === 'object' && cell.value !== null) {
-          parsedValue = String(cell.value);
+        if (typeof parsedValue === 'object' && parsedValue !== null) {
+          parsedValue = String(parsedValue);
         } else {
-          parsedValue = parseInt(String(cell.value));
-          if (isNaN(parsedValue)) parsedValue = String(cell.value);
+          parsedValue = parseInt(String(parsedValue));
+          if (isNaN(parsedValue)) parsedValue = String(parsedValue);
         }
         break;
 
       case "Decimal":
       case "Porcentaje":
-        if (typeof cell.value === 'object' && cell.value !== null) {
-          parsedValue = String(cell.value);
+        if (typeof parsedValue === 'object' && parsedValue !== null) {
+          parsedValue = String(parsedValue);
         } else {
-          parsedValue = parseFloat(String(cell.value));
-          if (isNaN(parsedValue)) parsedValue = String(cell.value);
+          parsedValue = parseFloat(String(parsedValue));
+          if (isNaN(parsedValue)) parsedValue = String(parsedValue);
         }
         break;
 
       case "Fecha":
-        if (typeof cell.value === 'object' && cell.value !== null) {
-          parsedValue = String(cell.value);
+        if (typeof parsedValue === 'object' && parsedValue !== null) {
+          parsedValue = String(parsedValue);
         } else {
-          const dateValue = new Date(String(cell.value));
-          parsedValue = isNaN(dateValue.getTime()) ? String(cell.value) : dateValue.toISOString();
+          const dateValue = new Date(String(parsedValue));
+          parsedValue = isNaN(dateValue.getTime()) ? String(parsedValue) : dateValue.toISOString();
         }
         break;
 
       case "True/False":
-        if (typeof cell.value === 'object' && cell.value !== null) {
-          parsedValue = String(cell.value);
+        if (typeof parsedValue === 'object' && parsedValue !== null) {
+          parsedValue = String(parsedValue);
         } else {
-          parsedValue = String(cell.value).toLowerCase() === "si" || cell.value === true;
+          parsedValue = String(parsedValue).toLowerCase() === "si" || parsedValue === true;
         }
         break;
 
       case "Texto Corto":
       case "Texto Largo":
-        parsedValue = typeof cell.value === 'object' && cell.value !== null ? 
-          JSON.stringify(cell.value) : String(cell.value ?? "");
+        parsedValue = typeof parsedValue === 'object' && parsedValue !== null ?
+          JSON.stringify(parsedValue) : String(parsedValue ?? "");
         break;
 
       case "Fecha Inicial / Fecha Final":
-        if (typeof cell.value === 'object' && cell.value !== null) {
-          parsedValue = JSON.stringify(cell.value);
+        if (typeof parsedValue === 'object' && parsedValue !== null) {
+          parsedValue = JSON.stringify(parsedValue);
         } else {
           try {
-            parsedValue = JSON.parse(String(cell.value));
+            parsedValue = JSON.parse(String(parsedValue));
             if (!Array.isArray(parsedValue) || parsedValue.length !== 2) throw new Error();
           } catch {
-            parsedValue = String(cell.value);
+            parsedValue = String(parsedValue);
           }
         }
         break;
 
       default:
-        // Asegurar que no se envíen objetos complejos
-        parsedValue = typeof cell.value === 'object' && cell.value !== null ? 
-          JSON.stringify(cell.value) : cell.value;
+        parsedValue = typeof parsedValue === 'object' && parsedValue !== null ?
+          JSON.stringify(parsedValue) : parsedValue;
     }
   }
 

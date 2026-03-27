@@ -5,11 +5,12 @@ import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group, Modal, Pill, rem, Select, Table, Text, TextInput, Title, Tooltip, useMantineTheme } from "@mantine/core";
 import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, IconCloudUpload, IconDownload, IconEdit, IconEye, IconSend, IconX } from "@tabler/icons-react";
 import classes from "../../../responsible/reports/ResponsibleReportsPage.module.css";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 
 interface Report {
   _id: string;
@@ -108,9 +109,9 @@ const ResponsibleReportPage = () => {
   };
 
   const isWithinProducerDateWindow = (): boolean => {
-  const now = dateNow();
+  const now = new Date();
   const start = new Date(publishedReport?.period?.producer_report_start_date ?? "");
-  const end = new Date(publishedReport?.period?.producer_report_end_date ?? "");
+  const end = endOfDayGMT5(publishedReport?.period?.producer_report_end_date ?? "");
   return now >= start && now <= end;
 };
 
@@ -143,6 +144,51 @@ const ResponsibleReportPage = () => {
   }, []);
 
   const loadDraft = async () => {
+    // Verificar si ya tiene un informe cargado
+    const hasExistingReport = publishedReport?.filled_reports[0]?.report_file || reportFile;
+    const hasExistingAttachments = (publishedReport?.filled_reports[0]?.attachments?.length || 0) > 0 || attachments.length > 0;
+    
+    if (hasExistingReport || hasExistingAttachments) {
+      modals.openConfirmModal({
+        title: "Confirmar guardado de borrador",
+        centered: true,
+        children: (
+          <Text size="sm">
+            ¿Estás seguro de que deseas guardar este borrador?
+            <br /><br />
+            {hasExistingReport && "Se actualizará el archivo de informe existente."}
+            {hasExistingAttachments && "Se actualizarán los anexos existentes."}
+            <br /><br />
+            <strong>Esta acción guardará los cambios realizados.</strong>
+          </Text>
+        ),
+        labels: { confirm: "Sí, guardar borrador", cancel: "Cancelar" },
+        confirmProps: { color: "blue" },
+        onConfirm: async () => {
+          await performLoadDraft();
+        },
+      });
+    } else {
+      modals.openConfirmModal({
+        title: "Confirmar guardado de borrador",
+        centered: true,
+        children: (
+          <Text size="sm">
+            ¿Estás seguro de que deseas guardar este borrador?
+            <br /><br />
+            Asegúrate de haber cargado el archivo de informe y los anexos necesarios.
+          </Text>
+        ),
+        labels: { confirm: "Sí, guardar borrador", cancel: "Cancelar" },
+        confirmProps: { color: "blue" },
+        onConfirm: async () => {
+          await performLoadDraft();
+        },
+      });
+    }
+  };
+
+  const performLoadDraft = async () => {
     setSaving(true);
     try {
       const formData = new FormData();
@@ -196,7 +242,7 @@ const ResponsibleReportPage = () => {
         color: "red",
       });
     }
-  }
+  };
 
   const sendReport = async () => {
     if (!publishedReport) {
@@ -236,6 +282,28 @@ const ResponsibleReportPage = () => {
       }
     }
 
+    // Modal de confirmación para envío
+    modals.openConfirmModal({
+      title: "⚠️ Confirmar envío de informe",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas enviar este informe?
+          <br /><br />
+          <strong>Una vez enviado, el informe pasará a estado "En Revisión" y no podrás realizar modificaciones hasta que sea evaluado.</strong>
+          <br /><br />
+          Asegúrate de que toda la información esté completa y correcta antes de continuar.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar informe", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        await performSendReport();
+      },
+    });
+  };
+
+  const performSendReport = async () => {
     try {
       setSending(true)
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/producer/send`, {
@@ -258,15 +326,15 @@ const ResponsibleReportPage = () => {
         color: "green",
       });
 
-    } catch (error) {
+    } catch(error) {
       setSending(false);
       console.error(error);
       showNotification({
         title: "Error",
         message: "No se pudo enviar el informe",
         color: "red",
-      });
-    } 
+      })
+    }
   }
 
   const onHistoryChange = (value: string | null) => {
@@ -396,12 +464,12 @@ const ResponsibleReportPage = () => {
             
           />
           <Tooltip
-            label={(new Date(publishedReport?.deadline || "") < dateNow()) ?
+            label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date()) ?
               "El plazo para enviar el informe ha expirado" :
               "No puedes modificar el informe si ya fue aprobado o está en revisión"}
             transitionProps={{ transition: "fade-up", duration: 300 }}
             disabled={!isWithinProducerDateWindow() || !sendsHistory.some((report) => report.status === "Aprobado" 
-              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow()) } 
+              || report.status === "En Revisión") && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date()) } 
           >
             <Button
               onClick={() => {
@@ -423,7 +491,7 @@ const ResponsibleReportPage = () => {
               mt={25}
               disabled={sendsHistory.some(
                 (report) => report.status === "Aprobado" || report.status === "En Revisión"
-              ) || (new Date(publishedReport?.deadline || "") < dateNow()) || !isWithinProducerDateWindow()}
+              ) || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()) || !isWithinProducerDateWindow()}
             >
               {sendsHistory[0]?.status === "En Borrador"
                 ? "Modificar borrador"
@@ -443,7 +511,7 @@ const ResponsibleReportPage = () => {
         <Collapse in={openedReportForm}>
           <Group grow gap={'xl'}>
             <Tooltip
-              label={(new Date(publishedReport?.deadline || "") < dateNow()) ? 
+              label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date()) ? 
                 "El plazo para enviar el informe ha expirado" :
                 "No has hecho cambios"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
@@ -455,7 +523,7 @@ const ResponsibleReportPage = () => {
                 variant="outline"
                 disabled={publishedReport?.filled_reports[0]?.status === "Rechazado" ||
                   sendsHistory.some((report) => report.status === "Aprobado" 
-                  || report.status === "En Revisión" || (new Date(publishedReport?.deadline || "") < dateNow()))
+                  || report.status === "En Revisión" || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()))
                 }
                 onClick={loadDraft}
                 loading={saving}
@@ -475,7 +543,7 @@ const ResponsibleReportPage = () => {
                 color="blue"
                 disabled={publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
                   sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión")
-                  || (new Date(publishedReport?.deadline || "") < dateNow())
+                  || (endOfDayGMT5(publishedReport?.deadline || "") < new Date())
                 }
                 onClick={sendReport}
                 loading={sending}

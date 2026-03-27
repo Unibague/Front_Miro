@@ -1,14 +1,16 @@
 "use client"
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { Button, Center, Checkbox, Container, FileInput, Group, Modal, MultiSelect, Pagination, rem, Select, Switch, Table, Text, Textarea, TextInput, Title, Tooltip } from "@mantine/core";
 import { DateInput, DatePickerInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
-import { IconArrowRight, IconCancel, IconCheck, IconCirclePlus, IconDeviceFloppy, IconEdit, IconEye, IconSend, IconTrash, IconUser, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconCancel, IconCheck, IconCirclePlus, IconDeviceFloppy, IconEdit, IconEye, IconHistory, IconSend, IconTrash, IconUser, IconX } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { modals } from "@mantine/modals";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Report {
   _id: string;
@@ -48,6 +50,7 @@ const StatusColor: Record<string, string> = {
 const ProducerReportPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -60,6 +63,8 @@ const ProducerReportPage = () => {
   const [customDeadline, setCustomDeadline] = useState(false);
 
   const [opened, setOpened] = useState(false);
+  const [auditModalOpened, setAuditModalOpened] = useState(false);
+  const [selectedReportForAudit, setSelectedReportForAudit] = useState<Report | null>(null);
 
 
 
@@ -71,7 +76,7 @@ const ProducerReportPage = () => {
           email: session?.user?.email,
           page: page,
           search: search,
-          periodId: selectedPeriod
+          periodId: selectedPeriodId
         },
       });
       setReports(response.data);
@@ -141,62 +146,102 @@ const ProducerReportPage = () => {
 
 
   const handlePublish = async (reportId: string) => {
-    try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
-        reportId,
-        deadline: customDeadline ? deadline : selectedPeriod ?
-          new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
-        period: selectedPeriod,
-        email: session?.user?.email
-      });
-      showNotification({
-        title: "Éxito",
-        message: "Informe publicado correctamente",
-        color: "green",
-      });
-      setOpened(false);
-      setSelectedReport(null);
-      setDeadline(null);
-      setCustomDeadline(false);
-      await fetchReports();
-    } catch (error) {
-      console.error("Error publishing report:", error);
+    if (!selectedPeriod) {
       showNotification({
         title: "Error",
-        message: "Hubo un error al publicar el informe",
+        message: "Por favor selecciona un período",
         color: "red",
       });
+      return;
     }
+    
+    modals.openConfirmModal({
+      title: 'Confirmar asignación',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas asignar el informe "{selectedReport?.name}" 
+          al período seleccionado? Los productores podrán acceder a este informe.
+        </Text>
+      ),
+      labels: { confirm: 'Asignar', cancel: 'Cancelar' },
+      confirmProps: { color: 'blue' },
+      onConfirm: async () => {
+        try {
+          const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pProducerReports/publish`, {
+            reportId,
+            deadline: customDeadline ? deadline : selectedPeriod ?
+              new Date(periods.find(period => period._id === selectedPeriod)?.producer_end_date || '') : null,
+            period: selectedPeriod,
+            email: session?.user?.email
+          });
+          
+          // Validar si la asignación fue exitosa
+          if (response.data && response.status === 200) {
+            showNotification({
+              title: "Éxito",
+              message: "Informe publicado correctamente",
+              color: "green",
+            });
+            setOpened(false);
+            setSelectedReport(null);
+            setDeadline(null);
+            setCustomDeadline(false);
+            await fetchReports();
+          } else {
+            // Si la respuesta no es válida, permitir reasignación
+            showNotification({
+              title: "Advertencia",
+              message: "La asignación puede no haberse completado correctamente. Verifica en Informes Publicados.",
+              color: "yellow",
+            });
+          }
+        } catch (error: any) {
+          console.error("Error publishing report:", error);
+          showNotification({
+            title: "Error",
+            message: error.response?.data?.message || "Hubo un error al publicar el informe",
+            color: "red",
+          });
+          // No cerrar el modal para permitir reintento
+        }
+      },
+    });
   }
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      fetchReports();
+      if (session?.user?.email && selectedPeriodId) {
+        fetchReports();
+      }
     }, 200);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search, selectedPeriod]);
+  }, [search, selectedPeriodId, session?.user?.email]);
 
   useEffect(() => {
     fetchPeriods();
   }, [selectedReport]);
 
   useEffect(() => {
-  const fetchActivePeriod = async () => {
-    try {
-      const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/active`);
-      console.log(data);
-      if (data.length > 0) {
-        setSelectedPeriod(data[0]._id); // Aquí lo estableces como valor por defecto
-      }
-    } catch (error) {
-      console.error("Error fetching active period:", error);
-    }
-  };
-  fetchActivePeriod();
-}, []);
+    if (!periods.length) return;
 
-  const rows = reports?.map((report: Report) => (
+    const hasSelectedGlobalPeriod =
+      !!selectedPeriodId && periods.some((period) => period._id === selectedPeriodId);
+
+    if (hasSelectedGlobalPeriod) {
+      setSelectedPeriod(selectedPeriodId);
+      const period = periods.find((p) => p._id === selectedPeriodId);
+      setDeadline(period ? new Date(period.producer_end_date) : null);
+      return;
+    }
+
+    setSelectedPeriod(periods[0]._id);
+    setDeadline(periods[0]?.producer_end_date ? new Date(periods[0].producer_end_date) : null);
+  }, [periods, selectedPeriodId]);
+
+  const rows = reports?.map((report: Report) => {
+    console.log(`Report: ${report.name}, Published: ${report.published}`); // DEBUG
+    return (
     <Table.Tr key={report._id}>
       <Table.Td maw={rem(500)}>
         {report.name}
@@ -238,6 +283,24 @@ const ProducerReportPage = () => {
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
+            <Tooltip
+              label="Trazabilidad"
+              position="top"
+              withArrow
+              transitionProps={{ transition: 'fade-up', duration: 300 }}
+            >
+              <Button
+                onClick={() => {
+                  setSelectedReportForAudit(report);
+                  setAuditModalOpened(true);
+                }}
+                variant="outline"
+                color="teal"
+              >
+                <IconHistory size={16} />
+              </Button>
+            </Tooltip>
+            
 <Tooltip label="Borrar informe">
   <Button
     color="red"
@@ -270,7 +333,8 @@ const ProducerReportPage = () => {
         </Center>
       </Table.Td>
     </Table.Tr>
-  ));
+    );
+  });
 
   return (
     <Container size="xl">
@@ -403,6 +467,17 @@ const ProducerReportPage = () => {
           </Button>
         </Group>
       </Modal>
+      
+      <ConfigAuditModal
+        opened={auditModalOpened}
+        onClose={() => {
+          setAuditModalOpened(false);
+          setSelectedReportForAudit(null);
+        }}
+        entityType="producer-report"
+        entityId={selectedReportForAudit?._id || ''}
+        entityName={selectedReportForAudit?.name || ''}
+      />
     </Container>
     );
 }

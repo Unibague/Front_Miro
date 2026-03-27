@@ -1,10 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme} from "@mantine/core";
+import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -12,6 +12,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import { useParams } from "next/navigation";
+import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
@@ -30,8 +31,10 @@ const DashboardPage = () => {
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
+  const [activeModule, setActiveModule] = useState<"home" | "operations" | "snies" | "cna">("home");
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
+  const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const params = useParams();
 const { id } = params ?? {};
@@ -390,7 +393,7 @@ useEffect(() => {
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita y asigna los informes que generarán los ámbitos.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos')}>
                 Ir a Configuración de Informes
               </Button>
             </Card>
@@ -435,7 +438,7 @@ useEffect(() => {
                 <IconReportSearch size={80}/>
               </Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Administrar Informes de Gestión</Text>
+                <Text ta={"center"} w={500}>Gestionar informes Responsables</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Adminsitra el proceso de cargue de los informes de gestión.
@@ -592,17 +595,17 @@ useEffect(() => {
                 </Button>
               </Card>
             </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-date-review">
+            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-dependencies-hierarchy">
               <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconCalendarMonth size={80}/></Center>
+                <Center><IconHierarchy2 size={80}/></Center>
                 <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Revision de fechas</Text>
+                  <Text ta={"center"} w={500}>Jerarquía de Dependencias</Text>
                 </Group>
                 <Text ta={"center"} size="sm" color="dimmed">
-                  Consulta las fechas corte y horarios de reuniones con respecto al registro calificado y acreditacion en torno a la dependencia.
+                  Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.
                 </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/date-review')}>
-                  Ir a revision de fechas
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies-hierarchy')}>
+                  Ir a Jerarquía de Dependencias
                 </Button>
               </Card>
             </Grid.Col>,
@@ -666,13 +669,13 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconHexagon3d size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Mi Dimensión</Text>
+                <Text ta={"center"} w={500}>Gestionar Mi Ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona la dimensión de la que eres responsable.
+                Gestiona el ámbito del que eres responsable.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-                Ir a Gestión de Mi Dimensión
+                Ir a Gestión de Mi Ámbito
               </Button>
             </Card>
           </Grid.Col>
@@ -715,6 +718,20 @@ useEffect(() => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
                 Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-traceability">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconChartHistogram size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Historial de Cambios</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta los cambios realizados en plantillas e informes de tus dependencias
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
+                Ir a Historial de Cambios
               </Button>
             </Card>
           </Grid.Col>,
@@ -775,6 +792,20 @@ useEffect(() => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
                 Ir a Plantillas con Filtros
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-traceability">
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconChartHistogram size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Historial de Cambios</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta los cambios realizados en plantillas e informes de tus dependencias
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
+                Ir a Historial de Cambios
               </Button>
             </Card>
           </Grid.Col>,
@@ -877,20 +908,9 @@ useEffect(() => {
       case "Usuario":
       default:
         cards.push(
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="usuario-date-review">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconCalendarMonth size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Revision de fechas</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta las fechas corte y horarios de reuniones con respecto al registro calificado y acreditacion en torno a la dependencia.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/date-review')}>
-                Ir a revision de fechas
-              </Button>
-            </Card>
-          </Grid.Col>
+          <Container key="default-message">
+            <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menú superior.</Text>
+          </Container>
         );
         break;
     }
@@ -915,20 +935,195 @@ useEffect(() => {
     // }
     return cards;
   };
-//Sirve porfi 
 
-//otra vez
+  const renderSniesCards = () => {
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/snies/templates")} style={{ cursor: "pointer" }}>
+          <Center>
+            <IconFileUpload size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Configurar plantilla SNIES</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Carga y administra las plantilla SNIES.
+          </Text>
+          <Button
+            variant="light"
+            fullWidth
+            mt="md"
+            radius="md"
+            onClick={() => router.push("/snies/templates")}
+          >
+            Ir a plantilla SNIES
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
+  const renderCnaCards = () => {
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Center>
+            <IconReport size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>CNA</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Módulo CNA disponible próximamente.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" disabled>
+            Próximamente
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
   return (
     <>
-      <Container>
-        <Center>
-          <Title mt="md" mb="md">Inicio</Title>
-        </Center>
+      <Container py="xl">
+        <Stack gap="xl">
         {renderMessage()}
-        <Grid justify="center" align="center">
-          {renderCards()}
-        </Grid>
+        {activeModule !== "home" && (
+          <Group justify="flex-start">
+            <Button variant="subtle" onClick={() => setActiveModule("home")}>
+              Volver a módulos
+            </Button>
+          </Group>
+        )}
+        {activeModule === "home" ? (
+          <Grid justify="center" align="stretch">
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setActiveModule("operations")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
+                  boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconFileAnalytics size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      Plantillas y reportes
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión plantillas y reportes.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="blue" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setActiveModule("snies")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
+                  boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconHexagon3d size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      SNIES
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión SNIES.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="teal" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setActiveModule("cna")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
+                  boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconReport size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      CNA
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión CNA.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="orange" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
+          </Grid>
+        ) : (
+          <Grid justify="center" align="stretch">
+            {activeModule === "operations" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
+          </Grid>
+        )}
+        </Stack>
+        
+        {/* AI Assistant Button */}
+        {/*<Button
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            borderRadius: '50px',
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
+          size="lg"
+          leftSection={<IconRobot size={20} />}
+          onClick={() => setAiChatOpened(true)}
+        >
+          Hablar con Ardi
+        </Button>*/}
       </Container>
+      
+      <AIChat opened={aiChatOpened} onClose={() => setAiChatOpened(false)} />
+      
       <Modal
         opened={opened}
         onClose={() => {}}

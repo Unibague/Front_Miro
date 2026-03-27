@@ -15,7 +15,7 @@ import {
   Pagination,
   Tooltip
 } from "@mantine/core";
-import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 import { IconBulb, IconReportAnalytics } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
@@ -97,7 +97,7 @@ const ProducerReportsPage = () => {
     const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/byId/${periodId}`);
     const { producer_report_start_date, producer_report_end_date } = response.data;
     const today = new Date();
-    const isValid = today <= new Date(producer_report_end_date);
+    const isValid = today <= endOfDayGMT5(producer_report_end_date);
     setValidProducerPeriod(prev => ({ ...prev, [periodId]: isValid }));
   } catch (error) {
     console.error("Error validating producer period", error);

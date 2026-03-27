@@ -202,6 +202,7 @@ const CreateTemplatePage = () => {
       fields,
       active,
       email: userEmail,
+      full_name: session?.user?.name,
       dimensions: selectedDimensions?.map((dim) => dim._id),
       producers: selectedDependencies
     };

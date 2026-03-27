@@ -9,7 +9,7 @@ import { Badge, Button, Center, Collapse, Container, Divider, FileButton, Group,
 import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, IconCloudUpload, IconDownload, IconEdit, IconEye, IconSend, IconX } from "@tabler/icons-react";
 import classes from "../ResponsibleReportsPage.module.css";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 
 interface Report {
   _id: string;
@@ -109,10 +109,10 @@ const ResponsibleReportPage = () => {
   const [saving, setSaving] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
 
-  const now = dateNow();
+  const now = new Date();
   const isReportEditable = publishedReport &&
     new Date(publishedReport.period.responsible_start_date) <= now &&
-    new Date(publishedReport.period.responsible_end_date) >= now;
+    endOfDayGMT5(publishedReport.period.responsible_end_date) >= now;
 
   const clearSelect = () => {
     setSelectedHistoryReport(null);
@@ -131,34 +131,16 @@ const ResponsibleReportPage = () => {
         }
       )
       if (response.data) {
-
-          console.log(response.data);
-
-          
-if (response.data.report.dimensions.length === 1) {
-  setSelectedDimension(response.data.report.dimensions[0]._id);
-
-}
-
-          if(response.data.report.dimensions.length > 1) {
-          setAvailableDimensions(response.data.report.dimensions);
-
-
-          {availableDimensions.length > 1 && (
-  <Select
-    label="Selecciona una dimensión"
-    placeholder="Selecciona una opción"
-    data={availableDimensions.map((d) => ({
-      value: d._id,
-      label: d.name,
-    }))}
-    value={selectedDimension}
-    onChange={setSelectedDimension}
-    mb="md"
-    required
-  />
-)}
+        console.log(response.data);
+        
+        if (response.data.report.dimensions.length === 1) {
+          setSelectedDimension(response.data.report.dimensions[0]._id);
         }
+
+        if(response.data.report.dimensions.length > 1) {
+          setAvailableDimensions(response.data.report.dimensions);
+        }
+        
         setSendsHistory(response.data.filled_reports);
         setPublishedReport(response.data);
       }
@@ -182,9 +164,8 @@ if (response.data.report.dimensions.length === 1) {
       const formData = new FormData();
 
       formData.append("email", session?.user?.email ?? "");
-      formData.append("dimension", dimension ?? "");
       formData.append("publishedReportId", publishedReport?._id ?? "");
-      formData.append("dimension", selectedDimension ?? "");
+      formData.append("dimension", selectedDimension ?? dimension ?? "");
       formData.append("filledDraft", JSON.stringify(publishedReport?.filled_reports[0] ?? ""));
       if (reportFile) {
         formData.append("reportFile", reportFile);
@@ -200,7 +181,7 @@ if (response.data.report.dimensions.length === 1) {
         formData.append("deletedAttachments", attachment);
       });
       
-
+      console.log('Enviando datos al backend...');
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pReports/responsible/loadDraft`,
         formData,
         {
@@ -210,6 +191,7 @@ if (response.data.report.dimensions.length === 1) {
         }
       )
       
+      console.log('Borrador guardado exitosamente');
       setAttachments([]);
       setDeletedAttachments([]);
       setDeletedReport(undefined);
@@ -223,12 +205,15 @@ if (response.data.report.dimensions.length === 1) {
         message: "El borrador se ha guardado correctamente",
         color: "green",
       });
-    } catch (error) {
+    } catch (error: any) {
       setSaving(false);
-      console.error(error);
+      console.error('Error completo:', error);
+      console.error('Error response:', error.response?.data);
+      
+      const errorMessage = error.response?.data?.message || "No se pudo guardar el borrador";
       showNotification({
         title: "Error",
-        message: "No se pudo guardar el borrador",
+        message: errorMessage,
         color: "red",
       });
     }
@@ -274,8 +259,8 @@ if (response.data.report.dimensions.length === 1) {
 
     if (!selectedDimension) {
   showNotification({
-    title: "Falta seleccionar dimensión",
-    message: "Por favor selecciona una dimensión antes de continuar",
+    title: "Falta seleccionar ámbito",
+    message: "Por favor selecciona un ámbito antes de continuar",
     color: "red",
   });
   return;
@@ -444,12 +429,12 @@ if (response.data.report.dimensions.length === 1) {
             
           />
           <Tooltip
-            label={new Date(publishedReport?.deadline || "") < dateNow() 
+            label={endOfDayGMT5(publishedReport?.deadline || "") < new Date() 
               ? "El plazo para enviar el informe ha vencido"
               : "No puedes modificar el informe si ya fue aprobado o está en revisión"}
             transitionProps={{ transition: "fade-up", duration: 300 }}
             disabled={!sendsHistory.some((report) => report.status === "Aprobado" 
-              || report.status === "En Revisión") && (new Date(publishedReport?.deadline || "") >= dateNow()) }
+              || report.status === "En Revisión") && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date()) }
           >
             <Button
               onClick={() => {
@@ -470,7 +455,7 @@ if (response.data.report.dimensions.length === 1) {
               mt={25}
               disabled={ !isReportEditable ||  sendsHistory.some(
               (report) => report.status === "Aprobado" || report.status === "En Revisión"
-              ) || (new Date(publishedReport?.deadline || "") < dateNow())}
+              ) || (endOfDayGMT5(publishedReport?.deadline || "") < new Date())}
             >
               {sendsHistory[0]?.status === "En Borrador"
               ? "Modificar borrador"
@@ -490,11 +475,11 @@ if (response.data.report.dimensions.length === 1) {
         <Collapse in={openedReportForm}>
           <Group grow gap={'xl'}>
             <Tooltip
-              label={(new Date(publishedReport?.deadline || "") < dateNow())
+              label={(endOfDayGMT5(publishedReport?.deadline || "") < new Date())
                 ? "El plazo para enviar el informe ha vencido"
                 : "No has hecho cambios"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
-              disabled={!canSend && (new Date(publishedReport?.deadline || "") >= dateNow())}
+              disabled={!canSend && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date())}
             >
               <Button
                 leftSection={<IconCloudUpload/>}
@@ -511,12 +496,12 @@ if (response.data.report.dimensions.length === 1) {
               </Button>
             </Tooltip>
             <Tooltip
-              label={ (new Date(publishedReport?.deadline || "") < dateNow()) 
+              label={ (endOfDayGMT5(publishedReport?.deadline || "") < new Date()) 
                 ? "El plazo para enviar el informe ha vencido"
                 : publishedReport?.filled_reports[0]?.status !== "En Borrador" 
                 ? "Primero debes guardar el borrador" : "Este informe ya fue enviado"}
               transitionProps={{ transition: "fade-up", duration: 300 }}
-              disabled={canSend && (new Date(publishedReport?.deadline || "") >= dateNow())}
+              disabled={canSend && (endOfDayGMT5(publishedReport?.deadline || "") >= new Date())}
             >
               <Button
                 leftSection={<IconSend/>}
@@ -524,7 +509,7 @@ if (response.data.report.dimensions.length === 1) {
                 variant="outline"
                 color="blue"
                 disabled={!canSend || publishedReport?.filled_reports[0]?.status !== "En Borrador" || 
-                  sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión" || (new Date(publishedReport?.deadline || "") < dateNow()))
+                  sendsHistory.some((report) => report.status === "Aprobado" || report.status === "En Revisión" || (endOfDayGMT5(publishedReport?.deadline || "") < new Date()))
                 }
                 onClick={sendReport}
                 loading={sending}

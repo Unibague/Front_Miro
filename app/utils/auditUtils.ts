@@ -255,7 +255,7 @@ export const compareTemplateChanges = (oldTemplate: any, newTemplate: any) => {
     changes.producers = producerChanges;
   }
   
-  // Comparar dimensiones
+  // Comparar ?mbitos
   const oldDimensions = oldTemplate.dimensions || [];
   const newDimensions = newTemplate.dimensions || [];
   

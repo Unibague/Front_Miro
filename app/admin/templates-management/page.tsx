@@ -26,7 +26,7 @@ import {
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications"
-import { IconArrowLeft, IconDownload, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFilter, IconSettings, IconEye, IconEyeOff } from "@tabler/icons-react";
+import { IconArrowLeft, IconDownload, IconTableRow, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconTrash, IconArrowRight, IconFilter, IconSettings, IconEye, IconEyeOff, IconFileSearch } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -136,6 +136,11 @@ const TemplatesWithFiltersPage = () => {
   const [fieldConfigModalOpened, setFieldConfigModalOpened] = useState(false);
   const [availableFields, setAvailableFields] = useState<{field: string, template: string, selected: boolean, order: number}[]>([]);
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
+  
+  // Template status states
+  const [templateStatusModal, setTemplateStatusModal] = useState(false);
+  const [templateStatusData, setTemplateStatusData] = useState<any[]>([]);
+  const [loadingTemplateStatus, setLoadingTemplateStatus] = useState(false);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
@@ -839,6 +844,82 @@ const TemplatesWithFiltersPage = () => {
     }
   };
 
+  const fetchTemplateStatus = async () => {
+    setLoadingTemplateStatus(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/templateStatus/submission-status`,
+        {
+          params: {
+            email: session?.user?.email,
+            periodId: selectedPeriodId,
+          },
+        }
+      );
+      
+      if (response.data && response.data.length > 0) {
+        setTemplateStatusData(response.data);
+        setTemplateStatusModal(true);
+        showNotification({
+          title: "Estado de plantillas cargado",
+          message: `Se encontraron ${response.data.length} plantillas`,
+          color: "green",
+        });
+      } else {
+        showNotification({
+          title: "Sin resultados",
+          message: "No se encontraron plantillas en este período",
+          color: "yellow",
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching template status:', error);
+      showNotification({
+        title: "Error",
+        message: "No se pudo obtener el estado de las plantillas",
+        color: "red",
+      });
+    } finally {
+      setLoadingTemplateStatus(false);
+    }
+  };
+
+  const downloadTemplateStatusReport = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/templateStatus/submission-status/download`,
+        {
+          params: {
+            email: session?.user?.email,
+            periodId: selectedPeriodId,
+          },
+          responseType: 'blob'
+        }
+      );
+      
+      const blob = new Blob([response.data]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `estado-plantillas-${new Date().toISOString().split('T')[0]}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      showNotification({
+        title: "Descarga exitosa",
+        message: "El reporte se ha descargado correctamente",
+        color: "green",
+      });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      showNotification({
+        title: "Error",
+        message: "No se pudo descargar el reporte",
+        color: "red",
+      });
+    }
+  };
+
   const rows = sortedTemplates.map((publishedTemplate) => {
     let progress = {
       total: publishedTemplate.template.producers.length,
@@ -1088,16 +1169,28 @@ const TemplatesWithFiltersPage = () => {
                 >
                   Ir a Configuración de Plantillas
                 </Button>
+                
+                <Group>
+                  <Button
+                    variant="light"
+                    color="teal"
+                    loading={loadingTemplateStatus}
+                    onClick={fetchTemplateStatus}
+                    leftSection={<IconFileSearch size={16} />}
+                  >
+                    Estado de Plantillas
+                  </Button>
 
-                <Button
-                  onClick={() =>
-                    router.push("/templates/published/update")
-                  }
-                  variant="outline"
-                  leftSection={<IconArrowRight size={16} />}
-                >
-                  Cambiar fechas de entrega plantillas
-                </Button>
+                  <Button
+                    onClick={() =>
+                      router.push("/templates/published/update")
+                    }
+                    variant="outline"
+                    leftSection={<IconArrowRight size={16} />}
+                  >
+                    Cambiar fechas de entrega plantillas
+                  </Button>
+                </Group>
                 </>
               )
             }

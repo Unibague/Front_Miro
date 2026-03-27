@@ -585,7 +585,7 @@ const AdminPubReportsPage = () => {
   return (
     <Container size="xl">
       <Title ta="center" mb={"md"}>
-        Gestión de Informes de Ámbitos
+        Gestión de Informes de Responsables
       </Title>
       <TextInput
         placeholder="Buscar en los informes publicados"
