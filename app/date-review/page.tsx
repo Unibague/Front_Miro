@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Title, Select, Button, Text, Paper, Box, SimpleGrid, Group,
-  Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea,
+  Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea, Collapse,
 } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
 import axios from "axios";
@@ -15,6 +15,144 @@ import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
 import AgregarProcesoModal from "./components/AgregarProcesoModal";
+
+/* ── Helper: renderiza la fecha subida de un doc ── */
+const fmtFecha = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }) : null;
+
+/* ── Lista de documentos con fecha de subida ── */
+const DocList = ({ docs }: { docs: Array<{ name: string; view_link: string; subido_en?: string | null }> }) => (
+  docs.length > 0 ? (
+    <Stack gap={2}>
+      {docs.map((d, i) => (
+        <Group key={i} gap={6} align="center">
+          <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>📎 {d.name}</Anchor>
+          {d.subido_en && <Text size="xs" c="dimmed">· {fmtFecha(d.subido_en)}</Text>}
+        </Group>
+      ))}
+    </Stack>
+  ) : <Text size="xs" c="dimmed">Sin documentos</Text>
+);
+
+/* ── Componente expandible para el historial de fases ── */
+type HistFase = ProcessHistoryRecord["fases"][number];
+const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
+  const [openFase, setOpenFase]   = useState<number | null>(null);
+  const [openAct, setOpenAct]     = useState<string | null>(null);
+
+  return (
+    <Stack gap="xs">
+      {fases.map(f => (
+        <Paper key={f.fase_numero} withBorder radius="sm" style={{ overflow: "hidden" }}>
+          {/* Cabecera de fase — clic para expandir */}
+          <Box
+            px="sm" py={8}
+            style={{ cursor: "pointer", backgroundColor: "#f8f9fa", borderBottom: openFase === f.fase_numero ? "1px solid #dee2e6" : "none" }}
+            onClick={() => setOpenFase(prev => prev === f.fase_numero ? null : f.fase_numero)}
+          >
+            <Group justify="space-between">
+              <Group gap="xs">
+                <Text size="xs" fw={700}>{openFase === f.fase_numero ? "▾" : "▸"} Fase {f.fase_numero} — {f.fase_nombre}</Text>
+                <Badge size="xs" color={f.actividades_completadas === f.actividades_total ? "green" : "orange"} variant="light">
+                  {f.actividades_completadas}/{f.actividades_total} completadas
+                </Badge>
+              </Group>
+            </Group>
+          </Box>
+
+          <Collapse in={openFase === f.fase_numero}>
+            <Box px="sm" pt="xs" pb="sm">
+              {/* Docs de la fase */}
+              {f.documentos.length > 0 && (
+                <Box mb="xs">
+                  <Text size="xs" c="dimmed" fw={600} mb={4}>Documentos de la fase</Text>
+                  <DocList docs={f.documentos} />
+                </Box>
+              )}
+
+              {/* Actividades */}
+              <Stack gap={4}>
+                {(f.actividades ?? []).map((act, ai) => {
+                  const actKey = `${f.fase_numero}-${ai}`;
+                  return (
+                    <Paper key={ai} withBorder radius="xs" style={{ overflow: "hidden" }}>
+                      {/* Cabecera actividad */}
+                      <Box
+                        px="sm" py={6}
+                        style={{ cursor: "pointer", backgroundColor: act.completada ? "#f0fff4" : "#fff" }}
+                        onClick={() => setOpenAct(prev => prev === actKey ? null : actKey)}
+                      >
+                        <Group justify="space-between">
+                          <Group gap="xs">
+                            <Text size="xs">{openAct === actKey ? "▾" : "▸"}</Text>
+                            <input type="checkbox" checked={act.completada} readOnly style={{ width: 13, height: 13 }} />
+                            <Text size="xs" fw={500} td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : undefined}>
+                              {act.nombre}
+                            </Text>
+                          </Group>
+                          {act.fecha_completado && (
+                            <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>
+                          )}
+                        </Group>
+                        {act.responsables && <Text size="xs" c="dimmed" pl={34}>{act.responsables}</Text>}
+                      </Box>
+
+                      <Collapse in={openAct === actKey}>
+                        <Box px="sm" pt={6} pb="sm" style={{ backgroundColor: "#fafafa" }}>
+                          {act.observaciones && (
+                            <Paper withBorder radius="xs" p={6} mb={6} style={{ backgroundColor: "#fff9db" }}>
+                              <Text size="xs" c="dimmed">Observaciones:</Text>
+                              <Text size="xs">{act.observaciones}</Text>
+                            </Paper>
+                          )}
+
+                          {/* Docs de la actividad */}
+                          <Box mb={act.subactividades.length > 0 ? "xs" : 0}>
+                            <Text size="xs" c="dimmed" fw={600} mb={4}>Documentos</Text>
+                            <DocList docs={act.documentos} />
+                          </Box>
+
+                          {/* Subactividades */}
+                          {act.subactividades.length > 0 && (
+                            <Stack gap={4} mt="xs">
+                              <Text size="xs" c="dimmed" fw={600}>Subactividades</Text>
+                              {act.subactividades.map((sub, si) => (
+                                <Paper key={si} withBorder radius="xs" p={6}
+                                  style={{ backgroundColor: sub.completada ? "#f8f9fa" : "#fff" }}>
+                                  <Group justify="space-between" mb={sub.documentos.length > 0 || sub.observaciones ? 4 : 0}>
+                                    <Group gap="xs">
+                                      <input type="checkbox" checked={sub.completada} readOnly style={{ width: 12, height: 12 }} />
+                                      <Text size="xs" td={sub.completada ? "line-through" : undefined} c={sub.completada ? "dimmed" : undefined}>
+                                        {sub.nombre}
+                                      </Text>
+                                    </Group>
+                                    {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
+                                  </Group>
+                                  {sub.observaciones && (
+                                    <Text size="xs" c="dimmed" pl={20} mb={2}>📝 {sub.observaciones}</Text>
+                                  )}
+                                  {sub.documentos.length > 0 && (
+                                    <Box pl={20}>
+                                      <DocList docs={sub.documentos} />
+                                    </Box>
+                                  )}
+                                </Paper>
+                              ))}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Collapse>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </Box>
+          </Collapse>
+        </Paper>
+      ))}
+    </Stack>
+  );
+};
 
 const DateReviewPage = () => {
   const { userRole } = useRole();
@@ -679,23 +817,7 @@ const DateReviewPage = () => {
             )}
 
             <Divider label="Fases y documentos" labelPosition="left" />
-            {historialDetalle.fases.map(f => (
-              <div key={f.fase_numero}>
-                <Group gap="xs" mb={4}>
-                  <Text size="xs" fw={700}>Fase {f.fase_numero} — {f.fase_nombre}</Text>
-                  <Text size="xs" c="dimmed">({f.actividades_completadas}/{f.actividades_total} actividades completadas)</Text>
-                </Group>
-                {f.documentos.length > 0 ? (
-                  <Stack gap={2} pl="sm">
-                    {f.documentos.map((d, i) => (
-                      <Anchor key={i} href={d.view_link} target="_blank" size="xs">📎 {d.name}</Anchor>
-                    ))}
-                  </Stack>
-                ) : (
-                  <Text size="xs" c="dimmed" pl="sm">Sin documentos</Text>
-                )}
-              </div>
-            ))}
+            <HistorialFases fases={historialDetalle.fases} />
           </Stack>
         )}
       </Modal>

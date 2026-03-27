@@ -165,12 +165,27 @@ export type ProcessHistoryRecord = {
     fecha_radicacion_avance_cna: string | null;
     observaciones: string;
   } | null;
-  documentos_proceso: Array<{ name: string; view_link: string }>;
+  documentos_proceso: Array<{ name: string; view_link: string; subido_en?: string | null }>;
   fases: Array<{
     fase_numero: number;
     fase_nombre: string;
     actividades_completadas: number;
     actividades_total: number;
-    documentos: Array<{ name: string; view_link: string }>;
+    documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
+    actividades: Array<{
+      nombre: string;
+      responsables: string;
+      completada: boolean;
+      fecha_completado: string | null;
+      observaciones: string;
+      documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
+      subactividades: Array<{
+        nombre: string;
+        completada: boolean;
+        fecha_completado: string | null;
+        observaciones: string;
+        documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
+      }>;
+    }>;
   }>;
 };
