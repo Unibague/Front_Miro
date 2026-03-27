@@ -31,7 +31,7 @@ const DashboardPage = () => {
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
-  const [activeModule, setActiveModule] = useState<"home" | "operations" | "snies" | "cna">("home");
+  const [activeModule, setActiveModule] = useState<"home" | "operations" | "snies" | "cna" | "av-rc">("home");
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
@@ -43,6 +43,7 @@ const { id } = params ?? {};
     if (session?.user?.email && selectedPeriodId) {
         try {
             // Si es Administrador, no hacer nada
+            //nada
             if (role === "Administrador") {
                 setPendingReports(0);
                 setPendingTemplates(0);
@@ -984,6 +985,25 @@ useEffect(() => {
     );
   };
 
+  const renderAvRcCards = () => {
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Center><IconCalendarMonth size={80} /></Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Gestión de procesos</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Gestión de procesos de Registro Calificado y Acreditación Voluntaria.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+            Ir a gestión de procesos
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
   return (
     <>
       <Container py="xl">
@@ -1096,10 +1116,43 @@ useEffect(() => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setActiveModule("av-rc")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                  boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconCalendarMonth size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      Gestión de Procesos
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión de RC y AV.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="green" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {activeModule === "operations" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
+            {activeModule === "operations" ? renderCards() : activeModule === "snies" ? renderSniesCards() : activeModule === "cna" ? renderCnaCards() : renderAvRcCards()}
           </Grid>
         )}
         </Stack>
