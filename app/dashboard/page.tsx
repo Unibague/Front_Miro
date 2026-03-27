@@ -5,13 +5,13 @@ import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
@@ -35,8 +35,10 @@ const DashboardPage = () => {
   const showResponsibleScopeCards = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
+  const [avRcOpen, setAvRcOpen] = useState(false);
+
   const params = useParams();
-const { id } = params ?? {};
+  const { id } = params ?? {};
   const pathname = usePathname();
   const activeModule: "home" | "reports" | "snies" | "cna" =
     pathname === "/reports" || pathname === "/operations"
@@ -47,10 +49,12 @@ const { id } = params ?? {};
       ? "cna"
       : "home";
 
+      //aalalsd
   const fetchPendingItems = async (role: string) => {
     if (session?.user?.email && selectedPeriodId) {
         try {
             // Si es Administrador, no hacer nada
+            //nada
             if (role === "Administrador") {
                 setPendingReports(0);
                 setPendingTemplates(0);
@@ -582,7 +586,7 @@ useEffect(() => {
                   <Text ta={"center"} w={500}>Jerarquía de Dependencias</Text>
                 </Group>
                 <Text ta={"center"} size="sm" color="dimmed">
-                  Administra la estructura jerárquica de dependencias padre-hijo con vista de Árbol.
+                  Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.
                 </Text>
                 <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies-hierarchy')}>
                   Ir a Jerarquía de Dependencias
@@ -649,13 +653,13 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconHexagon3d size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Mi Ãmbito</Text>
+                <Text ta={"center"} w={500}>Gestionar Mi Ámbito</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el Ã¡mbito del que eres responsable.
+                Gestiona el ámbito del que eres responsable.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-                Ir a GestiÃ³n de Mi Ãmbito
+                Ir a Gestión de Mi Ámbito
               </Button>
             </Card>
           </Grid.Col>
@@ -889,7 +893,7 @@ useEffect(() => {
       default:
         cards.push(
           <Container key="default-message">
-            <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menÃº superior.</Text>
+            <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menú superior.</Text>
           </Container>
         );
         break;
@@ -918,83 +922,68 @@ useEffect(() => {
 
   const renderSniesCards = () => {
     return (
-      <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/snies/templates")} style={{ cursor: "pointer" }}>
-            <Center><IconFileAnalytics size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Configurar Plantillas SNIES</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Crea, edita, elimina o asigna las plantillas del módulo SNIES.
-            </Text>
-            <Button
-              variant="light"
-              fullWidth
-              mt="md"
-              radius="md"
-              onClick={() => router.push("/snies/templates")}
-            >
-              Ir a Configurar Plantillas SNIES
-            </Button>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/snies/templates/published")} style={{ cursor: "pointer" }}>
-            <Center><IconChecklist size={80}></IconChecklist></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestionar Plantillas SNIES</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Consulta la información enviada en las plantillas SNIES y descarga los archivos generados.
-            </Text>
-            <Button
-              variant="light"
-              fullWidth
-              mt="md"
-              radius="md"
-              onClick={() => router.push("/snies/templates/published")}
-            >
-              Ir a Consultar y Descargar SNIES
-            </Button>
-          </Card>
-        </Grid.Col>
-      </>
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/snies/templates")} style={{ cursor: "pointer" }}>
+          <Center>
+            <IconFileUpload size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Configurar plantilla SNIES</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Carga y administra las plantilla SNIES.
+          </Text>
+          <Button
+            variant="light"
+            fullWidth
+            mt="md"
+            radius="md"
+            onClick={() => router.push("/snies/templates")}
+          >
+            Ir a plantilla SNIES
+          </Button>
+        </Card>
+      </Grid.Col>
     );
   };
 
   const renderCnaCards = () => {
     return (
-      <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconFileAnalytics size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Configurar Plantillas CNA</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Crea, edita, elimina o asigna las plantillas del módulo CNA.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" disabled>
-              Próximamente
-            </Button>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconChecklist size={80}></IconChecklist></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestionar Plantillas CNA</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Administra las plantillas cargadas y consolidadas del módulo CNA.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" disabled>
-              Próximamente
-            </Button>
-          </Card>
-        </Grid.Col>
-      </>
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Center>
+            <IconReport size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>CNA</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Módulo CNA disponible próximamente.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" disabled>
+            Próximamente
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
+  const renderAvRcCards = () => {
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Center><IconCalendarMonth size={80} /></Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Gestión de procesos</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Gestión de procesos de Registro Calificado y Acreditación Voluntaria.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+            Ir a gestión de procesos
+          </Button>
+        </Card>
+      </Grid.Col>
     );
   };
 
@@ -1003,14 +992,14 @@ useEffect(() => {
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {activeModule !== "home" && (
+        {(activeModule !== "home" || avRcOpen) && (
           <Group justify="flex-start">
-            <Button variant="subtle" onClick={() => router.push("/dashboard")}>
+            <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
               Volver a módulos
             </Button>
           </Group>
         )}
-        {activeModule === "home" ? (
+        {activeModule === "home" && !avRcOpen ? (
           <Grid justify="center" align="stretch">
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
@@ -1032,10 +1021,10 @@ useEffect(() => {
                       <IconFileAnalytics size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      Reportes
+                      Plantillas y reportes
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Gestión de reportes.
+                      Gestión plantillas y reportes.
                     </Text>
                   </Stack>
                   <Button variant="white" color="blue" radius="xl">
@@ -1110,11 +1099,44 @@ useEffect(() => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setAvRcOpen(true)}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                  boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconCalendarMonth size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      Gestión de Procesos
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión de RC y AV.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="green" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
-       </Grid>
+            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
+          </Grid>
         )}
         </Stack>
         

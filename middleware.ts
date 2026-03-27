@@ -25,5 +25,6 @@ export const config = {
     "/responsible/:path*",
     "/templates/:path*",
     "/templates-with-filters/:path*",
+    "/date-review/:path*",
   ],
 };
