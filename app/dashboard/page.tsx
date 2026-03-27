@@ -43,6 +43,7 @@ const { id } = params ?? {};
     if (session?.user?.email && selectedPeriodId) {
         try {
             // Si es Administrador, no hacer nada
+            //nada
             if (role === "Administrador") {
                 setPendingReports(0);
                 setPendingTemplates(0);
