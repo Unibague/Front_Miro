@@ -11,7 +11,7 @@ import { useColorScheme } from "@mantine/hooks";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
@@ -31,13 +31,14 @@ const DashboardPage = () => {
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
-  const [activeModule, setActiveModule] = useState<"home" | "operations" | "snies" | "cna">("home");
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
+  const [avRcOpen, setAvRcOpen] = useState(false);
+
   const params = useParams();
-const { id } = params ?? {};
+  const { id } = params ?? {};
   const pathname = usePathname();
   const activeModule: "home" | "reports" | "snies" | "cna" =
     pathname === "/reports" || pathname === "/operations"
@@ -966,25 +967,44 @@ useEffect(() => {
     );
   };
 
+  const renderAvRcCards = () => {
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Center><IconCalendarMonth size={80} /></Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Gestión de procesos</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Gestión de procesos de Registro Calificado y Acreditación Voluntaria.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+            Ir a gestión de procesos
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
   return (
     <>
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {activeModule !== "home" && (
+        {(activeModule !== "home" || avRcOpen) && (
           <Group justify="flex-start">
-            <Button variant="subtle" onClick={() => setActiveModule("home")}>
+            <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
               Volver a módulos
             </Button>
           </Group>
         )}
-        {activeModule === "home" ? (
+        {activeModule === "home" && !avRcOpen ? (
           <Grid justify="center" align="stretch">
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("operations")}
+                onClick={() => router.push("/reports")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1017,7 +1037,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("snies")}
+                onClick={() => router.push("/snies")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1050,7 +1070,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("cna")}
+                onClick={() => router.push("/cna")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1078,10 +1098,43 @@ useEffect(() => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => setAvRcOpen(true)}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                  boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconCalendarMonth size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      Gestión de Procesos
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Gestión de RC y AV.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="green" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {activeModule === "operations" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
+            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
           </Grid>
         )}
         </Stack>
