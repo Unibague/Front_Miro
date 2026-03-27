@@ -80,11 +80,32 @@ export default function SniesTemplateDetailPage() {
     fetchConnectedData();
   }, [session?.user?.email, templateId]);
 
+  const handleGoBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push("/snies/templates/published");
+  };
+
   const handleDownload = () => {
     if (!session?.user?.email) return;
 
     window.open(
       `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-connected-data?email=${encodeURIComponent(
+        session.user.email
+      )}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  const handleDownloadFieldComparison = () => {
+    if (!session?.user?.email) return;
+
+    window.open(
+      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-field-comparison?email=${encodeURIComponent(
         session.user.email
       )}`,
       "_blank",
@@ -101,7 +122,7 @@ export default function SniesTemplateDetailPage() {
       </Group>
 
       <Group mb="md">
-        <Button variant="outline" leftSection={<IconArrowLeft size={16} />} onClick={() => router.back()}>
+        <Button variant="outline" leftSection={<IconArrowLeft size={16} />} onClick={handleGoBack}>
           Volver
         </Button>
         <Button
@@ -111,6 +132,15 @@ export default function SniesTemplateDetailPage() {
           disabled={!data}
         >
           Descargar plantilla SNIES llena
+        </Button>
+        <Button
+          variant="outline"
+          color="blue"
+          leftSection={<IconDownload size={16} />}
+          onClick={handleDownloadFieldComparison}
+          disabled={!data}
+        >
+          Descargar comparativo de campos
         </Button>
       </Group>
 
