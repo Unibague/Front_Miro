@@ -90,8 +90,10 @@ export type Subactividad = {
   _id: string;
   nombre: string;
   completada: boolean;
+  no_aplica?: boolean;
   fecha_completado: string | null;
   observaciones: string;
+  grupo?: string | null;
 };
 
 export type Actividad = {
@@ -99,9 +101,24 @@ export type Actividad = {
   nombre: string;
   responsables: string;
   completada: boolean;
+  no_aplica?: boolean;
+  acto_admin_modo?: string | null;
   fecha_completado: string | null;
   observaciones: string;
   subactividades: Subactividad[];
+};
+
+export type Caso = {
+  _id: string;
+  proceso_id: string;
+  codigo_caso: string | null;
+  fecha_solicitud_radicado: string | null;
+  fecha_notificacion_completitud: string | null;
+  fecha_respuesta_completitud: string | null;
+  fecha_resolucion: string | null;
+  resolucion_aprobada: boolean | null;
+  aplica_apelacion?: boolean;
+  fecha_resolucion_apelacion?: string | null;
 };
 
 export type Phase = {

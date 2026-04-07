@@ -46,7 +46,12 @@ const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro, onRowClick }: 
             ) : (
               rows.map((row, i) => (
                 <Table.Tr key={i} style={{ cursor: "pointer" }} onClick={() => onRowClick(row.programa)}>
-                  <Table.Td><Text size="xs" fw={600}>{row.programa.nombre}</Text></Table.Td>
+                  <Table.Td>
+                    <Text size="xs" fw={600}>{row.programa.nombre}</Text>
+                    <Text size="xs" c={row.programa.codigo_snies ? "dimmed" : "red"}>
+                      {row.programa.codigo_snies ? `SNIES: ${row.programa.codigo_snies}` : "No tiene SNIES"}
+                    </Text>
+                  </Table.Td>
                   {modoPrograma
                     ? COLS_9.map((n) => <Table.Td key={n} ta="center"><Text size="xs" c="dimmed">—</Text></Table.Td>)
                     : <>
