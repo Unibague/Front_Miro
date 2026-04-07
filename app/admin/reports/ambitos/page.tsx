@@ -284,7 +284,7 @@ export default function AdminReportsAmbitosPage() {
         instructions: aiInstructions.trim(),
         email: session?.user?.email,
       }, {
-        timeout: 300000, // 5 minutos
+        timeout: 300000, 
       });
 
       showNotification({
