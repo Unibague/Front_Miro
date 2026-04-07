@@ -351,7 +351,7 @@ const ProducerReportPage = () => {
         </Button>
         <Button
           ml={"auto"}
-          onClick={() => router.push("/reports")}
+          onClick={() => router.push("/admin/reports/uploaded")}
           variant="outline"
           rightSection={<IconArrowRight size={16} />}
         >

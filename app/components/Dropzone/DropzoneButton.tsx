@@ -18,6 +18,36 @@ interface DropzoneButtonProps {
   onUploadSuccess: () => void;
 }
 
+const normalizeBackendValidationErrors = (payload: any) => {
+  const details = payload?.details;
+
+  if (Array.isArray(details)) {
+    return details;
+  }
+
+  const fallbackMessage =
+    typeof details === 'string'
+      ? details
+      : typeof payload?.message === 'string'
+        ? payload.message
+        : typeof payload?.status === 'string'
+          ? payload.status
+          : 'Error desconocido al procesar la plantilla.';
+
+  return [
+    {
+      column: payload?.column || 'Campo desconocido',
+      errors: [
+        {
+          register: 1,
+          message: fallbackMessage,
+          value: payload?.value ?? 'Sin valor',
+        },
+      ],
+    },
+  ];
+};
+
 
 
 
@@ -117,7 +147,30 @@ const handleFileDrop = async (files: File[]) => {
       if (lookup.size > 0) fieldValidatorLookup[field.name] = lookup;
     });
 
-sheet.eachRow((row, rowNumber) => {
+    const expectedColumns = Object.keys(fieldTypeMap);
+    const guideHeaders = new Set(['CAMPO', 'COMENTARIO DEL CAMPO']);
+    const selectedSheet =
+      workbook.worksheets.find((worksheet) => {
+        const headerRow = worksheet.getRow(1);
+        const worksheetHeaders: string[] = [];
+
+        headerRow.eachCell({ includeEmpty: true }, (cell) => {
+          worksheetHeaders.push(cell.text?.toString?.() ?? cell.value?.toString?.() ?? '');
+        });
+
+        const filledHeaders = worksheetHeaders.map((header) => header.trim()).filter(Boolean);
+        if (filledHeaders.length === 0) return false;
+
+        const normalizedHeaders = filledHeaders.map((header) => _vNorm(header));
+        const isGuideSheet = normalizedHeaders.every((header) => guideHeaders.has(header));
+        if (isGuideSheet) return false;
+
+        return filledHeaders.some((header) => expectedColumns.includes(header));
+      }) ?? sheet;
+
+    if (!selectedSheet) return;
+
+    selectedSheet.eachRow((row, rowNumber) => {
  if (rowNumber === 1) {
   headers = [];
   row.eachCell({ includeEmpty: true }, (cell) => {
@@ -125,7 +178,6 @@ sheet.eachRow((row, rowNumber) => {
   });
   
   // 🚨 Validar columnas antes de procesar datos
-  const expectedColumns = Object.keys(fieldTypeMap);
   const invalidColumns = headers.filter(header => header && !expectedColumns.includes(header));
   
   if (invalidColumns.length > 0) {
@@ -317,10 +369,14 @@ const multiple = templateResponse.data.template.fields.find((f: { name: string; 
 
       if (axios.isAxiosError(error)) {
         console.error("Detalles del error:", error.response?.data);
+        console.error(
+          "Detalles del error JSON:",
+          JSON.stringify(error.response?.data ?? {}, null, 2)
+        );
 
-        const details = error.response?.data.details;
-        if (Array.isArray(details)) {
-          localStorage.setItem("errorDetails", JSON.stringify(details));
+        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
+          localStorage.setItem("errorDetails", JSON.stringify(normalizedErrors));
           if (typeof window !== "undefined") window.open("/logs", "_blank");
         } else {
           showNotification({

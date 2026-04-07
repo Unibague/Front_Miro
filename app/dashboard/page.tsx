@@ -11,7 +11,7 @@ import { useColorScheme } from "@mantine/hooks";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
@@ -31,14 +31,51 @@ const DashboardPage = () => {
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
-  const [activeModule, setActiveModule] = useState<"home" | "operations" | "snies" | "cna" | "av-rc">("home");
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
-  const params = useParams();
-const { id } = params ?? {};
+  const [avRcOpen, setAvRcOpen] = useState(false);
 
+  const params = useParams();
+  const { id } = params ?? {};
+  const pathname = usePathname();
+  const activeModule: "home" | "reports" | "snies" | "cna" =
+    pathname === "/reports" || pathname === "/operations"
+      ? "reports"
+      : pathname === "/snies"
+      ? "snies"
+      : pathname === "/cna"
+      ? "cna"
+      : "home";
+
+  const shouldRedirectFromDashboardHome =
+    pathname === "/dashboard" &&
+    status === "authenticated" &&
+    !opened &&
+    !!userRole &&
+    userRole !== "Administrador";
+
+  const shouldWaitDashboardRedirect =
+    pathname === "/dashboard" &&
+    status === "authenticated" &&
+    !opened &&
+    !userRole;
+
+  const getDefaultRouteByRole = (role: string) => {
+    switch (role) {
+      case "Administrador":
+        return "/dashboard";
+      case "Responsable":
+        return "/reports";
+      case "Productor":
+        return "/reports";
+      default:
+        return "/dashboard";
+    }
+  };
+
+      //aalalsd
   const fetchPendingItems = async (role: string) => {
     if (session?.user?.email && selectedPeriodId) {
         try {
@@ -76,7 +113,7 @@ const { id } = params ?? {};
             // Se filtran los reportes pendientes
             const pendingReportsData = reportsResponse.data.pendingReports 
 
-            // Se establece el número de reportes pendientes
+            // Se establece el nÃºmero de reportes pendientes
             setPendingReports(pendingReportsData.length);
             setNextReportDeadline(
                 pendingReportsData.length > 0 ? dayjs(pendingReportsData[0].deadline).format("DD/MM/YYYY") : null
@@ -92,7 +129,7 @@ const { id } = params ?? {};
                 // Se obtiene el total de plantillas
                 const totalTemplates = templatesResponse.data.templates.length;
 
-                // Se establece el número total de plantillas pendientes
+                // Se establece el nÃºmero total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
                 setNextTemplateDeadline(
                     totalTemplates > 0 ? dayjs(templatesResponse.data.templates[0].deadline).format("DD/MM/YYYY") : null
@@ -109,24 +146,24 @@ const { id } = params ?? {};
 
 
 const fetchVisualizers = async () => {
-  if (!session?.user?.email) return; // Evita errores si el usuario no está autenticado
+  if (!session?.user?.email) return; // Evita errores si el usuario no estÃ¡ autenticado
 
   try {
     const response = await axios.get(
       `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
     );
 
-    console.log("🔍 Respuesta del backend corregida:", response.data.dependencies); // 👀 DEBUG
+    console.log("ðŸ” Respuesta del backend corregida:", response.data.dependencies); // ðŸ‘€ DEBUG
 
-    // Verificar si el usuario está en la lista de visualizadores
+    // Verificar si el usuario estÃ¡ en la lista de visualizadores
     const isUserVisualizer = response.data.dependencies.some((dep: any) =>
       Array.isArray(dep.visualizers) && dep.visualizers.includes(session?.user?.email)
     );
 
     setIsVisualizer(isUserVisualizer);
-    console.log("✅ El usuario es visualizador:", isUserVisualizer); // 👀 DEBUG
+    console.log("âœ… El usuario es visualizador:", isUserVisualizer); // ðŸ‘€ DEBUG
   } catch (error) {
-    console.error("❌ Error fetching visualizers:", error);
+    console.error("âŒ Error fetching visualizers:", error);
   }
 };
 
@@ -199,6 +236,21 @@ useEffect(() => {
   }, [session, status, notificationShown, userRole]);
 
   useEffect(() => {
+    if (
+      status === "authenticated" &&
+      userRole &&
+      userRole !== "Administrador" &&
+      pathname === "/dashboard" &&
+      !opened
+    ) {
+      const targetRoute = getDefaultRouteByRole(userRole);
+      if (targetRoute !== pathname) {
+        router.replace(targetRoute);
+      }
+    }
+  }, [activeModule, opened, pathname, router, status, userRole]);
+
+  useEffect(() => {
     const checkIfUserIsResponsible = async () => {
       if (session?.user?.email) {
         try {
@@ -248,14 +300,14 @@ useEffect(() => {
           variant="light"
           style={{
             padding: "10px 15px", // Reduce el padding para ajustarse al texto
-            textAlign: "center", // Asegura que el texto esté alineado al centro
-            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none", // Mantiene el tamaño adecuado
+            textAlign: "center", // Asegura que el texto estÃ© alineado al centro
+            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none", // Mantiene el tamaÃ±o adecuado
             maxWidth: "max-content", // Ajusta el ancho al contenido
-            whiteSpace: "pre-wrap", // Permite saltos de línea si el contenido es muy largo
+            whiteSpace: "pre-wrap", // Permite saltos de lÃ­nea si el contenido es muy largo
             margin: "20px auto", // Centra el badge y da margen con otros elementos
             justifyContent: "center", // Centra el contenido horizontalmente
             alignItems: "center", // Centra el contenido verticalmente
-            lineHeight: "normal", // Asegura que la altura de línea no sea excesiva
+            lineHeight: "normal", // Asegura que la altura de lÃ­nea no sea excesiva
             height: "auto", // Permite que el `Badge` se adapte al contenido
           }}
         >
@@ -292,6 +344,10 @@ useEffect(() => {
       console.log("Active role updated:", response.data);
       setUserRole(role);
       setOpened(false);
+      const targetRoute = getDefaultRouteByRole(role);
+      if (targetRoute !== pathname) {
+        router.replace(targetRoute);
+      }
       showNotification({
         title: "Rol actualizado",
         message: `Tu nuevo rol es ${role}`,
@@ -316,36 +372,52 @@ useEffect(() => {
     switch (userRole) {
       case "Administrador":
         cards.push(
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconFileAnalytics size={80}/></Center>
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-configure-templates">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/templates')} style={{ cursor: "pointer" }}>
+              <Center>
+                <IconFileAnalytics size={80}/>
+              </Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Configurar Plantillas</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Crea, edita, elimina o asigna plantillas a los productores.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates')}>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push('/admin/templates')}
+              >
                 Ir a Configurar Plantillas
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-published-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconChecklist size={80}></IconChecklist></Center>
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-manage-templates">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates/published')} style={{ cursor: "pointer" }}>
+              <Center>
+                <IconChecklist size={80}/>
+              </Center>
               <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
+                <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
                 Administra las plantillas cargadas por los productores.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates/published')}>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push('/templates/published')}
+              >
                 Ir a Gestión de Plantillas
               </Button>
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producers-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/producers')} style={{ cursor: "pointer" }}>
               <Center>
                 <IconClipboardData size={80}/>
               </Center>
@@ -367,7 +439,7 @@ useEffect(() => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports-producers">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/uploaded')} style={{ cursor: "pointer" }}>
               <Center>
                 <IconReportSearch size={80}/>
               </Center>
@@ -377,7 +449,7 @@ useEffect(() => {
               <Text ta={"center"} size="sm" color="dimmed">
                 Gestiona el proceso de cargue de los informes por parte de los productores.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reports')}>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/uploaded')}>
                 Ir a Gestión de Informes
               </Button>
             </Card>
@@ -392,7 +464,7 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Configurar Informes de Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes que generarán los ámbitos.
+                Crea, edita y asigna los informes que generarán los Ámbitos.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos')}>
                 Ir a Configuración de Informes
@@ -408,9 +480,9 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Gestionar Informes Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el proceso de cargue de los informes por parte de las ámbitos.
+                Gestiona el proceso de cargue de los informes por parte de las Ámbitos.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/uploaded')}>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos/uploaded')}>
                 Ir a Gestión de Informes
               </Button>
             </Card>
@@ -471,7 +543,7 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Gestionar Ámbitos</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Administra los ámbitos y sus responsables.
+                Administra los Ámbitos y sus responsables.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dimensions')}>
                 Ir a Gestión de Ámbitos
@@ -575,7 +647,7 @@ useEffect(() => {
                   <Text ta={"center"} w={500}>Historial de Trazabilidad</Text>
                 </Group>
                 <Text ta={"center"} size="sm" color="dimmed">
-                  Consulta el historial de cambios en plantillas y ámbitos
+                  Consulta el historial de cambios en plantillas y Ámbitos
                 </Text>
                 <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/audit')}>
                   Ir a Historial
@@ -639,9 +711,9 @@ useEffect(() => {
                <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
              </Group>
              <Text ta={"center"} size="sm" color="dimmed">
-              Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito
+             Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito
              </Text>
-             <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reports')}>
+             <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reportproducers')}>
                Ir a Informes de Gestión de Productores
              </Button>
             </Card>
@@ -689,7 +761,7 @@ useEffect(() => {
 
     <Group mt="md" mb="xs">
       <Text ta="center" w={500}>
-        Informe de Gestión de Responsables
+       Informe de Gestión de Responsables
       </Text>
     </Group>
 
@@ -715,7 +787,7 @@ useEffect(() => {
                 <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
+               Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
                 Ir a Plantillas con Filtros
@@ -925,10 +997,10 @@ useEffect(() => {
     //           <Text ta={"center"} w={500}>Administrar Mi Dependencia</Text>
     //         </Group>
     //         <Text ta={"center"} size="sm" color="dimmed">
-    //           Selecciona qué miembros de tu equipo tendrán acceso a Miró
+    //           Selecciona quÃ© miembros de tu equipo tendrÃ¡n acceso a MirÃ³
     //         </Text>
     //         <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/dependency')}>
-    //           Ir a Gestión de Dependencia
+    //           Ir a GestiÃ³n de Dependencia
     //         </Button>
     //       </Card>
     //     </Grid.Col>
@@ -948,7 +1020,7 @@ useEffect(() => {
             <Text ta={"center"} w={500}>Configurar plantilla SNIES</Text>
           </Group>
           <Text ta={"center"} size="sm" color="dimmed">
-            Carga y administra las plantilla SNIES.
+            Carga y administra las plantillas SNIES.
           </Text>
           <Button
             variant="light"
@@ -967,23 +1039,33 @@ useEffect(() => {
   const renderCnaCards = () => {
     return (
       <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/cna/templates")} style={{ cursor: "pointer" }}>
           <Center>
             <IconReport size={80} />
           </Center>
           <Group mt="md" mb="xs">
-            <Text ta={"center"} w={500}>CNA</Text>
+            <Text ta={"center"} w={500}>Configurar plantilla CNA</Text>
           </Group>
           <Text ta={"center"} size="sm" color="dimmed">
-            Módulo CNA disponible próximamente.
+            Carga y administra las plantillas CNA.
           </Text>
-          <Button variant="light" fullWidth mt="md" radius="md" disabled>
-            Próximamente
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/cna/templates")}> 
+            Ir a plantilla CNA
           </Button>
         </Card>
       </Grid.Col>
     );
   };
+
+  if (shouldRedirectFromDashboardHome || shouldWaitDashboardRedirect) {
+    return (
+      <Container size="xl" py="xl">
+        <Center style={{ minHeight: "60vh", flexDirection: "column", gap: 12 }}>
+          <Text c="dimmed">Cargando módulo...</Text>
+        </Center>
+      </Container>
+    );
+  }
 
   const renderAvRcCards = () => {
     return (
@@ -1009,20 +1091,20 @@ useEffect(() => {
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {activeModule !== "home" && (
+        {(activeModule !== "home" || avRcOpen) && !(activeModule === "reports" && ["Productor", "Responsable"].includes(userRole)) && (
           <Group justify="flex-start">
-            <Button variant="subtle" onClick={() => setActiveModule("home")}>
+            <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
               Volver a módulos
             </Button>
           </Group>
         )}
-        {activeModule === "home" ? (
+        {activeModule === "home" && !avRcOpen ? (
           <Grid justify="center" align="stretch">
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("operations")}
+                onClick={() => router.push("/reports")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1055,7 +1137,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("snies")}
+                onClick={() => router.push("/snies")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1088,7 +1170,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("cna")}
+                onClick={() => router.push("/cna")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1110,7 +1192,7 @@ useEffect(() => {
                       Gestión CNA.
                     </Text>
                   </Stack>
-                  <Button variant="white" color="orange" radius="xl">
+                  <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}> 
                     Abrir módulo
                   </Button>
                 </Stack>
@@ -1121,7 +1203,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => setActiveModule("av-rc")}
+                onClick={() => setAvRcOpen(true)}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1152,7 +1234,7 @@ useEffect(() => {
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {activeModule === "operations" ? renderCards() : activeModule === "snies" ? renderSniesCards() : activeModule === "cna" ? renderCnaCards() : renderAvRcCards()}
+            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
           </Grid>
         )}
         </Stack>
@@ -1207,3 +1289,5 @@ useEffect(() => {
 };
 
 export default DashboardPage;
+
+

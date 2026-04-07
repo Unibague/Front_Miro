@@ -391,16 +391,7 @@ const UploadedReportsPage = () => {
   return (
     <Container size={"xl"}>
       <DateConfig/>
-      <Title ta="center">{`Envíos para: ${publishedReport?.report.name}`}</Title>
-      <Group mb="md">
-        <Button
-          variant="outline"
-          leftSection={<IconArrowLeft />}
-          onClick={() => router.back()}
-        >
-          Ir atrás
-        </Button>
-      </Group>
+      <Title ta="center">{`Envíos para: ${publishedReport?.report.name}`}</Title>
       <Accordion>
         {items}
         {missingItems}
