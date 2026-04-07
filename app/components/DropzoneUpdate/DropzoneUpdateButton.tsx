@@ -18,6 +18,36 @@ interface DropzoneButtonProps {
   edit?: boolean;
 }
 
+const normalizeBackendValidationErrors = (payload: any) => {
+  const details = payload?.details;
+
+  if (Array.isArray(details)) {
+    return details;
+  }
+
+  const fallbackMessage =
+    typeof details === 'string'
+      ? details
+      : typeof payload?.message === 'string'
+        ? payload.message
+        : typeof payload?.status === 'string'
+          ? payload.status
+          : 'Error desconocido al procesar la plantilla.';
+
+  return [
+    {
+      column: payload?.column || 'Campo desconocido',
+      errors: [
+        {
+          register: 1,
+          message: fallbackMessage,
+          value: payload?.value ?? 'Sin valor',
+        },
+      ],
+    },
+  ];
+};
+
 export function DropzoneUpdateButton({ pubTemId, endDate, onClose, edit = false }: DropzoneButtonProps) {
   const theme = useMantineTheme();
   const openRef = useRef<() => void>(null);
@@ -109,7 +139,26 @@ const handleFileDrop = async (files: File[]) => {
       if (lookup.size > 0) fieldValidatorLookup[f.name] = lookup;
     });
 
-    const sheet = workbook.worksheets[0];
+    const expectedColumns = Object.keys(fieldTypes);
+    const guideHeaders = new Set(['CAMPO', 'COMENTARIO DEL CAMPO']);
+    const sheet = workbook.worksheets.find((worksheet) => {
+      const headerRow = worksheet.getRow(1);
+      const worksheetHeaders: string[] = [];
+
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        worksheetHeaders.push(cell.text?.toString?.() ?? cell.value?.toString?.() ?? '');
+      });
+
+      const filledHeaders = worksheetHeaders.map((header) => header.trim()).filter(Boolean);
+      if (filledHeaders.length === 0) return false;
+
+      const normalizedHeaders = filledHeaders.map((header) => _vNorm(header));
+      const isGuideSheet = normalizedHeaders.every((header) => guideHeaders.has(header));
+      if (isGuideSheet) return false;
+
+      return filledHeaders.some((header) => expectedColumns.includes(header));
+    }) ?? workbook.worksheets[0];
+
     if (sheet) {
       let headers: string[] = [];
 
@@ -121,7 +170,6 @@ const handleFileDrop = async (files: File[]) => {
           });
           
           // 🚨 Validar columnas antes de procesar datos
-          const expectedColumns = Object.keys(fieldTypes);
           const invalidColumns = headers.filter(header => header && !expectedColumns.includes(header));
           
           if (invalidColumns.length > 0) {
@@ -309,9 +357,15 @@ const handleFileDrop = async (files: File[]) => {
     } catch (error) {
       console.error('Error enviando los datos al servidor:', error);
       if (axios.isAxiosError(error)) {
-        const details = error.response?.data.details;
-        if (Array.isArray(details)) {
-          localStorage.setItem("errorDetails", JSON.stringify(details));
+        console.error('Detalles del error:', error.response?.data);
+        console.error(
+          'Detalles del error JSON:',
+          JSON.stringify(error.response?.data ?? {}, null, 2)
+        );
+
+        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
+          localStorage.setItem("errorDetails", JSON.stringify(normalizedErrors));
           if (typeof window !== "undefined") window.open("/logs", "_blank");
         } else {
           showNotification({

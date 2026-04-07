@@ -15,6 +15,25 @@ interface ColumnError {
   errors: ErrorDetail[];
 }
 
+const normalizeColumnErrors = (payload: unknown): ColumnError[] => {
+  if (!Array.isArray(payload)) return [];
+
+  return payload.map((item: any) => ({
+    column: typeof item?.column === 'string' && item.column.trim() ? item.column : 'Campo desconocido',
+    errors: Array.isArray(item?.errors) && item.errors.length > 0
+      ? item.errors.map((detail: any) => ({
+          register: Number.isFinite(Number(detail?.register)) ? Number(detail.register) : 1,
+          message: typeof detail?.message === 'string' && detail.message.trim() ? detail.message : 'Error desconocido',
+          value: detail?.value ?? 'Sin valor',
+        }))
+      : [{
+          register: 1,
+          message: typeof item?.message === 'string' && item.message.trim() ? item.message : 'Error desconocido',
+          value: item?.value ?? 'Sin valor',
+        }],
+  }));
+};
+
 const ErrorLogsPage = () => {
   const [columnErrors, setColumnErrors] = useState<ColumnError[]>([]);
 
@@ -29,8 +48,9 @@ const ErrorLogsPage = () => {
     const errors = localStorage.getItem('errorDetails');
     if (errors) {
       const parsedErrors = JSON.parse(errors);
-      if (Array.isArray(parsedErrors)) {
-        setColumnErrors(parsedErrors);
+      const normalizedErrors = normalizeColumnErrors(parsedErrors);
+      if (normalizedErrors.length > 0) {
+        setColumnErrors(normalizedErrors);
       } else {
         console.warn("Estructura inesperada en errorDetails:", parsedErrors);
         setColumnErrors([]);
