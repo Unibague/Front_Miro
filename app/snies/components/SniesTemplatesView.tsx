@@ -52,11 +52,12 @@ interface SniesTemplate {
 
 interface SniesTemplatesViewProps {
   mode: "configure" | "manage";
+  module?: "snies" | "cna";
 }
 
 const PAGE_SIZE = 8;
 
-export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
+export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemplatesViewProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
@@ -72,13 +73,16 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
   const [file, setFile] = useState<File | null>(null);
 
   const isConfigureMode = mode === "configure";
+  const moduleUpper = module.toUpperCase();
+  const moduleBasePath = `/${module}/templates`;
+  const apiBasePath = `${process.env.NEXT_PUBLIC_API_URL}/${module}/templates`;
 
   const fetchTemplates = async () => {
     if (!session?.user?.email) return;
 
     setLoading(true);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/snies/templates`, {
+      const response = await axios.get(apiBasePath, {
         params: {
           email: session.user.email,
           page,
@@ -91,10 +95,10 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
       setTemplates(response.data.templates || []);
       setTotalPages(response.data.pages || 1);
     } catch (error) {
-      console.error("Error fetching SNIES templates:", error);
+      console.error(`Error fetching ${moduleUpper} templates:`, error);
       showNotification({
         title: "Error",
-        message: "No fue posible cargar las plantillas SNIES.",
+        message: `No fue posible cargar las plantillas ${moduleUpper}.`,
         color: "red",
       });
       setTemplates([]);
@@ -138,7 +142,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
     if (!editingTemplate && !file) {
       showNotification({
         title: "Archivo requerido",
-        message: "Debes subir el archivo base de la plantilla SNIES.",
+        message: `Debes subir el archivo base de la plantilla ${moduleUpper}.`,
         color: "red",
       });
       return;
@@ -167,24 +171,24 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
 
       if (editingTemplate) {
         await axios.put(
-          `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${editingTemplate._id}`,
+          `${apiBasePath}/${editingTemplate._id}`,
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
         showNotification({
           title: "Plantilla actualizada",
-          message: "La plantilla SNIES se actualizó correctamente.",
+          message: `La plantilla ${moduleUpper} se actualiz?ó correctamente.`,
           color: "teal",
         });
       } else {
         await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/create`,
+          `${apiBasePath}/create`,
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
         showNotification({
           title: "Plantilla creada",
-          message: "La plantilla SNIES se guardó en la base de datos.",
+          message: `La plantilla ${moduleUpper} se guard?ó en la base de datos.`,
           color: "teal",
         });
       }
@@ -193,10 +197,10 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
       resetForm();
       fetchTemplates();
     } catch (error) {
-      console.error("Error saving SNIES template:", error);
+      console.error(`Error saving ${moduleUpper} template:`, error);
       showNotification({
         title: "Error",
-        message: "No fue posible guardar la plantilla SNIES.",
+        message: `No fue posible guardar la plantilla ${moduleUpper}.`,
         color: "red",
       });
     } finally {
@@ -208,7 +212,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
     if (!session?.user?.email) return;
 
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${template._id}`, {
+      await axios.delete(`${apiBasePath}/${template._id}`, {
         params: { email: session.user.email },
       });
 
@@ -220,10 +224,10 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
 
       fetchTemplates();
     } catch (error) {
-      console.error("Error deleting SNIES template:", error);
+      console.error(`Error deleting ${moduleUpper} template:`, error);
       showNotification({
         title: "Error",
-        message: "No fue posible eliminar la plantilla SNIES.",
+        message: `No fue posible eliminar la plantilla ${moduleUpper}.`,
         color: "red",
       });
     }
@@ -233,7 +237,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
     if (!session?.user?.email || !template._id) return;
 
     window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${template._id}/download-template?email=${encodeURIComponent(
+      `${apiBasePath}/${template._id}/download-template?email=${encodeURIComponent(
         session.user.email
       )}`,
       "_blank",
@@ -245,7 +249,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
     if (!session?.user?.email) return;
 
     window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${template._id}/download-field-comparison?email=${encodeURIComponent(
+      `${apiBasePath}/${template._id}/download-field-comparison?email=${encodeURIComponent(
         session.user.email
       )}`,
       "_blank",
@@ -271,7 +275,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
   };
 
   const handleOpenConnectedData = (template: SniesTemplate) => {
-    router.push(`/snies/templates/${template._id}`);
+    router.push(`${moduleBasePath}/${template._id}`);
   };
 
   const rows = templates.map((template) => (
@@ -294,10 +298,21 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
                     <IconDownload size={16} />
                   </Button>
                 </Tooltip>
+                {module === "cna" ? (
+                  <Tooltip label="Descargar comparativo de campos">
+                    <Button
+                      variant="outline"
+                      color="blue"
+                      onClick={() => handleDownloadFieldComparison(template)}
+                    >
+                      <IconDownload size={16} />
+                    </Button>
+                  </Tooltip>
+                ) : null}
                 <Tooltip label="Editar plantilla">
                   <Button
                     variant="outline"
-                    onClick={() => router.push(`/snies/templates/update/${template._id}`)}
+                    onClick={() => router.push(`${moduleBasePath}/update/${template._id}`)}
                   >
                     <IconEdit size={16} />
                   </Button>
@@ -331,7 +346,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
   return (
     <Container size="xl" py="xl">
       <Title order={2} mb="md">
-        {isConfigureMode ? "Configurar Plantillas SNIES" : "Gestionar Plantillas SNIES"}
+        {isConfigureMode ? `Configurar Plantillas ${moduleUpper}` : `Gestionar Plantillas ${moduleUpper}`}
       </Title>
 
       <TextInput
@@ -350,20 +365,22 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
             <Button onClick={openCreate} leftSection={<IconCirclePlus size={18} />}>
               Crear Nueva Plantilla
             </Button>
-            <Button
-              variant="outline"
-              rightSection={<IconArrowRight size={16} />}
-              onClick={() => router.push("/snies/templates/published")}
-            >
-              Ir a Gestionar Plantillas SNIES
-            </Button>
+            {module === "snies" ? (
+              <Button
+                variant="outline"
+                rightSection={<IconArrowRight size={16} />}
+                onClick={() => router.push(`${moduleBasePath}/published`)}
+              >
+                {`Ir a Gestionar Plantillas ${moduleUpper}`}
+              </Button>
+            ) : null}
           </>
         ) : (
           <Button
             variant="outline"
-            onClick={() => router.push("/snies/templates")}
+            onClick={() => router.push(moduleBasePath)}
           >
-            Ir a Configurar Plantillas SNIES
+            {`Ir a Configurar Plantillas ${moduleUpper}`}
           </Button>
         )}
       </Group>
@@ -388,7 +405,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
               <Table.Td colSpan={5}>
                 <Center>
                   <Text c="dimmed">
-                    {loading ? "Cargando plantillas SNIES..." : "No hay plantillas SNIES para los filtros actuales."}
+                    {loading ? `Cargando plantillas ${moduleUpper}...` : `No hay plantillas ${moduleUpper} para los filtros actuales.`}
                   </Text>
                 </Center>
               </Table.Td>
@@ -414,7 +431,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
           close();
           resetForm();
         }}
-        title={editingTemplate ? "Editar plantilla SNIES" : "Subir plantilla SNIES"}
+        title={editingTemplate ? `Editar plantilla ${moduleUpper}` : `Subir plantilla ${moduleUpper}`}
         overlayProps={{ backgroundOpacity: 0.55, blur: 3 }}
       >
         <TextInput
@@ -442,7 +459,7 @@ export default function SniesTemplatesView({ mode }: SniesTemplatesViewProps) {
             Cancelar
           </Button>
           <Button onClick={handleSave} loading={saving}>
-            {editingTemplate ? "Actualizar plantilla SNIES" : "Guardar plantilla SNIES"}
+            {editingTemplate ? `Actualizar plantilla ${moduleUpper}` : `Guardar plantilla ${moduleUpper}`}
           </Button>
         </Group>
       </Modal>

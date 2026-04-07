@@ -22,6 +22,7 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const producerRoutes = /^\/producer/;
     const templateRoutes = /^\/templates/;
     const reportRoutes = /^\/reports/;
+    const managementProducerReportsRoute = /^\/reportproducers$/;
     const templatesWithFiltersRoute = /^\/templates-with-filters/;
     const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/; // Ruta específica para detalles de template
 
@@ -33,7 +34,7 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
        !templatesWithFiltersRoute.test(pathname) && 
        !templateDetailRoute.test(pathname) && 
        !["Administrador", "Responsable"].includes(userRole)) ||
-      (reportRoutes.test(pathname) && !["Administrador", "Responsable"].includes(userRole))
+      ((reportRoutes.test(pathname) || managementProducerReportsRoute.test(pathname)) && !["Administrador", "Responsable", "Productor"].includes(userRole))
     ) {
       showNotification({
         title: "Acceso denegado",
