@@ -1020,7 +1020,7 @@ useEffect(() => {
             <Text ta={"center"} w={500}>Configurar plantilla SNIES</Text>
           </Group>
           <Text ta={"center"} size="sm" color="dimmed">
-            Carga y administra las plantilla SNIES.
+            Carga y administra las plantillas SNIES.
           </Text>
           <Button
             variant="light"
