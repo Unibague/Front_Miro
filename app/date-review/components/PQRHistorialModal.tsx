@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Modal, Stack, Text, Table, Group, Badge, Button, Textarea } from "@mantine/core";
+import { Modal, Stack, Text, Table, Group, Badge, Button, ScrollArea } from "@mantine/core";
 import type { PQR, Program } from "../types";
 
 interface Props {
@@ -137,12 +137,14 @@ export default function PQRHistorialModal({ opened, onClose, pqrs, programas }: 
         title={viewModal?.label ?? "Detalle"}
         centered size="sm" radius="md" zIndex={300}>
         <Stack gap="sm">
-          <Textarea
-            value={viewModal?.value ?? ""}
-            readOnly
-            autosize minRows={2} maxRows={12}
-            styles={{ input: { backgroundColor: "#f8f9fa", cursor: "default" } }}
-          />
+          <ScrollArea mah={300} style={{
+            backgroundColor: "#f8f9fa", borderRadius: 6,
+            border: "1px solid #dee2e6", padding: "10px 12px",
+          }}>
+            <Text size="sm" style={{ whiteSpace: "pre-wrap", userSelect: "text" }}>
+              {viewModal?.value}
+            </Text>
+          </ScrollArea>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setViewModal(null)}>Cerrar</Button>
           </Group>
