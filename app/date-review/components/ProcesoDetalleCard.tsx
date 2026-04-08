@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, Notification, SimpleGrid, Anchor, Divider, Loader,
-  ActionIcon,
+  ActionIcon, Switch, Tooltip,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
@@ -28,7 +28,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps } from "../types";
+import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso } from "../types";
 
 /* ── Fila sortable de actividad (drag & drop) con subactividades ── */
 const SortableActividad = ({
@@ -39,6 +39,8 @@ const SortableActividad = ({
   onAddSubactividad, onToggleSubactividad, onDeleteSubactividad, onReorderSubactividades,
   onOpenDocsActividad, onOpenObsActividad,
   onOpenDocsSubactividad, onOpenObsSubactividad,
+  onChangeActoAdminModo,
+  actoAdminModoExterno,
   actividadDocCount, subactividadDocCounts,
 }: {
   act: Actividad;
@@ -64,6 +66,8 @@ const SortableActividad = ({
   onOpenDocsSubactividad: (sub: Subactividad) => void;
   onOpenObsSubactividad: (sub: Subactividad) => void;
   onReorderSubactividades: (newOrder: string[]) => void;
+  onChangeActoAdminModo: (modo: string | null) => void;
+  actoAdminModoExterno?: string | null;
   actividadDocCount: number;
   subactividadDocCounts: Record<string, number>;
 }) => {
@@ -83,6 +87,18 @@ const SortableActividad = ({
     setNuevaSub("");
   };
 
+  const esActoAdmin = act.nombre.trim().toLowerCase() === 'acto administrativo';
+  // Si viene modo externo (del caso), usarlo; si no, usar el guardado en la actividad
+  const usaModoExterno = esActoAdmin && actoAdminModoExterno !== undefined;
+  const modoActual = usaModoExterno ? (actoAdminModoExterno ?? null) : (act.acto_admin_modo ?? null);
+
+  // Subactividades visibles según modo (para "Acto administrativo")
+  const subsVisibles = esActoAdmin && modoActual
+    ? act.subactividades.filter(s => s.grupo === modoActual)
+    : esActoAdmin && !modoActual
+    ? []
+    : act.subactividades;
+
   return (
     <div ref={setNodeRef} style={style}>
       <Paper withBorder radius="sm" p="sm">
@@ -92,11 +108,13 @@ const SortableActividad = ({
             <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 3, color: "#adb5bd", fontSize: 16, userSelect: "none" }}>
               ⠿
             </div>
-            <input type="checkbox" checked={act.completada}
-              onChange={() => canToggle && onToggle()}
-              disabled={!canToggle}
-              style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
-            />
+            {!esActoAdmin && (
+              <input type="checkbox" checked={act.completada}
+                onChange={() => canToggle && onToggle()}
+                disabled={!canToggle}
+                style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
+              />
+            )}
             {editActividadId === act._id ? (
               <Stack gap={4} style={{ flex: 1 }}>
                 <TextInput size="xs" label="Nombre de la actividad" value={editActividadNombre}
@@ -115,6 +133,37 @@ const SortableActividad = ({
                   {act.responsables || "Sin encargado — clic en ✏ para asignar"}
                 </Text>
                 {act.fecha_completado && <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>}
+                {/* Estado para "Acto administrativo" */}
+                {esActoAdmin && (
+                  <Group gap="xs" mt={6} align="center">
+                    {usaModoExterno ? (
+                      /* Modo derivado del caso — solo informativo */
+                      modoActual === null ? (
+                        <Text size="xs" c="orange" fs="italic">Define el estado en "Información del caso" para ver las subactividades</Text>
+                      ) : (
+                        <Badge size="xs" color={modoActual === 'satisfactorio' ? 'green' : 'red'} variant="light">
+                          {modoActual === 'satisfactorio' ? 'Satisfactorio' : 'No satisfactorio'}
+                        </Badge>
+                      )
+                    ) : (
+                      /* Modo con switch propio (actividades sin caso ligado) */
+                      <>
+                        <Text size="xs" fw={600} c="dimmed">Estado:</Text>
+                        <Switch size="md" checked={modoActual === 'satisfactorio'}
+                          onChange={e => onChangeActoAdminModo(e.currentTarget.checked ? 'satisfactorio' : 'no_satisfactorio')}
+                          color="green" />
+                        {modoActual === null && (
+                          <Text size="xs" c="orange" fs="italic">Selecciona un estado para ver las subactividades</Text>
+                        )}
+                        {modoActual !== null && (
+                          <Badge size="xs" color={modoActual === 'satisfactorio' ? 'green' : 'red'} variant="light">
+                            {modoActual === 'satisfactorio' ? 'Satisfactorio' : 'No satisfactorio'}
+                          </Badge>
+                        )}
+                      </>
+                    )}
+                  </Group>
+                )}
               </div>
             )}
           </Group>
@@ -141,16 +190,19 @@ const SortableActividad = ({
               onClick={() => setExpandSubs(v => !v)}
             >
               {expandSubs ? "▾" : "▸"} Subactividades
-              {act.subactividades.length > 0 && (
+              {subsVisibles.length > 0 && (
                 <Badge size="xs" ml={4} color="gray" variant="outline">
-                  {act.subactividades.filter(s => s.completada).length}/{act.subactividades.length}
+                  {subsVisibles.filter(s => s.completada).length}/{subsVisibles.length}
                 </Badge>
               )}
             </Button>
 
             {expandSubs && (
               <Stack gap={4} mt={6}>
-                {act.subactividades.map((sub, subIdx) => (
+                {subsVisibles.length === 0 && esActoAdmin && modoActual === null && (
+                  <Text size="xs" c="dimmed" fs="italic" ml={4}>Selecciona un estado arriba para ver las subactividades.</Text>
+                )}
+                {subsVisibles.map((sub, subIdx) => (
                   <Paper key={sub._id} withBorder radius="xs" p={6}
                     style={{ background: sub.completada ? "#f8f9fa" : undefined }}>
                     <Group justify="space-between" wrap="nowrap">
@@ -172,15 +224,19 @@ const SortableActividad = ({
                           title="Mover arriba"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
-                            const tmp = ids[subIdx - 1]; ids[subIdx - 1] = ids[subIdx]; ids[subIdx] = tmp;
+                            const visIdx = act.subactividades.findIndex(s => s._id === sub._id);
+                            const prevVisIdx = subIdx > 0 ? act.subactividades.findIndex(s => s._id === subsVisibles[subIdx - 1]._id) : -1;
+                            if (prevVisIdx >= 0) { const tmp = ids[prevVisIdx]; ids[prevVisIdx] = ids[visIdx]; ids[visIdx] = tmp; }
                             onReorderSubactividades(ids);
                           }}>↑</Button>
                         <Button size="xs" variant="subtle" color="gray" p={2}
-                          disabled={subIdx === act.subactividades.length - 1}
+                          disabled={subIdx === subsVisibles.length - 1}
                           title="Mover abajo"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
-                            const tmp = ids[subIdx + 1]; ids[subIdx + 1] = ids[subIdx]; ids[subIdx] = tmp;
+                            const visIdx = act.subactividades.findIndex(s => s._id === sub._id);
+                            const nextVisIdx = subIdx < subsVisibles.length - 1 ? act.subactividades.findIndex(s => s._id === subsVisibles[subIdx + 1]._id) : -1;
+                            if (nextVisIdx >= 0) { const tmp = ids[nextVisIdx]; ids[nextVisIdx] = ids[visIdx]; ids[visIdx] = tmp; }
                             onReorderSubactividades(ids);
                           }}>↓</Button>
                         <Button size="xs" variant="subtle" color="gray" title="Observaciones"
@@ -486,6 +542,65 @@ const ProcesoDetalleCard = ({
   // Recargar PM cuando cambia el proceso o su fase (para detectar el PM auto-creado al llegar a Fase 6 en AV)
   useEffect(() => { cargarPM(); }, [proceso._id, proceso.fase_actual]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ── Información del caso ── */
+  const [caso, setCaso]                       = useState<Caso | null>(null);
+  const [savingCaso, setSavingCaso]           = useState(false);
+  const [editingCasoDateKey, setEditingCasoDateKey] = useState<string | null>(null);
+
+  const cargarCaso = async () => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/casos`, {
+        params: { proceso_id: proceso._id },
+      });
+      setCaso(res.data);
+    } catch { setCaso(null); }
+  };
+
+  const autoCrearCaso = async () => {
+    try {
+      const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/casos`, {
+        proceso_id: proceso._id,
+      });
+      setCaso(res.data);
+    } catch { /* silencioso */ }
+  };
+
+  const saveCasoField = async (field: string, value: string | boolean | null) => {
+    if (!caso) return;
+    setSavingCaso(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${caso._id}`, {
+        [field]: value,
+      });
+      setCaso(res.data);
+    } catch { /* silencioso */ }
+    finally { setSavingCaso(false); }
+  };
+
+  const saveCasoDate = async (field: string, val: Date | null) => {
+    const fechaStr = val ? val.toISOString().split("T")[0] : null;
+    await saveCasoField(field, fechaStr);
+    setEditingCasoDateKey(null);
+  };
+
+  // "No renovación" siempre tiene caso automáticamente
+  const esCasoAutoVisible = (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && proceso.subtipo === "No renovación";
+
+  // Verificar si la actividad "Información del caso" de fase 4 ya está completada
+  const actInfoCasoCompletada = fases
+    .find(f => f.numero === 4)
+    ?.actividades.some(a => a.nombre.trim().toLowerCase() === 'información del caso' && a.completada) ?? false;
+
+  useEffect(() => {
+    if (proceso.tipo_proceso !== "RC" && proceso.tipo_proceso !== "AV") return;
+    const debeAutoCrear = esCasoAutoVisible || actInfoCasoCompletada;
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/casos`, { params: { proceso_id: proceso._id } })
+      .then(res => setCaso(res.data))
+      .catch(() => {
+        if (debeAutoCrear) autoCrearCaso();
+      });
+  }, [proceso._id, proceso.fase_actual, actInfoCasoCompletada]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Modal de creación de PM para RC (con etiquetas y meses editables) ── */
   const [crearPMModalOpen, setCrearPMModalOpen] = useState(false);
   const [pmLabels, setPmLabels] = useState({
@@ -568,6 +683,11 @@ const ProcesoDetalleCard = ({
       const faseActualizada: Phase = res.data;
       const fasesActualizadas = fases.map(f => f._id === fase._id ? faseActualizada : f);
       onUpdateFases(fasesActualizadas);
+      // Si se completó actividad "Información del caso" en fase 4, recargar el caso
+      if (nuevaCompletada && fase.numero === 4 &&
+          act.nombre.trim().toLowerCase() === 'información del caso') {
+        setTimeout(() => cargarCaso(), 300);
+      }
       if (nuevaCompletada && faseActualizada.actividades.every(a => a.completada)) {
         const siguienteFase = proceso.fase_actual + 1;
         if (siguienteFase <= 6) {
@@ -839,6 +959,16 @@ const ProcesoDetalleCard = ({
     finally { setSavingActividad(false); }
   };
 
+  const changeActoAdminModo = async (fase: Phase, act: Actividad, modo: string | null) => {
+    try {
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
+        { acto_admin_modo: modo }
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
   const eliminarActividad = async (fase: Phase, actId: string) => {
     try {
       const res = await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${actId}`);
@@ -894,6 +1024,125 @@ const ProcesoDetalleCard = ({
       setChecklistOpen(false);
     } catch (e) { console.error(e); }
     finally { setFinalizandoFase(false); }
+  };
+
+  const [revirtiendoFase, setRevirtiendoFase] = useState(false);
+  const revertirFase = async (fase: Phase) => {
+    if (!confirm("¿Seguro que quieres volver a la fase anterior? Se desmarcarán todas las actividades de esta fase.")) return;
+    setRevirtiendoFase(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/revert-all`);
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
+      if (res.data.proceso) onUpdateProceso(res.data.proceso);
+      setChecklistOpen(false);
+    } catch (e) { console.error(e); }
+    finally { setRevirtiendoFase(false); }
+  };
+
+  /* ── Render tabla Información del caso (reutilizado en vista normal y No renovación) ── */
+  const renderCasoTabla = () => {
+    if (!caso) return null;
+    const mostrarApelacion = caso.resolucion_aprobada === false;
+    const COLS_FECHAS = [
+      { key: "fecha_solicitud_radicado",       label: "Solicitud radicado" },
+      { key: "fecha_notificacion_completitud", label: "Notificación completitud" },
+      { key: "fecha_respuesta_completitud",    label: "Respuesta completitud" },
+      { key: "fecha_resolucion",               label: "Acto administrativo MEN" },
+    ];
+    const minWidth = (mostrarApelacion ? 900 : 720) + (caso.codigo_caso !== null ? 120 : 0);
+
+    const renderDateCell = (field: string, bgColor?: string) => {
+      const fecha     = caso[field as keyof Caso] as string | null | undefined;
+      const isEditing = editingCasoDateKey === field;
+      const dateVal   = fecha ? new Date(fecha + "T12:00:00") : null;
+      const isApelacion = field === "fecha_resolucion_apelacion";
+      return (
+        <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 130, ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
+          <Stack gap={2} align="center">
+            {isEditing ? (
+              <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
+                valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
+                style={{ width: 130 }} clearable disabled={savingCaso}
+                onKeyDown={e => e.preventDefault()}
+                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
+            ) : (
+              <Text size="xs" fw={600} ta="center" style={{
+                cursor: "pointer", padding: "2px 8px", borderRadius: 4,
+                border: isApelacion ? "1px dashed #fd7014" : "1px dashed #4dabf7",
+                backgroundColor: isApelacion ? "#fff3e0" : "#e7f5ff",
+                color: fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
+              }}
+                title="Clic para editar fecha" onClick={() => setEditingCasoDateKey(field)}>
+                {fecha ?? <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+              </Text>
+            )}
+          </Stack>
+        </Table.Td>
+      );
+    };
+
+    return (
+      <ScrollArea>
+        <Table withTableBorder withColumnBorders style={{ minWidth }}>
+          <Table.Thead>
+            <Table.Tr>
+              {/* Código del caso como primera columna */}
+              <Table.Th style={{ backgroundColor: "#f8f9fa", minWidth: 140 }}>
+                <Text size="xs" fw={700} ta="center">Código del caso</Text>
+              </Table.Th>
+              {COLS_FECHAS.map(col => (
+                <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
+                  <Text size="xs" fw={700} ta="center">{col.label}</Text>
+                </Table.Th>
+              ))}
+              <Table.Th style={{ backgroundColor: "#f8f9fa", minWidth: 120 }}>
+                <Text size="xs" fw={700} ta="center">Estado</Text>
+              </Table.Th>
+              {mostrarApelacion && (
+                <Table.Th style={{ backgroundColor: "#fff3e0" }}>
+                  <Group gap={4} justify="center">
+                    <Badge size="xs" color="orange" variant="light">Apelación</Badge>
+                    <Text size="xs" fw={700} ta="center">Resolución apelación</Text>
+                  </Group>
+                </Table.Th>
+              )}
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            <Table.Tr>
+              {/* Input código */}
+              <Table.Td style={{ verticalAlign: "middle" }}>
+                <TextInput
+                  size="xs" placeholder="Ej: 2024-RC-001" ta="center"
+                  value={caso.codigo_caso ?? ""}
+                  onChange={e => setCaso({ ...caso, codigo_caso: e.currentTarget.value })}
+                  onBlur={() => saveCasoField("codigo_caso", caso.codigo_caso)}
+                  disabled={savingCaso}
+                  styles={{ input: { textAlign: "center" } }}
+                />
+              </Table.Td>
+              {COLS_FECHAS.map(col => renderDateCell(col.key))}
+              {/* Estado */}
+              <Table.Td style={{ verticalAlign: "middle", minWidth: 120 }}>
+                <Stack gap={4} align="center">
+                  <Switch size="sm"
+                    checked={caso.resolucion_aprobada === true}
+                    indeterminate={caso.resolucion_aprobada === null}
+                    onChange={e => saveCasoField("resolucion_aprobada", e.currentTarget.checked)}
+                    color="green" />
+                  {caso.resolucion_aprobada !== null && (
+                    <Badge size="xs" color={caso.resolucion_aprobada ? "green" : "red"} variant="light">
+                      {caso.resolucion_aprobada ? "Satisfactorio" : "No satisfactorio"}
+                    </Badge>
+                  )}
+                </Stack>
+              </Table.Td>
+              {mostrarApelacion && renderDateCell("fecha_resolucion_apelacion", "#fff8f0")}
+            </Table.Tr>
+          </Table.Tbody>
+        </Table>
+      </ScrollArea>
+    );
   };
 
   /* ── Datos derivados ── */
@@ -957,12 +1206,12 @@ const ProcesoDetalleCard = ({
         <Box px="md" pt="sm" pb="md">
           {/* Cabecera de fase */}
           <Group gap="xs" mb="sm" align="center">
-            <Badge color="orange" variant="light" size="md">Fase 7 — Solo documentos</Badge>
+            <Badge color="orange" variant="light" size="md">Plan de contingencia — Solo documentos</Badge>
           </Group>
 
           {/* Descripción — texto simple gris */}
           <Text size="xs" c="dimmed" mb="sm">
-            Proceso de No renovación en Fase 7 permanente. No tiene actividades ni fechas de proceso.
+            Proceso de No renovación en Plan de contingencia permanente. No tiene actividades ni fechas de proceso.
           </Text>
 
           {/* Acciones */}
@@ -1009,6 +1258,17 @@ const ProcesoDetalleCard = ({
             </Paper>
           )}
         </Box>
+
+        {/* Panel Información del caso — No renovación */}
+        {caso && (
+          <Box px="md" pt="sm" pb="sm">
+            <Group gap="xs" mb="xs">
+              <Text size="sm" fw={600}>Información del caso</Text>
+              <Badge size="xs" color="blue" variant="light">Activo</Badge>
+            </Group>
+            {renderCasoTabla()}
+          </Box>
+        )}
 
         {/* Modal PDF resolución vigente */}
         <Modal opened={resolucionDocModalOpen} onClose={() => setResolucionDocModalOpen(false)}
@@ -1227,7 +1487,8 @@ const ProcesoDetalleCard = ({
                     <Text size="xs" fw={700} ta="center">{col.label}</Text>
                     {col.key === "fecha_vencimiento"
                       ? <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
-                      : <Text size="xs" c="dimmed" ta="center">{offsetValue != null ? `(${offsetValue} meses antes del vencimiento)` : ""}</Text>
+                      : (proceso.subtipo !== "Nuevo" && proceso.subtipo !== "Primera vez") &&
+                        <Text size="xs" c="dimmed" ta="center">{offsetValue != null ? `(${offsetValue} meses antes del vencimiento)` : ""}</Text>
                     }
                   </Table.Th>
                 );
@@ -1492,6 +1753,17 @@ const ProcesoDetalleCard = ({
           ) : (
             <Text size="xs" c="dimmed">No hay plan de mejoramiento activo para este proceso.</Text>
           )}
+        </Box>
+      )}
+
+      {/* ── Bloque Información del caso ── */}
+      {(proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && caso && (
+        <Box px="md" pt="sm" pb="sm">
+          <Group gap="xs" mb="xs">
+            <Text size="sm" fw={600}>Información del caso</Text>
+            <Badge size="xs" color="blue" variant="light">Activo</Badge>
+          </Group>
+          {renderCasoTabla()}
         </Box>
       )}
 
@@ -1817,6 +2089,12 @@ const ProcesoDetalleCard = ({
                       onOpenObsActividad={() => abrirObsActividad(faseActual, act)}
                       onOpenDocsSubactividad={(sub) => abrirDocsSubactividad(faseActual, act, sub)}
                       onOpenObsSubactividad={(sub) => abrirObsSubactividad(faseActual, act, sub)}
+                      onChangeActoAdminModo={(modo) => changeActoAdminModo(faseActual, act, modo)}
+                      actoAdminModoExterno={
+                        act.nombre.trim().toLowerCase() === 'acto administrativo' && caso
+                          ? (caso.resolucion_aprobada === true ? 'satisfactorio' : caso.resolucion_aprobada === false ? 'no_satisfactorio' : null)
+                          : undefined
+                      }
                       actividadDocCount={actDocCounts[act._id] ?? 0}
                       subactividadDocCounts={subDocCounts}
                     />
@@ -1825,6 +2103,17 @@ const ProcesoDetalleCard = ({
               </SortableContext>
             </DndContext>
             <Group justify="flex-end" mt="xs">
+              {proceso.fase_actual > 0 && (
+                <Button
+                  size="xs"
+                  color="orange"
+                  variant="light"
+                  loading={revirtiendoFase}
+                  onClick={() => revertirFase(faseActual)}
+                >
+                  ← Volver a fase anterior
+                </Button>
+              )}
               <Button
                 size="xs"
                 color="green"
