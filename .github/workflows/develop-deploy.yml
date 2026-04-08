@@ -61,7 +61,8 @@ jobs:
           else
             echo "Updating existing repository...";
             cd Front_Miro_Test;
-            git pull origin develop;
+            git fetch origin develop;
+            git reset --hard origin/develop;
           fi;
           echo "Repository updated successfully"'
 

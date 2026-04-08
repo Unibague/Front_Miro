@@ -8,13 +8,16 @@ import {
 import { useRole } from "@/app/context/RoleContext";
 import axios from "axios";
 
-import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcesoRow, BarRow } from "./types";
+import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcesoRow, BarRow, PQR } from "./types";
 import { LABEL_PROCESO, selectorStyle } from "./constants";
 import FaseBadge from "./components/FaseBadge";
 import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
 import AgregarProcesoModal from "./components/AgregarProcesoModal";
+import AgregarPQRModal from "./components/AgregarPQRModal";
+import PQRListModal from "./components/PQRListModal";
+import PQRHistorialModal from "./components/PQRHistorialModal";
 
 /* ── Helper: renderiza la fecha subida de un doc ── */
 const fmtFecha = (iso?: string | null) =>
@@ -194,6 +197,47 @@ const DateReviewPage = () => {
 
   /* ── Modal agregar proceso ── */
   const [agregarProcesoOpen, setAgregarProcesoOpen] = useState(false);
+
+  /* ── Ventanas de gestión ── */
+  const [gestionProcesosOpen, setGestionProcesosOpen] = useState(false);
+  const [gestionPQROpen, setGestionPQROpen]           = useState(false);
+
+  /* ── PQR ── */
+  const [pqrs, setPqrs]                     = useState<PQR[]>([]);
+  const [agregarPQROpen, setAgregarPQROpen] = useState(false);
+  const [listaPQROpen, setListaPQROpen]     = useState(false);
+  const [historialPQROpen, setHistorialPQROpen] = useState(false);
+
+  const cargarPQRs = async () => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pqr`);
+      setPqrs(Array.isArray(res.data) ? res.data as PQR[] : []);
+    } catch (e) { console.error("Error cargando PQRs:", e); }
+  };
+
+  useEffect(() => { cargarPQRs(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePQRCreado = (pqr: PQR) => {
+    setPqrs(prev => [pqr, ...prev]);
+    setListaPQROpen(true);
+  };
+
+  const handlePQRActualizado = (updated: PQR) =>
+    setPqrs(prev => prev.map(p => p._id === updated._id ? updated : p));
+
+  const handlePQRCerrado = async (id: string) => {
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pqr/${id}/cerrar`);
+      setPqrs(prev => prev.map(p => p._id === id ? res.data as PQR : p));
+    } catch (e) { console.error(e); }
+  };
+
+  const handlePQREliminar = async (id: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/pqr/${id}`);
+      setPqrs(prev => prev.filter(p => p._id !== id));
+    } catch (e) { console.error(e); }
+  };
 
   /* ── Programa seleccionado (modal detalle) ── */
   const [selectedProgram, setSelectedProgram]   = useState<Program | null>(null);
@@ -394,10 +438,63 @@ const DateReviewPage = () => {
           )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          <Button variant="light" size="sm" fullWidth onClick={() => setAgregarProcesoOpen(true)}>+ Agregar proceso</Button>
-          <Button variant="subtle" size="sm" fullWidth onClick={abrirHistorial}>Ver historial</Button>
+          <Button variant="light" size="sm" fullWidth
+            styles={{ root: { paddingTop: 5, paddingBottom: 5 } }}
+            onClick={() => setGestionProcesosOpen(true)}>
+            Gestión procesos
+          </Button>
+          <Button variant="light" color="teal" size="sm" fullWidth
+            styles={{ root: { paddingTop: 5, paddingBottom: 5 } }}
+            onClick={() => setGestionPQROpen(true)}>
+            Gestión PQR
+            {pqrs.filter(p => !p.cerrado).length > 0 && (
+              <Badge size="xs" color="teal" variant="filled" ml={6}>
+                {pqrs.filter(p => !p.cerrado).length}
+              </Badge>
+            )}
+          </Button>
         </div>
       </Box>
+
+      {/* ── Ventana Gestión procesos ── */}
+      <Modal opened={gestionProcesosOpen} onClose={() => setGestionProcesosOpen(false)}
+        title="Gestión de procesos" centered size="sm" radius="md">
+        <Stack gap="sm" pb="xs">
+          <Button variant="light" size="md" fullWidth
+            onClick={() => { setGestionProcesosOpen(false); setAgregarProcesoOpen(true); }}>
+            + Agregar proceso
+          </Button>
+          <Button variant="subtle" size="md" fullWidth
+            onClick={() => { setGestionProcesosOpen(false); abrirHistorial(); }}>
+            Ver historial procesos
+          </Button>
+        </Stack>
+      </Modal>
+
+      {/* ── Ventana Gestión PQR ── */}
+      <Modal opened={gestionPQROpen} onClose={() => setGestionPQROpen(false)}
+        title="Gestión de PQR" centered size="sm" radius="md">
+        <Stack gap="sm" pb="xs">
+          <Button variant="light" color="teal" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setAgregarPQROpen(true); }}>
+            + Agregar PQR
+          </Button>
+          <Button variant="subtle" color="teal" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setListaPQROpen(true); }}>
+            Ver PQRs activos
+            {pqrs.filter(p => !p.cerrado).length > 0 && (
+              <Badge size="xs" color="teal" variant="filled" ml={6}>
+                {pqrs.filter(p => !p.cerrado).length}
+              </Badge>
+            )}
+          </Button>
+          <Divider />
+          <Button variant="subtle" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setHistorialPQROpen(true); }}>
+            Ver historial PQR
+          </Button>
+        </Stack>
+      </Modal>
 
       {/* ── Modal agregar proceso ── */}
       <AgregarProcesoModal
@@ -407,6 +504,28 @@ const DateReviewPage = () => {
         facultades={facultades}
         procesos={procesos}
         onCreated={handleProcesoCreado}
+      />
+
+      {/* ── Modales PQR ── */}
+      <AgregarPQRModal
+        opened={agregarPQROpen}
+        onClose={() => setAgregarPQROpen(false)}
+        programas={programas}
+        onCreado={handlePQRCreado}
+      />
+      <PQRListModal
+        opened={listaPQROpen}
+        onClose={() => setListaPQROpen(false)}
+        pqrs={pqrs}
+        programas={programas}
+        onUpdate={handlePQRActualizado}
+        onCerrar={handlePQRCerrado}
+      />
+      <PQRHistorialModal
+        opened={historialPQROpen}
+        onClose={() => setHistorialPQROpen(false)}
+        pqrs={pqrs}
+        programas={programas}
       />
 
       {/* ── CONTENIDO PRINCIPAL ── */}
