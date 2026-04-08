@@ -154,6 +154,20 @@ export type ProcesoDetalleProps = {
   onRefreshProcesos: (programCode: string) => Promise<void>;
 };
 
+export type PQR = {
+  _id: string;
+  nombre_solicitud: string;
+  programa_id?: string | null;
+  fecha_radicacion?: string | null;
+  hora?: string | null;
+  numero_radicado?: string | null;
+  medio_realizado?: string | null;
+  fecha_respuesta?: string | null;
+  observacion_respuesta?: string | null;
+  cerrado: boolean;
+  createdAt?: string;
+};
+
 export type ProcessHistoryRecord = {
   _id: string;
   program_code: string;
