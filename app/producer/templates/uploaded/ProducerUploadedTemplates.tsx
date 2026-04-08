@@ -13,6 +13,8 @@ import {
   Title,
   Group,
   Divider,
+  Select,
+  Text,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -114,6 +116,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(10); // Nuevo estado para el tamaño de página
   const [producerEndDate, setProducerEndDate] = useState<Date | undefined>(
     undefined
   );
@@ -124,12 +127,12 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     useDisclosure(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
-  const fetchTemplates = async (page: number, search: string, filterByDependency?: string) => {
+  const fetchTemplates = async (page: number, search: string, filterByDependency?: string, limit?: number) => {
     try {
       const params: any = {
         email: session?.user?.email, 
         page, 
-        limit: 10, 
+        limit: limit || pageSize, // Usar el pageSize seleccionado
         search,
         periodId: selectedPeriodId,
       };
@@ -167,18 +170,26 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     }
   };
 
+  // Función para manejar el cambio de tamaño de página
+  const handlePageSizeChange = (newPageSize: string | null) => {
+    if (newPageSize) {
+      setPageSize(parseInt(newPageSize));
+      setPage(1); // Resetear a la primera página cuando cambie el tamaño
+    }
+  };
+
   useEffect(() => {
     if (session?.user?.email) {
       const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-      fetchTemplates(page, search, filterDep);
+      fetchTemplates(page, search, filterDep, pageSize);
     }
-  }, [page, search, session, selectedPeriodId, selectedDependency]);
+  }, [page, search, session, selectedPeriodId, selectedDependency, pageSize]); // Agregar pageSize a las dependencias
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
         const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-        fetchTemplates(page, search, filterDep);
+        fetchTemplates(page, search, filterDep, pageSize);
       }
     }, 500);
 
@@ -506,7 +517,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
           color: "blue",
         });
         const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-        fetchTemplates(page, search, filterDep);
+        fetchTemplates(page, search, filterDep, pageSize);
         fetchTemp();
       }
     } catch (error) {
@@ -635,12 +646,28 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
       <Title ta="center" mb={"md"}>
         Plantillas con Información
       </Title>
-      <TextInput
-        placeholder="Buscar plantillas"
-        value={search}
-        onChange={(event) => setSearch(event.currentTarget.value)}
-        mb="md"
-      />
+      <Group mb="md">
+        <TextInput
+          placeholder="Buscar plantillas"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Select
+          label="Plantillas por página"
+          placeholder="Seleccionar cantidad"
+          data={[
+            { value: '5', label: '5 por página' },
+            { value: '10', label: '10 por página' },
+            { value: '15', label: '15 por página' },
+            { value: '20', label: '20 por página' },
+            { value: '25', label: '25 por página' }
+          ]}
+          value={pageSize.toString()}
+          onChange={handlePageSizeChange}
+          style={{ minWidth: 150 }}
+        />
+      </Group>
       <Table striped withTableBorder mt="md">
         <Table.Thead>
           <Table.Tr>
@@ -737,14 +764,18 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         </Table.Tbody>
       </Table>
       <Center>
-        <Pagination
-          mt={15}
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          siblings={1}
-          boundaries={3}
-        />
+        <Group mt={15} align="center">
+          <Pagination
+            value={page}
+            onChange={setPage}
+            total={totalPages}
+            siblings={1}
+            boundaries={3}
+          />
+          <Text size="sm" c="dimmed">
+            Mostrando {pageSize} plantillas por página
+          </Text>
+        </Group>
       </Center>
 
       <Modal
@@ -752,7 +783,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         onClose={() => {
           closeUploadModal();
           const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-          fetchTemplates(page, search, filterDep);
+          fetchTemplates(page, search, filterDep, pageSize);
         }}
         title="Editar Información"
         overlayProps={{
