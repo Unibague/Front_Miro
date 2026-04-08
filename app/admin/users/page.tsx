@@ -472,7 +472,7 @@ const AdminUsersPage = () => {
           
 
 
-          {session?.user?.image ? (
+          {session?.user?.email && (
             <Tooltip
               label="Impersonar usuario"
               position="top"
@@ -488,7 +488,7 @@ const AdminUsersPage = () => {
                 <IconUser size={16} />
               </Button>
             </Tooltip>
-          ) : null}
+          )}
         </Stack>
       </Table.Td>
       <Table.Td>
