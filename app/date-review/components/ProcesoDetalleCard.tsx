@@ -1127,7 +1127,6 @@ const ProcesoDetalleCard = ({
                 <Stack gap={4} align="center">
                   <Switch size="sm"
                     checked={caso.resolucion_aprobada === true}
-                    indeterminate={caso.resolucion_aprobada === null}
                     onChange={e => saveCasoField("resolucion_aprobada", e.currentTarget.checked)}
                     color="green" />
                   {caso.resolucion_aprobada !== null && (
