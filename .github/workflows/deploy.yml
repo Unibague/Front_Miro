@@ -58,7 +58,8 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/BrayanD117/Front_Miro.git
           else
-            git pull
+            git fetch origin main;
+            git reset --hard origin/main;
           fi'
 
     - name: Build project on remote server
