@@ -25,12 +25,8 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
 import { usePeriod } from "@/app/context/PeriodContext";
-
-// Components
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
-
-// Styles
 import classes from "./Navbar.module.css";
 import { IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
 import axios from "axios";
@@ -42,6 +38,19 @@ type LinkItem = {
 };
 
 type Roles = "Usuario" | "Administrador" | "Responsable" | "Productor";
+
+type ImpersonatedUser = {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  role?: string;
+  isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
+};
 
 const linksByRole: Record<Roles, LinkItem[]> = {
   Usuario: [{ link: "/dashboard", label: "Inicio" }],
@@ -74,20 +83,11 @@ const home = [{ link: "/dashboard", label: "Inicio" }];
 
 export default function Navbar() {
   const { data: session } = useSession();
-type ImpersonatedUser = {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  role?: string;
-  isImpersonating?: boolean;
-};
-
-const user = session?.user as ImpersonatedUser;
+  const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const [selectedRole, setSelectedRole] = useState<string>("");
   const { userRole, setUserRole } = useRole();
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
@@ -95,7 +95,6 @@ const user = session?.user as ImpersonatedUser;
   const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
   const [tempPeriod, setTempPeriod] = useState<string>(selectedPeriodId || "");
   const [periodModalOpened, setPeriodModalOpened] = useState(false);
-
 
   const titles = session
     ? [{ link: "/dashboard", label: "MIRÓ" }]
@@ -120,25 +119,21 @@ const user = session?.user as ImpersonatedUser;
           console.error("Error fetching roles:", error);
         });
     }
-  }, [session]);
+  }, [session, setUserRole]);
 
   useEffect(() => {
     if (periodModalOpened) {
       setTempPeriod(selectedPeriodId || "");
     }
   }, [periodModalOpened, selectedPeriodId]);
-  
 
   const handleRoleChange = async (role: string) => {
     if (!session?.user?.email) return;
     try {
-      const response = await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`,
-        {
-          email: session.user.email,
-          activeRole: role,
-        }
-      );
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`, {
+        email: session.user.email,
+        activeRole: role,
+      });
       setUserRole(role as Roles);
       showNotification({
         title: "Rol actualizado",
@@ -158,19 +153,38 @@ const user = session?.user as ImpersonatedUser;
     }
   };
 
-  const links = linksByRole[userRole as Roles] || linksByRole.Usuario;
+  const handleExitImpersonation = async () => {
+    if (
+      !user?.originalUserId ||
+      !user?.originalUserEmail ||
+      !user?.originalUserName
+    ) {
+      showNotification({
+        title: "No se puede restaurar la sesión",
+        message: "No se encontró la cuenta original del administrador.",
+        autoClose: 5000,
+        color: "red",
+      });
+      return;
+    }
 
-  const items = links.map((link: LinkItem) => (
-    <Link href={link.link} key={link.label} passHref>
-      <Button variant="light" size="sm" style={{ fontWeight: 500 }}>
-        {link.label}
-      </Button>
-    </Link>
-  ));
+    await signIn("impersonate", {
+      id: user.originalUserId,
+      userEmail: user.originalUserEmail,
+      userName: user.originalUserName,
+      userImage: user.originalUserImage || "",
+      isImpersonating: false,
+      redirect: true,
+      callbackUrl:
+        process.env.APP_ENV === "development" ? "/dev/admin/users" : "/admin/users",
+    });
+  };
+
+  const links = linksByRole[userRole as Roles] || linksByRole.Usuario;
 
   const homeLink = home.map((link: LinkItem) => (
     <Link href={link.link} key={link.label} passHref>
-      <Button variant="light" size="sm" fw={700} leftSection={<IconHome size={18}/>}>
+      <Button variant="light" size="sm" fw={700} leftSection={<IconHome size={18} />}>
         {link.label}
       </Button>
     </Link>
@@ -191,8 +205,8 @@ const user = session?.user as ImpersonatedUser;
 
   const titleButton = titles.map((link: LinkItem) => (
     <Link href={link.link} key={link.label} passHref>
-      <Group gap={"xs"}>
-        <MiroEye/>
+      <Group gap="xs">
+        <MiroEye />
         <Image
           src={`/assets/textoMiro-${colorScheme}.svg`}
           alt="MIRÓ"
@@ -218,8 +232,6 @@ const user = session?.user as ImpersonatedUser;
       </Link>
     ));
 
-
-
   return (
     <>
       <header className={classes.header}>
@@ -230,17 +242,12 @@ const user = session?.user as ImpersonatedUser;
           {session?.user ? (
             <>
               <Group gap={8} visibleFrom="xs">
-              
-{user?.isImpersonating ? (
-  <Badge color="red" size="lg" m={20} variant="light">
-    Estás impersonando al usuario: {user.name}
-  </Badge>
-) : null}
-
                 <Badge m={20} variant="light">
                   {userRole}
                 </Badge>
+
                 {homeLink}
+
                 {availableRoles.length > 0 && (
                   <Menu
                     shadow="md"
@@ -251,7 +258,12 @@ const user = session?.user as ImpersonatedUser;
                     onOpen={() => setRoleMenuOpened(true)}
                   >
                     <Menu.Target>
-                      <Button variant="light" size="sm" fw={700} leftSection={<IconSwitch3 size={18}/>}>
+                      <Button
+                        variant="light"
+                        size="sm"
+                        fw={700}
+                        leftSection={<IconSwitch3 size={18} />}
+                      >
                         Rol
                       </Button>
                     </Menu.Target>
@@ -259,7 +271,7 @@ const user = session?.user as ImpersonatedUser;
                       {availableRoles.map((role) => (
                         <Button
                           key={role}
-                          mt={"xs"}
+                          mt="xs"
                           fullWidth
                           variant={userRole === role ? "outline" : "light"}
                           onClick={() => handleRoleChange(role)}
@@ -270,6 +282,7 @@ const user = session?.user as ImpersonatedUser;
                     </Menu.Dropdown>
                   </Menu>
                 )}
+
                 <Menu
                   shadow="md"
                   width={200}
@@ -278,13 +291,20 @@ const user = session?.user as ImpersonatedUser;
                   onOpen={() => setManageMenuOpened(true)}
                 >
                   <Menu.Target>
-                    <Button variant="light" size="sm" fw={700} leftSection={<IconSubtask size={18}/>}>
+                    <Button
+                      variant="light"
+                      size="sm"
+                      fw={700}
+                      leftSection={<IconSubtask size={18} />}
+                    >
                       Gestión
                     </Button>
                   </Menu.Target>
                   <Menu.Dropdown>{actionItems}</Menu.Dropdown>
                 </Menu>
+
                 <ThemeChanger />
+
                 <Menu shadow="md" width={200}>
                   <Menu.Target>
                     <Avatar
@@ -295,8 +315,9 @@ const user = session?.user as ImpersonatedUser;
                       className={classes.avatarClickable}
                     />
                   </Menu.Target>
+
                   <div style={{ position: "relative", display: "inline-block" }}>
-                    <Button 
+                    <Button
                       size="xs"
                       style={{
                         marginTop: "40px",
@@ -305,18 +326,32 @@ const user = session?.user as ImpersonatedUser;
                         left: "70%",
                         transform: "translateX(-100%)",
                         zIndex: 1,
-                      }} onClick={() => setPeriodModalOpened(true)} variant="light" fw={700}>
-                        Periodo: {availablePeriods.find((p) => p._id === selectedPeriodId)?.name || "Seleccionar"}
+                      }}
+                      onClick={() => setPeriodModalOpened(true)}
+                      variant="light"
+                      fw={700}
+                    >
+                      Periodo: {availablePeriods.find((p) => p._id === selectedPeriodId)?.name || "Seleccionar"}
                     </Button>
                   </div>
-                  {/* Menu Dropdown */}
+
                   <Menu.Dropdown>
+                    {user?.isImpersonating ? (
+                      <Menu.Item
+                        color="red"
+                        leftSection={
+                          <IconSwitch3 style={{ width: rem(14), height: rem(14) }} />
+                        }
+                        onClick={handleExitImpersonation}
+                      >
+                        Salir de la impersonación
+                      </Menu.Item>
+                    ) : null}
+
                     <Menu.Item
                       color="red"
                       leftSection={
-                        <IconDoorExit
-                          style={{ width: rem(14), height: rem(14) }}
-                        />
+                        <IconDoorExit style={{ width: rem(14), height: rem(14) }} />
                       }
                       variant="transparent"
                       onClick={() => setModalOpened(true)}
@@ -347,6 +382,20 @@ const user = session?.user as ImpersonatedUser;
             <Stack align="stretch" justify="center" gap="md">
               {itemsDrawer}
               <ThemeChangerMobile />
+              {session?.user && user?.isImpersonating ? (
+                <Button
+                  mt={8}
+                  fullWidth
+                  color="red"
+                  variant="light"
+                  onClick={() => {
+                    toggle();
+                    handleExitImpersonation();
+                  }}
+                >
+                  Salir de la impersonación
+                </Button>
+              ) : null}
               {session?.user && (
                 <>
                   <Divider />
@@ -367,6 +416,30 @@ const user = session?.user as ImpersonatedUser;
             </Stack>
           </Drawer>
         </Container>
+
+        {user?.isImpersonating ? (
+          <div className={classes.impersonationBar}>
+            <div className={classes.impersonationContent}>
+              <Badge
+                color="red"
+                size="lg"
+                variant="light"
+                className={classes.impersonationBadge}
+              >
+                ESTAS IMPERSONANDO AL USUARIO: {user.name}
+              </Badge>
+              <Button
+                color="red"
+                variant="light"
+                size="sm"
+                className={classes.impersonationButton}
+                onClick={handleExitImpersonation}
+              >
+                Salir de la impersonación
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <Modal
@@ -386,9 +459,8 @@ const user = session?.user as ImpersonatedUser;
           <Button
             color="red"
             onClick={async () => {
-              await signOut({ 
-                callbackUrl: process.env.APP_ENV==="development" ? 
-                "/dev" : "/"
+              await signOut({
+                callbackUrl: process.env.APP_ENV === "development" ? "/dev" : "/",
               });
             }}
           >
@@ -396,6 +468,7 @@ const user = session?.user as ImpersonatedUser;
           </Button>
         </Group>
       </Modal>
+
       <Modal
         opened={periodModalOpened}
         onClose={() => setPeriodModalOpened(false)}
@@ -405,9 +478,9 @@ const user = session?.user as ImpersonatedUser;
           label="Periodo"
           placeholder="Selecciona un periodo"
           value={tempPeriod}
-          onChange={(value) =>{
+          onChange={(value) => {
             console.log("Periodo seleccionado en navbar:", value);
-            setTempPeriod(value || "")
+            setTempPeriod(value || "");
           }}
           searchable
           allowDeselect={false}
