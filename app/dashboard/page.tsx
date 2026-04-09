@@ -1231,6 +1231,39 @@ useEffect(() => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => router.push("/pdi")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #9d0c0c 0%, #c73a3a 100%)",
+                  boxShadow: "0 18px 45px rgba(101, 29, 29, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconChartBarPopular size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      PDI
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Plan de Desarrollo Institucional.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="violet" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">

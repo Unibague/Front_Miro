@@ -340,7 +340,7 @@ const AdminUsersPage = () => {
         {
           params: {
             id: userId,
-            adminEmail: sessionUser?.email
+            adminEmail: session?.user?.email
           }
         }
       );

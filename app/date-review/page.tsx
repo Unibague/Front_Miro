@@ -132,7 +132,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                                     {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
                                   </Group>
                                   {sub.observaciones && (
-                                    <Text size="xs" c="dimmed" pl={20} mb={2}>📝 {sub.observaciones}</Text>
+                                    <Text size="xs" c="dimmed" pl={20} mb={2}>Observaciones: {sub.observaciones}</Text>
                                   )}
                                   {sub.documentos.length > 0 && (
                                     <Box pl={20}>

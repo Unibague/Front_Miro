@@ -22,15 +22,6 @@ const GoBackButton = () => {
         backdropFilter: "blur(10px)",
       }}
     >
-      <Button
-        onClick={() => router.back()}
-        variant="light"
-        color="blue"
-        size="sm"
-        leftSection={<IconArrowLeft size={16}/>}
-      >
-        Volver
-      </Button>
     </div>
   );
 };
