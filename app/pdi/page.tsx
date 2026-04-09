@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
-  Loader, Center, Progress, Accordion, ThemeIcon, Divider, ActionIcon,
+  Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
+  SimpleGrid, RingProgress, Box,
 } from "@mantine/core";
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
+  IconFolderOpen, IconFlag, IconAlertTriangle, IconUsers, IconChevronDown,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -21,6 +23,7 @@ import ProyectoModal from "./components/ProyectoModal";
 import AccionModal from "./components/AccionModal";
 import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
+import PdiResumenSidebar from "./components/PdiResumenSidebar";
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
@@ -357,6 +360,184 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, onEdit, onDelete, onAv
   );
 }
 
+// ── Stats cards ───────────────────────────────────────────────────────────
+function StatsCards({ macros, proyectosPorMacro }: {
+  macros: Macroproyecto[];
+  proyectosPorMacro: Record<string, Proyecto[]>;
+}) {
+  const totalProyectos = Object.values(proyectosPorMacro).flat().length;
+  const avanceGlobal = macros.length
+    ? Math.round(macros.reduce((s, m) => s + m.avance, 0) / macros.length)
+    : 0;
+  const criticos = macros.filter(m => m.semaforo === "rojo").length;
+  const amarillos = macros.filter(m => m.semaforo === "amarillo").length;
+
+  const cards = [
+    {
+      icon: "", title: "Total Macroproyectos", value: String(macros.length),
+      subtitle: `${criticos} en estado crítico`,
+      badge: criticos > 0 ? "Crítico" : "OK",
+      badgeColor: criticos > 0 ? "red" : "green",
+    },
+    {
+      icon: "", title: "Avance Promedio", value: `${avanceGlobal}%`,
+      subtitle: `${macros.filter(m => m.avance >= 50).length} de ${macros.length} macroproyectos`,
+      badge: "En progreso",
+      badgeColor: "blue",
+    },
+    {
+      icon: "", title: "Indicadores Críticos", value: String(criticos),
+      subtitle: "Macroproyectos en rojo",
+      badge: "Atención",
+      badgeColor: "orange",
+    },
+    {
+      icon: "", title: "Proyectos Cargados", value: String(totalProyectos),
+      subtitle: `${amarillos} macros requieren atención`,
+      badge: "Pendiente",
+      badgeColor: "yellow",
+    },
+  ];
+
+  return (
+    <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
+      {cards.map(c => (
+        <Paper key={c.title} withBorder radius="lg" p="lg" shadow="xs">
+          <Group justify="space-between" align="flex-start" mb="sm">
+            <Box
+              style={{
+                width: 52, height: 52, borderRadius: 14,
+                background: "var(--mantine-color-default-hover)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 24,
+              }}
+            >{c.icon}</Box>
+            <Badge color={c.badgeColor} variant="light" size="sm" radius="xl">{c.badge}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mb={2}>{c.title}</Text>
+          <Text size="2rem" fw={800} lh={1} mb={4}>{c.value}</Text>
+          <Text size="xs" c="dimmed">{c.subtitle}</Text>
+        </Paper>
+      ))}
+    </SimpleGrid>
+  );
+}
+
+// ── MacroproyectoPortfolioCard ─────────────────────────────────────────────
+function MacroproyectoPortfolioCard({ macro, proyectos, loadingProyectos, admin, onEdit, onDelete, onAddProyecto, onEditProyecto, onDeleteProyecto, onAvanceUpdate, onCargar }: {
+  macro: Macroproyecto;
+  proyectos: Proyecto[];
+  loadingProyectos: boolean;
+  admin: boolean;
+  onEdit: (m: Macroproyecto) => void;
+  onDelete: (id: string) => void;
+  onAddProyecto: () => void;
+  onEditProyecto: (p: Proyecto) => void;
+  onDeleteProyecto: (id: string) => void;
+  onAvanceUpdate: () => void;
+  onCargar: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const statusLabel = macro.semaforo === "verde" ? "Correcto"
+    : macro.semaforo === "amarillo" ? "En riesgo" : "Crítico";
+  const statusColor = macro.semaforo === "verde" ? "green"
+    : macro.semaforo === "amarillo" ? "yellow" : "red";
+  const barColor = macro.avance >= 50 ? "#22c55e" : macro.avance >= 25 ? "#f59e0b" : "#ef4444";
+
+  return (
+    <Paper
+      withBorder radius="xl" p="lg" shadow="xs"
+      style={{ transition: "box-shadow .2s, transform .2s", cursor: "default" }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
+    >
+      <Group justify="space-between" align="flex-start" mb="xs">
+        <Text fw={700} size="lg" style={{ flex: 1, lineHeight: 1.3 }}>{macro.nombre}</Text>
+        <Group gap={4}>
+          <Badge color={statusColor} variant="light" size="sm" radius="xl">{statusLabel}</Badge>
+          {admin && <>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(macro)}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(macro._id)}><IconTrash size={13} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+
+      <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {macro.peso}%</Text>
+
+      <Group justify="space-between" align="flex-end" mb={6}>
+        <div>
+          <Text size="2.2rem" fw={800} lh={1}>{macro.avance}%</Text>
+          <Text size="xs" c="dimmed">Avance consolidado</Text>
+        </div>
+      </Group>
+
+      <Box
+        style={{
+          height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)",
+          overflow: "hidden", marginBottom: 16,
+        }}
+      >
+        <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
+      </Box>
+
+      <SimpleGrid cols={3} mb="md">
+        {[
+          { label: "Proyectos", value: proyectos.length },
+          { label: "Acciones", value: "—" },
+          { label: "Indicadores", value: "—" },
+        ].map(s => (
+          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "10px 4px" }}>
+            <Text fw={800} size="xl" lh={1}>{s.value}</Text>
+            <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
+          </Box>
+        ))}
+      </SimpleGrid>
+
+      <Group justify="space-between" align="center">
+        <div>
+          <Text size="xs" c="dimmed" style={{ textTransform: "uppercase", letterSpacing: "0.1em" }}>Código</Text>
+          <Text fw={600} size="sm">{macro.codigo}</Text>
+        </div>
+        <Button
+          variant="light" color="violet" radius="xl" size="xs"
+          rightSection={<IconChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "", transition: "transform .2s" }} />}
+          onClick={() => { if (!open) onCargar(); setOpen(v => !v); }}
+        >
+          {open ? "Ocultar proyectos" : "Ver proyectos"}
+        </Button>
+      </Group>
+
+      {open && (
+        <Box mt="md">
+          <Divider mb="sm" />
+          {admin && (
+            <Button size="xs" variant="light" color="blue" leftSection={<IconPlus size={12} />} mb="sm" onClick={onAddProyecto}>
+              Nuevo proyecto
+            </Button>
+          )}
+          {loadingProyectos ? (
+            <Center py="sm"><Loader size="xs" /></Center>
+          ) : proyectos.length === 0 ? (
+            <Text size="xs" c="dimmed">Sin proyectos registrados</Text>
+          ) : (
+            <Stack gap={4}>
+              {proyectos.map(p => (
+                <ProyectoCard
+                  key={p._id} proyecto={p} admin={admin}
+                  onEdit={onEditProyecto}
+                  onDelete={onDeleteProyecto}
+                  onAvanceUpdate={onAvanceUpdate}
+                />
+              ))}
+            </Stack>
+          )}
+        </Box>
+      )}
+    </Paper>
+  );
+}
+
 // ── Página principal PDI ───────────────────────────────────────────────────
 export default function PdiPage() {
   const router = useRouter();
@@ -440,7 +621,7 @@ export default function PdiPage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
     <PdiSidebar />
-    <div style={{ flex: 1, overflow: "auto" }}>
+    <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
     <Container size="xl" py="xl">
       <Group mb="lg" justify="space-between">
         <Group gap={10}>
@@ -465,70 +646,39 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
+      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} />
+
+      <Group justify="space-between" align="center" mb="md">
+        <div>
+          <Text fw={700} size="xl">Macroproyectos</Text>
+          <Text size="xs" c="dimmed">Vista tipo portfolio — navega la jerarquía del PDI</Text>
+        </div>
+        <Badge variant="outline" color="violet" radius="xl" size="md">{macros.length} resultados</Badge>
+      </Group>
+
       {loadingMacros ? (
         <Center py="xl"><Loader /></Center>
       ) : macros.length === 0 ? (
         <Center py="xl"><Text c="dimmed">No hay macroproyectos registrados</Text></Center>
       ) : (
-        <Accordion variant="separated" radius="md" onChange={(value) => { if (value) cargarProyectos(value); }}>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
           {macros.map(macro => (
-            <Accordion.Item key={macro._id} value={macro._id}>
-              <Accordion.Control>
-                <Group justify="space-between" pr="md">
-                  <Group gap={10}>
-                    <Text size="xs" fw={700} c="dimmed">{macro.codigo}</Text>
-                    <Text fw={600}>{macro.nombre}</Text>
-                  </Group>
-                  <Group gap={8}>
-                    <Text size="xs" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
-                    <SemaforoBadge semaforo={macro.semaforo} />
-                    <Group gap={6} style={{ minWidth: 140 }}>
-                      <Progress value={macro.avance} color={SEMAFORO_COLOR[macro.semaforo]} size="sm" style={{ flex: 1 }} />
-                      <Text size="xs" fw={600}>{macro.avance}%</Text>
-                    </Group>
-                    {admin && <>
-                      <ActionIcon size="sm" variant="subtle" color="blue"
-                        onClick={(e) => { e.stopPropagation(); setSelectedMacro(macro); setMacroModal(true); }}>
-                        <IconEdit size={13} />
-                      </ActionIcon>
-                      <ActionIcon size="sm" variant="subtle" color="red"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteMacro(macro._id); }}>
-                        <IconTrash size={13} />
-                      </ActionIcon>
-                    </>}
-                  </Group>
-                </Group>
-              </Accordion.Control>
-
-              <Accordion.Panel>
-                {admin && (
-                  <Group mb="sm">
-                    <Button size="xs" variant="light" color="blue" leftSection={<IconPlus size={12} />}
-                      onClick={() => { setSelectedProyecto(null); setDefaultMacroId(macro._id); setProyectoModal(true); }}>
-                      Nuevo proyecto
-                    </Button>
-                  </Group>
-                )}
-                {loadingProyectos[macro._id] ? (
-                  <Center py="md"><Loader size="sm" /></Center>
-                ) : (proyectosPorMacro[macro._id] ?? []).length === 0 ? (
-                  <Text size="sm" c="dimmed" py="sm">Sin proyectos registrados</Text>
-                ) : (
-                  <Stack gap={4}>
-                    {(proyectosPorMacro[macro._id] ?? []).map(p => (
-                      <ProyectoCard
-                        key={p._id} proyecto={p} admin={admin}
-                        onEdit={(proy) => { setSelectedProyecto(proy); setDefaultMacroId(macro._id); setProyectoModal(true); }}
-                        onDelete={(id) => handleDeleteProyecto(macro._id, id)}
-                        onAvanceUpdate={() => refrescarMacro(macro._id)}
-                      />
-                    ))}
-                  </Stack>
-                )}
-              </Accordion.Panel>
-            </Accordion.Item>
+            <MacroproyectoPortfolioCard
+              key={macro._id}
+              macro={macro}
+              proyectos={proyectosPorMacro[macro._id] ?? []}
+              loadingProyectos={!!loadingProyectos[macro._id]}
+              admin={admin}
+              onEdit={(m) => { setSelectedMacro(m); setMacroModal(true); }}
+              onDelete={handleDeleteMacro}
+              onCargar={() => cargarProyectos(macro._id)}
+              onAddProyecto={() => { setSelectedProyecto(null); setDefaultMacroId(macro._id); setProyectoModal(true); }}
+              onEditProyecto={(p) => { setSelectedProyecto(p); setDefaultMacroId(macro._id); setProyectoModal(true); }}
+              onDeleteProyecto={(id) => handleDeleteProyecto(macro._id, id)}
+              onAvanceUpdate={() => refrescarMacro(macro._id)}
+            />
           ))}
-        </Accordion>
+        </SimpleGrid>
       )}
 
       <MacroproyectoModal
@@ -561,6 +711,7 @@ export default function PdiPage() {
 
     </Container>
     </div>
+    {admin && <PdiResumenSidebar />}
     </div>
   );
 }
