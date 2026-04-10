@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, Notification, SimpleGrid, Anchor, Divider, Loader,
-  ActionIcon, Switch, Tooltip,
+  ActionIcon, Switch, Tooltip, Alert,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
@@ -1711,7 +1711,12 @@ const ProcesoDetalleCard = ({
       </ScrollArea>
 
       {/* Bloque Plan de Mejoramiento */}
-      {(proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && (
+      {(proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && (() => {
+        const programaTieneResolucionPM =
+          proceso.tipo_proceso === "RC"
+            ? !!(programa.fecha_resolucion_rc && programa.duracion_resolucion_rc != null)
+            : !!(programa.fecha_resolucion_av && programa.duracion_resolucion_av != null);
+        return (
         <Box px="md" pt="sm" pb="sm">
           <Group justify="space-between" mb="xs" align="center">
             <Group gap="xs">
@@ -1758,8 +1763,18 @@ const ProcesoDetalleCard = ({
               title={pmProceso ? "Editar configuración del Plan de Mejoramiento" : "Crear Plan de Mejoramiento"}
               centered size="lg" radius="md">
               <Stack gap="md">
+                {!programaTieneResolucionPM && proceso.tipo_proceso === "RC" && (
+                  <Alert color="yellow" variant="light" title="Sin resolución vigente en el programa">
+                    <Text size="xs">
+                      Puedes crear el plan igualmente: las cuatro fechas quedarán vacías hasta que registres fecha y duración de la resolución en la tarjeta del proceso.
+                      Después usa Guardar y recalcular aquí para generarlas con los meses que elijas, o complétalas a mano en la tabla del plan.
+                    </Text>
+                  </Alert>
+                )}
                 <Text size="sm" c="dimmed">
-                  Las fechas se calculan automáticamente a partir de la resolución vigente y los meses que configures.
+                  {programaTieneResolucionPM
+                    ? "Las fechas se calculan automáticamente a partir de la resolución vigente y los meses que configures."
+                    : "Cuando registres resolución y duración en el programa, podrás recalcular fechas con estos meses; si aún no la hay, el plan se crea sin fechas para editarlas a mano o pulsar Guardar y recalcular después."}
                 </Text>
                 <Divider label="Nombres de las fechas" labelPosition="center" />
                 <Stack gap="xs">
@@ -1892,7 +1907,8 @@ const ProcesoDetalleCard = ({
             <Text size="xs" c="dimmed">No hay plan de mejoramiento activo para este proceso.</Text>
           )}
         </Box>
-      )}
+        );
+      })()}
 
       {/* ── Bloque Información del caso ── */}
       {(proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && caso && (
