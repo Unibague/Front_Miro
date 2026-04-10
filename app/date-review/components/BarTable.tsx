@@ -5,14 +5,17 @@ import { faseColors } from "../constants";
 import type { BarRow } from "../types";
 
 const StackedBar = ({ row }: { row: BarRow }) => {
-  const vals  = [row.fase_0, row.fase_1, row.fase_2, row.fase_3, row.fase_4, row.fase_5, row.fase_6];
+  const vals = [
+    row.fase_0, row.fase_1, row.fase_2, row.fase_3, row.fase_4, row.fase_5, row.fase_6,
+    row.fase_contingencia,
+  ];
   const total = vals.reduce((a, b) => a + b, 0);
   return (
     <div style={{ display: "flex", height: "28px", borderRadius: "6px", overflow: "hidden", width: "100%" }}>
       {vals.map((v, i) => v > 0 && (
         <div key={i} style={{
           width: `${(v / total) * 100}%`,
-          backgroundColor: faseColors[i].color,
+          backgroundColor: faseColors[i]?.color ?? "#ced4da",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "12px", fontWeight: 600, color: "#333",
         }}>
