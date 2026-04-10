@@ -209,12 +209,14 @@ export type ProcessHistoryRecord = {
       nombre: string;
       responsables: string;
       completada: boolean;
+      no_aplica?: boolean;
       fecha_completado: string | null;
       observaciones: string;
       documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
       subactividades: Array<{
         nombre: string;
         completada: boolean;
+        no_aplica?: boolean;
         fecha_completado: string | null;
         observaciones: string;
         documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
