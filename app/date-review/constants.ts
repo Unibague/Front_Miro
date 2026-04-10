@@ -6,6 +6,12 @@ export const faseColors = [
   { fase: 4, color: "#74c0fc", label: "Fase 4", fullName: "Fase 4 - Radicación" },
   { fase: 5, color: "#a9e34b", label: "Fase 5", fullName: "Fase 5 - Evaluación" },
   { fase: 6, color: "#69db7c", label: "Fase 6", fullName: "Fase 6 - Plan de Mejoramiento" },
+  {
+    fase: 7,
+    color: "#9775fa",
+    label: "Contingencia",
+    fullName: "Plan de contingencia (No renovación)",
+  },
 ];
 
 export const estadoColor: Record<string, string> = {

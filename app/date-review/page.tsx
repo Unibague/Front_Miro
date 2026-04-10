@@ -359,15 +359,25 @@ const DateReviewPage = () => {
     const grupos: Record<string, BarRow> = {};
     facultades.forEach((f) => {
       if (programas.some((p) => p.dep_code_facultad === f.dep_code)) {
-        grupos[f.dep_code] = { nombre: f.name, fase_0: 0, fase_1: 0, fase_2: 0, fase_3: 0, fase_4: 0, fase_5: 0, fase_6: 0 };
+        grupos[f.dep_code] = {
+          nombre: f.name,
+          fase_0: 0, fase_1: 0, fase_2: 0, fase_3: 0, fase_4: 0, fase_5: 0, fase_6: 0,
+          fase_contingencia: 0,
+        };
       }
     });
     programas.forEach((p) => {
       if (!grupos[p.dep_code_facultad]) return;
       const proc = getProceso(p.dep_code_programa, tipo);
-      if (!proc?.fecha_vencimiento) return;
-      const fase = proc.fase_actual ?? 0;
-      (grupos[p.dep_code_facultad][`fase_${fase}` as keyof BarRow] as number) += 1;
+      if (!proc) return;
+      /* Incluir procesos sin fecha_vencimiento (p. ej. RC Nuevo / AV Primera vez) para alinear con la tabla */
+      const n = Number(proc.fase_actual) || 0;
+      if (n >= 7) {
+        grupos[p.dep_code_facultad].fase_contingencia += 1;
+      } else {
+        const fase = Math.min(Math.max(n, 0), 6);
+        (grupos[p.dep_code_facultad][`fase_${fase}` as keyof BarRow] as number) += 1;
+      }
     });
     return Object.values(grupos);
   };
