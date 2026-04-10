@@ -133,6 +133,8 @@ export type BarRow = {
   nombre: string;
   fase_0: number; fase_1: number; fase_2: number;
   fase_3: number; fase_4: number; fase_5: number; fase_6: number;
+  /** Procesos en fase 7 (plan de contingencia / no renovación); se dibuja al final de la barra */
+  fase_contingencia: number;
 };
 
 export type ProcesoRow = {
