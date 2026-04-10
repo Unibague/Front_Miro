@@ -30,18 +30,44 @@ import { CSS } from "@dnd-kit/utilities";
 
 import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso } from "../types";
 
+const esActoAdministrativo = (nombre: string) => nombre.trim().toLowerCase() === "acto administrativo";
+
+/** Actividad cerrada para avance de fase y “pendiente”. */
+const actividadResuelta = (a: Actividad) => !!a.completada || !!a.no_aplica;
+
+/** Modo efectivo del acto administrativo (tabla del caso o interruptor en la actividad). */
+const getModoActoAdminEfectivo = (act: Actividad, caso: Caso | null): string | null => {
+  if (!esActoAdministrativo(act.nombre)) return null;
+  if (caso) {
+    if (caso.resolucion_aprobada === true) return "satisfactorio";
+    if (caso.resolucion_aprobada === false) return "no_satisfactorio";
+    return null;
+  }
+  return act.acto_admin_modo ?? null;
+};
+
+/** Permite marcar “Hecha” el acto administrativo: modo definido y todas las subactividades del ramal resueltas. */
+const puedeMarcarHechaActoAdminActividad = (act: Actividad, caso: Caso | null): boolean => {
+  if (!esActoAdministrativo(act.nombre)) return true;
+  const modo = getModoActoAdminEfectivo(act, caso);
+  if (modo === null) return false;
+  const subs = act.subactividades.filter((s) => s.grupo === modo);
+  if (subs.length === 0) return true;
+  return subs.every((s) => s.completada || s.no_aplica);
+};
+
 /* ── Fila sortable de actividad (drag & drop) con subactividades ── */
 const SortableActividad = ({
   act, index, faseActual, editActividadId, editActividadNombre, editActividadResponsables,
-  savingActividad, canToggle,
-  onToggle, onEdit, onDelete, onSave, onCancel,
+  savingActividad, canToggleCompletada, canToggleNoAplica,
+  onToggle, onToggleNoAplica, onEdit, onDelete, onSave, onCancel,
   setEditActividadNombre, setEditActividadResponsables,
-  onAddSubactividad, onToggleSubactividad, onDeleteSubactividad, onReorderSubactividades,
+  onAddSubactividad, onToggleSubactividad, onToggleSubNoAplica, onDeleteSubactividad, onReorderSubactividades,
   onOpenDocsActividad, onOpenObsActividad,
   onOpenDocsSubactividad, onOpenObsSubactividad,
   onChangeActoAdminModo,
   actoAdminModoExterno,
-  actividadDocCount, subactividadDocCounts,
+  actividadDocCount, subactividadDocCounts, tooltipBloqueoHecha,
 }: {
   act: Actividad;
   index: number;
@@ -50,8 +76,10 @@ const SortableActividad = ({
   editActividadNombre: string;
   editActividadResponsables: string;
   savingActividad: boolean;
-  canToggle: boolean;
+  canToggleCompletada: boolean;
+  canToggleNoAplica: boolean;
   onToggle: () => void;
+  onToggleNoAplica: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onSave: () => void;
@@ -60,6 +88,7 @@ const SortableActividad = ({
   setEditActividadResponsables: (v: string) => void;
   onAddSubactividad: (nombre: string) => void;
   onToggleSubactividad: (sub: Subactividad) => void;
+  onToggleSubNoAplica: (sub: Subactividad) => void;
   onDeleteSubactividad: (subId: string) => void;
   onOpenDocsActividad: () => void;
   onOpenObsActividad: () => void;
@@ -70,6 +99,7 @@ const SortableActividad = ({
   actoAdminModoExterno?: string | null;
   actividadDocCount: number;
   subactividadDocCounts: Record<string, number>;
+  tooltipBloqueoHecha?: string | null;
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: act._id });
   const [expandSubs, setExpandSubs] = useState(false);
@@ -87,7 +117,7 @@ const SortableActividad = ({
     setNuevaSub("");
   };
 
-  const esActoAdmin = act.nombre.trim().toLowerCase() === 'acto administrativo';
+  const esActoAdmin = esActoAdministrativo(act.nombre);
   // Si viene modo externo (del caso), usarlo; si no, usar el guardado en la actividad
   const usaModoExterno = esActoAdmin && actoAdminModoExterno !== undefined;
   const modoActual = usaModoExterno ? (actoAdminModoExterno ?? null) : (act.acto_admin_modo ?? null);
@@ -108,12 +138,30 @@ const SortableActividad = ({
             <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 3, color: "#adb5bd", fontSize: 16, userSelect: "none" }}>
               ⠿
             </div>
-            {!esActoAdmin && (
-              <input type="checkbox" checked={act.completada}
-                onChange={() => canToggle && onToggle()}
-                disabled={!canToggle}
-                style={{ marginTop: 3, cursor: canToggle ? "pointer" : "not-allowed", width: 16, height: 16 }}
-              />
+            {tooltipBloqueoHecha ? (
+              <Tooltip label={tooltipBloqueoHecha} withArrow multiline w={260}>
+                <span style={{ display: "inline-flex", marginTop: 2, flexShrink: 0 }}>
+                  <Group gap={6} wrap="nowrap" align="flex-start">
+                    <input type="checkbox" checked={act.completada && !act.no_aplica}
+                      onChange={() => canToggleCompletada && onToggle()}
+                      disabled={!canToggleCompletada}
+                      title="Hecha"
+                      style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
+                    />
+                    <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecha</Text>
+                  </Group>
+                </span>
+              </Tooltip>
+            ) : (
+              <Group gap={6} wrap="nowrap" align="flex-start" style={{ marginTop: 2, flexShrink: 0 }}>
+                <input type="checkbox" checked={act.completada && !act.no_aplica}
+                  onChange={() => canToggleCompletada && onToggle()}
+                  disabled={!canToggleCompletada}
+                  title="Hecha"
+                  style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
+                />
+                <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecha</Text>
+              </Group>
             )}
             {editActividadId === act._id ? (
               <Stack gap={4} style={{ flex: 1 }}>
@@ -128,7 +176,10 @@ const SortableActividad = ({
               </Stack>
             ) : (
               <div style={{ flex: 1 }}>
-                <Text size="sm" td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : "#000"}>{act.nombre}</Text>
+                <Group gap={6} align="center" wrap="wrap">
+                  <Text size="sm" td={(act.completada || act.no_aplica) ? "line-through" : undefined} c={act.no_aplica ? "orange" : act.completada ? "dimmed" : "#000"}>{act.nombre}</Text>
+                  {act.no_aplica && <Badge size="xs" color="orange" variant="light">N/A</Badge>}
+                </Group>
                 <Text size="xs" c={act.responsables ? "dimmed" : "#bbb"} fs={act.responsables ? undefined : "italic"}>
                   {act.responsables || "Sin encargado — clic en ✏ para asignar"}
                 </Text>
@@ -168,7 +219,7 @@ const SortableActividad = ({
             )}
           </Group>
           {editActividadId !== act._id && (
-            <Group gap={4} wrap="nowrap">
+            <Group gap={4} wrap="nowrap" align="center" style={{ flexShrink: 0 }}>
               <Button size="xs" variant="subtle" color="gray" title="Observaciones" onClick={onOpenObsActividad}>
                 📝{act.observaciones ? " ●" : ""}
               </Button>
@@ -178,6 +229,20 @@ const SortableActividad = ({
               </Button>
               <Button size="xs" variant="subtle" color="blue" onClick={onEdit}>✏</Button>
               <Button size="xs" variant="subtle" color="red" onClick={onDelete}>🗑</Button>
+              <Switch
+                size="xs"
+                label="N/A"
+                labelPosition="left"
+                checked={!!act.no_aplica}
+                onChange={(e) => {
+                  if (!canToggleNoAplica) return;
+                  const on = e.currentTarget.checked;
+                  if (on !== !!act.no_aplica) onToggleNoAplica();
+                }}
+                disabled={!canToggleNoAplica}
+                color="orange"
+                styles={{ root: { alignItems: "center" }, label: { fontSize: 11, fontWeight: 600 } }}
+              />
             </Group>
           )}
         </Group>
@@ -190,9 +255,9 @@ const SortableActividad = ({
               onClick={() => setExpandSubs(v => !v)}
             >
               {expandSubs ? "▾" : "▸"} Subactividades
-              {subsVisibles.length > 0 && (
+                  {subsVisibles.length > 0 && (
                 <Badge size="xs" ml={4} color="gray" variant="outline">
-                  {subsVisibles.filter(s => s.completada).length}/{subsVisibles.length}
+                  {subsVisibles.filter(s => s.completada || s.no_aplica || act.no_aplica).length}/{subsVisibles.length}
                 </Badge>
               )}
             </Button>
@@ -202,25 +267,44 @@ const SortableActividad = ({
                 {subsVisibles.length === 0 && esActoAdmin && modoActual === null && (
                   <Text size="xs" c="dimmed" fs="italic" ml={4}>Selecciona un estado arriba para ver las subactividades.</Text>
                 )}
-                {subsVisibles.map((sub, subIdx) => (
+                {subsVisibles.map((sub, subIdx) => {
+                  const heredaNaActividad = !!act.no_aplica;
+                  const subNaPropia = !!sub.no_aplica;
+                  const subNaEfectivo = subNaPropia || heredaNaActividad;
+                  const subResuelta = !!sub.completada || subNaEfectivo;
+                  return (
                   <Paper key={sub._id} withBorder radius="xs" p={6}
-                    style={{ background: sub.completada ? "#f8f9fa" : undefined }}>
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap="xs" style={{ flex: 1 }}>
-                        <input type="checkbox" checked={sub.completada}
+                    style={{ background: subResuelta ? "#f8f9fa" : undefined }}>
+                    <Group justify="space-between" wrap="nowrap" align="flex-start">
+                      <Group gap="xs" style={{ flex: 1, minWidth: 0 }} align="flex-start">
+                        <input type="checkbox" checked={sub.completada && !subNaEfectivo}
                           onChange={() => onToggleSubactividad(sub)}
-                          style={{ cursor: "pointer", width: 14, height: 14 }}
+                          disabled={subNaEfectivo}
+                          title="Hecha"
+                          style={{
+                            marginTop: 4,
+                            cursor: subNaEfectivo ? "not-allowed" : "pointer",
+                            width: 14, height: 14, flexShrink: 0,
+                          }}
                         />
-                        <div style={{ flex: 1 }}>
-                          <Text size="xs" td={sub.completada ? "line-through" : undefined}
-                            c={sub.completada ? "dimmed" : undefined}>{sub.nombre}</Text>
-                          {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Group gap={4} wrap="wrap" align="center">
+                            <Text size="xs" td={subResuelta ? "line-through" : undefined}
+                              c={subNaEfectivo ? "orange" : sub.completada ? "dimmed" : undefined}>{sub.nombre}</Text>
+                            {subNaEfectivo && (
+                              <Badge size="xs" color="orange" variant="light">
+                                {heredaNaActividad && !subNaPropia ? "N/A (actividad)" : "N/A"}
+                              </Badge>
+                            )}
+                          </Group>
+                          {sub.fecha_completado && !subNaEfectivo && (
+                            <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>
+                          )}
                         </div>
                       </Group>
-                      <Group gap={2} wrap="nowrap">
-                        {/* Botones de reorden ↑/↓ */}
+                      <Group gap={4} wrap="nowrap" align="center" style={{ flexShrink: 0 }}>
                         <Button size="xs" variant="subtle" color="gray" p={2}
-                          disabled={subIdx === 0}
+                          disabled={subIdx === 0 || heredaNaActividad}
                           title="Mover arriba"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
@@ -230,7 +314,7 @@ const SortableActividad = ({
                             onReorderSubactividades(ids);
                           }}>↑</Button>
                         <Button size="xs" variant="subtle" color="gray" p={2}
-                          disabled={subIdx === subsVisibles.length - 1}
+                          disabled={subIdx === subsVisibles.length - 1 || heredaNaActividad}
                           title="Mover abajo"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
@@ -248,11 +332,26 @@ const SortableActividad = ({
                           📎{subactividadDocCounts[sub._id] > 0 ? ` ${subactividadDocCounts[sub._id]}` : ""}
                         </Button>
                         <Button size="xs" variant="subtle" color="red"
+                          disabled={heredaNaActividad}
                           onClick={() => onDeleteSubactividad(sub._id)}>🗑</Button>
+                        <Switch
+                          size="xs"
+                          label="N/A"
+                          labelPosition="left"
+                          checked={subNaEfectivo}
+                          onChange={(e) => {
+                            if (heredaNaActividad) return;
+                            const on = e.currentTarget.checked;
+                            if (on !== subNaPropia) onToggleSubNoAplica(sub);
+                          }}
+                          disabled={heredaNaActividad}
+                          color="orange"
+                          styles={{ root: { alignItems: "center" }, label: { fontSize: 11, fontWeight: 600 } }}
+                        />
                       </Group>
                     </Group>
                   </Paper>
-                ))}
+                );})}
 
                 {/* Agregar subactividad */}
                 <Group gap="xs" mt={2}>
@@ -280,7 +379,7 @@ const ProcesoDetalleCard = ({
   proceso, programa, fases, onUpdateProceso, onUpdateFases, onUpdatePrograma, onRefreshProcesos,
 }: ProcesoDetalleProps) => {
   const faseActual   = fases.find(f => f.numero === proceso.fase_actual);
-  const ultimaActiva = faseActual?.actividades.filter(a => !a.completada)[0] ?? null;
+  const ultimaActiva = faseActual?.actividades.filter(a => !actividadResuelta(a))[0] ?? null;
 
   /* ── Iniciar / cerrar proceso ── */
   const [resolucionOpen, setResolucionOpen]   = useState(false);
@@ -672,32 +771,55 @@ const ProcesoDetalleCard = ({
   const [loadingDocs, setLoadingDocs]   = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
+  const intentarAvanzarFaseSiCorresponde = async (fase: Phase, faseActualizada: Phase) => {
+    if (fase.numero !== proceso.fase_actual) return;
+    if (!faseActualizada.actividades.every(actividadResuelta)) return;
+    const siguienteFase = proceso.fase_actual + 1;
+    if (siguienteFase > 6) return;
+    try {
+      const procRes = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}`,
+        { fase_actual: siguienteFase }
+      );
+      onUpdateProceso(procRes.data);
+    } catch (e) { console.error(e); }
+  };
+
   const toggleCompletada = async (fase: Phase, act: Actividad) => {
     try {
       const nuevaCompletada = !act.completada;
       const hoy = new Date().toISOString().split("T")[0];
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
-        { completada: nuevaCompletada, fecha_completado: nuevaCompletada ? hoy : null }
+        {
+          completada: nuevaCompletada,
+          fecha_completado: nuevaCompletada ? hoy : null,
+          ...(nuevaCompletada ? { no_aplica: false } : {}),
+        }
       );
       const faseActualizada: Phase = res.data;
       const fasesActualizadas = fases.map(f => f._id === fase._id ? faseActualizada : f);
       onUpdateFases(fasesActualizadas);
-      // Si se completó actividad "Información del caso" en fase 4, recargar el caso
       if (nuevaCompletada && fase.numero === 4 &&
           act.nombre.trim().toLowerCase() === 'información del caso') {
         setTimeout(() => cargarCaso(), 300);
       }
-      if (nuevaCompletada && faseActualizada.actividades.every(a => a.completada)) {
-        const siguienteFase = proceso.fase_actual + 1;
-        if (siguienteFase <= 6) {
-          const procRes = await axios.put(
-            `${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}`,
-            { fase_actual: siguienteFase }
-          );
-          onUpdateProceso(procRes.data);
-        }
-      }
+      if (nuevaCompletada) await intentarAvanzarFaseSiCorresponde(fase, faseActualizada);
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleNoAplica = async (fase: Phase, act: Actividad) => {
+    try {
+      const siguiente = !act.no_aplica;
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
+        siguiente
+          ? { no_aplica: true, completada: false, fecha_completado: null }
+          : { no_aplica: false }
+      );
+      const faseActualizada: Phase = res.data;
+      onUpdateFases(fases.map(f => f._id === fase._id ? faseActualizada : f));
+      if (siguiente) await intentarAvanzarFaseSiCorresponde(fase, faseActualizada);
     } catch (e) { console.error(e); }
   };
 
@@ -811,7 +933,24 @@ const ProcesoDetalleCard = ({
       const hoy = new Date().toISOString().split("T")[0];
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${sub._id}`,
-        { completada: nuevaCompletada, fecha_completado: nuevaCompletada ? hoy : null }
+        {
+          completada: nuevaCompletada,
+          fecha_completado: nuevaCompletada ? hoy : null,
+          ...(nuevaCompletada ? { no_aplica: false } : {}),
+        }
+      );
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleSubNoAplica = async (fase: Phase, act: Actividad, sub: Subactividad) => {
+    try {
+      const siguiente = !sub.no_aplica;
+      const res = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${sub._id}`,
+        siguiente
+          ? { no_aplica: true, completada: false, fecha_completado: null }
+          : { no_aplica: false }
       );
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
     } catch (e) { console.error(e); }
@@ -1796,7 +1935,7 @@ const ProcesoDetalleCard = ({
           )}
           {!ultimaActiva && faseActual && (
             <Group gap="xs" mt={6}>
-              <Text size="xs" c="green" fw={600}>✓ Todas las actividades completadas</Text>
+              <Text size="xs" c="green" fw={600}>✓ Todas las actividades resueltas (completadas o no aplican)</Text>
               <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
                 Ver actividades
               </Button>
@@ -2059,9 +2198,17 @@ const ProcesoDetalleCard = ({
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, faseActual)}>
               <SortableContext items={faseActual.actividades.map(a => a._id)} strategy={verticalListSortingStrategy}>
                 {faseActual.actividades.map((act, index) => {
-                  const firstIncompleteIndex = faseActual.actividades.findIndex(a => !a.completada);
-                  const isFirstIncomplete    = !act.completada && index === firstIncompleteIndex;
-                  const canToggle            = act.completada || isFirstIncomplete;
+                  const firstIncompleteIndex = faseActual.actividades.findIndex(a => !actividadResuelta(a));
+                  const isFirstIncomplete    = !actividadResuelta(act) && index === firstIncompleteIndex;
+                  const puedeHechaActoAdmin  = puedeMarcarHechaActoAdminActividad(act, caso);
+                  const canToggleCompletada  = act.no_aplica ? false : (act.completada || (isFirstIncomplete && puedeHechaActoAdmin));
+                  const canToggleNoAplica    = act.completada ? false : (act.no_aplica || isFirstIncomplete);
+                  const modoActoEff          = getModoActoAdminEfectivo(act, caso);
+                  const tooltipBloqueoHecha  = esActoAdministrativo(act.nombre) && !act.completada && !act.no_aplica && isFirstIncomplete && !puedeHechaActoAdmin
+                    ? (modoActoEff === null
+                        ? "Indica si el acto administrativo fue satisfactorio o no (tabla del caso o interruptor de estado)."
+                        : "Completa o marca N/A todas las subactividades de este ramal antes de marcar la actividad como hecha.")
+                    : null;
                   return (
                     <SortableActividad
                       key={act._id}
@@ -2072,8 +2219,11 @@ const ProcesoDetalleCard = ({
                       editActividadNombre={editActividadNombre}
                       editActividadResponsables={editActividadResponsables}
                       savingActividad={savingActividad}
-                      canToggle={canToggle}
+                      canToggleCompletada={canToggleCompletada}
+                      canToggleNoAplica={canToggleNoAplica}
+                      tooltipBloqueoHecha={tooltipBloqueoHecha}
                       onToggle={() => toggleCompletada(faseActual, act)}
+                      onToggleNoAplica={() => toggleNoAplica(faseActual, act)}
                       onEdit={() => { setEditActividadId(act._id); setEditActividadNombre(act.nombre); setEditActividadResponsables(act.responsables ?? ""); }}
                       onDelete={() => eliminarActividad(faseActual, act._id)}
                       onSave={() => guardarNombreActividad(faseActual, act)}
@@ -2082,6 +2232,7 @@ const ProcesoDetalleCard = ({
                       setEditActividadResponsables={setEditActividadResponsables}
                       onAddSubactividad={(nombre) => agregarSubactividad(faseActual, act, nombre)}
                       onToggleSubactividad={(sub) => toggleSubactividad(faseActual, act, sub)}
+                      onToggleSubNoAplica={(sub) => toggleSubNoAplica(faseActual, act, sub)}
                       onDeleteSubactividad={(subId) => eliminarSubactividad(faseActual, act, subId)}
                       onReorderSubactividades={(newOrder) => reorderSubactividades(faseActual, act, newOrder)}
                       onOpenDocsActividad={() => abrirDocsActividad(faseActual, act)}

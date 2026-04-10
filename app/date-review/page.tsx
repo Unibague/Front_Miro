@@ -57,7 +57,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
               <Group gap="xs">
                 <Text size="xs" fw={700}>{openFase === f.fase_numero ? "▾" : "▸"} Fase {f.fase_numero} — {f.fase_nombre}</Text>
                 <Badge size="xs" color={f.actividades_completadas === f.actividades_total ? "green" : "orange"} variant="light">
-                  {f.actividades_completadas}/{f.actividades_total} completadas
+                  {f.actividades_completadas}/{f.actividades_total} resueltas
                 </Badge>
               </Group>
             </Group>
@@ -77,23 +77,28 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
               <Stack gap={4}>
                 {(f.actividades ?? []).map((act, ai) => {
                   const actKey = `${f.fase_numero}-${ai}`;
+                  const actNa = !!act.no_aplica;
+                  const actLista = act.completada || actNa;
                   return (
                     <Paper key={ai} withBorder radius="xs" style={{ overflow: "hidden" }}>
                       {/* Cabecera actividad */}
                       <Box
                         px="sm" py={6}
-                        style={{ cursor: "pointer", backgroundColor: act.completada ? "#f0fff4" : "#fff" }}
+                        style={{ cursor: "pointer", backgroundColor: actLista ? "#f0fff4" : "#fff" }}
                         onClick={() => setOpenAct(prev => prev === actKey ? null : actKey)}
                       >
                         <Group justify="space-between">
                           <Group gap="xs">
                             <Text size="xs">{openAct === actKey ? "▾" : "▸"}</Text>
-                            <input type="checkbox" checked={act.completada} readOnly style={{ width: 13, height: 13 }} />
-                            <Text size="xs" fw={500} td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : undefined}>
+                            <input type="checkbox" checked={actLista} readOnly style={{ width: 13, height: 13 }} />
+                            <Text size="xs" fw={500} td={actLista ? "line-through" : undefined} c={actNa ? "orange" : act.completada ? "dimmed" : undefined}>
                               {act.nombre}
                             </Text>
+                            {actNa && (
+                              <Badge size="xs" color="orange" variant="light">No aplica</Badge>
+                            )}
                           </Group>
-                          {act.fecha_completado && (
+                          {act.fecha_completado && !actNa && (
                             <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>
                           )}
                         </Group>
@@ -119,17 +124,25 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                           {act.subactividades.length > 0 && (
                             <Stack gap={4} mt="xs">
                               <Text size="xs" c="dimmed" fw={600}>Subactividades</Text>
-                              {act.subactividades.map((sub, si) => (
+                              {act.subactividades.map((sub, si) => {
+                                const subNa = !!sub.no_aplica || actNa;
+                                const subLista = sub.completada || subNa;
+                                return (
                                 <Paper key={si} withBorder radius="xs" p={6}
-                                  style={{ backgroundColor: sub.completada ? "#f8f9fa" : "#fff" }}>
+                                  style={{ backgroundColor: subLista ? "#f8f9fa" : "#fff" }}>
                                   <Group justify="space-between" mb={sub.documentos.length > 0 || sub.observaciones ? 4 : 0}>
                                     <Group gap="xs">
-                                      <input type="checkbox" checked={sub.completada} readOnly style={{ width: 12, height: 12 }} />
-                                      <Text size="xs" td={sub.completada ? "line-through" : undefined} c={sub.completada ? "dimmed" : undefined}>
+                                      <input type="checkbox" checked={sub.completada && !subNa} readOnly style={{ width: 12, height: 12 }} />
+                                      <Text size="xs" td={subLista ? "line-through" : undefined} c={subNa ? "orange" : sub.completada ? "dimmed" : undefined}>
                                         {sub.nombre}
                                       </Text>
+                                      {subNa && (
+                                        <Badge size="xs" color="orange" variant="light">
+                                          {actNa && !sub.no_aplica ? "N/A (actividad)" : "No aplica"}
+                                        </Badge>
+                                      )}
                                     </Group>
-                                    {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
+                                    {sub.fecha_completado && !subNa && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
                                   </Group>
                                   {sub.observaciones && (
                                     <Text size="xs" c="dimmed" pl={20} mb={2}>📝 {sub.observaciones}</Text>
@@ -140,7 +153,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                                     </Box>
                                   )}
                                 </Paper>
-                              ))}
+                              );})}
                             </Stack>
                           )}
                         </Box>
