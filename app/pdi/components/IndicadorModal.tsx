@@ -12,6 +12,9 @@ import axios from "axios";
 import "dayjs/locale/es";
 import type { Indicador, Periodo } from "../types";
 import { PDI_ROUTES } from "../api";
+import dynamic from "next/dynamic";
+
+const EvidenciasPanel = dynamic(() => import("./EvidenciasPanel"), { ssr: false });
 
 interface Props {
   opened: boolean;
@@ -150,6 +153,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
           <Tabs.Tab value="general">General</Tabs.Tab>
           <Tabs.Tab value="seguimiento">Seguimiento</Tabs.Tab>
           <Tabs.Tab value="periodos">Periodos ({periodos.length})</Tabs.Tab>
+          {selected && <Tabs.Tab value="evidencias">Evidencias</Tabs.Tab>}
         </Tabs.List>
 
         {/* ── General ── */}
@@ -226,6 +230,12 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
             ))}
           </Stack>
         </Tabs.Panel>
+        {/* ── Evidencias ── */}
+        {selected && (
+          <Tabs.Panel value="evidencias">
+            <EvidenciasPanel indicadorId={selected._id} />
+          </Tabs.Panel>
+        )}
       </Tabs>
 
       <Group justify="flex-end" mt="md">

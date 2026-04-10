@@ -10,6 +10,7 @@ import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFolderOpen, IconFlag, IconAlertTriangle, IconUsers, IconChevronDown,
+  IconListCheck,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -372,30 +373,31 @@ function StatsCards({ macros, proyectosPorMacro }: {
   const criticos = macros.filter(m => m.semaforo === "rojo").length;
   const amarillos = macros.filter(m => m.semaforo === "amarillo").length;
 
-  const cards = [
+  const cards: { iconEl: React.ReactNode; iconColor: string; title: string; value: string; subtitle: string; badge: string; badgeColor: string }[] = [
     {
-      icon: "", title: "Total Macroproyectos", value: String(macros.length),
+      iconEl: <IconChartBarPopular size={24} />, iconColor: "violet",
+      title: "Total Macroproyectos", value: String(macros.length),
       subtitle: `${criticos} en estado crítico`,
       badge: criticos > 0 ? "Crítico" : "OK",
       badgeColor: criticos > 0 ? "red" : "green",
     },
     {
-      icon: "", title: "Avance Promedio", value: `${avanceGlobal}%`,
+      iconEl: <IconTrendingUp size={24} />, iconColor: "blue",
+      title: "Avance Promedio", value: `${avanceGlobal}%`,
       subtitle: `${macros.filter(m => m.avance >= 50).length} de ${macros.length} macroproyectos`,
-      badge: "En progreso",
-      badgeColor: "blue",
+      badge: "En progreso", badgeColor: "blue",
     },
     {
-      icon: "", title: "Indicadores Críticos", value: String(criticos),
+      iconEl: <IconFlag size={24} />, iconColor: "orange",
+      title: "Indicadores Críticos", value: String(criticos),
       subtitle: "Macroproyectos en rojo",
-      badge: "Atención",
-      badgeColor: "orange",
+      badge: "Atención", badgeColor: "orange",
     },
     {
-      icon: "", title: "Proyectos Cargados", value: String(totalProyectos),
+      iconEl: <IconFolderOpen size={24} />, iconColor: "teal",
+      title: "Proyectos Cargados", value: String(totalProyectos),
       subtitle: `${amarillos} macros requieren atención`,
-      badge: "Pendiente",
-      badgeColor: "yellow",
+      badge: "Pendiente", badgeColor: "yellow",
     },
   ];
 
@@ -404,14 +406,9 @@ function StatsCards({ macros, proyectosPorMacro }: {
       {cards.map(c => (
         <Paper key={c.title} withBorder radius="lg" p="lg" shadow="xs">
           <Group justify="space-between" align="flex-start" mb="sm">
-            <Box
-              style={{
-                width: 52, height: 52, borderRadius: 14,
-                background: "var(--mantine-color-default-hover)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 24,
-              }}
-            >{c.icon}</Box>
+            <ThemeIcon size={52} radius="xl" color={c.iconColor} variant="light">
+              {c.iconEl}
+            </ThemeIcon>
             <Badge color={c.badgeColor} variant="light" size="sm" radius="xl">{c.badge}</Badge>
           </Group>
           <Text size="xs" c="dimmed" mb={2}>{c.title}</Text>

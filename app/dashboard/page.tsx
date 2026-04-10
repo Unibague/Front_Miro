@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -808,6 +808,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-pdi-indicadores">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
+              <Center><IconTarget size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Indicadores PDI</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta y actualiza el avance de los indicadores PDI asignados a ti.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
+                Ir a Mis Indicadores PDI
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -879,6 +893,20 @@ useEffect(() => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
                 Ir a Historial de Cambios
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-pdi-indicadores">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
+              <Center><IconTarget size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Indicadores PDI</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta y actualiza el avance de los indicadores PDI asignados a ti.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
+                Ir a Mis Indicadores PDI
               </Button>
             </Card>
           </Grid.Col>,

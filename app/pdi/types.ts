@@ -35,6 +35,17 @@ export interface Periodo {
   avance: number | string | null;
 }
 
+export interface Evidencia {
+  _id: string;
+  nombre_original: string;
+  filename: string;
+  url: string;
+  subido_por: string;
+  periodo: string;
+  descripcion: string;
+  fecha_subida: string;
+}
+
 export interface Indicador {
   _id: string;
   codigo: string;
@@ -56,6 +67,7 @@ export interface Indicador {
   avances_por_anio: Record<string, number>;
   avance_total_real: number | null;
   accion_id: { _id: string; codigo: string; nombre: string };
+  evidencias: Evidencia[];
 }
 
 export type Semaforo = "verde" | "amarillo" | "rojo";
