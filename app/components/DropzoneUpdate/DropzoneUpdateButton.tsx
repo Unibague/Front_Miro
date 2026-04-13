@@ -169,7 +169,7 @@ const handleFileDrop = async (files: File[]) => {
             headers.push(cell.text?.toString?.() ?? cell.value?.toString?.() ?? '');
           });
           
-          // 🚨 Validar columnas antes de procesar datos
+          //  Validar columnas antes de procesar datos
           const invalidColumns = headers.filter(header => header && !expectedColumns.includes(header));
           
           if (invalidColumns.length > 0) {
