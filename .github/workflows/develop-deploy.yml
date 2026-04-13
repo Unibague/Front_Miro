@@ -22,93 +22,82 @@ jobs:
       with:
         node-version: '22.14.0'
 
-    - name: Install OpenConnect
-      run: sudo apt-get install -y openconnect
+    - name: Install OpenConnect and sshpass
+      run: sudo apt-get install -y openconnect sshpass
 
-    - name: Install sshpass
-      run: sudo apt-get install -y sshpass
-
-    - name: Connect to VPN
+    - name: Connect to VPN and deploy
+      env:
+        VPN_PASSWORD: ${{ secrets.VPN_PASSWORD }}
+        VPN_USER: ${{ secrets.VPN_USER }}
+        VPN_HOST: ${{ secrets.VPN_HOST }}
+        SSH_PASS: ${{ secrets.INTERNAL_SSH_PASSWORD }}
+        SSH_USER: ${{ secrets.INTERNAL_USER }}
+        SSH_HOST: ${{ secrets.INTERNAL_RESOURCE_IP }}
       run: |
-        echo "${{ secrets.VPN_PASSWORD }}" | sudo openconnect \
+        # 1. Conectar VPN forzando gateway interno
+        echo "$VPN_PASSWORD" | sudo openconnect \
           --protocol=gp \
-          --user=${{ secrets.VPN_USER }} \
+          --user="$VPN_USER" \
           --passwd-on-stdin \
           --servercert pin-sha256:+4XOhCB4GmaXr8/TMWL09EayWRbrz3X8WWAWgu79f9U= \
-          ${{ secrets.VPN_HOST }} -b
+          --os=win \
+          "$VPN_HOST" -b
 
-
-    - name: Verify VPN connection
-      run: |
-        ip a
-        # Esperar hasta 30s a que la interfaz VPN aparezca
-        for i in $(seq 1 10); do
-          ip a | grep -E "tun|gpd|pan" && echo "VPN interface found" && break
-          echo "Waiting for VPN interface... ($i/10)"
+        # 2. Esperar que el túnel levante
+        echo "Waiting for VPN tunnel..."
+        for i in $(seq 1 15); do
+          ip a | grep -E "tun|gpd|pan|ppp" && echo "VPN interface found" && break
+          echo "  attempt $i/15..."
           sleep 3
         done
+        ip route
 
-    - name: List network routes
-      run: ip route
-
-    - name: Test internal connectivity with SSH
-      run: |
-        # Reintentar SSH hasta 3 veces con espera entre intentos
-        for i in 1 2 3; do
-          sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"' && break
-          echo "SSH attempt $i failed, retrying in 5s..."
-          sleep 5
+        # 3. Verificar conectividad TCP con reintentos
+        echo "Checking TCP port 22..."
+        for i in 1 2 3 4 5; do
+          timeout 15 bash -c "</dev/tcp/$SSH_HOST/22" && echo "TCP 22 reachable" && break
+          echo "  TCP attempt $i failed, waiting 10s..."
+          sleep 10
         done
-        
-    - name: Update repository on remote server
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          echo "Checking PM2 processes...";
-          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
-          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
-          cd ~/MIRO_TEST;
-          if [ ! -d "Front_Miro_Test" ]; then
-            echo "Directory does not exist, cloning repository...";
-            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
-          else
-            echo "Updating existing repository...";
-            cd Front_Miro_Test;
-            git fetch origin develop;
-            git reset --hard origin/develop;
-          fi;
-          echo "Repository updated successfully"'
 
-    - name: Fix environment and build
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "=== FIXING ENV FILE FORMAT ===";
-          sed -i "s/ = /=/g" .env;
-          echo "=== FIXED ENV FILE ===";
-          cat .env | grep -E "(API|NODE_TLS)";
-          echo "=== TESTING VARIABLE LOADING ===";
-          export $(cat .env | grep -v "^#" | xargs);
-          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
-          npm install;
-          echo "=== BUILD OUTPUT ===";
-          npm run build'
+        # 4. Todo el trabajo SSH en una sola conexión
+        sshpass -p "$SSH_PASS" ssh \
+          -o StrictHostKeyChecking=no \
+          -o ConnectTimeout=20 \
+          -o ServerAliveInterval=20 \
+          -o ServerAliveCountMax=30 \
+          "$SSH_USER@$SSH_HOST" '
+            set -e
+            echo "=== Stopping PM2 process ==="
+            pm2 stop Front_Dev || echo "Front_Dev not running"
+            pm2 delete Front_Dev || echo "Front_Dev not found"
 
-    - name: Start PM2 process
-      run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          
-          # Start PM2 with fixed port 3001 (already configured in nginx)
-          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
-          pm2 save;
-          
-          echo "Front_Dev started successfully on port 3001"'
+            echo "=== Updating repository ==="
+            cd ~/MIRO_TEST
+            if [ ! -d "Front_Miro_Test" ]; then
+              git clone --depth=1 --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test
+            fi
+            cd Front_Miro_Test
+            git fetch --depth=1 origin develop
+            git reset --hard origin/develop
+
+            echo "=== Fixing env and building ==="
+            sed -i "s/ = /=/g" .env
+            npm install
+            npm run build
+
+            echo "=== Starting PM2 ==="
+            PORT=3001 pm2 start npm --name "Front_Dev" -- start
+            pm2 save
+
+            echo "=== Deploy complete ==="
+          '
 
     - name: Run Semantic Release
-      working-directory: ./    
+      working-directory: ./
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
 
-    - name: Post Checkout repository
+    - name: Post deploy
       run: echo "Development deployment complete"
