@@ -148,6 +148,20 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
       return;
     }
 
+    if (file) {
+      const fileName = file.name.toLowerCase();
+      const isSupportedWorkbook = fileName.endsWith(".xlsx") || fileName.endsWith(".xlsm");
+
+      if (!isSupportedWorkbook) {
+        showNotification({
+          title: "Formato no compatible",
+          message: `La plantilla ${moduleUpper} debe estar en formato .xlsx o .xlsm. Los archivos .xls no son compatibles.`,
+          color: "red",
+        });
+        return;
+      }
+    }
+
     if (!session?.user?.email) {
       showNotification({
         title: "Sesión no disponible",
@@ -453,6 +467,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
           leftSection={<IconUpload size={16} />}
           value={file}
           onChange={setFile}
+          accept=".xlsx,.xlsm"
         />
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={close}>

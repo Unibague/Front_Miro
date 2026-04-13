@@ -128,7 +128,7 @@ export const applyValidatorDropdowns = ({
   let sourceCol = Math.max(1, sourcesSheet.columnCount + 1);
 
   fields.forEach((field, fieldIndex) => {
-    if (!field.validate_with || field.multiple) return;
+    if (!field.validate_with) return;
 
     const validateWithParts = field.validate_with.split(" - ");
     const validatorName = validateWithParts[0]?.trim();
@@ -167,7 +167,8 @@ export const applyValidatorDropdowns = ({
         type: "list",
         allowBlank: true,
         formulae: [rangeRef],
-        showErrorMessage: true,
+        // Para campos múltiples no se bloquea la entrada libre, solo se muestra la lista como referencia
+        showErrorMessage: !field.multiple,
         errorTitle: "Valor no valido",
         error: "Selecciona un valor de la lista desplegable.",
       };
