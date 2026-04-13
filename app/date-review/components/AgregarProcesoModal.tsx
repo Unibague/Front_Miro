@@ -49,6 +49,11 @@ const SUBTIPOS_AV = [
     titulo: "Renovación",
     desc: "Renovación normal. Ingresa la resolución vigente y el sistema auto-calcula todas las fechas.",
   },
+  {
+    key: "No renovación",
+    titulo: "No renovación",
+    desc: "Proceso de no renovación. El panel de Información del caso se genera automáticamente.",
+  },
 ];
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */

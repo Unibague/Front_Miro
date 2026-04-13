@@ -39,9 +39,12 @@
     "next-auth": "^4.24.7",
     "node-cron": "^4.0.5",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.23",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^10.1.5",

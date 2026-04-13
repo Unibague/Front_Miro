@@ -8,13 +8,16 @@ import {
 import { useRole } from "@/app/context/RoleContext";
 import axios from "axios";
 
-import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcesoRow, BarRow } from "./types";
+import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcesoRow, BarRow, PQR } from "./types";
 import { LABEL_PROCESO, selectorStyle } from "./constants";
 import FaseBadge from "./components/FaseBadge";
 import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
 import AgregarProcesoModal from "./components/AgregarProcesoModal";
+import AgregarPQRModal from "./components/AgregarPQRModal";
+import PQRListModal from "./components/PQRListModal";
+import PQRHistorialModal from "./components/PQRHistorialModal";
 
 /* ── Helper: renderiza la fecha subida de un doc ── */
 const fmtFecha = (iso?: string | null) =>
@@ -54,7 +57,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
               <Group gap="xs">
                 <Text size="xs" fw={700}>{openFase === f.fase_numero ? "▾" : "▸"} Fase {f.fase_numero} — {f.fase_nombre}</Text>
                 <Badge size="xs" color={f.actividades_completadas === f.actividades_total ? "green" : "orange"} variant="light">
-                  {f.actividades_completadas}/{f.actividades_total} completadas
+                  {f.actividades_completadas}/{f.actividades_total} resueltas
                 </Badge>
               </Group>
             </Group>
@@ -74,23 +77,28 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
               <Stack gap={4}>
                 {(f.actividades ?? []).map((act, ai) => {
                   const actKey = `${f.fase_numero}-${ai}`;
+                  const actNa = !!act.no_aplica;
+                  const actLista = act.completada || actNa;
                   return (
                     <Paper key={ai} withBorder radius="xs" style={{ overflow: "hidden" }}>
                       {/* Cabecera actividad */}
                       <Box
                         px="sm" py={6}
-                        style={{ cursor: "pointer", backgroundColor: act.completada ? "#f0fff4" : "#fff" }}
+                        style={{ cursor: "pointer", backgroundColor: actLista ? "#f0fff4" : "#fff" }}
                         onClick={() => setOpenAct(prev => prev === actKey ? null : actKey)}
                       >
                         <Group justify="space-between">
                           <Group gap="xs">
                             <Text size="xs">{openAct === actKey ? "▾" : "▸"}</Text>
-                            <input type="checkbox" checked={act.completada} readOnly style={{ width: 13, height: 13 }} />
-                            <Text size="xs" fw={500} td={act.completada ? "line-through" : undefined} c={act.completada ? "dimmed" : undefined}>
+                            <input type="checkbox" checked={actLista} readOnly style={{ width: 13, height: 13 }} />
+                            <Text size="xs" fw={500} td={actLista ? "line-through" : undefined} c={actNa ? "orange" : act.completada ? "dimmed" : undefined}>
                               {act.nombre}
                             </Text>
+                            {actNa && (
+                              <Badge size="xs" color="orange" variant="light">No aplica</Badge>
+                            )}
                           </Group>
-                          {act.fecha_completado && (
+                          {act.fecha_completado && !actNa && (
                             <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>
                           )}
                         </Group>
@@ -116,20 +124,28 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                           {act.subactividades.length > 0 && (
                             <Stack gap={4} mt="xs">
                               <Text size="xs" c="dimmed" fw={600}>Subactividades</Text>
-                              {act.subactividades.map((sub, si) => (
+                              {act.subactividades.map((sub, si) => {
+                                const subNa = !!sub.no_aplica || actNa;
+                                const subLista = sub.completada || subNa;
+                                return (
                                 <Paper key={si} withBorder radius="xs" p={6}
-                                  style={{ backgroundColor: sub.completada ? "#f8f9fa" : "#fff" }}>
+                                  style={{ backgroundColor: subLista ? "#f8f9fa" : "#fff" }}>
                                   <Group justify="space-between" mb={sub.documentos.length > 0 || sub.observaciones ? 4 : 0}>
                                     <Group gap="xs">
-                                      <input type="checkbox" checked={sub.completada} readOnly style={{ width: 12, height: 12 }} />
-                                      <Text size="xs" td={sub.completada ? "line-through" : undefined} c={sub.completada ? "dimmed" : undefined}>
+                                      <input type="checkbox" checked={sub.completada && !subNa} readOnly style={{ width: 12, height: 12 }} />
+                                      <Text size="xs" td={subLista ? "line-through" : undefined} c={subNa ? "orange" : sub.completada ? "dimmed" : undefined}>
                                         {sub.nombre}
                                       </Text>
+                                      {subNa && (
+                                        <Badge size="xs" color="orange" variant="light">
+                                          {actNa && !sub.no_aplica ? "N/A (actividad)" : "No aplica"}
+                                        </Badge>
+                                      )}
                                     </Group>
-                                    {sub.fecha_completado && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
+                                    {sub.fecha_completado && !subNa && <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>}
                                   </Group>
                                   {sub.observaciones && (
-                                    <Text size="xs" c="dimmed" pl={20} mb={2}>📝 {sub.observaciones}</Text>
+                                    <Text size="xs" c="dimmed" pl={20} mb={2}>Observaciones: {sub.observaciones}</Text>
                                   )}
                                   {sub.documentos.length > 0 && (
                                     <Box pl={20}>
@@ -137,7 +153,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                                     </Box>
                                   )}
                                 </Paper>
-                              ))}
+                              );})}
                             </Stack>
                           )}
                         </Box>
@@ -194,6 +210,47 @@ const DateReviewPage = () => {
 
   /* ── Modal agregar proceso ── */
   const [agregarProcesoOpen, setAgregarProcesoOpen] = useState(false);
+
+  /* ── Ventanas de gestión ── */
+  const [gestionProcesosOpen, setGestionProcesosOpen] = useState(false);
+  const [gestionPQROpen, setGestionPQROpen]           = useState(false);
+
+  /* ── PQR ── */
+  const [pqrs, setPqrs]                     = useState<PQR[]>([]);
+  const [agregarPQROpen, setAgregarPQROpen] = useState(false);
+  const [listaPQROpen, setListaPQROpen]     = useState(false);
+  const [historialPQROpen, setHistorialPQROpen] = useState(false);
+
+  const cargarPQRs = async () => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pqr`);
+      setPqrs(Array.isArray(res.data) ? res.data as PQR[] : []);
+    } catch (e) { console.error("Error cargando PQRs:", e); }
+  };
+
+  useEffect(() => { cargarPQRs(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePQRCreado = (pqr: PQR) => {
+    setPqrs(prev => [pqr, ...prev]);
+    setListaPQROpen(true);
+  };
+
+  const handlePQRActualizado = (updated: PQR) =>
+    setPqrs(prev => prev.map(p => p._id === updated._id ? updated : p));
+
+  const handlePQRCerrado = async (id: string) => {
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pqr/${id}/cerrar`);
+      setPqrs(prev => prev.map(p => p._id === id ? res.data as PQR : p));
+    } catch (e) { console.error(e); }
+  };
+
+  const handlePQREliminar = async (id: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/pqr/${id}`);
+      setPqrs(prev => prev.filter(p => p._id !== id));
+    } catch (e) { console.error(e); }
+  };
 
   /* ── Programa seleccionado (modal detalle) ── */
   const [selectedProgram, setSelectedProgram]   = useState<Program | null>(null);
@@ -315,15 +372,25 @@ const DateReviewPage = () => {
     const grupos: Record<string, BarRow> = {};
     facultades.forEach((f) => {
       if (programas.some((p) => p.dep_code_facultad === f.dep_code)) {
-        grupos[f.dep_code] = { nombre: f.name, fase_0: 0, fase_1: 0, fase_2: 0, fase_3: 0, fase_4: 0, fase_5: 0, fase_6: 0 };
+        grupos[f.dep_code] = {
+          nombre: f.name,
+          fase_0: 0, fase_1: 0, fase_2: 0, fase_3: 0, fase_4: 0, fase_5: 0, fase_6: 0,
+          fase_contingencia: 0,
+        };
       }
     });
     programas.forEach((p) => {
       if (!grupos[p.dep_code_facultad]) return;
       const proc = getProceso(p.dep_code_programa, tipo);
-      if (!proc?.fecha_vencimiento) return;
-      const fase = proc.fase_actual ?? 0;
-      (grupos[p.dep_code_facultad][`fase_${fase}` as keyof BarRow] as number) += 1;
+      if (!proc) return;
+      /* Incluir procesos sin fecha_vencimiento (p. ej. RC Nuevo / AV Primera vez) para alinear con la tabla */
+      const n = Number(proc.fase_actual) || 0;
+      if (n >= 7) {
+        grupos[p.dep_code_facultad].fase_contingencia += 1;
+      } else {
+        const fase = Math.min(Math.max(n, 0), 6);
+        (grupos[p.dep_code_facultad][`fase_${fase}` as keyof BarRow] as number) += 1;
+      }
     });
     return Object.values(grupos);
   };
@@ -394,10 +461,63 @@ const DateReviewPage = () => {
           )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-          <Button variant="light" size="sm" fullWidth onClick={() => setAgregarProcesoOpen(true)}>+ Agregar proceso</Button>
-          <Button variant="subtle" size="sm" fullWidth onClick={abrirHistorial}>Ver historial</Button>
+          <Button variant="light" size="sm" fullWidth
+            styles={{ root: { paddingTop: 5, paddingBottom: 5 } }}
+            onClick={() => setGestionProcesosOpen(true)}>
+            Gestión procesos
+          </Button>
+          <Button variant="light" color="teal" size="sm" fullWidth
+            styles={{ root: { paddingTop: 5, paddingBottom: 5 } }}
+            onClick={() => setGestionPQROpen(true)}>
+            Gestión PQR
+            {pqrs.filter(p => !p.cerrado).length > 0 && (
+              <Badge size="xs" color="teal" variant="filled" ml={6}>
+                {pqrs.filter(p => !p.cerrado).length}
+              </Badge>
+            )}
+          </Button>
         </div>
       </Box>
+
+      {/* ── Ventana Gestión procesos ── */}
+      <Modal opened={gestionProcesosOpen} onClose={() => setGestionProcesosOpen(false)}
+        title="Gestión de procesos" centered size="sm" radius="md">
+        <Stack gap="sm" pb="xs">
+          <Button variant="light" size="md" fullWidth
+            onClick={() => { setGestionProcesosOpen(false); setAgregarProcesoOpen(true); }}>
+            + Agregar proceso
+          </Button>
+          <Button variant="subtle" size="md" fullWidth
+            onClick={() => { setGestionProcesosOpen(false); abrirHistorial(); }}>
+            Ver historial procesos
+          </Button>
+        </Stack>
+      </Modal>
+
+      {/* ── Ventana Gestión PQR ── */}
+      <Modal opened={gestionPQROpen} onClose={() => setGestionPQROpen(false)}
+        title="Gestión de PQR" centered size="sm" radius="md">
+        <Stack gap="sm" pb="xs">
+          <Button variant="light" color="teal" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setAgregarPQROpen(true); }}>
+            + Agregar PQR
+          </Button>
+          <Button variant="subtle" color="teal" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setListaPQROpen(true); }}>
+            Ver PQRs activos
+            {pqrs.filter(p => !p.cerrado).length > 0 && (
+              <Badge size="xs" color="teal" variant="filled" ml={6}>
+                {pqrs.filter(p => !p.cerrado).length}
+              </Badge>
+            )}
+          </Button>
+          <Divider />
+          <Button variant="subtle" size="md" fullWidth
+            onClick={() => { setGestionPQROpen(false); setHistorialPQROpen(true); }}>
+            Ver historial PQR
+          </Button>
+        </Stack>
+      </Modal>
 
       {/* ── Modal agregar proceso ── */}
       <AgregarProcesoModal
@@ -407,6 +527,28 @@ const DateReviewPage = () => {
         facultades={facultades}
         procesos={procesos}
         onCreated={handleProcesoCreado}
+      />
+
+      {/* ── Modales PQR ── */}
+      <AgregarPQRModal
+        opened={agregarPQROpen}
+        onClose={() => setAgregarPQROpen(false)}
+        programas={programas}
+        onCreado={handlePQRCreado}
+      />
+      <PQRListModal
+        opened={listaPQROpen}
+        onClose={() => setListaPQROpen(false)}
+        pqrs={pqrs}
+        programas={programas}
+        onUpdate={handlePQRActualizado}
+        onCerrar={handlePQRCerrado}
+      />
+      <PQRHistorialModal
+        opened={historialPQROpen}
+        onClose={() => setHistorialPQROpen(false)}
+        pqrs={pqrs}
+        programas={programas}
       />
 
       {/* ── CONTENIDO PRINCIPAL ── */}

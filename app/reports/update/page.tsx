@@ -209,7 +209,7 @@ const AdminPubReportsPage = () => {
               variant="light"
               size="xs"
               leftSection={<IconFileDescription size={14} />}
-              onClick={() => router.push(`${pubReport._id}`)}
+              onClick={() => router.push(`/reports/${pubReport._id}`)}
             >
               Ver
             </Button>
