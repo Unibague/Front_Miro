@@ -39,14 +39,26 @@ jobs:
 
 
     - name: Verify VPN connection
-      run: ip a
+      run: |
+        ip a
+        # Esperar hasta 30s a que la interfaz VPN aparezca
+        for i in $(seq 1 10); do
+          ip a | grep -E "tun|gpd|pan" && echo "VPN interface found" && break
+          echo "Waiting for VPN interface... ($i/10)"
+          sleep 3
+        done
 
     - name: List network routes
       run: ip route
 
     - name: Test internal connectivity with SSH
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
+        # Reintentar SSH hasta 3 veces con espera entre intentos
+        for i in 1 2 3; do
+          sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"' && break
+          echo "SSH attempt $i failed, retrying in 5s..."
+          sleep 5
+        done
         
     - name: Update repository on remote server
       run: |
