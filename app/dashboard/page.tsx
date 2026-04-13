@@ -439,7 +439,7 @@ useEffect(() => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports-producers">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/uploaded')} style={{ cursor: "pointer" }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/reportproducers')} style={{ cursor: "pointer" }}>
               <Center>
                 <IconReportSearch size={80}/>
               </Center>
@@ -449,7 +449,7 @@ useEffect(() => {
               <Text ta={"center"} size="sm" color="dimmed">
                 Gestiona el proceso de cargue de los informes por parte de los productores.
               </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/uploaded')}>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reportproducers')}>
                 Ir a Gestión de Informes
               </Button>
             </Card>
@@ -1232,7 +1232,7 @@ useEffect(() => {
               </Card>
             </Grid.Col>
 
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+           {/* <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
                 p="xl"
@@ -1263,7 +1263,7 @@ useEffect(() => {
                   </Button>
                 </Stack>
               </Card>
-            </Grid.Col>
+            </Grid.Col>*/}
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
