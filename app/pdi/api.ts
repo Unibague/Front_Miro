@@ -16,4 +16,6 @@ export const PDI_ROUTES = {
 
   evidencias:              (id: string) => `${BASE()}/pdi/indicadores/${id}/evidencias`,
   evidencia: (id: string, evId: string) => `${BASE()}/pdi/indicadores/${id}/evidencias/${evId}`,
+
+  historial:               () => `${BASE()}/pdi/historial`,
 };

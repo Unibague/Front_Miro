@@ -66,15 +66,14 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, onSaved }: {
   const handleSave = async () => {
     setLoading(true);
     try {
-      // Convertir strings a números al momento de guardar
       const periodosPayload = periodos.map(p => ({
-        ...p,
+        periodo: p.periodo,
+        meta: p.meta,
         avance: avancesStr[p.periodo] !== ""
           ? Number(avancesStr[p.periodo].replace(",", "."))
           : null,
       }));
       const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
-        ...indicador,
         periodos: periodosPayload,
         observaciones: obs.trim(),
         accion_id: typeof indicador.accion_id === "string"
@@ -347,17 +346,26 @@ export default function MisIndicadoresPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (status !== "authenticated" || !session?.user?.name) return;
-    axios.get(PDI_ROUTES.indicadores())
-      .then(res => {
-        const todos: Indicador[] = res.data;
-        const nombre = session.user?.name ?? "";
-        const email = session.user?.email ?? "";
-        const mios = todos.filter(i =>
-          i.responsable &&
-          (i.responsable.toLowerCase() === nombre.toLowerCase() ||
-           i.responsable.toLowerCase() === email.toLowerCase())
-        );
+    if (status !== "authenticated" || !session?.user?.email) return;
+    const email = (session.user.email ?? "").toLowerCase().trim();
+
+    Promise.all([
+      axios.get(PDI_ROUTES.indicadores()),
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
+    ])
+      .then(([resInd, resUser]) => {
+        const todos: Indicador[] = resInd.data;
+        const fullName = (resUser.data?.full_name ?? "").toLowerCase().trim();
+        const mios = todos.filter(i => {
+          if (!i.responsable) return false;
+          // 1. match exacto por email dedicado (indicadores nuevos)
+          if ((i as any).responsable_email?.toLowerCase().trim() === email) return true;
+          // 2. match exacto por full_name real del usuario en BD
+          if (fullName && i.responsable.toLowerCase().trim() === fullName) return true;
+          // 3. match por email en campo responsable (algunos admins guardan el email)
+          if (i.responsable.toLowerCase().trim() === email) return true;
+          return false;
+        });
         setIndicadores(mios);
       })
       .catch(e => console.error(e))

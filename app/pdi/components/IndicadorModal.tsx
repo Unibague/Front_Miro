@@ -36,6 +36,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [indicadorResultado, setIndicadorResultado] = useState("");
   const [peso, setPeso]                         = useState("");
   const [responsable, setResponsable]           = useState("");
+  const [responsableEmail, setResponsableEmail] = useState("");
   const [entregable, setEntregable]             = useState("");
   const [fechaInicio, setFechaInicio]           = useState<Date | null>(null);
   const [fechaFin, setFechaFin]                 = useState<Date | null>(null);
@@ -48,13 +49,19 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [usuarios, setUsuarios]                 = useState<string[]>([]);
   const [loading, setLoading]                   = useState(false);
 
+  const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
+
   // Cargar usuarios para el autocomplete
   useEffect(() => {
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
       .then(res => {
         const lista = Array.isArray(res.data) ? res.data : (res.data.users ?? []);
-        const nombres = lista.map((u: any) => u.full_name).filter(Boolean);
-        setUsuarios([...new Set(nombres as string[])]);
+        const data = lista
+          .filter((u: any) => u.full_name)
+          .map((u: any) => ({ label: u.full_name as string, email: (u.email ?? "") as string }));
+        const unicos = Array.from(new Map<string, { label: string; email: string }>(data.map((u: { label: string; email: string }) => [u.label, u])).values());
+        setUsuariosData(unicos);
+        setUsuarios(unicos.map((u: { label: string; email: string }) => u.label));
       })
       .catch(() => {});
   }, []);
@@ -68,6 +75,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       setIndicadorResultado(selected.indicador_resultado ?? "");
       setPeso(String(selected.peso));
       setResponsable(selected.responsable ?? "");
+      setResponsableEmail((selected as any).responsable_email ?? "");
       setEntregable(selected.entregable ?? "");
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
@@ -83,7 +91,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       })));
     } else {
       setCodigo(""); setNombre(""); setIndicadorResultado(""); setPeso("");
-      setResponsable(""); setEntregable(""); setFechaInicio(null); setFechaFin(null);
+      setResponsable(""); setResponsableEmail(""); setEntregable(""); setFechaInicio(null); setFechaFin(null);
       setObservaciones(""); setTipoSeguimiento(""); setFechaSeguimiento("");
       setTipoCalculo("promedio"); setMetaFinal(""); setPeriodos([]);
     }
@@ -120,6 +128,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         indicador_resultado:  indicadorResultado.trim(),
         peso:                 toNum(peso),
         responsable:          responsable.trim(),
+        responsable_email:    responsableEmail.trim(),
         entregable:           entregable.trim(),
         fecha_inicio:         fechaInicio ? fechaInicio.toISOString().split("T")[0] : null,
         fecha_fin:            fechaFin    ? fechaFin.toISOString().split("T")[0]    : null,
@@ -169,7 +178,11 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               label="Responsable"
               placeholder="Buscar usuario..."
               value={responsable}
-              onChange={setResponsable}
+              onChange={val => {
+                setResponsable(val);
+                const found = usuariosData.find(u => u.label === val);
+                setResponsableEmail(found?.email ?? "");
+              }}
               data={usuarios}
               limit={8}
             />

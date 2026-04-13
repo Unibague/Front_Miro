@@ -15,6 +15,8 @@ export interface Proyecto {
   avance: number;
   semaforo: "verde" | "amarillo" | "rojo";
   formulador: string;
+  responsable: string;
+  responsable_email: string;
   macroproyecto_id: { _id: string; codigo: string; nombre: string };
 }
 
@@ -60,6 +62,7 @@ export interface Indicador {
   meta_final_2029: number | null;
   entregable: string;
   responsable: string;
+  responsable_email: string;
   fecha_inicio: string | null;
   fecha_fin: string | null;
   observaciones: string;
