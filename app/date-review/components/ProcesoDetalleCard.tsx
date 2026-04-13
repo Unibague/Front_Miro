@@ -221,7 +221,7 @@ const SortableActividad = ({
           {editActividadId !== act._id && (
             <Group gap={4} wrap="nowrap" align="center" style={{ flexShrink: 0 }}>
               <Button size="xs" variant="subtle" color="gray" title="Observaciones" onClick={onOpenObsActividad}>
-                📝{act.observaciones ? " ●" : ""}
+                Observaciones:{act.observaciones ? " ●" : ""}
               </Button>
               <Button size="xs" variant="subtle" color="gray" title="Documentos"
                 onClick={onOpenDocsActividad}>
@@ -325,7 +325,7 @@ const SortableActividad = ({
                           }}>↓</Button>
                         <Button size="xs" variant="subtle" color="gray" title="Observaciones"
                           onClick={() => onOpenObsSubactividad(sub)}>
-                          📝{sub.observaciones ? " ●" : ""}
+                          Observaciones:{sub.observaciones ? " ●" : ""}
                         </Button>
                         <Button size="xs" variant="subtle" color="gray" title="Documentos"
                           onClick={() => onOpenDocsSubactividad(sub)}>
