@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack,
-  Textarea, Select, Tabs, Text, ActionIcon, Paper, Autocomplete,
+  Textarea, Select, MultiSelect, Tabs, Text, ActionIcon, Paper, Autocomplete,
 } from "@mantine/core";
-import { DateInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import axios from "axios";
@@ -26,7 +25,7 @@ interface Props {
 
 interface PeriodoForm {
   periodo: string;
-  meta: string;       // string para aceptar texto y números
+  meta: string;
   avance: string;
 }
 
@@ -38,20 +37,20 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [responsable, setResponsable]           = useState("");
   const [responsableEmail, setResponsableEmail] = useState("");
   const [entregable, setEntregable]             = useState("");
-  const [fechaInicio, setFechaInicio]           = useState<Date | null>(null);
-  const [fechaFin, setFechaFin]                 = useState<Date | null>(null);
   const [observaciones, setObservaciones]       = useState("");
   const [tipoSeguimiento, setTipoSeguimiento]   = useState("");
-  const [fechaSeguimiento, setFechaSeguimiento] = useState("");
+  const [cortesSegimiento, setCortesSegimiento] = useState<string[]>([]); // cortes en los que se hace seguimiento
   const [tipoCalculo, setTipoCalculo]           = useState("promedio");
   const [metaFinal, setMetaFinal]               = useState("");  // string libre
   const [periodos, setPeriodos]                 = useState<PeriodoForm[]>([]);
   const [usuarios, setUsuarios]                 = useState<string[]>([]);
   const [loading, setLoading]                   = useState(false);
+  const [cortesData, setCortesData]             = useState<{ nombre: string; descripcion: string }[]>([]);
+  const [cortes, setCortes]                     = useState<string[]>([]);
 
   const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
 
-  // Cargar usuarios para el autocomplete
+  // Cargar usuarios y cortes
   useEffect(() => {
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
       .then(res => {
@@ -62,6 +61,12 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         const unicos = Array.from(new Map<string, { label: string; email: string }>(data.map((u: { label: string; email: string }) => [u.label, u])).values());
         setUsuariosData(unicos);
         setUsuarios(unicos.map((u: { label: string; email: string }) => u.label));
+      })
+      .catch(() => {});
+    axios.get(PDI_ROUTES.cortesActivos())
+      .then(res => {
+        setCortesData(res.data.map((c: any) => ({ nombre: c.nombre, descripcion: c.descripcion ?? "" })));
+        setCortes(res.data.map((c: any) => c.nombre));
       })
       .catch(() => {});
   }, []);
@@ -77,11 +82,14 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       setResponsable(selected.responsable ?? "");
       setResponsableEmail((selected as any).responsable_email ?? "");
       setEntregable(selected.entregable ?? "");
-      setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
-      setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
       setObservaciones(selected.observaciones ?? "");
       setTipoSeguimiento(selected.tipo_seguimiento ?? "");
-      setFechaSeguimiento(selected.fecha_seguimiento ?? "");
+      // fecha_seguimiento guardada como string separado por comas → array
+      setCortesSegimiento(
+        selected.fecha_seguimiento
+          ? selected.fecha_seguimiento.split(",").map(s => s.trim()).filter(Boolean)
+          : []
+      );
       setTipoCalculo(selected.tipo_calculo ?? "promedio");
       setMetaFinal(selected.meta_final_2029 != null ? String(selected.meta_final_2029) : "");
       setPeriodos((selected.periodos ?? []).map(p => ({
@@ -91,9 +99,11 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       })));
     } else {
       setCodigo(""); setNombre(""); setIndicadorResultado(""); setPeso("");
-      setResponsable(""); setResponsableEmail(""); setEntregable(""); setFechaInicio(null); setFechaFin(null);
-      setObservaciones(""); setTipoSeguimiento(""); setFechaSeguimiento("");
-      setTipoCalculo("promedio"); setMetaFinal(""); setPeriodos([]);
+      setResponsable(""); setResponsableEmail(""); setEntregable("");
+      setObservaciones(""); setTipoSeguimiento(""); setCortesSegimiento([]);
+      setTipoCalculo("promedio"); setMetaFinal("");
+      // Precargar periodos desde los cortes activos
+      setPeriodos(cortesData.map(c => ({ periodo: c.nombre, meta: "", avance: "" })));
     }
   }, [opened]);
 
@@ -101,6 +111,12 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const removePeriodo = (idx: number) => setPeriodos(p => p.filter((_, i) => i !== idx));
   const updatePeriodo = (idx: number, field: keyof PeriodoForm, value: string) =>
     setPeriodos(p => p.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+
+  // Si los cortes cargan después de abrir el modal en modo nuevo, precargar periodos
+  useEffect(() => {
+    if (!opened || selected || cortesData.length === 0 || periodos.length > 0) return;
+    setPeriodos(cortesData.map(c => ({ periodo: c.nombre, meta: "", avance: "" })));
+  }, [cortesData, opened]);
 
   // Normaliza separador decimal: reemplaza coma por punto
   const toNum = (val: string) => {
@@ -130,11 +146,11 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         responsable:          responsable.trim(),
         responsable_email:    responsableEmail.trim(),
         entregable:           entregable.trim(),
-        fecha_inicio:         fechaInicio ? fechaInicio.toISOString().split("T")[0] : null,
-        fecha_fin:            fechaFin    ? fechaFin.toISOString().split("T")[0]    : null,
+        fecha_inicio:         null,
+        fecha_fin:            null,
         observaciones:        observaciones.trim(),
         tipo_seguimiento:     tipoSeguimiento.trim(),
-        fecha_seguimiento:    fechaSeguimiento.trim(),
+        fecha_seguimiento:    cortesSegimiento.join(", "), // guardado como string separado por comas
         tipo_calculo:         tipoCalculo,
         meta_final_2029:      metaFinal !== "" ? (toNum(metaFinal) !== null ? toNum(metaFinal) : metaFinal) : null,
         accion_id:            defaultAccionId,
@@ -187,10 +203,6 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               limit={8}
             />
             <Textarea label="Entregable / Evidencia verificable" value={entregable} onChange={(e) => setEntregable(e.currentTarget.value)} rows={2} />
-            <Group grow>
-              <DateInput label="Fecha inicio" locale="es" placeholder="Selecciona fecha" value={fechaInicio} onChange={setFechaInicio} clearable />
-              <DateInput label="Fecha fin" locale="es" placeholder="Selecciona fecha" value={fechaFin} onChange={setFechaFin} clearable minDate={fechaInicio ?? undefined} />
-            </Group>
             <Textarea label="Observaciones" value={observaciones} onChange={(e) => setObservaciones(e.currentTarget.value)} rows={2} />
           </Stack>
         </Tabs.Panel>
@@ -198,10 +210,37 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         {/* ── Seguimiento ── */}
         <Tabs.Panel value="seguimiento">
           <Stack gap="sm">
-            <TextInput label="Tipo de seguimiento" placeholder="Ej: Semestral, Anual" value={tipoSeguimiento} onChange={(e) => setTipoSeguimiento(e.currentTarget.value)} />
-            <TextInput label="Fecha de seguimiento planeación" placeholder="Ej: Junio / Diciembre" value={fechaSeguimiento} onChange={(e) => setFechaSeguimiento(e.currentTarget.value)} />
+            <Select
+              label="Tipo de seguimiento"
+              description="Frecuencia con la que se reporta este indicador"
+              placeholder="Selecciona el tipo"
+              data={[
+                { value: "Semestral", label: "Semestral" },
+                { value: "Anual",     label: "Anual" },
+                { value: "Trimestral", label: "Trimestral" },
+                { value: "Mensual",   label: "Mensual" },
+              ]}
+              value={tipoSeguimiento || null}
+              onChange={v => setTipoSeguimiento(v ?? "")}
+              clearable
+            />
+            <MultiSelect
+              label="Cortes de seguimiento"
+              description="Selecciona en cuáles cortes del año se califica este indicador"
+              placeholder={cortes.length ? "Selecciona los cortes..." : "Sin cortes activos"}
+              data={cortesData.map(c => ({
+                value: c.nombre,
+                label: c.descripcion ? `${c.nombre} — ${c.descripcion}` : c.nombre,
+              }))}
+              value={cortesSegimiento}
+              onChange={setCortesSegimiento}
+              searchable
+              clearable
+              nothingFoundMessage="Sin cortes activos — crea uno en Cortes PDI"
+            />
             <Select
               label="Tipo de cálculo"
+              description="Cómo se consolida el avance de los periodos"
               data={[
                 { value: "promedio",     label: "Promedio" },
                 { value: "acumulado",    label: "Acumulado" },
@@ -222,25 +261,75 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         {/* ── Periodos ── */}
         <Tabs.Panel value="periodos">
           <Stack gap="xs">
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">Periodos semestrales (Ej: 2026A, 2026B)</Text>
+            <Group justify="space-between" align="flex-start" mb={4}>
+              <div>
+                <Text size="sm" fw={600}>Periodos de corte</Text>
+                <Text size="xs" c="dimmed">
+                  {selected
+                    ? "Periodos guardados en este indicador"
+                    : cortes.length > 0
+                      ? `Se precargaron ${cortes.length} corte(s) activo(s) — agrega la meta de cada uno`
+                      : "No hay cortes activos — crea cortes en la sección Cortes PDI"
+                  }
+                </Text>
+              </div>
               <Button size="xs" leftSection={<IconPlus size={13} />} variant="light" onClick={addPeriodo}>
-                Agregar periodo
+                Agregar corte extra
               </Button>
             </Group>
-            {periodos.length === 0 && <Text size="xs" c="dimmed" ta="center" py="sm">Sin periodos registrados</Text>}
-            {periodos.map((p, idx) => (
-              <Paper key={idx} withBorder radius="sm" p="xs">
-                <Group gap="xs" align="flex-end">
-                  <TextInput label="Periodo" placeholder="2026A" value={p.periodo} onChange={(e) => updatePeriodo(idx, "periodo", e.currentTarget.value)} style={{ flex: 1 }} />
-                  <TextInput label="Meta" placeholder="Ej: 100 o 'Implementado'" value={p.meta} onChange={(e) => updatePeriodo(idx, "meta", e.currentTarget.value)} style={{ flex: 1 }} />
-                  <TextInput label="Avance" placeholder="Ej: 80" value={p.avance} onChange={(e) => updatePeriodo(idx, "avance", e.currentTarget.value)} style={{ flex: 1 }} />
-                  <ActionIcon color="red" variant="subtle" onClick={() => removePeriodo(idx)} mb={2}>
-                    <IconTrash size={15} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-            ))}
+
+            {periodos.length === 0 && (
+              <Text size="xs" c="dimmed" ta="center" py="sm">
+                Sin periodos — {cortes.length === 0 ? "crea cortes en Cortes PDI primero" : "recarga el modal"}
+              </Text>
+            )}
+
+            {periodos.map((p, idx) => {
+              const descripcion = cortesData.find(c => c.nombre === p.periodo)?.descripcion;
+              return (
+                <Paper key={idx} withBorder radius="md" p="sm">
+                  <Group gap="xs" align="flex-end">
+                    <div style={{ flex: 1 }}>
+                      <Text size="xs" fw={700}>{p.periodo}</Text>
+                      {descripcion && <Text size="xs" c="dimmed">{descripcion}</Text>}
+                      {/* Si el periodo no viene de un corte conocido, mostrar selector */}
+                      {!cortesData.find(c => c.nombre === p.periodo) && (
+                        <Select
+                          label="Corte"
+                          placeholder="Selecciona un corte"
+                          data={cortes}
+                          value={p.periodo || null}
+                          onChange={v => updatePeriodo(idx, "periodo", v ?? "")}
+                          searchable
+                          allowDeselect={false}
+                          size="xs"
+                          nothingFoundMessage="Sin cortes activos"
+                        />
+                      )}
+                    </div>
+                    <TextInput
+                      label="Meta"
+                      placeholder="Ej: 100"
+                      value={p.meta}
+                      onChange={e => updatePeriodo(idx, "meta", e.currentTarget.value)}
+                      style={{ flex: 1 }}
+                      size="sm"
+                    />
+                    <TextInput
+                      label="Avance"
+                      placeholder="Ej: 80"
+                      value={p.avance}
+                      onChange={e => updatePeriodo(idx, "avance", e.currentTarget.value)}
+                      style={{ flex: 1 }}
+                      size="sm"
+                    />
+                    <ActionIcon color="red" variant="subtle" onClick={() => removePeriodo(idx)} mb={2}>
+                      <IconTrash size={15} />
+                    </ActionIcon>
+                  </Group>
+                </Paper>
+              );
+            })}
           </Stack>
         </Tabs.Panel>
         {/* ── Evidencias ── */}

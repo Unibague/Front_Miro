@@ -34,15 +34,60 @@ const BLUE = {
 // Campos legibles
 const LABEL: Record<string, string> = {
   avance: "Avance (%)", observaciones: "Observaciones", periodos: "Periodos",
+  evidencias: "Evidencias",
   meta_final_2029: "Meta 2029", responsable: "Responsable", nombre: "Nombre",
   codigo: "Código", peso: "Peso (%)", tipo_calculo: "Tipo cálculo",
   tipo_seguimiento: "Tipo seguimiento", entregable: "Entregable",
   fecha_inicio: "Fecha inicio", fecha_fin: "Fecha fin",
 };
 
-function ValorCampo({ valor }: { valor: any }) {
+function PeriodoRow({ p }: { p: any }) {
+  return (
+    <Group gap={8} wrap="nowrap" style={{ fontSize: 11, padding: "4px 8px", background: "#f8fafc", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+      <Badge size="xs" variant="outline" color="violet">{p.periodo ?? "—"}</Badge>
+      <Text size="xs" c="dimmed">Meta: <b>{p.meta ?? "—"}</b></Text>
+      <Text size="xs" c="dimmed">Avance: <b>{p.avance ?? "—"}</b></Text>
+    </Group>
+  );
+}
+
+function EvidenciaRow({ e }: { e: any }) {
+  return (
+    <Stack gap={2} style={{ padding: "6px 10px", background: "#f8fafc", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11 }}>
+      <Text size="xs" fw={600}>{e.nombre_original ?? "—"}</Text>
+      <Group gap={8} wrap="wrap">
+        {e.periodo && <Badge size="xs" variant="outline" color="blue">{e.periodo}</Badge>}
+        {e.subido_por && <Text size="xs" c="dimmed">Por: <b>{e.subido_por}</b></Text>}
+        {e.descripcion && <Text size="xs" c="dimmed">Desc: <b>{e.descripcion}</b></Text>}
+        {e.fecha_subida && <Text size="xs" c="dimmed">{new Date(e.fecha_subida).toLocaleDateString("es-CO")}</Text>}
+      </Group>
+      {e.url && (
+        <Text size="xs" c="blue" style={{ wordBreak: "break-all" }}>
+          <a href={e.url} target="_blank" rel="noreferrer">{e.url}</a>
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function ValorCampo({ valor, campo }: { valor: any; campo?: string }) {
   if (valor === null || valor === undefined) return <Text size="xs" c="dimmed">—</Text>;
+
+  // Periodos
+  if (campo === "periodos" && Array.isArray(valor)) {
+    if (valor.length === 0) return <Text size="xs" c="dimmed">Sin periodos</Text>;
+    return <Stack gap={4}>{valor.map((p: any, i: number) => <PeriodoRow key={i} p={p} />)}</Stack>;
+  }
+
+  // Evidencias
+  if (campo === "evidencias" && Array.isArray(valor)) {
+    if (valor.length === 0) return <Text size="xs" c="dimmed">Sin evidencias</Text>;
+    return <Stack gap={4}>{valor.map((e: any, i: number) => <EvidenciaRow key={i} e={e} />)}</Stack>;
+  }
+
+  // Otros arrays simples
   if (Array.isArray(valor)) {
+    if (valor.length === 0) return <Text size="xs" c="dimmed">—</Text>;
     return (
       <Stack gap={2}>
         {valor.map((v, i) => (
@@ -53,9 +98,18 @@ function ValorCampo({ valor }: { valor: any }) {
       </Stack>
     );
   }
+
+  // Objeto genérico
   if (typeof valor === "object") {
-    return <Text size="xs" style={{ fontFamily: "monospace" }}>{JSON.stringify(valor)}</Text>;
+    return (
+      <Stack gap={2}>
+        {Object.entries(valor).map(([k, v]) => (
+          <Text key={k} size="xs"><b>{k}:</b> {String(v)}</Text>
+        ))}
+      </Stack>
+    );
   }
+
   return <Text size="xs" fw={500}>{String(valor)}</Text>;
 }
 
@@ -124,21 +178,13 @@ function EntradaCard({ entrada }: { entrada: EntradaHistorial }) {
                   {LABEL[campo] ?? campo}
                 </Text>
                 <SimpleGrid cols={2} spacing="xs">
-                  {/* Antes */}
-                  <Box style={{
-                    background: "#fff5f5", borderRadius: 6, padding: "8px 10px",
-                    border: "1px solid #fecaca",
-                  }}>
+                  <Box style={{ background: "#fff5f5", borderRadius: 6, padding: "8px 10px", border: "1px solid #fecaca" }}>
                     <Text size="xs" c="red" fw={600} mb={4}>Antes</Text>
-                    <ValorCampo valor={entrada.antes?.[campo]} />
+                    <ValorCampo valor={entrada.antes?.[campo]} campo={campo} />
                   </Box>
-                  {/* Después */}
-                  <Box style={{
-                    background: "#f0fdf4", borderRadius: 6, padding: "8px 10px",
-                    border: "1px solid #bbf7d0",
-                  }}>
+                  <Box style={{ background: "#f0fdf4", borderRadius: 6, padding: "8px 10px", border: "1px solid #bbf7d0" }}>
                     <Text size="xs" c="green" fw={600} mb={4}>Después</Text>
-                    <ValorCampo valor={entrada.despues?.[campo]} />
+                    <ValorCampo valor={entrada.despues?.[campo]} campo={campo} />
                   </Box>
                 </SimpleGrid>
               </Paper>

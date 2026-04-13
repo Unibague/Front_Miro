@@ -1,7 +1,7 @@
 "use client";
 
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
-import { IconChartBar, IconChartBarPopular, IconHistory } from "@tabler/icons-react";
+import { IconChartBar, IconChartBarPopular, IconHistory, IconCalendarStats } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
 export default function PdiSidebar() {
@@ -46,6 +46,15 @@ export default function PdiSidebar() {
         active={pathname === "/pdi/historial"}
         color="blue"
         onClick={() => router.push("/pdi/historial")}
+        style={{ borderRadius: 8 }}
+      />
+
+      <NavLink
+        label="Cortes PDI"
+        leftSection={<IconCalendarStats size={16} />}
+        active={pathname === "/pdi/cortes"}
+        color="violet"
+        onClick={() => router.push("/pdi/cortes")}
         style={{ borderRadius: 8 }}
       />
     </Stack>

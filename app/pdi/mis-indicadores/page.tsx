@@ -4,13 +4,14 @@ import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Textarea, Modal, Tabs,
+  Divider, TextInput, Textarea, Modal, Tabs, Tooltip,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget, IconChartBarPopular,
   IconEdit, IconChevronDown, IconChevronUp,
   IconCheck, IconAlertTriangle, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf,
+  IconLock,
 } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -21,6 +22,19 @@ import type { Indicador, Periodo } from "../types";
 import dynamic from "next/dynamic";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
+
+interface CorteVigente {
+  _id: string;
+  nombre: string;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+}
+
+function esPeriodoEditable(periodo: string, cortesVigentes: CorteVigente[]): boolean {
+  // Si no hay cortes configurados con fechas, todo es editable
+  if (!cortesVigentes.length) return true;
+  return cortesVigentes.some(c => c.nombre === periodo);
+}
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
@@ -33,10 +47,11 @@ const SEMAFORO_ICON: Record<string, React.ReactNode> = {
 };
 
 // ── Modal completo del responsable ────────────────────────────────────────
-function ResponsableIndicadorModal({ opened, onClose, indicador, onSaved }: {
+function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes, onSaved }: {
   opened: boolean;
   onClose: () => void;
   indicador: Indicador;
+  cortesVigentes: CorteVigente[];
   onSaved: (ind: Indicador) => void;
 }) {
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
@@ -140,31 +155,44 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, onSaved }: {
             {periodos.length === 0 ? (
               <Text size="sm" c="dimmed" ta="center" py="sm">Sin periodos registrados</Text>
             ) : (
-              periodos.map(p => (
+              periodos.map(p => {
+                const editable = esPeriodoEditable(p.periodo, cortesVigentes);
+                return (
                 <Paper key={p.periodo} withBorder radius="md" p="sm"
-                  style={{ borderLeft: "3px solid #7c3aed" }}>
+                  style={{ borderLeft: `3px solid ${editable ? "#7c3aed" : "#adb5bd"}` }}>
                   <Group justify="space-between" align="flex-end">
                     <Box>
-                      <Text size="sm" fw={700}>{p.periodo}</Text>
+                      <Group gap={6}>
+                        <Text size="sm" fw={700}>{p.periodo}</Text>
+                        {!editable && (
+                          <Tooltip label="Este periodo ya cerró, no se puede modificar" withArrow>
+                            <Badge size="xs" color="red" variant="light" leftSection={<IconLock size={9} />}>
+                              Cerrado
+                            </Badge>
+                          </Tooltip>
+                        )}
+                      </Group>
                       <Text size="xs" c="dimmed">Meta: <b>{p.meta ?? "—"}</b></Text>
                     </Box>
                     <TextInput
                       label="Avance"
-                      placeholder="Ej: 80"
+                      placeholder={editable ? "Ej: 80" : "Periodo cerrado"}
                       value={avancesStr[p.periodo] ?? ""}
-                      onChange={e => updateAvanceStr(p.periodo, e.currentTarget.value)}
+                      onChange={e => editable && updateAvanceStr(p.periodo, e.currentTarget.value)}
                       style={{ width: 120 }}
                       size="sm"
+                      disabled={!editable}
                     />
                   </Group>
                   {avancesStr[p.periodo] !== "" && p.meta != null && Number(p.meta) > 0 && (
                     <Progress
                       value={Math.min((Number(avancesStr[p.periodo].replace(",", ".")) / Number(p.meta)) * 100, 100)}
-                      color="blue" size="xs" radius="xl" mt={8}
+                      color={editable ? "blue" : "gray"} size="xs" radius="xl" mt={8}
                     />
                   )}
                 </Paper>
-              ))
+                );
+              })
             )}
 
             <Textarea
@@ -177,7 +205,14 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, onSaved }: {
 
             <Group justify="flex-end">
               <Button variant="default" onClick={onClose}>Cancelar</Button>
-              <Button loading={loading} onClick={handleSave} color="violet">Guardar avances</Button>
+              <Button
+                loading={loading}
+                onClick={handleSave}
+                color="violet"
+                disabled={periodos.length > 0 && periodos.every(p => !esPeriodoEditable(p.periodo, cortesVigentes))}
+              >
+                Guardar avances
+              </Button>
             </Group>
           </Stack>
         </Tabs.Panel>
@@ -192,8 +227,9 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, onSaved }: {
 }
 
 // ── Card de indicador ──────────────────────────────────────────────────────
-function MiIndicadorCard({ indicador: indInicial, onUpdated }: {
+function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
   indicador: Indicador;
+  cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
 }) {
   const [ind, setInd] = useState(indInicial);
@@ -332,6 +368,7 @@ function MiIndicadorCard({ indicador: indInicial, onUpdated }: {
         opened={modalAbierto}
         onClose={() => setModalAbierto(false)}
         indicador={ind}
+        cortesVigentes={cortesVigentes}
         onSaved={handleSaved}
       />
     </Paper>
@@ -344,6 +381,7 @@ export default function MisIndicadoresPage() {
   const { data: session, status } = useSession();
   const [indicadores, setIndicadores] = useState<Indicador[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) return;
@@ -352,21 +390,20 @@ export default function MisIndicadoresPage() {
     Promise.all([
       axios.get(PDI_ROUTES.indicadores()),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
+      axios.get(PDI_ROUTES.cortesVigentes()),
     ])
-      .then(([resInd, resUser]) => {
+      .then(([resInd, resUser, resCortes]) => {
         const todos: Indicador[] = resInd.data;
         const fullName = (resUser.data?.full_name ?? "").toLowerCase().trim();
         const mios = todos.filter(i => {
           if (!i.responsable) return false;
-          // 1. match exacto por email dedicado (indicadores nuevos)
           if ((i as any).responsable_email?.toLowerCase().trim() === email) return true;
-          // 2. match exacto por full_name real del usuario en BD
           if (fullName && i.responsable.toLowerCase().trim() === fullName) return true;
-          // 3. match por email en campo responsable (algunos admins guardan el email)
           if (i.responsable.toLowerCase().trim() === email) return true;
           return false;
         });
         setIndicadores(mios);
+        setCortesVigentes(resCortes.data);
       })
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
@@ -450,6 +487,7 @@ export default function MisIndicadoresPage() {
               <MiIndicadorCard
                 key={ind._id}
                 indicador={ind}
+                cortesVigentes={cortesVigentes}
                 onUpdated={updated => setIndicadores(prev => prev.map(i => i._id === updated._id ? updated : i))}
               />
             ))}

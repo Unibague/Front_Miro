@@ -10,7 +10,7 @@ import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFolderOpen, IconFlag, IconAlertTriangle, IconUsers, IconChevronDown,
-  IconListCheck,
+  IconListCheck, IconExternalLink,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -421,21 +421,14 @@ function StatsCards({ macros, proyectosPorMacro }: {
 }
 
 // ── MacroproyectoPortfolioCard ─────────────────────────────────────────────
-function MacroproyectoPortfolioCard({ macro, proyectos, loadingProyectos, admin, onEdit, onDelete, onAddProyecto, onEditProyecto, onDeleteProyecto, onAvanceUpdate, onCargar }: {
+function MacroproyectoPortfolioCard({ macro, proyectos, admin, onEdit, onDelete }: {
   macro: Macroproyecto;
   proyectos: Proyecto[];
-  loadingProyectos: boolean;
   admin: boolean;
   onEdit: (m: Macroproyecto) => void;
   onDelete: (id: string) => void;
-  onAddProyecto: () => void;
-  onEditProyecto: (p: Proyecto) => void;
-  onDeleteProyecto: (id: string) => void;
-  onAvanceUpdate: () => void;
-  onCargar: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-
+  const router = useRouter();
   const statusLabel = macro.semaforo === "verde" ? "Correcto"
     : macro.semaforo === "amarillo" ? "En riesgo" : "Crítico";
   const statusColor = macro.semaforo === "verde" ? "green"
@@ -497,40 +490,15 @@ function MacroproyectoPortfolioCard({ macro, proyectos, loadingProyectos, admin,
           <Text fw={600} size="sm">{macro.codigo}</Text>
         </div>
         <Button
-          variant="light" color="violet" radius="xl" size="xs"
-          rightSection={<IconChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "", transition: "transform .2s" }} />}
-          onClick={() => { if (!open) onCargar(); setOpen(v => !v); }}
+          variant="gradient"
+          gradient={{ from: "violet", to: "blue", deg: 135 }}
+          radius="xl" size="sm"
+          rightSection={<IconExternalLink size={14} />}
+          onClick={() => router.push(`/pdi/${macro._id}`)}
         >
-          {open ? "Ocultar proyectos" : "Ver proyectos"}
+          Ver detalle
         </Button>
       </Group>
-
-      {open && (
-        <Box mt="md">
-          <Divider mb="sm" />
-          {admin && (
-            <Button size="xs" variant="light" color="blue" leftSection={<IconPlus size={12} />} mb="sm" onClick={onAddProyecto}>
-              Nuevo proyecto
-            </Button>
-          )}
-          {loadingProyectos ? (
-            <Center py="sm"><Loader size="xs" /></Center>
-          ) : proyectos.length === 0 ? (
-            <Text size="xs" c="dimmed">Sin proyectos registrados</Text>
-          ) : (
-            <Stack gap={4}>
-              {proyectos.map(p => (
-                <ProyectoCard
-                  key={p._id} proyecto={p} admin={admin}
-                  onEdit={onEditProyecto}
-                  onDelete={onDeleteProyecto}
-                  onAvanceUpdate={onAvanceUpdate}
-                />
-              ))}
-            </Stack>
-          )}
-        </Box>
-      )}
     </Paper>
   );
 }
@@ -544,13 +512,8 @@ export default function PdiPage() {
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [loadingMacros, setLoadingMacros] = useState(true);
-  const [loadingProyectos, setLoadingProyectos] = useState<Record<string, boolean>>({});
-  const [loadedMacros, setLoadedMacros] = useState<Record<string, boolean>>({});
   const [macroModal, setMacroModal] = useState(false);
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
-  const [proyectoModal, setProyectoModal] = useState(false);
-  const [selectedProyecto, setSelectedProyecto] = useState<Proyecto | null>(null);
-  const [defaultMacroId, setDefaultMacroId] = useState<string>("");
 
   useEffect(() => {
     axios.get(PDI_ROUTES.macroproyectos())
@@ -559,26 +522,10 @@ export default function PdiPage() {
       .finally(() => setLoadingMacros(false));
   }, []);
 
-  const cargarProyectos = async (macroId: string) => {
-    if (loadedMacros[macroId]) return;
-    setLoadingProyectos(prev => ({ ...prev, [macroId]: true }));
-    try {
-      const res = await axios.get(PDI_ROUTES.proyectos(), { params: { macroproyecto_id: macroId } });
-      setProyectosPorMacro(prev => ({ ...prev, [macroId]: res.data }));
-      setLoadedMacros(prev => ({ ...prev, [macroId]: true }));
-    } catch (e) { console.error(e); }
-    finally { setLoadingProyectos(prev => ({ ...prev, [macroId]: false })); }
-  };
-
-  // Refresca el macroproyecto desde el back
   const refrescarMacro = async (macroId: string) => {
     try {
-      const [resMacro, resProyectos] = await Promise.all([
-        axios.get(PDI_ROUTES.macroproyecto(macroId)),
-        axios.get(PDI_ROUTES.proyectos(), { params: { macroproyecto_id: macroId } }),
-      ]);
+      const resMacro = await axios.get(PDI_ROUTES.macroproyecto(macroId));
       setMacros(prev => prev.map(m => m._id === macroId ? resMacro.data : m));
-      setProyectosPorMacro(prev => ({ ...prev, [macroId]: resProyectos.data }));
     } catch (e) { console.error(e); }
   };
 
@@ -650,7 +597,6 @@ export default function PdiPage() {
           <Text fw={700} size="xl">Macroproyectos</Text>
           <Text size="xs" c="dimmed">Vista tipo portfolio — navega la jerarquía del PDI</Text>
         </div>
-        <Badge variant="outline" color="violet" radius="xl" size="md">{macros.length} resultados</Badge>
       </Group>
 
       {loadingMacros ? (
@@ -664,15 +610,9 @@ export default function PdiPage() {
               key={macro._id}
               macro={macro}
               proyectos={proyectosPorMacro[macro._id] ?? []}
-              loadingProyectos={!!loadingProyectos[macro._id]}
               admin={admin}
               onEdit={(m) => { setSelectedMacro(m); setMacroModal(true); }}
               onDelete={handleDeleteMacro}
-              onCargar={() => cargarProyectos(macro._id)}
-              onAddProyecto={() => { setSelectedProyecto(null); setDefaultMacroId(macro._id); setProyectoModal(true); }}
-              onEditProyecto={(p) => { setSelectedProyecto(p); setDefaultMacroId(macro._id); setProyectoModal(true); }}
-              onDeleteProyecto={(id) => handleDeleteProyecto(macro._id, id)}
-              onAvanceUpdate={() => refrescarMacro(macro._id)}
             />
           ))}
         </SimpleGrid>
@@ -688,27 +628,8 @@ export default function PdiPage() {
         )}
       />
 
-      <ProyectoModal
-        opened={proyectoModal}
-        onClose={() => setProyectoModal(false)}
-        selected={selectedProyecto}
-        macroproyectos={macros}
-        defaultMacroId={defaultMacroId}
-        onSaved={async (doc) => {
-          const macroId = typeof doc.macroproyecto_id === "string" ? doc.macroproyecto_id : doc.macroproyecto_id._id;
-          setProyectosPorMacro(prev => ({
-            ...prev,
-            [macroId]: selectedProyecto
-              ? (prev[macroId] ?? []).map(p => p._id === doc._id ? doc : p)
-              : [...(prev[macroId] ?? []), doc],
-          }));
-          await refrescarMacro(macroId);
-        }}
-      />
-
     </Container>
     </div>
-    {admin && <PdiResumenSidebar />}
     </div>
   );
 }
