@@ -308,10 +308,11 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, macros, macroId, on
       <Box style={{ overflowX: "auto", paddingBottom: 8 }}>
         {loading ? (
           <Center py="md"><Loader size="sm" /></Center>
-        ) : acciones.length === 0 ? (
-          <Text size="sm" c="dimmed" pl={4}>Sin acciones estratégicas registradas</Text>
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingBottom: 4 }}>
+            {acciones.length === 0 && (
+              <Text size="sm" c="dimmed" pl={4} style={{ alignSelf: "center" }}></Text>
+            )}
             {acciones.map(a => (
               <AccionCard key={a._id} accion={a} admin={admin}
                 onEdit={(ac) => { setSelectedAccion(ac); setAccionModal(true); }}

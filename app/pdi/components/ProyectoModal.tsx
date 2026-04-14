@@ -14,11 +14,12 @@ interface Props {
   macroproyectos: Macroproyecto[];
   defaultMacroId?: string;
   onSaved: (doc: Proyecto) => void;
+  onCreated?: (doc: Proyecto) => void;
 }
 
 const toNum = (v: string) => Number(v.replace(',', '.'));
 
-export default function ProyectoModal({ opened, onClose, selected, macroproyectos, defaultMacroId, onSaved }: Props) {
+export default function ProyectoModal({ opened, onClose, selected, macroproyectos, defaultMacroId, onSaved, onCreated }: Props) {
   const [codigo, setCodigo]               = useState("");
   const [nombre, setNombre]               = useState("");
   const [formulador, setFormulador]       = useState("");
@@ -78,6 +79,7 @@ export default function ProyectoModal({ opened, onClose, selected, macroproyecto
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Proyecto guardado", color: "teal" });
       onSaved(res.data);
       onClose();
+      if (!selected) onCreated?.(res.data);
     } catch (e: any) {
       showNotification({ title: "Error", message: e.response?.data?.error ?? "Error al guardar", color: "red" });
     } finally {
