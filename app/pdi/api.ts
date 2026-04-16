@@ -24,6 +24,8 @@ export const PDI_ROUTES = {
   cortesActivos:           () => `${BASE()}/pdi/cortes/activos`,
   cortesVigentes:          () => `${BASE()}/pdi/cortes/vigentes`,
   corte: (id: string)      => `${BASE()}/pdi/cortes/${id}`,
+  corteResumen: (id: string) => `${BASE()}/pdi/cortes/${id}/resumen`,
+
 
   // Tableros de control
   dashboardResumen:                   () => `${BASE()}/pdi/dashboard/resumen`,
