@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
-  ThemeIcon, ActionIcon, Box, Title, Progress,
+  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, Divider,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget, IconBulb, IconTrendingUp,
@@ -25,7 +25,9 @@ import IndicadorModal from "../components/IndicadorModal";
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
-  verde: "Cumplimiento adecuado", amarillo: "Requiere atención", rojo: "Crítico",
+  verde: "Cumplimiento adecuado",
+  amarillo: "Requiere atención",
+  rojo: "Crítico",
 };
 const isAdmin = (role: string) => role === "Administrador";
 
@@ -39,48 +41,127 @@ function SemaforoBadge({ semaforo }: { semaforo: string }) {
 
 function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
   return (
-    <Group gap={6} align="center">
-      <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="xs" style={{ flex: 1 }} />
-      <Text size="xs" fw={700} w={32} ta="right">{avance}%</Text>
+    <Group gap={8} align="center">
+      <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
+      <Text size="xs" fw={700} w={36} ta="right">{avance}%</Text>
     </Group>
   );
 }
 
-// ── Indicador card horizontal ──────────────────────────────────────────────
+function MetaBadge({ label, color = "gray" }: { label: string; color?: string }) {
+  return (
+    <Badge variant="light" color={color} radius="sm">
+      {label}
+    </Badge>
+  );
+}
+
 function IndicadorCard({ ind, admin, onEdit, onDelete }: {
   ind: Indicador; admin: boolean;
   onEdit: (i: Indicador) => void;
   onDelete: (id: string) => void;
 }) {
+  const router = useRouter();
+  const [hovered, setHovered] = useState(false);
+  const [showAnios, setShowAnios] = useState(false);
+  const tieneAnios = !!ind.avances_por_anio;
+  const avance = ind.avance_total_real ?? ind.avance;
+
   return (
-    <Paper withBorder radius="lg" p="sm" shadow="xs"
-      style={{ minWidth: 200, flex: "1 1 200px" }}
+    <Paper
+      withBorder
+      radius="lg"
+      p="md"
+      shadow="xs"
+      style={{
+        height: "100%",
+        background: hovered
+          ? "linear-gradient(180deg, rgba(124, 58, 237, 0.08), rgba(255, 255, 255, 0.98) 58%)"
+          : "linear-gradient(180deg, rgba(124, 58, 237, 0.03), transparent 45%)",
+        cursor: "pointer",
+        transform: hovered ? "translateY(-3px)" : "translateY(0)",
+        boxShadow: hovered ? "0 14px 30px rgba(124, 58, 237, 0.12)" : "",
+        borderColor: hovered ? "rgba(124, 58, 237, 0.35)" : undefined,
+        transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease",
+      }}
+      onClick={() => router.push(`/pdi/indicadores/${ind._id}`)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <Group justify="space-between" mb={6}>
-        <ThemeIcon size={28} radius="xl" color="violet" variant="light">
-          <IconTarget size={14} />
-        </ThemeIcon>
+      <Group justify="space-between" align="flex-start" mb="xs">
+        <Group gap={10} align="flex-start">
+          <ThemeIcon size={34} radius="xl" color="violet" variant="light">
+            <IconTarget size={17} />
+          </ThemeIcon>
+          <div style={{ textAlign: "center" }}>
+            <Text size="xs" fw={700} c="dimmed" mb={2}>{ind.codigo}</Text>
+            <Text size="sm" fw={700} lh={1.35}>{ind.nombre}</Text>
+          </div>
+        </Group>
         <Group gap={4}>
           <SemaforoBadge semaforo={ind.semaforo} />
           {admin && <>
-            <ActionIcon size="xs" variant="subtle" color="blue" onClick={() => onEdit(ind)}><IconEdit size={11} /></ActionIcon>
-            <ActionIcon size="xs" variant="subtle" color="red" onClick={() => onDelete(ind._id)}><IconTrash size={11} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); onEdit(ind); }}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); onDelete(ind._id); }}><IconTrash size={13} /></ActionIcon>
           </>}
         </Group>
       </Group>
-      <Text size="xs" fw={700} c="dimmed" mb={2}>{ind.codigo}</Text>
-      <Text size="xs" fw={600} mb={6} lineClamp={3}>{ind.nombre}</Text>
-      <AvanceBar avance={ind.avance} semaforo={ind.semaforo} />
-      <Group gap={8} mt={6} wrap="wrap">
-        <Text size="xs" c="dimmed">Peso: <b>{ind.peso}%</b></Text>
-        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta: <b>{ind.meta_final_2029}</b></Text>}
+
+      {/* Barra de avance con botón para desplegar años */}
+      <Group gap={6} align="center">
+        <Progress value={avance} color={SEMAFORO_COLOR[ind.semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
+        <Text size="xs" fw={700} w={36} ta="right">{avance}%</Text>
+        <ActionIcon
+          size="xs"
+          variant="subtle"
+          color="violet"
+          onClick={(e) => { e.stopPropagation(); setShowAnios(v => !v); }}
+          title="Ver avance por año"
+        >
+          <IconChevronRight size={12} style={{ transform: showAnios ? "rotate(90deg)" : "none", transition: "transform .2s" }} />
+        </ActionIcon>
       </Group>
-      {ind.responsable && <Text size="xs" c="dimmed" mt={2}>Resp: <b>{ind.responsable}</b></Text>}
+
+      {/* Desglose por año (colapsable) */}
+      {showAnios && (
+        <Group gap={6} mt={8} wrap="wrap" onClick={(e) => e.stopPropagation()}>
+          {["2026", "2027", "2028", "2029"].map((anio) => {
+            const val = ind.avances_por_anio?.[anio] ?? 0;
+            return (
+              <Box
+                key={anio}
+                style={{
+                  background: "rgba(124,58,237,0.07)",
+                  border: "1px solid rgba(124,58,237,0.18)",
+                  borderRadius: 8,
+                  padding: "3px 10px",
+                  textAlign: "center",
+                  minWidth: 60,
+                }}
+              >
+                <Text size="10px" c="dimmed" fw={700}>{anio}</Text>
+                <Text size="xs" fw={800} c="violet">{val.toFixed(1)}%</Text>
+              </Box>
+            );
+          })}
+        </Group>
+      )}
+
+      <Group gap={8} mt="sm" wrap="wrap">
+        <MetaBadge label={`Peso ${ind.peso}%`} />
+        {ind.meta_final_2029 != null && <MetaBadge label={`Meta ${ind.meta_final_2029}`} color="violet" />}
+        {ind.tipo_seguimiento && <MetaBadge label={ind.tipo_seguimiento} color="blue" />}
+      </Group>
+
+      {ind.responsable && (
+        <Text size="xs" c="dimmed" mt="sm">
+          Responsable: <b>{ind.responsable}</b>
+        </Text>
+      )}
     </Paper>
   );
 }
 
-// ── Acción card con indicadores horizontales ───────────────────────────────
 function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUpdate }: {
   accion: Accion; admin: boolean;
   onEdit: (a: Accion) => void;
@@ -98,15 +179,22 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
   const cargar = async () => {
-    if (loaded) { setOpen(v => !v); return; }
+    if (loaded) {
+      setOpen((value) => !value);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accion._id } });
       setIndicadores(res.data);
       setLoaded(true);
       setOpen(true);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const refrescarAccion = async () => {
@@ -114,7 +202,9 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
       const res = await axios.get(PDI_ROUTES.accion(accion._id));
       setAccion(res.data);
       onAvanceUpdate();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleDeleteInd = (id: string) => {
@@ -126,68 +216,122 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
       onConfirm: async () => {
         try {
           await axios.delete(PDI_ROUTES.indicador(id));
-          setIndicadores(prev => prev.filter(i => i._id !== id));
+          setIndicadores((prev) => prev.filter((i) => i._id !== id));
           showNotification({ title: "Eliminado", message: "Indicador eliminado", color: "teal" });
           await refrescarAccion();
-        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
       },
     });
   };
 
   return (
-    <Paper withBorder radius="lg" p="md" shadow="xs"
-      style={{ minWidth: 280, flex: 1 }}
+    <Paper
+      withBorder
+      radius="xl"
+      p="lg"
+      shadow="xs"
+      style={{
+        background: open
+          ? "linear-gradient(180deg, rgba(251, 146, 60, 0.06), transparent 38%)"
+          : "var(--mantine-color-body)",
+      }}
     >
-      <Group justify="space-between" mb={6}>
-        <ThemeIcon size={28} radius="xl" color="orange" variant="light">
-          <IconBulb size={14} />
-        </ThemeIcon>
-        <Group gap={4}>
-          <SemaforoBadge semaforo={accion.semaforo} />
+      <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
+        <Group gap={12} align="flex-start">
+          <ThemeIcon size={40} radius="xl" color="orange" variant="light">
+            <IconBulb size={20} />
+          </ThemeIcon>
+          <div style={{ textAlign: "right" }}>
+            <Group gap={8} mb={4} wrap="wrap">
+              <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
+              <SemaforoBadge semaforo={accion.semaforo} />
+              <MetaBadge label={`Peso ${accion.peso}%`} />
+              {accion.responsable && <MetaBadge label={accion.responsable} color="blue" />}
+            </Group>
+            <Text fw={700} size="md" lh={1.35}>{accion.nombre}</Text>
+          </div>
+        </Group>
+
+        <Group gap={6}>
+          <Button
+            variant={open ? "light" : "subtle"}
+            size="xs"
+            color="dark"
+            loading={loading}
+            rightSection={<IconChevronRight size={12} style={{ transform: open ? "rotate(90deg)" : "", transition: "transform .2s" }} />}
+            onClick={cargar}
+          >
+            {open ? "Ocultar indicadores" : "Ver indicadores"}
+          </Button>
+          {admin && (
+            <Button
+              size="xs"
+              variant="light"
+              color="violet"
+              leftSection={<IconPlus size={12} />}
+              onClick={() => { setSelectedInd(null); setIndModal(true); }}
+            >
+              Nuevo indicador
+            </Button>
+          )}
           {admin && <>
-            <ActionIcon size="xs" variant="subtle" color="blue" onClick={() => onEdit(accion)}><IconEdit size={11} /></ActionIcon>
-            <ActionIcon size="xs" variant="subtle" color="red" onClick={() => onDelete(accion._id)}><IconTrash size={11} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(accion)}><IconEdit size={14} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(accion._id)}><IconTrash size={14} /></ActionIcon>
           </>}
         </Group>
       </Group>
-      <Text size="xs" fw={700} c="dimmed" mb={2}>{accion.codigo}</Text>
-      <Text size="xs" fw={600} mb={6} lineClamp={3}>{accion.nombre}</Text>
+
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
-      <Text size="xs" c="dimmed" mt={4}>Peso: <b>{accion.peso}%</b></Text>
 
-      {/* Botón ver indicadores */}
-      <Group gap={6} mt={8}>
-        <Button variant="subtle" size="xs" p={0} loading={loading}
-          rightSection={<IconChevronRight size={11} style={{ transform: open ? "rotate(90deg)" : "", transition: "transform .2s" }} />}
-          onClick={cargar}>
-          {open ? "Ocultar indicadores" : `Indicadores`}
-        </Button>
-        {admin && open && (
-          <Button size="xs" variant="light" color="violet" leftSection={<IconPlus size={11} />}
-            onClick={() => { setSelectedInd(null); setIndModal(true); }}>
-            Nuevo
-          </Button>
-        )}
-      </Group>
-
-      {/* Indicadores en grid que fluye — si caben van al lado, si no bajan */}
       {open && (
-        <Box mt={8}>
+        <>
+          <Divider my="md" />
           {loading ? (
-            <Center py="xs"><Loader size="xs" /></Center>
+            <Center py="sm"><Loader size="sm" /></Center>
           ) : indicadores.length === 0 ? (
-            <Text size="xs" c="dimmed">Sin indicadores</Text>
+            <Paper
+              withBorder
+              radius="lg"
+              p="xl"
+              style={{ borderStyle: "dashed", background: "var(--mantine-color-default-hover)" }}
+            >
+              <Stack align="center" gap={6}>
+                <ThemeIcon size={40} radius="xl" color="violet" variant="light">
+                  <IconTarget size={18} />
+                </ThemeIcon>
+                <Text fw={600}>Sin indicadores registrados</Text>
+                <Text size="sm" c="dimmed" ta="center">
+                  Agrega indicadores para hacer seguimiento a esta acción estratégica.
+                </Text>
+                {admin && (
+                  <Button
+                    size="sm"
+                    variant="light"
+                    color="violet"
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => { setSelectedInd(null); setIndModal(true); }}
+                  >
+                    Crear indicador
+                  </Button>
+                )}
+              </Stack>
+            </Paper>
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start" }}>
-              {indicadores.map(ind => (
-                <IndicadorCard key={ind._id} ind={ind} admin={admin}
+            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
+              {indicadores.map((ind) => (
+                <IndicadorCard
+                  key={ind._id}
+                  ind={ind}
+                  admin={admin}
                   onEdit={(i) => { setSelectedInd(i); setIndModal(true); }}
                   onDelete={handleDeleteInd}
                 />
               ))}
-            </div>
+            </SimpleGrid>
           )}
-        </Box>
+        </>
       )}
 
       <IndicadorModal
@@ -196,8 +340,8 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
         selected={selectedInd}
         defaultAccionId={accion._id}
         onSaved={async (doc) => {
-          setIndicadores(prev => selectedInd
-            ? prev.map(i => i._id === doc._id ? doc : i)
+          setIndicadores((prev) => selectedInd
+            ? prev.map((i) => i._id === doc._id ? doc : i)
             : [...prev, doc]
           );
           await refrescarAccion();
@@ -207,11 +351,8 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
   );
 }
 
-// ── Proyecto: header + acciones en fila horizontal ─────────────────────────
-function ProyectoSeccion({ proyecto: proyectoInicial, admin, macros, macroId, onEdit, onDelete, onAvanceUpdate }: {
+function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, onAvanceUpdate }: {
   proyecto: Proyecto; admin: boolean;
-  macros: Macroproyecto[];
-  macroId: string;
   onEdit: (p: Proyecto) => void;
   onDelete: (id: string) => void;
   onAvanceUpdate: () => void;
@@ -229,21 +370,26 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, macros, macroId, on
     if (loaded) return;
     setLoading(true);
     axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } })
-      .then(res => { setAcciones(res.data); setLoaded(true); })
-      .catch(e => console.error(e))
+      .then((res) => {
+        setAcciones(res.data);
+        setLoaded(true);
+      })
+      .catch((e) => console.error(e))
       .finally(() => setLoading(false));
-  }, []);
+  }, [loaded, proyecto._id]);
 
   const refrescarProyecto = async () => {
     try {
-      const [resP, resA] = await Promise.all([
+      const [resProyecto, resAcciones] = await Promise.all([
         axios.get(PDI_ROUTES.proyecto(proyecto._id)),
         axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } }),
       ]);
-      setProyecto(resP.data);
-      setAcciones(resA.data);
+      setProyecto(resProyecto.data);
+      setAcciones(resAcciones.data);
       onAvanceUpdate();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleDeleteAccion = (id: string) => {
@@ -255,92 +401,127 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, macros, macroId, on
       onConfirm: async () => {
         try {
           await axios.delete(PDI_ROUTES.accion(id));
-          setAcciones(prev => prev.filter(a => a._id !== id));
+          setAcciones((prev) => prev.filter((a) => a._id !== id));
           showNotification({ title: "Eliminada", message: "Acción eliminada", color: "teal" });
           await refrescarProyecto();
-        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
       },
     });
   };
 
-  const barColor = proyecto.avance >= 50 ? "#22c55e" : proyecto.avance >= 25 ? "#f59e0b" : "#ef4444";
-  const statusColor = proyecto.semaforo === "verde" ? "green" : proyecto.semaforo === "amarillo" ? "yellow" : "red";
+  const estadoProyectoColor = proyecto.semaforo === "verde"
+    ? "green"
+    : proyecto.semaforo === "amarillo"
+      ? "yellow"
+      : "red";
 
   return (
-    <Box mb={32}>
-      {/* Header del proyecto */}
-      <Paper withBorder radius="xl" p="lg" shadow="sm" mb={12}>
-        <Group justify="space-between" align="flex-start">
-          <Group gap={12}>
-            <ThemeIcon size={40} radius="xl" color="blue" variant="light">
-              <IconTrendingUp size={20} />
-            </ThemeIcon>
-            <div>
-              <Group gap={8} mb={2}>
-                <Text size="xs" fw={700} c="dimmed">{proyecto.codigo}</Text>
-                <Badge color={statusColor} variant="light" size="xs" radius="xl">
-                  {proyecto.semaforo === "verde" ? "En cumplimiento" : proyecto.semaforo === "amarillo" ? "En riesgo" : "Crítico"}
-                </Badge>
-              </Group>
-              <Text fw={700} size="md">{proyecto.nombre}</Text>
-              {proyecto.formulador && <Text size="xs" c="dimmed" mt={2}>Formulador: <b>{proyecto.formulador}</b></Text>}
-            </div>
-          </Group>
-          <Group gap={12} align="flex-end">
-            <div style={{ textAlign: "right" }}>
-              <Text size="1.8rem" fw={800} lh={1}>{proyecto.avance}%</Text>
-              <Text size="xs" c="dimmed">Peso: {proyecto.peso}%</Text>
-            </div>
-            <Box style={{ width: 80, height: 6, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden", alignSelf: "center" }}>
-              <Box style={{ height: "100%", width: `${proyecto.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
-            </Box>
-            {admin && (
-              <Group gap={4}>
-                <ActionIcon variant="subtle" color="blue" onClick={() => onEdit(proyecto)}><IconEdit size={15} /></ActionIcon>
-                <ActionIcon variant="subtle" color="red" onClick={() => onDelete(proyecto._id)}><IconTrash size={15} /></ActionIcon>
-              </Group>
+    <Paper withBorder radius="xl" p="xl" shadow="sm" mb="lg">
+      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+        <Group gap={14} align="flex-start">
+          <ThemeIcon size={46} radius="xl" color="blue" variant="light">
+            <IconTrendingUp size={22} />
+          </ThemeIcon>
+          <div>
+            <Group gap={8} mb={4} wrap="wrap">
+              <Text size="xs" fw={700} c="dimmed">{proyecto.codigo}</Text>
+              <Badge color={estadoProyectoColor} variant="light" radius="xl">
+                {proyecto.semaforo === "verde" ? "En cumplimiento" : proyecto.semaforo === "amarillo" ? "En riesgo" : "Crítico"}
+              </Badge>
+            </Group>
+            <Title order={4}>{proyecto.nombre}</Title>
+            {proyecto.formulador && (
+              <Text size="sm" c="dimmed" mt={4}>
+                Formulador: <b>{proyecto.formulador}</b>
+              </Text>
             )}
-          </Group>
+            <Group gap={12} mt={6} wrap="wrap">
+              <Text size="sm" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
+              <Group gap={8} align="center">
+                <Text size="sm" c="dimmed">Avance global</Text>
+                <Box style={{ width: 110 }}>
+                  <AvanceBar avance={proyecto.avance} semaforo={proyecto.semaforo} />
+                </Box>
+              </Group>
+            </Group>
+          </div>
         </Group>
-      </Paper>
 
-      {/* Acciones en fila horizontal con scroll */}
-      <Box style={{ overflowX: "auto", paddingBottom: 8 }}>
-        {loading ? (
-          <Center py="md"><Loader size="sm" /></Center>
-        ) : (
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingBottom: 4 }}>
-            {acciones.length === 0 && (
-              <Text size="sm" c="dimmed" pl={4} style={{ alignSelf: "center" }}></Text>
-            )}
-            {acciones.map(a => (
-              <AccionCard key={a._id} accion={a} admin={admin}
-                onEdit={(ac) => { setSelectedAccion(ac); setAccionModal(true); }}
-                onDelete={handleDeleteAccion}
-                onAvanceUpdate={refrescarProyecto}
-              />
-            ))}
+        <Group gap={8}>
+          {admin && (
+            <Button
+              size="sm"
+              variant="light"
+              color="orange"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => { setSelectedAccion(null); setAccionModal(true); }}
+            >
+              Nueva acción
+            </Button>
+          )}
+          {admin && <>
+            <ActionIcon size="lg" variant="subtle" color="blue" onClick={() => onEdit(proyecto)}><IconEdit size={18} /></ActionIcon>
+            <ActionIcon size="lg" variant="subtle" color="red" onClick={() => onDelete(proyecto._id)}><IconTrash size={18} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+
+      <Group justify="space-between" align="center" mb="md">
+        <div>
+          <Text fw={700}>Acciones estratégicas</Text>
+        </div>
+        {acciones.length > 0 && (
+          <Badge variant="outline" color="orange" radius="xl">
+            {acciones.length} acción{acciones.length !== 1 ? "es" : ""}
+          </Badge>
+        )}
+      </Group>
+
+      {loading ? (
+        <Center py="lg"><Loader size="sm" /></Center>
+      ) : acciones.length === 0 ? (
+        <Paper
+          withBorder
+          radius="lg"
+          p="xl"
+          style={{ borderStyle: "dashed", background: "var(--mantine-color-default-hover)" }}
+        >
+          <Stack align="center" gap={6}>
+            <ThemeIcon size={44} radius="xl" color="orange" variant="light">
+              <IconBulb size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Este proyecto aún no tiene acciones</Text>
+            <Text size="sm" c="dimmed" ta="center">
+              Crea la primera acción estratégica para organizar responsables, seguimiento e indicadores.
+            </Text>
             {admin && (
-              <Paper withBorder radius="lg" p="md" shadow="xs"
-                style={{
-                  minWidth: 160, flexShrink: 0, display: "flex",
-                  alignItems: "center", justifyContent: "center",
-                  cursor: "pointer", opacity: 0.7,
-                  border: "2px dashed var(--mantine-color-default-border)",
-                }}
+              <Button
+                size="sm"
+                color="orange"
+                leftSection={<IconPlus size={14} />}
                 onClick={() => { setSelectedAccion(null); setAccionModal(true); }}
               >
-                <Stack align="center" gap={4}>
-                  <ThemeIcon size={32} radius="xl" color="orange" variant="light">
-                    <IconPlus size={16} />
-                  </ThemeIcon>
-                  <Text size="xs" c="dimmed" ta="center">Nueva acción</Text>
-                </Stack>
-              </Paper>
+                Crear primera acción
+              </Button>
             )}
-          </div>
-        )}
-      </Box>
+          </Stack>
+        </Paper>
+      ) : (
+        <Stack gap="md">
+          {acciones.map((accion) => (
+            <AccionCard
+              key={accion._id}
+              accion={accion}
+              admin={admin}
+              onEdit={(item) => { setSelectedAccion(item); setAccionModal(true); }}
+              onDelete={handleDeleteAccion}
+              onAvanceUpdate={refrescarProyecto}
+            />
+          ))}
+        </Stack>
+      )}
 
       <AccionModal
         opened={accionModal}
@@ -348,18 +529,17 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, macros, macroId, on
         selected={selectedAccion}
         defaultProyectoId={proyecto._id}
         onSaved={async (doc) => {
-          setAcciones(prev => selectedAccion
-            ? prev.map(a => a._id === doc._id ? doc : a)
+          setAcciones((prev) => selectedAccion
+            ? prev.map((a) => a._id === doc._id ? doc : a)
             : [...prev, doc]
           );
           await refrescarProyecto();
         }}
       />
-    </Box>
+    </Paper>
   );
 }
 
-// ── Página principal ───────────────────────────────────────────────────────
 export default function MacroproyectoDetallePage() {
   const router = useRouter();
   const params = useParams();
@@ -387,7 +567,7 @@ export default function MacroproyectoDetallePage() {
         setProyectos(resProyectos.data);
         setMacros(resMacros.data);
       })
-      .catch(e => console.error(e))
+      .catch((e) => console.error(e))
       .finally(() => setLoading(false));
   }, [macroId]);
 
@@ -399,7 +579,9 @@ export default function MacroproyectoDetallePage() {
       ]);
       setMacro(resMacro.data);
       setProyectos(resProyectos.data);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleDeleteProyecto = (id: string) => {
@@ -411,10 +593,12 @@ export default function MacroproyectoDetallePage() {
       onConfirm: async () => {
         try {
           await axios.delete(PDI_ROUTES.proyecto(id));
-          setProyectos(prev => prev.filter(p => p._id !== id));
+          setProyectos((prev) => prev.filter((p) => p._id !== id));
           showNotification({ title: "Eliminado", message: "Proyecto eliminado", color: "teal" });
           await refrescarMacro();
-        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
       },
     });
   };
@@ -427,55 +611,64 @@ export default function MacroproyectoDetallePage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-
-        {/* Header fijo */}
-        <div style={{
-          padding: "16px 24px",
-          borderBottom: "1px solid var(--mantine-color-default-border)",
-          background: "var(--mantine-color-body)",
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            padding: "20px 28px",
+            borderBottom: "1px solid var(--mantine-color-default-border)",
+            background: "var(--mantine-color-body)",
+            flexShrink: 0,
+          }}
+        >
           {loading || !macro ? (
             <Group gap={10}>
               <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}><IconArrowLeft size={18} /></ActionIcon>
               <Loader size="sm" />
             </Group>
           ) : (
-            <Group justify="space-between" align="center">
+            <Group justify="space-between" align="center" wrap="wrap">
               <Group gap={12}>
                 <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}><IconArrowLeft size={18} /></ActionIcon>
-                <ThemeIcon size={44} radius="xl" color="violet" variant="light">
+                <ThemeIcon size={46} radius="xl" color="violet" variant="light">
                   <IconChartBarPopular size={22} />
                 </ThemeIcon>
                 <div>
-                  <Group gap={8}>
+                  <Group gap={8} wrap="wrap">
                     <Title order={3}>{macro.nombre}</Title>
                     <Badge color={SEMAFORO_COLOR[macro.semaforo]} variant="light" radius="xl">
                       {SEMAFORO_LABEL[macro.semaforo]}
                     </Badge>
                   </Group>
-                  <Group gap={12} mt={2}>
-                    <Text size="xs" c="dimmed">Código: <b>{macro.codigo}</b></Text>
-                    <Text size="xs" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
-                    <Group gap={6} align="center">
-                      <Text size="xs" c="dimmed">Avance global:</Text>
-                      <Box style={{ width: 100, height: 6, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
-                        <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99 }} />
+                  <Group gap={12} mt={4} wrap="wrap">
+                    <Text size="sm" c="dimmed">Código: <b>{macro.codigo}</b></Text>
+                    <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
+                    <Group gap={8}>
+                      <Text size="sm" c="dimmed">Avance global</Text>
+                      <Box style={{ width: 120 }}>
+                        <AvanceBar avance={macro.avance} semaforo={macro.semaforo} />
                       </Box>
-                      <Text size="xs" fw={700}>{macro.avance}%</Text>
                     </Group>
                   </Group>
                 </div>
               </Group>
+
               <Group gap={8}>
                 {admin && (
                   <>
-                    <Button size="sm" variant="light" color="violet" leftSection={<IconEdit size={14} />}
-                      onClick={() => setMacroModal(true)}>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color="violet"
+                      leftSection={<IconEdit size={14} />}
+                      onClick={() => setMacroModal(true)}
+                    >
                       Editar macro
                     </Button>
-                    <Button size="sm" color="blue" leftSection={<IconPlus size={14} />}
-                      onClick={() => { setSelectedProyecto(null); setProyectoModal(true); }}>
+                    <Button
+                      size="sm"
+                      color="blue"
+                      leftSection={<IconPlus size={14} />}
+                      onClick={() => { setSelectedProyecto(null); setProyectoModal(true); }}
+                    >
                       Nuevo proyecto
                     </Button>
                   </>
@@ -488,43 +681,44 @@ export default function MacroproyectoDetallePage() {
           )}
         </div>
 
-        {/* Contenido — scroll vertical por proyecto, acciones horizontales */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "28px" }}>
           {loading ? (
             <Center style={{ height: "100%" }}><Loader /></Center>
           ) : proyectos.length === 0 ? (
             <Center style={{ height: "60vh" }}>
-              <Stack align="center" gap="xs">
-                <ThemeIcon size={56} radius="xl" color="blue" variant="light">
-                  <IconFolderOpen size={28} />
-                </ThemeIcon>
-                <Text fw={600}>Sin proyectos registrados</Text>
-                <Text size="sm" c="dimmed">Agrega el primer proyecto a este macroproyecto</Text>
-                {admin && (
-                  <Button leftSection={<IconPlus size={14} />} color="blue" mt="sm"
-                    onClick={() => { setSelectedProyecto(null); setProyectoModal(true); }}>
-                    Nuevo proyecto
-                  </Button>
-                )}
-              </Stack>
+              <Paper withBorder radius="xl" p="xl" shadow="sm" maw={520}>
+                <Stack align="center" gap="xs">
+                  <ThemeIcon size={56} radius="xl" color="blue" variant="light">
+                    <IconFolderOpen size={28} />
+                  </ThemeIcon>
+                  <Text fw={700} size="lg">Sin proyectos registrados</Text>
+                  <Text size="sm" c="dimmed" ta="center">
+                    Crea el primer proyecto de este macroproyecto para empezar a organizar acciones e indicadores.
+                  </Text>
+                  {admin && (
+                    <Button
+                      leftSection={<IconPlus size={14} />}
+                      color="blue"
+                      mt="sm"
+                      onClick={() => { setSelectedProyecto(null); setProyectoModal(true); }}
+                    >
+                      Nuevo proyecto
+                    </Button>
+                  )}
+                </Stack>
+              </Paper>
             </Center>
           ) : (
-            <Stack gap={0}>
-              {proyectos.map((p, idx) => (
-                <Box key={p._id}>
-                  <ProyectoSeccion
-                    proyecto={p}
-                    admin={admin}
-                    macros={macros}
-                    macroId={macroId}
-                    onEdit={(proj) => { setSelectedProyecto(proj); setProyectoModal(true); }}
-                    onDelete={handleDeleteProyecto}
-                    onAvanceUpdate={refrescarMacro}
-                  />
-                  {idx < proyectos.length - 1 && (
-                    <Box mb={24} style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }} />
-                  )}
-                </Box>
+            <Stack gap="xl">
+              {proyectos.map((proyecto) => (
+                <ProyectoSeccion
+                  key={proyecto._id}
+                  proyecto={proyecto}
+                  admin={admin}
+                  onEdit={(item) => { setSelectedProyecto(item); setProyectoModal(true); }}
+                  onDelete={handleDeleteProyecto}
+                  onAvanceUpdate={refrescarMacro}
+                />
               ))}
             </Stack>
           )}
@@ -539,6 +733,7 @@ export default function MacroproyectoDetallePage() {
           onSaved={(doc) => { setMacro(doc); setMacroModal(false); }}
         />
       )}
+
       <ProyectoModal
         opened={proyectoModal}
         onClose={() => setProyectoModal(false)}
@@ -546,8 +741,8 @@ export default function MacroproyectoDetallePage() {
         macroproyectos={macros}
         defaultMacroId={macroId}
         onSaved={async (doc) => {
-          setProyectos(prev => selectedProyecto
-            ? prev.map(p => p._id === doc._id ? doc : p)
+          setProyectos((prev) => selectedProyecto
+            ? prev.map((p) => p._id === doc._id ? doc : p)
             : [...prev, doc]
           );
           await refrescarMacro();

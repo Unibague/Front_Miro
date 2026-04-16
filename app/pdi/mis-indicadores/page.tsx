@@ -7,7 +7,7 @@ import {
   Divider, TextInput, Textarea, Modal, Tabs, Tooltip,
 } from "@mantine/core";
 import {
-  IconArrowLeft, IconTarget, IconChartBarPopular,
+  IconArrowLeft, IconTarget,
   IconEdit, IconChevronDown, IconChevronUp,
   IconCheck, IconAlertTriangle, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf,
@@ -20,6 +20,7 @@ import { useSession } from "next-auth/react";
 import { PDI_ROUTES } from "../api";
 import type { Indicador, Periodo } from "../types";
 import dynamic from "next/dynamic";
+import { usePdiConfig } from "../hooks/usePdiConfig";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -45,14 +46,17 @@ const SEMAFORO_ICON: Record<string, React.ReactNode> = {
   amarillo: <IconAlertTriangle size={13} />,
   rojo: <IconX size={13} />,
 };
+const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
+  anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
 
 // ── Modal completo del responsable ────────────────────────────────────────
-function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes, onSaved }: {
+function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes, onSaved, anioMeta }: {
   opened: boolean;
   onClose: () => void;
   indicador: Indicador;
   cortesVigentes: CorteVigente[];
   onSaved: (ind: Indicador) => void;
+  anioMeta: number;
 }) {
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
   const [avancesStr, setAvancesStr] = useState<Record<string, string>>({});
@@ -73,21 +77,30 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
   }, [opened, indicador]);
 
   const updateAvanceStr = (periodo: string, value: string) => {
-    // Permitir escribir libremente: números, punto, coma, vacío
-    if (value !== "" && !/^[\d.,]*$/.test(value)) return;
+    // Permitir números, punto, coma y % (para metas en porcentaje)
+    if (value !== "" && !/^[\d.,% ]*$/.test(value)) return;
     setAvancesStr(prev => ({ ...prev, [periodo]: value }));
+  };
+
+  // Normaliza "2%", "2,5%", "2.5" → número
+  const parseAvance = (val: string): number | null => {
+    if (val === "") return null;
+    const limpio = val.replace("%", "").replace(",", ".").trim();
+    const n = Number(limpio);
+    return isNaN(n) ? null : n;
   };
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      const periodosPayload = periodos.map(p => ({
-        periodo: p.periodo,
-        meta: p.meta,
-        avance: avancesStr[p.periodo] !== ""
-          ? Number(avancesStr[p.periodo].replace(",", "."))
-          : null,
-      }));
+      const periodosPayload = periodos.map(p => {
+        const val = parseAvance(avancesStr[p.periodo] ?? "");
+        return {
+          periodo: p.periodo,
+          meta: p.meta,
+          avance: (val === 0 && !esPeriodoEditable(p.periodo, cortesVigentes)) ? null : val,
+        };
+      });
       const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
         periodos: periodosPayload,
         observaciones: obs.trim(),
@@ -138,7 +151,7 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
             <Paper withBorder radius="md" p="sm" style={{ background: "#f8f5ff" }}>
               <SimpleGrid cols={2}>
                 {[
-                  { label: "Meta 2029", value: indicador.meta_final_2029 ?? "—" },
+                  { label: `Meta ${anioMeta}`, value: indicador.meta_final_2029 ?? "-" },
                   { label: "Tipo cálculo", value: indicador.tipo_calculo ?? "—" },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "—" },
                   { label: "Avance actual", value: `${indicador.avance}%` },
@@ -176,18 +189,20 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
                     </Box>
                     <TextInput
                       label="Avance"
-                      placeholder={editable ? "Ej: 80" : "Periodo cerrado"}
+                      placeholder={editable
+                        ? (String(p.meta ?? "").includes("%") ? "Ej: 2%" : "Ej: 1")
+                        : "Periodo cerrado"}
                       value={avancesStr[p.periodo] ?? ""}
                       onChange={e => editable && updateAvanceStr(p.periodo, e.currentTarget.value)}
-                      style={{ width: 120 }}
+                      style={{ width: 130 }}
                       size="sm"
                       disabled={!editable}
                     />
                   </Group>
-                  {avancesStr[p.periodo] !== "" && p.meta != null && Number(p.meta) > 0 && (
+                  {(avancesStr[p.periodo] ?? "") !== "" && p.meta != null && parseAvance(String(p.meta)) !== null && Number(parseAvance(String(p.meta))) > 0 && (
                     <Progress
-                      value={Math.min((Number(avancesStr[p.periodo].replace(",", ".")) / Number(p.meta)) * 100, 100)}
-                      color={editable ? "blue" : "gray"} size="xs" radius="xl" mt={8}
+                      value={Math.min(((parseAvance(avancesStr[p.periodo] ?? "") ?? 0) / Number(parseAvance(String(p.meta)))) * 100, 100)}
+                      color={editable ? "violet" : "gray"} size="xs" radius="xl" mt={8}
                     />
                   )}
                 </Paper>
@@ -219,7 +234,7 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
 
         {/* ── Evidencias ── */}
         <Tabs.Panel value="evidencias">
-          <EvidenciasPanel indicadorId={indicador._id} />
+          <EvidenciasPanel indicadorId={indicador._id} periodos={indicador.periodos} />
         </Tabs.Panel>
       </Tabs>
     </Modal>
@@ -227,14 +242,17 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
 }
 
 // ── Card de indicador ──────────────────────────────────────────────────────
-function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
+function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, aniosPdi, anioMeta }: {
   indicador: Indicador;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
+  aniosPdi: number[];
+  anioMeta: number;
 }) {
   const [ind, setInd] = useState(indInicial);
   const [open, setOpen] = useState(false);
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [showAnios, setShowAnios] = useState(false);
 
   useEffect(() => { setInd(indInicial); }, [indInicial]);
 
@@ -243,7 +261,9 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
     onUpdated(updated);
   };
 
-  const barColor = ind.avance >= 70 ? "#22c55e" : ind.avance >= 40 ? "#f59e0b" : "#ef4444";
+  // Para indicadores acumulados/último_valor, avance_total_real es el % real de cumplimiento
+  const avanceMostrado = ind.avance_total_real != null ? ind.avance_total_real : ind.avance;
+  const barColor = avanceMostrado >= 70 ? "#22c55e" : avanceMostrado >= 40 ? "#f59e0b" : "#ef4444";
 
   return (
     <Paper withBorder radius="xl" p="lg" shadow="xs"
@@ -278,27 +298,61 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
       {/* Avance */}
       <Group justify="space-between" align="flex-end" mb={6}>
         <div>
-          <Text size="2rem" fw={800} lh={1}>{ind.avance}%</Text>
+          <Text size="2rem" fw={800} lh={1}>{avanceMostrado}%</Text>
           <Text size="xs" c="dimmed">Avance consolidado</Text>
         </div>
         {ind.meta_final_2029 != null && (
           <div style={{ textAlign: "right" }}>
             <Text size="lg" fw={700}>{ind.meta_final_2029}</Text>
-            <Text size="xs" c="dimmed">Meta 2029</Text>
+            <Text size="xs" c="dimmed">Meta {anioMeta}</Text>
           </div>
         )}
       </Group>
 
-      <Box style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden", marginBottom: 12 }}>
-        <Box style={{ height: "100%", width: `${ind.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
-      </Box>
+      <Group gap={8} align="center" mb={showAnios ? 6 : 12}>
+        <Box style={{ flex: 1, height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+          <Box style={{ height: "100%", width: `${Math.min(avanceMostrado, 100)}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
+        </Box>
+        <ActionIcon
+          size="xs" variant="subtle" color="violet"
+          onClick={() => setShowAnios(v => !v)}
+          title="Ver avance por año"
+        >
+          <IconChevronDown size={13} style={{ transform: showAnios ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+        </ActionIcon>
+      </Group>
+
+      {showAnios && (
+        <Group gap={6} mb="md" wrap="wrap">
+          {(aniosPdi.length ? aniosPdi.map(String) : Object.keys(ind.avances_por_anio ?? {}).sort()).map((anio) => {
+            const val = ind.avances_por_anio?.[anio];
+            const tieneData = val != null;
+            return (
+              <Box
+                key={anio}
+                style={{
+                  background: "rgba(124,58,237,0.07)",
+                  border: "1px solid rgba(124,58,237,0.18)",
+                  borderRadius: 8,
+                  padding: "3px 10px",
+                  textAlign: "center",
+                  minWidth: 60,
+                }}
+              >
+                <Text size="10px" c="dimmed" fw={700}>{anio}</Text>
+                <Text size="xs" fw={800} c={tieneData ? "violet" : "dimmed"}>{tieneData ? `${Number(val).toFixed(1)}%` : "-"}</Text>
+              </Box>
+            );
+          })}
+        </Group>
+      )}
 
       {/* Mini stats */}
       <SimpleGrid cols={3} mb="md">
         {[
           { label: "Peso", value: `${ind.peso}%` },
           { label: "Seguimiento", value: ind.tipo_seguimiento || "—" },
-          { label: "Avance real", value: ind.avance_total_real != null ? `${ind.avance_total_real}%` : "—" },
+          { label: "Tipo cálculo", value: ind.tipo_calculo || "—" },
         ].map(s => (
           <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
             <Text fw={700} size="sm" lh={1}>{s.value}</Text>
@@ -370,6 +424,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
         indicador={ind}
         cortesVigentes={cortesVigentes}
         onSaved={handleSaved}
+        anioMeta={anioMeta}
       />
     </Paper>
   );
@@ -379,6 +434,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated }: {
 export default function MisIndicadoresPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const { config } = usePdiConfig();
   const [indicadores, setIndicadores] = useState<Indicador[]>([]);
   const [loading, setLoading] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
@@ -395,11 +451,20 @@ export default function MisIndicadoresPage() {
       .then(([resInd, resUser, resCortes]) => {
         const todos: Indicador[] = resInd.data;
         const fullName = (resUser.data?.full_name ?? "").toLowerCase().trim();
+
+        const matchesUser = (responsable?: string, responsable_email?: string) => {
+          if (responsable_email?.toLowerCase().trim() === email) return true;
+          if (fullName && responsable?.toLowerCase().trim() === fullName) return true;
+          if (responsable?.toLowerCase().trim() === email) return true;
+          return false;
+        };
+
         const mios = todos.filter(i => {
-          if (!i.responsable) return false;
-          if ((i as any).responsable_email?.toLowerCase().trim() === email) return true;
-          if (fullName && i.responsable.toLowerCase().trim() === fullName) return true;
-          if (i.responsable.toLowerCase().trim() === email) return true;
+          // 1. Responsable directo del indicador
+          if (matchesUser(i.responsable, (i as any).responsable_email)) return true;
+          // 2. Responsable de la acción padre
+          const accion = typeof i.accion_id === "object" && i.accion_id !== null ? i.accion_id as any : null;
+          if (accion && matchesUser(accion.responsable, accion.responsable_email)) return true;
           return false;
         });
         setIndicadores(mios);
@@ -436,13 +501,9 @@ export default function MisIndicadoresPage() {
           </ThemeIcon>
           <div>
             <Title order={3}>Mis Indicadores PDI</Title>
-            <Text size="xs" c="dimmed">Indicadores asignados a ti — actualiza el avance</Text>
+            <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
-        <Button variant="light" color="violet" leftSection={<IconChartBarPopular size={15} />}
-          onClick={() => router.push("/pdi")}>
-          Ver PDI completo
-        </Button>
       </Group>
 
       <Divider mb="lg" />
@@ -488,6 +549,8 @@ export default function MisIndicadoresPage() {
                 key={ind._id}
                 indicador={ind}
                 cortesVigentes={cortesVigentes}
+                aniosPdi={config.anios}
+                anioMeta={config.anio_fin}
                 onUpdated={updated => setIndicadores(prev => prev.map(i => i._id === updated._id ? updated : i))}
               />
             ))}

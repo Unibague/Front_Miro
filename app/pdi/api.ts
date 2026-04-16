@@ -16,6 +16,7 @@ export const PDI_ROUTES = {
 
   evidencias:              (id: string) => `${BASE()}/pdi/indicadores/${id}/evidencias`,
   evidencia: (id: string, evId: string) => `${BASE()}/pdi/indicadores/${id}/evidencias/${evId}`,
+  evidenciaEstado: (id: string, evId: string) => `${BASE()}/pdi/indicadores/${id}/evidencias/${evId}/estado`,
 
   historial:               () => `${BASE()}/pdi/historial`,
 
@@ -23,4 +24,17 @@ export const PDI_ROUTES = {
   cortesActivos:           () => `${BASE()}/pdi/cortes/activos`,
   cortesVigentes:          () => `${BASE()}/pdi/cortes/vigentes`,
   corte: (id: string)      => `${BASE()}/pdi/cortes/${id}`,
+
+  // Tableros de control
+  dashboardResumen:                   () => `${BASE()}/pdi/dashboard/resumen`,
+  dashboardMacroproyecto: (id: string) => `${BASE()}/pdi/dashboard/macroproyecto/${id}`,
+  dashboardCorte: (periodo: string)    => `${BASE()}/pdi/dashboard/corte/${encodeURIComponent(periodo)}`,
+
+  // Gestión de cambios
+  cambios:                         () => `${BASE()}/pdi/cambios`,
+  cambio: (id: string)             => `${BASE()}/pdi/cambios/${id}`,
+  cambioRevision: (id: string)     => `${BASE()}/pdi/cambios/${id}/revision`,
+
+  // Configuración del PDI (singleton)
+  config:                          () => `${BASE()}/pdi/config`,
 };

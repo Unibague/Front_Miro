@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Stack, Group, Text, Button, TextInput, Textarea, Paper,
-  Badge, ActionIcon, Loader, Tooltip, Box, Progress, Modal,
+  Stack, Group, Text, Button, TextInput, Paper,
+  Badge, ActionIcon, Loader, Tooltip, Box, Progress, Modal, Select, Textarea,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
   IconUpload, IconTrash, IconFileTypePdf, IconEye,
   IconCalendar, IconUser, IconTag, IconDownload, IconX,
-  IconExternalLink, IconShieldCheck,
+  IconExternalLink, IconShieldCheck, IconCheck, IconAlertTriangle,
 } from "@tabler/icons-react";
+import { modals } from "@mantine/modals";
 import dynamic from "next/dynamic";
 import axios from "axios";
 import type { Evidencia } from "../types";
@@ -28,8 +29,20 @@ const PdfVisor = dynamic(() => import("./PdfVisor"), {
 
 interface Props {
   indicadorId: string;
-  readOnly?: boolean;
+  readOnly?: boolean;        // true = admin puede aprobar/rechazar, false = responsable sube
+  periodos?: { periodo: string }[];
 }
+
+const ESTADO_COLOR: Record<string, string> = {
+  "En Revisión": "yellow",
+  "Aprobado":    "green",
+  "Rechazado":   "red",
+};
+const ESTADO_ICON: Record<string, React.ReactNode> = {
+  "En Revisión": <IconAlertTriangle size={11} />,
+  "Aprobado":    <IconCheck size={11} />,
+  "Rechazado":   <IconX size={11} />,
+};
 
 const BLUE = {
   dark:   "#1e3a5f",
@@ -40,7 +53,7 @@ const BLUE = {
   muted:  "#93c5fd",
 };
 
-export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props) {
+export default function EvidenciasPanel({ indicadorId, readOnly = false, periodos = [] }: Props) {
   const [evidencias, setEvidencias] = useState<Evidencia[]>([]);
   const [loading, setLoading]       = useState(true);
   const [uploading, setUploading]   = useState(false);
@@ -51,6 +64,25 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props
   const [periodo, setPeriodo]       = useState("");
   const [descripcion, setDescripcion] = useState("");
   const fileInputRef                = useRef<HTMLInputElement>(null);
+
+  // Para el panel de revisión (admin)
+  const [revision, setRevision] = useState<Record<string, { estado: string; comentario: string }>>({});
+
+  const handleEstado = async (evId: string) => {
+    const r = revision[evId];
+    if (!r?.estado) return;
+    try {
+      const res = await axios.patch(PDI_ROUTES.evidenciaEstado(indicadorId, evId), {
+        estado: r.estado,
+        comentario_revision: r.comentario ?? "",
+      });
+      setEvidencias(prev => prev.map(e => e._id === evId ? { ...e, ...res.data } : e));
+      setRevision(prev => ({ ...prev, [evId]: { estado: "", comentario: "" } }));
+      showNotification({ title: "Guardado", message: `Evidencia marcada como ${r.estado}`, color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo actualizar el estado", color: "red" });
+    }
+  };
 
   const fetchEvidencias = async () => {
     try {
@@ -97,7 +129,18 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props
           if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
         },
       });
-      setEvidencias((prev) => [...prev, res.data]);
+      const nueva = res.data;
+      // Eliminar automáticamente evidencias rechazadas del mismo periodo
+      const rechazadasMismoPeriodo = evidencias.filter(
+        e => e.estado === "Rechazado" && e.periodo === periodo
+      );
+      await Promise.all(
+        rechazadasMismoPeriodo.map(e => axios.delete(PDI_ROUTES.evidencia(indicadorId, e._id)))
+      );
+      setEvidencias((prev) => [
+        ...prev.filter(e => !(e.estado === "Rechazado" && e.periodo === periodo)),
+        nueva,
+      ]);
       setFile(null); setPeriodo(""); setDescripcion("");
       if (fileInputRef.current) fileInputRef.current.value = "";
       showNotification({ title: "¡Listo!", message: "Evidencia subida correctamente", color: "teal" });
@@ -108,15 +151,29 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props
     }
   };
 
-  const handleDelete = async (evId: string) => {
-    if (!confirm("¿Eliminar esta evidencia?")) return;
-    try {
-      await axios.delete(PDI_ROUTES.evidencia(indicadorId, evId));
-      setEvidencias((prev) => prev.filter((e) => e._id !== evId));
-      showNotification({ title: "Eliminada", message: "Evidencia eliminada", color: "gray" });
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
-    }
+  const handleDelete = (evId: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar evidencia",
+      centered: true,
+      radius: "lg",
+      children: (
+        <Text size="sm" c="dimmed">
+          Esta acción no se puede deshacer. ¿Estás seguro de que deseas eliminar esta evidencia?
+        </Text>
+      ),
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red", radius: "md" },
+      cancelProps: { radius: "md", variant: "default" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.evidencia(indicadorId, evId));
+          setEvidencias((prev) => prev.filter((e) => e._id !== evId));
+          showNotification({ title: "Eliminada", message: "Evidencia eliminada", color: "teal" });
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
+      },
+    });
   };
 
   const formatDate = (iso: string) =>
@@ -131,58 +188,103 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props
       <Stack gap="md">
         {/* ── Zona de subida ── */}
         {!readOnly && (
-          <Paper withBorder radius="md" p="md" style={{
-            background: `linear-gradient(135deg, ${BLUE.soft} 0%, #e0f2fe 100%)`,
-            borderColor: BLUE.border, borderStyle: "dashed", borderWidth: 2,
-          }}>
-            <Stack gap="sm">
-              <Group gap="xs">
-                <IconUpload size={18} color={BLUE.main} />
-                <Text fw={600} size="sm" style={{ color: BLUE.main }}>Subir nueva evidencia (PDF)</Text>
-              </Group>
-
-              <Box onClick={() => fileInputRef.current?.click()} style={{
-                cursor: "pointer", border: `2px dashed ${BLUE.border}`, borderRadius: 8,
-                padding: "14px 16px", background: file ? BLUE.soft : "white",
-                transition: "all 0.2s", display: "flex", alignItems: "center", gap: 12,
+          <Stack gap="xs">
+            {/* Selector de archivo */}
+            <Box
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                cursor: "pointer",
+                border: `2px dashed ${file ? "#7c3aed" : "#e2e8f0"}`,
+                borderRadius: 12,
+                padding: "20px 16px",
+                background: file ? "#faf5ff" : "var(--mantine-color-default-hover)",
+                transition: "border-color 0.2s, background 0.2s",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+              }}
+            >
+              <Box style={{
+                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                background: file ? "#ede9fe" : "#f1f5f9",
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <Box style={{ background: file ? BLUE.soft : "#f0f9ff", borderRadius: 10, padding: 10, flexShrink: 0 }}>
-                  <IconFileTypePdf size={28} color={file ? BLUE.main : BLUE.muted} />
-                </Box>
-                <Box>
-                  <Text size="sm" fw={file ? 600 : 400} style={{ color: file ? BLUE.main : "#64748b" }}>
-                    {file ? file.name : "Haz clic para seleccionar un PDF"}
-                  </Text>
-                  {file
-                    ? <Text size="xs" c="dimmed">{(file.size / 1024 / 1024).toFixed(2)} MB</Text>
-                    : <Text size="xs" c="dimmed">Máximo 20 MB · Solo archivos PDF</Text>
-                  }
-                </Box>
+                <IconFileTypePdf size={24} color={file ? "#7c3aed" : "#94a3b8"} />
               </Box>
-              <input ref={fileInputRef} type="file" accept="application/pdf"
-                style={{ display: "none" }} onChange={handleFileChange} />
-
-              <Group grow>
-                <TextInput label="Periodo" placeholder="Ej: 2026A" value={periodo}
-                  onChange={(e) => setPeriodo(e.currentTarget.value)} size="sm" />
-                <Textarea label="Descripción" placeholder="Breve descripción de la evidencia"
-                  value={descripcion} onChange={(e) => setDescripcion(e.currentTarget.value)}
-                  rows={2} size="sm" />
-              </Group>
-
-              {uploading && (
-                <Box>
-                  <Text size="xs" c="dimmed" mb={4}>Subiendo... {uploadProgress}%</Text>
-                  <Progress value={uploadProgress} color="blue" size="sm" radius="xl" animated />
-                </Box>
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <Text size="sm" fw={600} c={file ? "violet" : "dimmed"} truncate="end">
+                  {file ? file.name : "Seleccionar PDF"}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "Máximo 20 MB · Solo PDF"}
+                </Text>
+              </Box>
+              {file && (
+                <ActionIcon
+                  size="sm" variant="subtle" color="red" radius="xl"
+                  onClick={(e) => { e.stopPropagation(); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                >
+                  <IconX size={13} />
+                </ActionIcon>
               )}
+            </Box>
+            <input ref={fileInputRef} type="file" accept="application/pdf"
+              style={{ display: "none" }} onChange={handleFileChange} />
 
-              <Button leftSection={<IconUpload size={15} />} color="blue"
-                loading={uploading} onClick={handleUpload} disabled={!file} size="sm">
-                Subir evidencia
-              </Button>
-            </Stack>
-          </Paper>
+            {/* Campos de metadata */}
+            <Group grow align="flex-start">
+              {periodos.length > 0 ? (
+                <Select
+                  label="Periodo"
+                  placeholder="Selecciona el periodo"
+                  value={periodo || null}
+                  onChange={(v) => setPeriodo(v ?? "")}
+                  data={periodos.map((p) => ({ value: p.periodo, label: p.periodo }))}
+                  size="sm"
+                  radius="md"
+                  clearable
+                />
+              ) : (
+                <TextInput
+                  label="Periodo"
+                  placeholder="Ej: 2026A"
+                  value={periodo}
+                  onChange={(e) => setPeriodo(e.currentTarget.value)}
+                  size="sm"
+                  radius="md"
+                />
+              )}
+              <TextInput
+                label="Descripción"
+                placeholder="Descripción de la evidencia"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.currentTarget.value)}
+                size="sm"
+                radius="md"
+              />
+            </Group>
+
+            {uploading && (
+              <Box>
+                <Text size="xs" c="dimmed" mb={4}>Subiendo {uploadProgress}%</Text>
+                <Progress value={uploadProgress} color="violet" size="xs" radius="xl" animated />
+              </Box>
+            )}
+
+            <Button
+              leftSection={<IconUpload size={14} />}
+              color="violet"
+              variant={file ? "filled" : "light"}
+              loading={uploading}
+              onClick={handleUpload}
+              disabled={!file}
+              size="sm"
+              radius="md"
+              fullWidth
+            >
+              Subir evidencia
+            </Button>
+          </Stack>
         )}
 
         {/* ── Lista de evidencias ── */}
@@ -196,75 +298,127 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false }: Props
               <IconFileTypePdf size={32} color={BLUE.main} />
             </Box>
             <Text fw={600} size="sm" style={{ color: BLUE.dark }}>Sin evidencias registradas</Text>
-            <Text c="dimmed" size="xs" mt={4}>Sube el primer PDF para este indicador</Text>
+            {!readOnly && (
+              <Text c="dimmed" size="xs" mt={4}>Sube el primer PDF para este indicador</Text>
+            )}
           </Paper>
         ) : (
           <Stack gap="xs">
-            <Group gap={6}>
-              <IconShieldCheck size={14} color={BLUE.main} />
-              <Text size="xs" fw={600} style={{ color: BLUE.main }}>
-                {evidencias.length} evidencia{evidencias.length !== 1 ? "s" : ""} registrada{evidencias.length !== 1 ? "s" : ""}
-              </Text>
-            </Group>
-            {evidencias.map((ev) => (
+            {evidencias.map((ev) => {
+              const estado = ev.estado ?? "En Revisión";
+              const rechazada = estado === "Rechazado";
+
+              // Responsable ve evidencia rechazada: solo aviso, sin archivo ni botón
+              if (!readOnly && rechazada) return (
+                <Paper key={ev._id} withBorder radius="md" p="sm" style={{
+                  borderLeft: "4px solid var(--mantine-color-red-5)",
+                  background: "#fef2f2",
+                }}>
+                  <Group gap={8} align="flex-start">
+                    <IconX size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <Box>
+                      <Text size="sm" fw={700} c="red">
+                        Evidencia rechazada{ev.periodo ? ` — ${ev.periodo}` : ""} — debes subir una nueva evidencia
+                      </Text>
+                      {ev.comentario_revision && (
+                        <Text size="xs" c="dimmed" mt={2}>Motivo: {ev.comentario_revision}</Text>
+                      )}
+                    </Box>
+                  </Group>
+                </Paper>
+              );
+
+              return (
               <Paper key={ev._id} withBorder radius="md" p="sm" style={{
-                borderLeft: `4px solid ${BLUE.main}`,
-                background: `linear-gradient(90deg, ${BLUE.soft} 0%, #ffffff 100%)`,
+                borderLeft: `4px solid var(--mantine-color-${ESTADO_COLOR[estado]}-5)`,
               }}>
-                <Group justify="space-between" wrap="nowrap">
+                {/* Cabecera: archivo + acciones */}
+                <Group justify="space-between" wrap="nowrap" mb={readOnly ? "xs" : 0}>
                   <Group gap="sm" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-                    <Box style={{ background: "#dbeafe", borderRadius: 10, padding: 10, flexShrink: 0 }}>
+                    <Box style={{ background: "#f3f4f6", borderRadius: 10, padding: 10, flexShrink: 0 }}>
                       <IconFileTypePdf size={22} color={BLUE.main} />
                     </Box>
                     <Box style={{ minWidth: 0 }}>
-                      <Text size="sm" fw={600} truncate="end" title={ev.nombre_original}
-                        style={{ color: BLUE.dark }}>
+                      <Text size="sm" fw={600} truncate="end" title={ev.nombre_original}>
                         {ev.nombre_original}
                       </Text>
-                      {ev.descripcion && (
-                        <Text size="xs" c="dimmed" truncate="end">{ev.descripcion}</Text>
-                      )}
+                      {ev.descripcion && <Text size="xs" c="dimmed" truncate="end">{ev.descripcion}</Text>}
                       <Group gap="xs" mt={4} wrap="wrap">
-                        {ev.periodo && (
-                          <Badge size="xs" color="blue" variant="light" leftSection={<IconTag size={10} />}>
-                            {ev.periodo}
-                          </Badge>
-                        )}
-                        {ev.subido_por && (
-                          <Badge size="xs" color="indigo" variant="light" leftSection={<IconUser size={10} />}>
-                            {ev.subido_por}
-                          </Badge>
-                        )}
-                        <Badge size="xs" color="gray" variant="light" leftSection={<IconCalendar size={10} />}>
-                          {formatDate(ev.fecha_subida)}
+                        <Badge size="xs" color={ESTADO_COLOR[estado]} variant="light" leftSection={ESTADO_ICON[estado]}>
+                          {estado}
                         </Badge>
+                        {ev.periodo && <Badge size="xs" color="blue" variant="light" leftSection={<IconTag size={10} />}>{ev.periodo}</Badge>}
+                        {ev.subido_por && <Badge size="xs" color="indigo" variant="light" leftSection={<IconUser size={10} />}>{ev.subido_por}</Badge>}
+                        <Badge size="xs" color="gray" variant="light" leftSection={<IconCalendar size={10} />}>{formatDate(ev.fecha_subida)}</Badge>
                       </Group>
                     </Box>
                   </Group>
-
                   <Group gap="xs" wrap="nowrap">
                     <Tooltip label="Ver PDF" withArrow>
-                      <ActionIcon color="blue" variant="light" size="md" onClick={() => setVisorEv(ev)}>
-                        <IconEye size={16} />
-                      </ActionIcon>
+                      <ActionIcon color="blue" variant="light" size="md" onClick={() => setVisorEv(ev)}><IconEye size={16} /></ActionIcon>
                     </Tooltip>
                     <Tooltip label="Descargar" withArrow>
-                      <ActionIcon component="a" href={ev.url} download={ev.nombre_original}
-                        color="indigo" variant="light" size="md">
-                        <IconDownload size={16} />
-                      </ActionIcon>
+                      <ActionIcon component="a" href={ev.url} download={ev.nombre_original} color="indigo" variant="light" size="md"><IconDownload size={16} /></ActionIcon>
                     </Tooltip>
                     {!readOnly && (
                       <Tooltip label="Eliminar" withArrow>
-                        <ActionIcon color="red" variant="light" size="md" onClick={() => handleDelete(ev._id)}>
-                          <IconTrash size={16} />
-                        </ActionIcon>
+                        <ActionIcon color="red" variant="light" size="md" onClick={() => handleDelete(ev._id)}><IconTrash size={16} /></ActionIcon>
                       </Tooltip>
                     )}
                   </Group>
                 </Group>
+
+                {/* Panel de revisión — solo admin (readOnly=true) */}
+                {readOnly && (
+                  <Box mt="xs" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 8 }}>
+                    <Group align="flex-end" gap="sm">
+                      <Select
+                        label="Cambiar estado"
+                        size="xs"
+                        radius="md"
+                        style={{ width: 150 }}
+                        data={["En Revisión", "Aprobado", "Rechazado"]}
+                        value={revision[ev._id]?.estado ?? estado}
+                        onChange={(v) => setRevision(prev => ({ ...prev, [ev._id]: { ...prev[ev._id], estado: v ?? "" } }))}
+                      />
+                      <TextInput
+                        label="Comentario (opcional)"
+                        placeholder="Motivo del rechazo o nota..."
+                        size="xs"
+                        radius="md"
+                        style={{ flex: 1 }}
+                        value={revision[ev._id]?.comentario ?? ""}
+                        onChange={(e) => setRevision(prev => ({ ...prev, [ev._id]: { ...prev[ev._id], comentario: e.currentTarget.value } }))}
+                      />
+                      <Button size="xs" radius="md" color="violet" onClick={() => handleEstado(ev._id)}>
+                        Guardar
+                      </Button>
+                    </Group>
+                    {ev.comentario_revision && (
+                      <Text size="xs" c="dimmed" mt={6}>Nota: <b>{ev.comentario_revision}</b></Text>
+                    )}
+                  </Box>
+                )}
+
+                {/* Aviso de rechazo — solo responsable (readOnly=false) */}
+                {!readOnly && rechazada && (
+                  <Box mt="xs" p="xs" style={{ background: "#fef2f2", borderRadius: 8, border: "1px solid #fecaca" }}>
+                    <Text size="xs" c="red" fw={600}>Evidencia rechazada — debes subir una nueva</Text>
+                    {ev.comentario_revision && (
+                      <Text size="xs" c="dimmed" mt={2}>Motivo: {ev.comentario_revision}</Text>
+                    )}
+                    <Button
+                      size="xs" variant="light" color="red" mt="xs"
+                      leftSection={<IconUpload size={12} />}
+                      onClick={() => { setPeriodo(ev.periodo ?? ""); fileInputRef.current?.click(); }}
+                    >
+                      Subir nueva evidencia para {ev.periodo || "este periodo"}
+                    </Button>
+                  </Box>
+                )}
               </Paper>
-            ))}
+              );
+            })}
           </Stack>
         )}
       </Stack>
