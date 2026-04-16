@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, ThemeIcon, ActionIcon, Divider, TextInput,
-  Switch, Modal, NumberInput,
+  Switch, Modal,
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import {
@@ -38,7 +38,6 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
   const [nombre, setNombre]           = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [activo, setActivo]           = useState(true);
-  const [orden, setOrden]             = useState<number>(0);
   const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
   const [fechaFin, setFechaFin]       = useState<Date | null>(null);
   const [loading, setLoading]         = useState(false);
@@ -49,11 +48,10 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
       setNombre(selected.nombre);
       setDescripcion(selected.descripcion);
       setActivo(selected.activo);
-      setOrden(selected.orden);
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
     } else {
-      setNombre(""); setDescripcion(""); setActivo(true); setOrden(0);
+      setNombre(""); setDescripcion(""); setActivo(true);
       setFechaInicio(null); setFechaFin(null);
     }
   }, [opened, selected]);
@@ -69,7 +67,6 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
         nombre: nombre.trim(),
         descripcion: descripcion.trim(),
         activo,
-        orden,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin:    fechaFin    ? fechaFin.toISOString()    : null,
       };
@@ -105,13 +102,6 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
           placeholder="Ej: Primer semestre 2026"
           value={descripcion}
           onChange={e => setDescripcion(e.currentTarget.value)}
-        />
-        <NumberInput
-          label="Orden"
-          description="Posición en el selector (menor = primero)"
-          value={orden}
-          onChange={v => setOrden(Number(v))}
-          min={0}
         />
         <DatePickerInput
           label="Fecha de apertura"
@@ -270,9 +260,7 @@ export default function CortesPage() {
                           >
                             {c.activo ? "Activo" : "Inactivo"}
                           </Badge>
-                          {c.orden > 0 && (
-                            <Badge size="xs" color="blue" variant="outline">Orden: {c.orden}</Badge>
-                          )}
+
                         </Group>
                         {c.descripcion && (
                           <Text size="xs" c="dimmed" mt={2}>{c.descripcion}</Text>
@@ -323,7 +311,7 @@ export default function CortesPage() {
         onSaved={doc => {
           setCortes(prev => selected
             ? prev.map(c => c._id === doc._id ? doc : c)
-            : [...prev, doc].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre))
+            : [...prev, doc]
           );
         }}
       />

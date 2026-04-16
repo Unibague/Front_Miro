@@ -1,11 +1,14 @@
 "use client";
 
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
-import { IconChartBar, IconChartBarPopular, IconHistory, IconCalendarStats } from "@tabler/icons-react";
+import {
+  IconChartBar, IconChartBarPopular, IconHistory, IconCalendarStats,
+  IconLayoutDashboard, IconGitPullRequest,
+} from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
 export default function PdiSidebar() {
-  const router  = useRouter();
+  const router   = useRouter();
   const pathname = usePathname();
 
   return (
@@ -13,8 +16,8 @@ export default function PdiSidebar() {
       gap={4}
       p="sm"
       style={{
-        width: 200,
-        minWidth: 200,
+        width: 210,
+        minWidth: 210,
         borderRight: "1px solid var(--mantine-color-default-border)",
         minHeight: "100vh",
         paddingTop: 16,
@@ -26,6 +29,28 @@ export default function PdiSidebar() {
         </ThemeIcon>
         <Text size="xs" fw={700} c="violet" mt={4}>Panel PDI</Text>
       </Stack>
+
+      <Divider />
+
+      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
+
+      <NavLink
+        label="Tablero de control"
+        leftSection={<IconLayoutDashboard size={16} />}
+        active={pathname === "/pdi/dashboard"}
+        color="violet"
+        onClick={() => router.push("/pdi/dashboard")}
+        style={{ borderRadius: 8 }}
+      />
+
+      <NavLink
+        label="Gestión de cambios"
+        leftSection={<IconGitPullRequest size={16} />}
+        active={pathname === "/pdi/cambios"}
+        color="violet"
+        onClick={() => router.push("/pdi/cambios")}
+        style={{ borderRadius: 8 }}
+      />
 
       <Divider />
 
@@ -53,7 +78,7 @@ export default function PdiSidebar() {
         label="Cortes PDI"
         leftSection={<IconCalendarStats size={16} />}
         active={pathname === "/pdi/cortes"}
-        color="violet"
+        color="blue"
         onClick={() => router.push("/pdi/cortes")}
         style={{ borderRadius: 8 }}
       />
