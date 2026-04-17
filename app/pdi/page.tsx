@@ -27,13 +27,46 @@ import PdiSidebar from "./components/PdiSidebar";
 import PdiResumenSidebar from "./components/PdiResumenSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 
+const formatCOP = (value: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
+
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
   verde: "Cumplimiento adecuado", amarillo: "Requiere atención", rojo: "Crítico",
 };
 const isAdmin = (role: string) => role === "Administrador";
+const PDI_FIXED_NAME = "Plan de Desarrollo Institucional (PDI)";
 const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
   anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
+
+function getSemaforoByAvance(avance: number) {
+  if (avance >= 90) return "verde";
+  if (avance >= 60) return "amarillo";
+  return "rojo";
+}
+
+function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
+  const totalPeso = items.reduce((acc, item) => acc + (Number(item.peso) || 0), 0);
+  if (totalPeso <= 0) return 0;
+  return Math.round(
+    items.reduce((acc, item) => acc + getValue(item) * (Number(item.peso) || 0), 0) / 100
+  );
+}
+
+function getIndicadorAvanceMostrado(ind: Indicador) {
+  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
+  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
+
+  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
+    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
+  }
+
+  return ind.avance_total_real ?? ind.avance;
+}
+
+function getIndicadorAvancePonderado(ind: Indicador) {
+  return Math.min(Math.max(getIndicadorAvanceMostrado(ind), 0), 100);
+}
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
   return <Badge color={SEMAFORO_COLOR[semaforo]} variant="light" size="sm">{SEMAFORO_LABEL[semaforo]}</Badge>;
@@ -64,7 +97,6 @@ function PdiConfigModal({
   onSaved: () => Promise<void>;
 }) {
   const [nombre, setNombre] = useState(initialConfig.nombre);
-  const [descripcion, setDescripcion] = useState(initialConfig.descripcion);
   const [anioInicio, setAnioInicio] = useState<number | string>(initialConfig.anio_inicio);
   const [anioFin, setAnioFin] = useState<number | string>(initialConfig.anio_fin);
   const [loading, setLoading] = useState(false);
@@ -72,7 +104,6 @@ function PdiConfigModal({
   useEffect(() => {
     if (!opened) return;
     setNombre(initialConfig.nombre);
-    setDescripcion(initialConfig.descripcion);
     setAnioInicio(initialConfig.anio_inicio);
     setAnioFin(initialConfig.anio_fin);
   }, [opened, initialConfig]);
@@ -95,7 +126,7 @@ function PdiConfigModal({
     try {
       await axios.put(PDI_ROUTES.config(), {
         nombre: String(nombre).trim(),
-        descripcion: String(descripcion).trim(),
+        descripcion: String(nombre).trim(),
         anio_inicio: Number(anioInicio),
         anio_fin: Number(anioFin),
       });
@@ -113,7 +144,6 @@ function PdiConfigModal({
     <Modal opened={opened} onClose={onClose} title="Editar PDI" centered size="md">
       <Stack gap="sm">
         <TextInput label="Nombre del PDI" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
-        <TextInput label="Título descriptivo" value={descripcion} onChange={(e) => setDescripcion(e.currentTarget.value)} />
         <Group grow>
           <NumberInput label="Año inicial" value={anioInicio} onChange={setAnioInicio} allowDecimal={false} />
           <NumberInput label="Año final" value={anioFin} onChange={setAnioFin} allowDecimal={false} />
@@ -143,6 +173,7 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
         .filter((anio) => !Number.isNaN(anio))
         .sort((a, b) => a - b);
   const anioMeta = aniosMostrados[aniosMostrados.length - 1];
+  const avanceMostrado = getIndicadorAvanceMostrado(ind);
   return (
     <Paper
       withBorder
@@ -166,13 +197,16 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
       </Group>
       <Text size="sm" fw={600} mb={4}>{ind.nombre}</Text>
       {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={6}>{ind.indicador_resultado}</Text>}
-      <AvanceBar avance={ind.avance} semaforo={ind.semaforo} />
+      <AvanceBar avance={avanceMostrado} semaforo={ind.semaforo} />
+      <Group gap={12} mt={4} wrap="wrap">
+        <Text size="xs" c="dimmed">Avance total: <b>{avanceMostrado}%</b></Text>
+        {ind.avance_total_real != null && <Text size="xs" c="dimmed">Avance total real: <b>{ind.avance_total_real}%</b></Text>}
+      </Group>
       <Group gap={8} mt={6} wrap="wrap">
         <Text size="xs" c="dimmed">Peso: <b>{ind.peso}%</b></Text>
         {ind.responsable && <Text size="xs" c="dimmed">Resp: <b>{ind.responsable}</b></Text>}
         {ind.tipo_seguimiento && <Text size="xs" c="dimmed">Seguimiento: <b>{ind.tipo_seguimiento}</b></Text>}
-        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta {anioMeta ?? "final"}: <b>{ind.meta_final_2029}</b></Text>}
-        {ind.avance_total_real != null && <Text size="xs" c="dimmed">Avance real: <b>{ind.avance_total_real}%</b></Text>}
+        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {anioMeta ?? "final"}: <b>{ind.meta_final_2029}</b></Text>}
       </Group>
       {ind.periodos.length > 0 && <>
         <Button variant="subtle" size="xs" mt={6} p={0} onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}>
@@ -301,6 +335,9 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
       <Group gap={8} mt={4}>
         <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
+        {accion.presupuesto > 0 && (
+          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(accion.presupuesto)}</b></Text>
+        )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar indicadores" : "Ver indicadores"}
         </Button>
@@ -358,6 +395,9 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
+  const presupuestoProyecto = acciones.length
+    ? acciones.reduce((total, accion) => total + (Number(accion.presupuesto) || 0), 0)
+    : Number(proyecto.presupuesto) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }
@@ -428,6 +468,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
       <Group gap={12} mt={6}>
         <Text size="xs" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
         <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
+        <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar acciones" : "Ver acciones estratégicas"}
         </Button>
@@ -438,6 +479,11 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
           </Button>
         )}
       </Group>
+      {proyecto.descripcion && (
+        <Text size="xs" c="dimmed" mt={8}>
+          Propósito: <b>{proyecto.descripcion}</b>
+        </Text>
+      )}
       {open && (
         <Stack gap={4} mt={10}>
           {acciones.length === 0
@@ -479,110 +525,153 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
-
-  // Avance ponderado real: suma(avance * peso) / suma(peso)
   const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
   const avancePonderado = pesosTotal > 0
     ? Math.round(macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal)
     : 0;
-
-  const criticos = macros.filter(m => m.semaforo === "rojo").length;
-  const amarillos = macros.filter(m => m.semaforo === "amarillo").length;
-  const verdes = macros.filter(m => m.semaforo === "verde").length;
-  const sinAvance = macros.filter(m => m.avance === 0).length;
+  const criticos = macros.filter((m) => m.semaforo === "rojo").length;
+  const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
+  const verdes = macros.filter((m) => m.semaforo === "verde").length;
+  const sinAvance = macros.filter((m) => m.avance === 0).length;
   const alertas = criticos + amarillos;
-
-  // Color dinámico del avance ponderado
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
-  const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atención" : "Crítico";
-
+  const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Critico";
+  const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
+  const estructuraResumen = [
+    { label: "Macros", value: macros.length, color: "violet" },
+    { label: "Proyectos", value: totalProyectos, color: "blue" },
+    { label: "Acciones", value: totalAcciones, color: "orange" },
+    { label: "Indicadores", value: totalIndicadores, color: "teal" },
+  ];
   return (
-    <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
+    <Stack gap="lg" mb="xl">
+      <Paper
+        withBorder
+        radius="xl"
+        p="xl"
+        shadow="xs"
+        style={{
+          background: "linear-gradient(135deg, rgba(124,58,237,0.08) 0%, rgba(59,130,246,0.05) 55%, rgba(255,255,255,0.95) 100%)",
+        }}
+      >
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-start">
+              <Group gap="md" align="center">
+                <div>
+                  <Title order={2} lh={1.1}>Panorama general</Title>
+                </div>
+              </Group>
+              
+            </Group>
 
-      {/* Tarjeta 1 — Avance ponderado del PDI (métrica clave) */}
-      <Paper withBorder radius="lg" p="lg" shadow="xs">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <ThemeIcon size={52} radius="xl" color={avanceColor} variant="light">
-            <IconTrendingUp size={24} />
-          </ThemeIcon>
-          <Badge color={avanceColor} variant="light" size="sm" radius="xl">{avanceBadge}</Badge>
-        </Group>
-        <Text size="xs" c="dimmed" mb={2}>Avance ponderado del PDI</Text>
-        <Text size="2rem" fw={800} lh={1} mb={6}>{avancePonderado}%</Text>
-        <Progress value={avancePonderado} color={avanceColor} size="sm" radius="xl" mb={6} />
-        <Text size="xs" c="dimmed">
-          {macros.filter(m => m.avance >= 50).length} de {macros.length} macros al 50%+
-        </Text>
+            <Text size="sm" c="dimmed" maw={560}>
+              Vista general del portafolio del PDI. 
+            </Text>
+
+            <Group justify="space-between" align="flex-end" wrap="wrap" mt={6}>
+              <div>
+                <Text size="xs" c="dimmed">Avance ponderado</Text>
+                <Group gap="sm" align="flex-end">
+                  <Text size="2.8rem" fw={900} lh={1}>{avancePonderado}%</Text>
+                  <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
+                </Group>
+              </div>
+            </Group>
+
+            <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
+
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+              {estructuraResumen.map((item) => (
+                <Paper
+                  key={item.label}
+                  withBorder
+                  radius="lg"
+                  p="sm"
+                  style={{
+                    background: "rgba(255,255,255,0.7)",
+                    borderColor: `var(--mantine-color-${item.color}-3)`,
+                  }}
+                >
+                  <Text size="1.2rem" fw={800} lh={1}>{item.value}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+                </Paper>
+              ))}
+            </SimpleGrid>
+
+          </Stack>
+
+          <SimpleGrid cols={2} spacing="md">
+            <Paper withBorder radius="lg" p="lg">
+              <Group justify="space-between" align="flex-start" mb="xs">
+                <ThemeIcon size={42} radius="xl" color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light">
+                  <IconFlag size={20} />
+                </ThemeIcon>
+                <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" radius="xl">
+                  {criticos > 0 ? "Critico" : amarillos > 0 ? "En riesgo" : "Estable"}
+                </Badge>
+              </Group>
+              <Text size="xs" c="dimmed">Estado del portafolio</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
+              <Text size="xs" c="dimmed" mt={6}>Macros en cumplimiento adecuado</Text>
+            </Paper>
+
+            <Paper withBorder radius="lg" p="lg">
+              <Group justify="space-between" align="flex-start" mb="xs">
+                <ThemeIcon size={42} radius="xl" color={alertas > 0 ? "red" : "teal"} variant="light">
+                  <IconAlertTriangle size={20} />
+                </ThemeIcon>
+                <Badge color={alertas > 0 ? "red" : "teal"} variant="light" radius="xl">
+                  {alertas > 0 ? "Revisar" : "Controlado"}
+                </Badge>
+              </Group>
+              <Text size="xs" c="dimmed">Alertas activas</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>{alertas}</Text>
+              <Text size="xs" c="dimmed" mt={6}>
+                {alertas === 0 ? "Sin macros en riesgo" : `${criticos} critico${criticos !== 1 ? "s" : ""} y ${amarillos} en riesgo`}
+              </Text>
+              {sinAvance > 0 && (
+                <Text size="xs" c="red" mt={6} fw={600}>
+                  {sinAvance} macro{sinAvance !== 1 ? "s" : ""} sin avance registrado
+                </Text>
+              )}
+            </Paper>
+
+            <Paper withBorder radius="lg" p="lg">
+              <Group justify="space-between" align="flex-start" mb="xs">
+                <ThemeIcon size={42} radius="xl" color="blue" variant="light">
+                  <IconListCheck size={20} />
+                </ThemeIcon>
+                <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
+              </Group>
+              <Text size="xs" c="dimmed">Macros al 50% o mas</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
+              <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} macroproyectos</Text>
+            </Paper>
+
+            <Paper withBorder radius="lg" p="lg">
+              <Group justify="space-between" align="flex-start" mb="xs">
+                <ThemeIcon size={42} radius="xl" color="grape" variant="light">
+                  <IconTrendingUp size={20} />
+                </ThemeIcon>
+                <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
+              </Group>
+              <Text size="xs" c="dimmed">Macro con mayor avance</Text>
+              <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
+                {macroLider?.codigo ?? "Sin datos"}
+              </Text>
+              <Text size="xs" c="dimmed" mt={6}>
+                {macroLider ? `${macroLider.avance}% consolidado` : "Aun no hay avance registrado"}
+              </Text>
+            </Paper>
+          </SimpleGrid>
+        </SimpleGrid>
       </Paper>
-
-      {/* Tarjeta 2 — Estado semáforo del PDI */}
-      <Paper withBorder radius="lg" p="lg" shadow="xs">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <ThemeIcon size={52} radius="xl" color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light">
-            <IconFlag size={24} />
-          </ThemeIcon>
-          <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" size="sm" radius="xl">
-            {criticos > 0 ? "Crítico" : amarillos > 0 ? "En riesgo" : "Cumplimiento"}
-          </Badge>
-        </Group>
-        <Text size="xs" c="dimmed" mb={2}>Estado del PDI</Text>
-        <Text size="2rem" fw={800} lh={1} mb={4}>{verdes}/{macros.length}</Text>
-        <Text size="xs" c="dimmed">macros en cumplimiento</Text>
-        <Group gap={6} mt={8} wrap="wrap">
-          {verdes > 0 && <Badge size="xs" color="green" variant="dot">{verdes} verde</Badge>}
-          {amarillos > 0 && <Badge size="xs" color="orange" variant="dot">{amarillos} riesgo</Badge>}
-          {criticos > 0 && <Badge size="xs" color="red" variant="dot">{criticos} crítico</Badge>}
-        </Group>
-      </Paper>
-
-      {/* Tarjeta 3 — Estructura del PDI */}
-      <Paper withBorder radius="lg" p="lg" shadow="xs">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <ThemeIcon size={52} radius="xl" color="violet" variant="light">
-            <IconChartBarPopular size={24} />
-          </ThemeIcon>
-          <Badge color="violet" variant="light" size="sm" radius="xl">Estructura</Badge>
-        </Group>
-        <Text size="xs" c="dimmed" mb={2}>Jerarquía del PDI</Text>
-        <Text size="2rem" fw={800} lh={1} mb={4}>{totalIndicadores}</Text>
-        <Text size="xs" c="dimmed">indicadores de seguimiento</Text>
-        <Group gap={6} mt={8} wrap="wrap">
-          <Badge size="xs" color="violet" variant="outline">{macros.length} macros</Badge>
-          <Badge size="xs" color="blue" variant="outline">{totalProyectos} proyectos</Badge>
-          <Badge size="xs" color="orange" variant="outline">{totalAcciones} acciones</Badge>
-          <Badge size="xs" color="teal" variant="outline">{totalIndicadores} indicadores</Badge>
-        </Group>
-      </Paper>
-
-      {/* Tarjeta 4 — Alertas que requieren gestión */}
-      <Paper withBorder radius="lg" p="lg" shadow="xs">
-        <Group justify="space-between" align="flex-start" mb="sm">
-          <ThemeIcon size={52} radius="xl" color={alertas > 0 ? "red" : "teal"} variant="light">
-            <IconAlertTriangle size={24} />
-          </ThemeIcon>
-          <Badge color={alertas > 0 ? "red" : "teal"} variant="light" size="sm" radius="xl">
-            {alertas > 0 ? "Requiere acción" : "Sin alertas"}
-          </Badge>
-        </Group>
-        <Text size="xs" c="dimmed" mb={2}>Alertas activas</Text>
-        <Text size="2rem" fw={800} lh={1} mb={4}>{alertas}</Text>
-        <Text size="xs" c="dimmed">
-          {alertas === 0
-            ? "Todos los macros en seguimiento"
-            : `${criticos} crítico${criticos !== 1 ? "s" : ""} · ${amarillos} en riesgo`}
-        </Text>
-        {sinAvance > 0 && (
-          <Text size="xs" c="red" mt={6} fw={600}>
-            {sinAvance} macro{sinAvance !== 1 ? "s" : ""} sin avance registrado
-          </Text>
-        )}
-      </Paper>
-
-    </SimpleGrid>
+    </Stack>
   );
 }
 
-// ── MacroproyectoPortfolioCard ─────────────────────────────────────────────
+// MacroproyectoPortfolioCard ─────────────────────────────────────────────
 function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicadoresCount, admin, onEdit, onDelete }: {
   macro: Macroproyecto;
   proyectos: Proyecto[];
@@ -697,19 +786,55 @@ export default function PdiPage() {
       const accionesData: Accion[] = accionesRes.data;
       const indicadoresData: Indicador[] = indicadoresRes.data;
 
-      const proyectosMap = macrosData.reduce<Record<string, Proyecto[]>>((acc, macro) => {
-        acc[macro._id] = proyectosData.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
+      const accionesComputadas = accionesData.map((accion) => {
+        const indicadoresAccion = indicadoresData.filter((indicador) => indicador.accion_id?._id === accion._id);
+        const avance = indicadoresAccion.length
+          ? getWeightedProgress(indicadoresAccion, (indicador) => getIndicadorAvancePonderado(indicador))
+          : Number(accion.avance) || 0;
+        return {
+          ...accion,
+          avance,
+          semaforo: getSemaforoByAvance(avance) as any,
+        };
+      });
+
+      const proyectosComputados = proyectosData.map((proyecto) => {
+        const accionesProyecto = accionesComputadas.filter((accion) => accion.proyecto_id?._id === proyecto._id);
+        const avance = accionesProyecto.length
+          ? getWeightedProgress(accionesProyecto, (accion) => Number(accion.avance) || 0)
+          : Number(proyecto.avance) || 0;
+        return {
+          ...proyecto,
+          avance,
+          semaforo: getSemaforoByAvance(avance) as any,
+        };
+      });
+
+      const macrosComputados = macrosData.map((macro) => {
+        const proyectosMacro = proyectosComputados.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
+        const avance = proyectosMacro.length
+          ? getWeightedProgress(proyectosMacro, (proyecto) => Number(proyecto.avance) || 0)
+          : Number(macro.avance) || 0;
+        return {
+          ...macro,
+          avance,
+          semaforo: getSemaforoByAvance(avance) as any,
+        };
+      });
+
+      const proyectosMap = macrosComputados.reduce<Record<string, Proyecto[]>>((acc, macro) => {
+        acc[macro._id] = proyectosComputados.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
         return acc;
       }, {});
 
-      const proyectoToMacroMap = proyectosData.reduce<Record<string, string>>((acc, proyecto) => {
+      const proyectoToMacroMap = proyectosComputados.reduce<Record<string, string>>((acc, proyecto) => {
         if (proyecto.macroproyecto_id?._id) {
           acc[proyecto._id] = proyecto.macroproyecto_id._id;
         }
         return acc;
       }, {});
 
-      const accionToMacroMap = accionesData.reduce<Record<string, string>>((acc, accion) => {
+      const accionToMacroMap = accionesComputadas.reduce<Record<string, string>>((acc, accion) => {
         const proyectoId = accion.proyecto_id?._id;
         const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
         if (macroId) {
@@ -718,7 +843,7 @@ export default function PdiPage() {
         return acc;
       }, {});
 
-      const accionesCountMap = accionesData.reduce<Record<string, number>>((acc, accion) => {
+      const accionesCountMap = accionesComputadas.reduce<Record<string, number>>((acc, accion) => {
         const proyectoId = accion.proyecto_id?._id;
         const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
         if (macroId) {
@@ -736,7 +861,7 @@ export default function PdiPage() {
         return acc;
       }, {});
 
-      setMacros(macrosData);
+      setMacros(macrosComputados);
       setProyectosPorMacro(proyectosMap);
       setAccionesPorMacro(accionesCountMap);
       setIndicadoresPorMacro(indicadoresCountMap);
@@ -753,8 +878,7 @@ export default function PdiPage() {
 
   const refrescarMacro = async (macroId: string) => {
     try {
-      const resMacro = await axios.get(PDI_ROUTES.macroproyecto(macroId));
-      setMacros(prev => prev.map(m => m._id === macroId ? resMacro.data : m));
+      await cargarPortfolio();
     } catch (e) { console.error(e); }
   };
 
@@ -805,8 +929,8 @@ export default function PdiPage() {
             <IconChartBarPopular size={22} />
           </ThemeIcon>
           <div>
-            <Title order={3}>{config.nombre}</Title>
-            <Text size="xs" c="dimmed">{formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
+            <Title order={3}>{PDI_FIXED_NAME}</Title>
+            <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
         {admin && (
@@ -831,6 +955,7 @@ export default function PdiPage() {
           <Text fw={700} size="xl">Macroproyectos</Text>
           <Text size="xs" c="dimmed">Vista tipo portfolio — navega la jerarquía del PDI</Text>
         </div>
+        
       </Group>
 
       {loadingMacros ? (
@@ -838,7 +963,7 @@ export default function PdiPage() {
       ) : macros.length === 0 ? (
         <Center py="xl"><Text c="dimmed">No hay macroproyectos registrados</Text></Center>
       ) : (
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg" verticalSpacing="lg">
           {macros.map(macro => (
             <MacroproyectoPortfolioCard
               key={macro._id}

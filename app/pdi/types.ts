@@ -13,6 +13,7 @@ export interface Macroproyecto {
   _id: string;
   codigo: string;
   nombre: string;
+  lider?: string;
   peso: number;
   avance: number;
   semaforo: Semaforo;
@@ -23,6 +24,7 @@ export interface Proyecto {
   codigo: string;
   nombre: string;
   descripcion: string;
+  proposito?: string;
   peso: number;
   avance: number;
   semaforo: Semaforo;
@@ -59,6 +61,7 @@ export interface Periodo {
   periodo: string;
   meta: number | string | null;
   avance: number | string | null;
+  presupuesto_ejecutado: number;
   // Campos cualitativos del reporte de avance por corte
   resultados_alcanzados: string;
   logros: string;
@@ -93,8 +96,10 @@ export interface Indicador {
   tipo_seguimiento: string;
   fecha_seguimiento: string;
   tipo_calculo: string;
-  meta_final_2029: number | null;
+  meta_final_2029: number | string | null;
   entregable: string;
+  presupuesto: number;
+  presupuesto_ejecutado: number;
   responsable: string;
   responsable_email: string;
   fecha_inicio: string | null;

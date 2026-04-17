@@ -15,6 +15,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import { usePdiConfig } from "../hooks/usePdiConfig";
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
@@ -43,6 +44,7 @@ function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
 
 // ── Indicador ──────────────────────────────────────────────────────────────
 function IndicadorCard({ ind }: { ind: IndicadorResumen }) {
+  const { config } = usePdiConfig();
   const barColor = ind.avance >= 50 ? "#22c55e" : ind.avance >= 25 ? "#f59e0b" : "#ef4444";
   return (
     <Paper withBorder radius="lg" p="sm" shadow="xs" style={{ minWidth: 200, flex: "1 1 200px" }}>
@@ -73,7 +75,7 @@ function IndicadorCard({ ind }: { ind: IndicadorResumen }) {
       <AvanceBar avance={ind.avance} semaforo={ind.semaforo} />
       <Group gap={8} mt={6} wrap="wrap">
         <Text size="xs" c="dimmed">Peso: <b>{ind.peso}%</b></Text>
-        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta 2029: <b>{ind.meta_final_2029}</b></Text>}
+        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {config.anio_fin}: <b>{ind.meta_final_2029}</b></Text>}
       </Group>
       {ind.responsable && <Text size="xs" c="dimmed" mt={2}>Resp: <b>{ind.responsable}</b></Text>}
       {ind.observaciones && <Text size="xs" c="dimmed" mt={2} lineClamp={2}>Obs: {ind.observaciones}</Text>}

@@ -31,6 +31,8 @@
     "fecha": "^4.2.3",
     "file-saver": "^2.0.5",
     "front": "file:",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "linkify-react": "^4.2.0",
     "linkifyjs": "^4.2.0",
     "lottie-react": "^2.4.0",
@@ -44,8 +46,6 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
-    "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.23",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^10.1.5",
@@ -54,6 +54,8 @@
     "@types/node": "^20.14.15",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.23",
     "postcss": "^8.4.38",
     "postcss-preset-mantine": "^1.15.0",
     "postcss-simple-vars": "^7.0.1",

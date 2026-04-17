@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
   ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, Divider,
@@ -22,6 +22,10 @@ import MacroproyectoModal from "../components/MacroproyectoModal";
 import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
+import { usePdiConfig } from "../hooks/usePdiConfig";
+
+const formatCOP = (value: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
@@ -30,6 +34,50 @@ const SEMAFORO_LABEL: Record<string, string> = {
   rojo: "Crítico",
 };
 const isAdmin = (role: string) => role === "Administrador";
+
+function getSemaforoByAvance(avance: number) {
+  if (avance >= 90) return "verde";
+  if (avance >= 60) return "amarillo";
+  return "rojo";
+}
+
+function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
+  const totalPeso = items.reduce((acc, item) => acc + (Number(item.peso) || 0), 0);
+  if (totalPeso <= 0) return 0;
+  return Math.round(
+    items.reduce((acc, item) => acc + getValue(item) * (Number(item.peso) || 0), 0) / 100
+  );
+}
+
+function getIndicadorAvanceMostrado(ind: Indicador) {
+  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
+  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
+
+  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
+    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
+  }
+
+  return ind.avance_total_real ?? ind.avance;
+}
+
+function getIndicadorAvanceTotalReal(ind: Indicador) {
+  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
+  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
+
+  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
+    return (avanceActual / metaFinal) * 100;
+  }
+
+  return ind.avance_total_real != null ? Number(ind.avance_total_real) : getIndicadorAvanceMostrado(ind);
+}
+
+function getIndicadorAvancePonderado(ind: Indicador) {
+  return Math.min(Math.max(getIndicadorAvanceMostrado(ind), 0), 100);
+}
+
+function clampProgress(avance: number) {
+  return Math.min(Math.max(Number(avance) || 0, 0), 100);
+}
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
   return (
@@ -42,7 +90,7 @@ function SemaforoBadge({ semaforo }: { semaforo: string }) {
 function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
   return (
     <Group gap={8} align="center">
-      <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
+      <Progress value={clampProgress(avance)} color={SEMAFORO_COLOR[semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
       <Text size="xs" fw={700} w={36} ta="right">{avance}%</Text>
     </Group>
   );
@@ -56,8 +104,10 @@ function MetaBadge({ label, color = "gray" }: { label: string; color?: string })
   );
 }
 
-function IndicadorCard({ ind, admin, onEdit, onDelete }: {
+function IndicadorCard({ ind, admin, aniosPdi, anioMeta, onEdit, onDelete }: {
   ind: Indicador; admin: boolean;
+  aniosPdi: number[];
+  anioMeta: number;
   onEdit: (i: Indicador) => void;
   onDelete: (id: string) => void;
 }) {
@@ -65,7 +115,9 @@ function IndicadorCard({ ind, admin, onEdit, onDelete }: {
   const [hovered, setHovered] = useState(false);
   const [showAnios, setShowAnios] = useState(false);
   const tieneAnios = !!ind.avances_por_anio;
-  const avance = ind.avance_total_real ?? ind.avance;
+  const avance = getIndicadorAvanceMostrado(ind);
+  const avanceVisible = clampProgress(avance);
+  const avanceTotalReal = getIndicadorAvanceTotalReal(ind);
 
   return (
     <Paper
@@ -109,8 +161,8 @@ function IndicadorCard({ ind, admin, onEdit, onDelete }: {
 
       {/* Barra de avance con botón para desplegar años */}
       <Group gap={6} align="center">
-        <Progress value={avance} color={SEMAFORO_COLOR[ind.semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
-        <Text size="xs" fw={700} w={36} ta="right">{avance}%</Text>
+        <Progress value={avanceVisible} color={SEMAFORO_COLOR[ind.semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
+        <Text size="xs" fw={700} w={36} ta="right">{avanceVisible}%</Text>
         <ActionIcon
           size="xs"
           variant="subtle"
@@ -124,32 +176,56 @@ function IndicadorCard({ ind, admin, onEdit, onDelete }: {
 
       {/* Desglose por año (colapsable) */}
       {showAnios && (
-        <Group gap={6} mt={8} wrap="wrap" onClick={(e) => e.stopPropagation()}>
-          {["2026", "2027", "2028", "2029"].map((anio) => {
-            const val = ind.avances_por_anio?.[anio] ?? 0;
-            return (
-              <Box
-                key={anio}
-                style={{
-                  background: "rgba(124,58,237,0.07)",
-                  border: "1px solid rgba(124,58,237,0.18)",
-                  borderRadius: 8,
-                  padding: "3px 10px",
-                  textAlign: "center",
-                  minWidth: 60,
-                }}
-              >
-                <Text size="10px" c="dimmed" fw={700}>{anio}</Text>
-                <Text size="xs" fw={800} c="violet">{val.toFixed(1)}%</Text>
-              </Box>
-            );
-          })}
-        </Group>
+        <>
+          <Group gap={6} mt={8} wrap="wrap" onClick={(e) => e.stopPropagation()}>
+            {(aniosPdi.length ? aniosPdi.map(String) : Object.keys(ind.avances_por_anio ?? {}).sort()).map((anio) => {
+              const val = ind.avances_por_anio?.[anio];
+              const tieneData = val != null;
+              return (
+                <Box
+                  key={anio}
+                  style={{
+                    background: "rgba(124,58,237,0.07)",
+                    border: "1px solid rgba(124,58,237,0.18)",
+                    borderRadius: 8,
+                    padding: "3px 10px",
+                    textAlign: "center",
+                    minWidth: 60,
+                  }}
+                >
+                  <Text size="10px" c="dimmed" fw={700}>{anio}</Text>
+                  <Text size="xs" fw={800} c={tieneData ? "violet" : "dimmed"}>
+                    {tieneData ? `${Number(val).toFixed(1)}%` : "0.0%"}
+                  </Text>
+                </Box>
+              );
+            })}
+          </Group>
+          <Box
+            mt={6}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: "rgba(59,130,246,0.12)",
+              border: "1px solid rgba(59,130,246,0.22)",
+            }}
+          >
+            <Text size="10px" fw={800} c="blue">
+              AVANCE TOTAL REAL
+            </Text>
+            <Text size="sm" fw={900} c="blue">
+              {avanceTotalReal}%
+            </Text>
+          </Box>
+        </>
       )}
 
       <Group gap={8} mt="sm" wrap="wrap">
         <MetaBadge label={`Peso ${ind.peso}%`} />
-        {ind.meta_final_2029 != null && <MetaBadge label={`Meta ${ind.meta_final_2029}`} color="violet" />}
+        {ind.meta_final_2029 != null && <MetaBadge label={`Meta final ${anioMeta}: ${ind.meta_final_2029}`} color="violet" />}
         {ind.tipo_seguimiento && <MetaBadge label={ind.tipo_seguimiento} color="blue" />}
       </Group>
 
@@ -162,17 +238,20 @@ function IndicadorCard({ ind, admin, onEdit, onDelete }: {
   );
 }
 
-function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUpdate }: {
+function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, onAvanceUpdate, onComputedProgress }: {
   accion: Accion; admin: boolean;
+  aniosPdi: number[];
   onEdit: (a: Accion) => void;
   onDelete: (id: string) => void;
   onAvanceUpdate: () => void;
+  onComputedProgress: (accionId: string, avance: number, semaforo: string) => void;
 }) {
   const [accion, setAccion] = useState(accionInicial);
   const [indicadores, setIndicadores] = useState<Indicador[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [indModal, setIndModal] = useState(false);
   const [selectedInd, setSelectedInd] = useState<Indicador | null>(null);
 
@@ -226,6 +305,18 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
     });
   };
 
+  const toggleIndicadores = () => {
+    void cargar();
+  };
+  const avanceAccion = indicadores.length
+    ? getWeightedProgress(indicadores, (ind) => getIndicadorAvancePonderado(ind))
+    : accion.avance;
+  const semaforoAccion = getSemaforoByAvance(avanceAccion);
+
+  useEffect(() => {
+    onComputedProgress(accion._id, avanceAccion, semaforoAccion);
+  }, [accion._id, avanceAccion, semaforoAccion, onComputedProgress]);
+
   return (
     <Paper
       withBorder
@@ -239,51 +330,62 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
       }}
     >
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
-        <Group gap={12} align="flex-start">
+        <Group
+          gap={12}
+          align="flex-start"
+          style={{
+            cursor: "pointer",
+            flex: 1,
+            padding: "4px 6px",
+            borderRadius: 12,
+            background: hovered || open ? "rgba(251, 146, 60, 0.08)" : "transparent",
+            boxShadow: hovered ? "inset 0 0 0 1px rgba(251, 146, 60, 0.18)" : "none",
+            transition: "background .18s ease, box-shadow .18s ease",
+          }}
+          onClick={toggleIndicadores}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
           <ThemeIcon size={40} radius="xl" color="orange" variant="light">
             <IconBulb size={20} />
           </ThemeIcon>
-          <div style={{ textAlign: "right" }}>
+          <div style={{ textAlign: "left" }}>
             <Group gap={8} mb={4} wrap="wrap">
               <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
-              <SemaforoBadge semaforo={accion.semaforo} />
+               <SemaforoBadge semaforo={semaforoAccion} />
               <MetaBadge label={`Peso ${accion.peso}%`} />
+              {accion.presupuesto > 0 && <MetaBadge label={formatCOP(accion.presupuesto)} color="green" />}
               {accion.responsable && <MetaBadge label={accion.responsable} color="blue" />}
             </Group>
             <Text fw={700} size="md" lh={1.35}>{accion.nombre}</Text>
+           
           </div>
         </Group>
 
         <Group gap={6}>
-          <Button
-            variant={open ? "light" : "subtle"}
-            size="xs"
-            color="dark"
-            loading={loading}
-            rightSection={<IconChevronRight size={12} style={{ transform: open ? "rotate(90deg)" : "", transition: "transform .2s" }} />}
-            onClick={cargar}
-          >
-            {open ? "Ocultar indicadores" : "Ver indicadores"}
-          </Button>
           {admin && (
             <Button
               size="xs"
               variant="light"
               color="violet"
               leftSection={<IconPlus size={12} />}
-              onClick={() => { setSelectedInd(null); setIndModal(true); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedInd(null);
+                setIndModal(true);
+              }}
             >
               Nuevo indicador
             </Button>
           )}
           {admin && <>
-            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(accion)}><IconEdit size={14} /></ActionIcon>
-            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(accion._id)}><IconTrash size={14} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); onEdit(accion); }}><IconEdit size={14} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); onDelete(accion._id); }}><IconTrash size={14} /></ActionIcon>
           </>}
         </Group>
       </Group>
 
-      <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
+      <AvanceBar avance={avanceAccion} semaforo={semaforoAccion} />
 
       {open && (
         <>
@@ -325,6 +427,8 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
                   key={ind._id}
                   ind={ind}
                   admin={admin}
+                  aniosPdi={aniosPdi}
+                  anioMeta={aniosPdi.length ? aniosPdi[aniosPdi.length - 1] : new Date().getFullYear()}
                   onEdit={(i) => { setSelectedInd(i); setIndModal(true); }}
                   onDelete={handleDeleteInd}
                 />
@@ -351,11 +455,13 @@ function AccionCard({ accion: accionInicial, admin, onEdit, onDelete, onAvanceUp
   );
 }
 
-function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, onAvanceUpdate }: {
+function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDelete, onAvanceUpdate, onComputedProgress }: {
   proyecto: Proyecto; admin: boolean;
+  aniosPdi: number[];
   onEdit: (p: Proyecto) => void;
   onDelete: (id: string) => void;
   onAvanceUpdate: () => void;
+  onComputedProgress: (proyectoId: string, avance: number, semaforo: string) => void;
 }) {
   const [proyecto, setProyecto] = useState(proyectoInicial);
   const [acciones, setAcciones] = useState<Accion[]>([]);
@@ -366,12 +472,36 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, o
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
 
+  const hydrateAcciones = async (accionesBase: Accion[]) => {
+    const accionesConIndicadores = await Promise.all(
+      accionesBase.map(async (accionItem) => {
+        try {
+          const res = await axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accionItem._id } });
+          const indicadoresAccion = res.data as Indicador[];
+          if (!indicadoresAccion.length) return accionItem;
+
+          const avance = getWeightedProgress(indicadoresAccion, (ind) => getIndicadorAvancePonderado(ind));
+          return {
+            ...accionItem,
+            avance,
+            semaforo: getSemaforoByAvance(avance) as any,
+          };
+        } catch {
+          return accionItem;
+        }
+      })
+    );
+
+    return accionesConIndicadores;
+  };
+
   useEffect(() => {
     if (loaded) return;
     setLoading(true);
     axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } })
-      .then((res) => {
-        setAcciones(res.data);
+      .then(async (res) => {
+        const accionesHydrated = await hydrateAcciones(res.data);
+        setAcciones(accionesHydrated);
         setLoaded(true);
       })
       .catch((e) => console.error(e))
@@ -385,7 +515,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, o
         axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } }),
       ]);
       setProyecto(resProyecto.data);
-      setAcciones(resAcciones.data);
+      setAcciones(await hydrateAcciones(resAcciones.data));
       onAvanceUpdate();
     } catch (e) {
       console.error(e);
@@ -411,11 +541,41 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, o
     });
   };
 
+  const handleComputedAccionProgress = useCallback((accionId: string, avance: number, semaforo: string) => {
+    setAcciones((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (item._id !== accionId) return item;
+        if (Number(item.avance) === avance && item.semaforo === semaforo) return item;
+        changed = true;
+        return { ...item, avance, semaforo: semaforo as any };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   const estadoProyectoColor = proyecto.semaforo === "verde"
     ? "green"
     : proyecto.semaforo === "amarillo"
       ? "yellow"
       : "red";
+  const avanceProyecto = acciones.length
+    ? getWeightedProgress(acciones, (accion) => Number(accion.avance) || 0)
+    : proyecto.avance;
+  const presupuestoProyecto = acciones.reduce(
+    (total, accion) => total + (Number(accion.presupuesto) || 0),
+    0,
+  );
+  const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
+  const estadoProyectoColorReal = semaforoProyecto === "verde"
+    ? "green"
+    : semaforoProyecto === "amarillo"
+      ? "yellow"
+      : "red";
+
+  useEffect(() => {
+    onComputedProgress(proyecto._id, avanceProyecto, semaforoProyecto);
+  }, [proyecto._id, avanceProyecto, semaforoProyecto, onComputedProgress]);
 
   return (
     <Paper withBorder radius="xl" p="xl" shadow="sm" mb="lg">
@@ -427,22 +587,28 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, o
           <div>
             <Group gap={8} mb={4} wrap="wrap">
               <Text size="xs" fw={700} c="dimmed">{proyecto.codigo}</Text>
-              <Badge color={estadoProyectoColor} variant="light" radius="xl">
-                {proyecto.semaforo === "verde" ? "En cumplimiento" : proyecto.semaforo === "amarillo" ? "En riesgo" : "Crítico"}
+              <Badge color={estadoProyectoColorReal} variant="light" radius="xl">
+                {semaforoProyecto === "verde" ? "En cumplimiento" : semaforoProyecto === "amarillo" ? "En riesgo" : "Crítico"}
               </Badge>
             </Group>
             <Title order={4}>{proyecto.nombre}</Title>
-            {proyecto.formulador && (
+            {proyecto.responsable && (
               <Text size="sm" c="dimmed" mt={4}>
-                Formulador: <b>{proyecto.formulador}</b>
+                Responsable: <b>{proyecto.responsable}</b>
+              </Text>
+            )}
+            {proyecto.descripcion && (
+              <Text size="sm" c="dimmed" mt={4}>
+                Propósito: <b>{proyecto.descripcion}</b>
               </Text>
             )}
             <Group gap={12} mt={6} wrap="wrap">
               <Text size="sm" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
+              <Text size="sm" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
               <Group gap={8} align="center">
                 <Text size="sm" c="dimmed">Avance global</Text>
                 <Box style={{ width: 110 }}>
-                  <AvanceBar avance={proyecto.avance} semaforo={proyecto.semaforo} />
+                  <AvanceBar avance={avanceProyecto} semaforo={semaforoProyecto} />
                 </Box>
               </Group>
             </Group>
@@ -515,9 +681,11 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, onEdit, onDelete, o
               key={accion._id}
               accion={accion}
               admin={admin}
+              aniosPdi={aniosPdi}
               onEdit={(item) => { setSelectedAccion(item); setAccionModal(true); }}
               onDelete={handleDeleteAccion}
               onAvanceUpdate={refrescarProyecto}
+              onComputedProgress={handleComputedAccionProgress}
             />
           ))}
         </Stack>
@@ -545,6 +713,7 @@ export default function MacroproyectoDetallePage() {
   const params = useParams();
   const macroId = params?.macroId as string;
   const { userRole } = useRole();
+  const { config } = usePdiConfig();
   const admin = isAdmin(userRole);
 
   const [macro, setMacro] = useState<Macroproyecto | null>(null);
@@ -603,9 +772,26 @@ export default function MacroproyectoDetallePage() {
     });
   };
 
+  const handleComputedProyectoProgress = useCallback((proyectoId: string, avance: number, semaforo: string) => {
+    setProyectos((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (item._id !== proyectoId) return item;
+        if (Number(item.avance) === avance && item.semaforo === semaforo) return item;
+        changed = true;
+        return { ...item, avance, semaforo: semaforo as any };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   const barColor = macro
     ? macro.avance >= 50 ? "#22c55e" : macro.avance >= 25 ? "#f59e0b" : "#ef4444"
     : "#7c3aed";
+  const avanceMacro = macro
+    ? (proyectos.length ? getWeightedProgress(proyectos, (proyecto) => Number(proyecto.avance) || 0) : macro.avance)
+    : 0;
+  const semaforoMacro = getSemaforoByAvance(avanceMacro);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -634,17 +820,20 @@ export default function MacroproyectoDetallePage() {
                 <div>
                   <Group gap={8} wrap="wrap">
                     <Title order={3}>{macro.nombre}</Title>
-                    <Badge color={SEMAFORO_COLOR[macro.semaforo]} variant="light" radius="xl">
-                      {SEMAFORO_LABEL[macro.semaforo]}
+                    <Badge color={SEMAFORO_COLOR[semaforoMacro]} variant="light" radius="xl">
+                      {SEMAFORO_LABEL[semaforoMacro]}
                     </Badge>
                   </Group>
                   <Group gap={12} mt={4} wrap="wrap">
                     <Text size="sm" c="dimmed">Código: <b>{macro.codigo}</b></Text>
                     <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
+                    {macro.lider && (
+                      <Text size="sm" c="dimmed">Líder: <b>{macro.lider}</b></Text>
+                    )}
                     <Group gap={8}>
                       <Text size="sm" c="dimmed">Avance global</Text>
                       <Box style={{ width: 120 }}>
-                        <AvanceBar avance={macro.avance} semaforo={macro.semaforo} />
+                        <AvanceBar avance={avanceMacro} semaforo={semaforoMacro} />
                       </Box>
                     </Group>
                   </Group>
@@ -715,9 +904,11 @@ export default function MacroproyectoDetallePage() {
                   key={proyecto._id}
                   proyecto={proyecto}
                   admin={admin}
+                  aniosPdi={config.anios}
                   onEdit={(item) => { setSelectedProyecto(item); setProyectoModal(true); }}
                   onDelete={handleDeleteProyecto}
                   onAvanceUpdate={refrescarMacro}
+                  onComputedProgress={handleComputedProyectoProgress}
                 />
               ))}
             </Stack>

@@ -8,13 +8,25 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
-  IconArrowLeft, IconCheck, IconGitPullRequest, IconPlus, IconX,
+  IconArrowLeft, IconCheck, IconGitPullRequest, IconX,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import type { SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio } from "../types";
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+const formatCOP = (value: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
+
+/** Si el valor es un número puro (puede venir guardado sin formato), lo convierte a COP */
+const fmtValor = (val: unknown): string => {
+  const str = String(val ?? "").trim();
+  if (/^\d+$/.test(str)) return formatCOP(Number(str));
+  return str;
+};
 
 // ── Config ────────────────────────────────────────────────────────────────
 
@@ -156,22 +168,16 @@ function RevisionModal({
   onRevisada: (s: SolicitudCambio) => void;
 }) {
   const [comentario, setComentario] = useState("");
-  const [revisadoPor, setRevisadoPor] = useState("");
   const [loading, setLoading]       = useState(false);
 
-  useEffect(() => { if (!opened) { setComentario(""); setRevisadoPor(""); } }, [opened]);
+  useEffect(() => { if (!opened) { setComentario(""); } }, [opened]);
 
   const handleRevision = async (estado: "Aprobado" | "Rechazado") => {
     if (!solicitud) return;
-    if (!revisadoPor.trim()) {
-      showNotification({ title: "Error", message: "Indica quién está revisando", color: "red" });
-      return;
-    }
     setLoading(true);
     try {
       const res = await axios.patch(PDI_ROUTES.cambioRevision(solicitud._id), {
         estado,
-        revisado_por: revisadoPor.trim(),
         comentario_revision: comentario.trim(),
       });
       showNotification({ title: `Solicitud ${estado}`, message: `La solicitud fue ${estado.toLowerCase()}`, color: estado === "Aprobado" ? "teal" : "red" });
@@ -197,26 +203,25 @@ function RevisionModal({
           </Group>
           <Text size="sm" fw={600}>{solicitud.descripcion}</Text>
           {solicitud.justificacion && <Text size="xs" c="dimmed" mt={4}>{solicitud.justificacion}</Text>}
-          {(solicitud.valor_anterior || solicitud.valor_propuesto) && (
+          {(solicitud.valor_anterior != null || solicitud.valor_propuesto != null) && (
             <Group gap={16} mt={8}>
               {solicitud.valor_anterior != null && (
                 <div>
                   <Text size="xs" c="dimmed">Valor anterior</Text>
-                  <Text size="sm">{String(solicitud.valor_anterior)}</Text>
+                  <Text size="sm">{fmtValor(solicitud.valor_anterior)}</Text>
                 </div>
               )}
               {solicitud.valor_propuesto != null && (
                 <div>
                   <Text size="xs" c="dimmed">Valor propuesto</Text>
-                  <Text size="sm" fw={600}>{String(solicitud.valor_propuesto)}</Text>
+                  <Text size="sm" fw={600}>{fmtValor(solicitud.valor_propuesto)}</Text>
                 </div>
               )}
             </Group>
           )}
           <Text size="xs" c="dimmed" mt={6}>Solicitado por: {solicitud.solicitado_por}</Text>
         </Paper>
-        <TextInput label="Revisado por" placeholder="Tu nombre" value={revisadoPor} onChange={(e) => setRevisadoPor(e.currentTarget.value)} required />
-        <Textarea label="Comentario de revisión" placeholder="Justificación de la decisión..." value={comentario} onChange={(e) => setComentario(e.currentTarget.value)} rows={3} />
+        <Textarea label="Comentario de revisión (opcional)" placeholder="Justificación de la decisión..." value={comentario} onChange={(e) => setComentario(e.currentTarget.value)} rows={3} />
         <Group justify="flex-end" mt="sm" gap="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
           <Button color="red" variant="light" leftSection={<IconX size={14} />} loading={loading} onClick={() => handleRevision("Rechazado")}>
@@ -275,14 +280,11 @@ export default function CambiosPage() {
                 <Text size="sm" c="dimmed">Solicitudes de modificación a proyectos, metas, fechas y presupuesto</Text>
               </div>
             </Group>
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setNuevaOpen(true)}>
-              Nueva solicitud
-            </Button>
           </Group>
 
           {/* Filtros */}
           <Group mb="md" gap="sm">
-            {([null, "Pendiente", "En Revisión", "Aprobado", "Rechazado"] as (EstadoCambio | null)[]).map((e) => (
+            {([null, "Pendiente", "Aprobado", "Rechazado"] as (EstadoCambio | null)[]).map((e) => (
               <Badge
                 key={e ?? "todos"}
                 color={e ? ESTADO_COLOR[e] : "violet"}
@@ -331,10 +333,10 @@ export default function CambiosPage() {
                   {(s.valor_anterior != null || s.valor_propuesto != null) && (
                     <Group gap={24} mb={4}>
                       {s.valor_anterior != null && (
-                        <Text size="xs">Antes: <strong>{String(s.valor_anterior)}</strong></Text>
+                        <Text size="xs">Antes: <strong>{fmtValor(s.valor_anterior)}</strong></Text>
                       )}
                       {s.valor_propuesto != null && (
-                        <Text size="xs">Propuesto: <strong>{String(s.valor_propuesto)}</strong></Text>
+                        <Text size="xs">Propuesto: <strong>{fmtValor(s.valor_propuesto)}</strong></Text>
                       )}
                     </Group>
                   )}

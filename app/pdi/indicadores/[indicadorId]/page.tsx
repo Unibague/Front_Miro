@@ -33,12 +33,30 @@ const SEMAFORO_COLORS: Record<string, string> = {
 };
 const isAdmin = (role: string) => role === "Administrador";
 
+function getIndicadorAvanceMostrado(indicador: Indicador) {
+  const metaFinal = indicador.meta_final_2029 != null ? Number(indicador.meta_final_2029) : null;
+  const avanceActual = indicador.avance != null ? Number(indicador.avance) : null;
+
+  if (indicador.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
+    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
+  }
+
+  return indicador.avance_total_real ?? indicador.avance;
+}
+
+const formatCOP = (value?: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value ?? 0);
+
 function PeriodoCard({
   p,
   onReportar,
+  admin = false,
+  evidenciasPeriodo = [],
 }: {
   p: Periodo;
   onReportar: (periodo: string) => void;
+  admin?: boolean;
+  evidenciasPeriodo?: Indicador["evidencias"];
 }) {
   const avanceNum = p.avance != null ? Number(p.avance) : null;
   const metaNum   = p.meta   != null ? Number(p.meta)   : null;
@@ -55,14 +73,16 @@ function PeriodoCard({
             {p.estado_reporte ?? "Borrador"}
           </Badge>
         </Group>
-        <Button
-          size="xs"
-          variant="light"
-          leftSection={<IconEdit size={13} />}
-          onClick={() => onReportar(p.periodo)}
-        >
-          Reportar
-        </Button>
+        {!admin && (
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconEdit size={13} />}
+            onClick={() => onReportar(p.periodo)}
+          >
+            Reportar
+          </Button>
+        )}
       </Group>
 
       <Group gap={24} mb="xs">
@@ -74,6 +94,10 @@ function PeriodoCard({
           <Text size="xs" c="dimmed">Avance</Text>
           <Text fw={600} size="sm">{avanceNum ?? "—"}</Text>
         </div>
+        <div>
+          <Text size="xs" c="dimmed">Presupuesto ejecutado</Text>
+          <Text fw={600} size="sm">{formatCOP(p.presupuesto_ejecutado ?? 0)}</Text>
+        </div>
         {pct !== null && (
           <div style={{ flex: 1 }}>
             <Text size="xs" c="dimmed" mb={4}>Cumplimiento</Text>
@@ -82,6 +106,30 @@ function PeriodoCard({
           </div>
         )}
       </Group>
+
+      {evidenciasPeriodo.length > 0 && (
+        <Paper withBorder radius="md" p="sm" mb="xs" style={{ background: "var(--mantine-color-default-hover)" }}>
+          <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>Evidencia enviada</Text>
+          <Stack gap={6}>
+            {evidenciasPeriodo.map((ev) => (
+              <Group key={ev._id} justify="space-between" wrap="nowrap">
+                <Box style={{ minWidth: 0 }}>
+                  <Text size="sm" fw={600} truncate="end">{ev.nombre_original}</Text>
+                  <Group gap={8} mt={4}>
+                    <Badge size="xs" variant="light" color={ev.estado === "Aprobado" ? "teal" : ev.estado === "Rechazado" ? "red" : "blue"}>
+                      {ev.estado}
+                    </Badge>
+                    <Text size="xs" c="dimmed">{new Date(ev.fecha_subida).toLocaleDateString("es-CO")}</Text>
+                  </Group>
+                </Box>
+                <Button component="a" href={ev.url} target="_blank" rel="noopener noreferrer" size="xs" variant="light">
+                  Ver PDF
+                </Button>
+              </Group>
+            ))}
+          </Stack>
+        </Paper>
+      )}
 
       {p.resultados_alcanzados && (
         <Box mb="xs">
@@ -148,6 +196,8 @@ export default function IndicadorEvidenciasPage() {
   useEffect(() => { load(); }, [indicadorId]);
 
   const semColor = indicador ? SEMAFORO_COLORS[indicador.semaforo] : "#aaa";
+  const avanceMostrado = indicador ? getIndicadorAvanceMostrado(indicador) : null;
+  const evidenciasPendientes = indicador?.evidencias?.filter((ev) => ev.estado === "En Revisión") ?? [];
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -190,7 +240,7 @@ export default function IndicadorEvidenciasPage() {
                     <Title order={4}>{indicador.nombre}</Title>
                   </div>
                   <Badge color={indicador.semaforo === "verde" ? "teal" : indicador.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
-                    {indicador.avance_total_real != null ? `${indicador.avance_total_real}%` : `${indicador.avance}%`}
+                    {`${avanceMostrado}%`}
                   </Badge>
                 </Group>
 
@@ -219,58 +269,60 @@ export default function IndicadorEvidenciasPage() {
                 )}
               </Paper>
 
-              {!admin && (
-                <>
-                  {/* Reportes de avance por periodo */}
-                  <div>
-                    <Group justify="space-between" mb="sm">
-                      <Title order={5}>Reportes de avance por corte</Title>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        color="violet"
-                        leftSection={<IconEdit size={13} />}
-                        onClick={() => setReportePeriodo("nuevo")}
-                      >
-                        Nuevo periodo
-                      </Button>
-                    </Group>
-
-                    {indicador.periodos.length === 0 ? (
-                      <Paper withBorder radius="md" p="lg">
-                        <Text c="dimmed" ta="center" size="sm">
-                          Sin reportes registrados. Haz clic en &quot;Nuevo periodo&quot; para agregar el primer corte.
-                        </Text>
-                      </Paper>
-                    ) : (
-                      <Stack gap="sm">
-                        {[...indicador.periodos]
-                          .sort((a, b) => a.periodo.localeCompare(b.periodo))
-                          .map((p) => (
-                            <PeriodoCard
-                              key={p.periodo}
-                              p={p}
-                              onReportar={(per) => setReportePeriodo(per)}
-                            />
-                          ))}
-                      </Stack>
-                    )}
-                  </div>
-
-                  <Divider />
-                </>
-              )}
-
-              {/* Evidencias */}
               <div>
-                <Title order={5} mb="sm">
-                  <Group gap={6}>
-                    <IconFileTypePdf size={18} />
-                    {admin ? "Evidencias enviadas para revisión" : "Evidencias documentales"}
-                  </Group>
-                </Title>
-                <EvidenciasPanel indicadorId={indicador._id} readOnly={admin} periodos={indicador.periodos} />
+                <Group justify="space-between" mb="sm">
+                  <Title order={5}>{admin ? "Reportes y evidencias por periodo" : "Reportes de avance por corte"}</Title>
+                  {!admin && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="violet"
+                      leftSection={<IconEdit size={13} />}
+                      onClick={() => setReportePeriodo("nuevo")}
+                    >
+                      Nuevo periodo
+                    </Button>
+                  )}
+                </Group>
+
+                {indicador.periodos.length === 0 ? (
+                  <Paper withBorder radius="md" p="lg">
+                    <Text c="dimmed" ta="center" size="sm">
+                      {admin
+                        ? "Este indicador todavía no tiene periodos reportados."
+                        : "Sin reportes registrados. Haz clic en \"Nuevo periodo\" para agregar el primer corte."}
+                    </Text>
+                  </Paper>
+                ) : (
+                  <Stack gap="sm">
+                    {[...indicador.periodos]
+                      .sort((a, b) => a.periodo.localeCompare(b.periodo))
+                      .map((p) => (
+                        <PeriodoCard
+                          key={p.periodo}
+                          p={p}
+                          admin={admin}
+                          evidenciasPeriodo={(indicador.evidencias ?? []).filter((ev) => ev.periodo === p.periodo)}
+                          onReportar={(per) => setReportePeriodo(per)}
+                        />
+                      ))}
+                  </Stack>
+                )}
               </div>
+
+              <Divider />
+
+              {(!admin || evidenciasPendientes.length > 0) && (
+                <div>
+                  <Title order={5} mb="sm">
+                    <Group gap={6}>
+                      <IconFileTypePdf size={18} />
+                      {admin ? "Evidencias enviadas para revisión" : "Evidencias documentales"}
+                    </Group>
+                  </Title>
+                  <EvidenciasPanel indicadorId={indicador._id} readOnly={admin} periodos={indicador.periodos} />
+                </div>
+              )}
             </Stack>
           )}
         </Container>

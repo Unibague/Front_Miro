@@ -68,6 +68,16 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   // Para el panel de revisión (admin)
   const [revision, setRevision] = useState<Record<string, { estado: string; comentario: string }>>({});
 
+  const evidenciasVigentesPorPeriodo = new Map(
+    evidencias
+      .filter((e) => e.periodo && e.estado !== "Rechazado")
+      .map((e) => [e.periodo, e] as const)
+  );
+  const periodosDisponibles = periodos.filter((p) => !evidenciasVigentesPorPeriodo.has(p.periodo));
+  const evidenciaBloqueante = periodo ? evidenciasVigentesPorPeriodo.get(periodo) : undefined;
+  const hayPeriodosDisponibles = periodos.length === 0 || periodosDisponibles.length > 0;
+  const puedeSubir = !!file && !evidenciaBloqueante && (periodos.length === 0 || !!periodo) && hayPeriodosDisponibles;
+
   const handleEstado = async (evId: string) => {
     const r = revision[evId];
     if (!r?.estado) return;
@@ -96,6 +106,9 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   };
 
   useEffect(() => { if (indicadorId) fetchEvidencias(); }, [indicadorId]);
+  useEffect(() => {
+    if (periodo && evidenciaBloqueante) setPeriodo("");
+  }, [periodo, evidenciaBloqueante]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -114,6 +127,18 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   const handleUpload = async () => {
     if (!file) {
       showNotification({ title: "Sin archivo", message: "Selecciona un PDF primero", color: "orange" });
+      return;
+    }
+    if (periodos.length > 0 && !periodo) {
+      showNotification({ title: "Periodo requerido", message: "Selecciona un periodo disponible", color: "orange" });
+      return;
+    }
+    if (evidenciaBloqueante) {
+      showNotification({
+        title: "Periodo bloqueado",
+        message: `El periodo ${periodo} ya tiene una evidencia ${evidenciaBloqueante.estado?.toLowerCase() ?? "vigente"}.`,
+        color: "orange",
+      });
       return;
     }
     setUploading(true);
@@ -188,103 +213,133 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
       <Stack gap="md">
         {/* ── Zona de subida ── */}
         {!readOnly && (
-          <Stack gap="xs">
-            {/* Selector de archivo */}
-            <Box
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                cursor: "pointer",
-                border: `2px dashed ${file ? "#7c3aed" : "#e2e8f0"}`,
-                borderRadius: 12,
-                padding: "20px 16px",
-                background: file ? "#faf5ff" : "var(--mantine-color-default-hover)",
-                transition: "border-color 0.2s, background 0.2s",
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-              }}
-            >
-              <Box style={{
-                width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-                background: file ? "#ede9fe" : "#f1f5f9",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <IconFileTypePdf size={24} color={file ? "#7c3aed" : "#94a3b8"} />
-              </Box>
-              <Box style={{ flex: 1, minWidth: 0 }}>
-                <Text size="sm" fw={600} c={file ? "violet" : "dimmed"} truncate="end">
-                  {file ? file.name : "Seleccionar PDF"}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "Máximo 20 MB · Solo PDF"}
-                </Text>
-              </Box>
-              {file && (
-                <ActionIcon
-                  size="sm" variant="subtle" color="red" radius="xl"
-                  onClick={(e) => { e.stopPropagation(); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                >
-                  <IconX size={13} />
-                </ActionIcon>
-              )}
-            </Box>
-            <input ref={fileInputRef} type="file" accept="application/pdf"
-              style={{ display: "none" }} onChange={handleFileChange} />
+          <Paper
+            withBorder
+            radius="xl"
+            p="md"
+            style={{
+              background: "linear-gradient(180deg, rgba(248,250,252,0.92) 0%, rgba(255,255,255,0.98) 100%)",
+              borderColor: "#e2e8f0",
+            }}
+          >
+            <Stack gap="sm">
+              <Group justify="space-between" align="flex-start" wrap="wrap">
+                <div>
+                  <Text fw={700} size="sm">Nueva evidencia</Text>
+                  
+                </div>
+                {periodos.length > 0 && (
+                  <Badge color={hayPeriodosDisponibles ? "violet" : "gray"} variant="light" radius="xl">
+                    {hayPeriodosDisponibles ? `${periodosDisponibles.length} periodo(s) disponible(s)` : "Sin periodos disponibles"}
+                  </Badge>
+                )}
+              </Group>
 
-            {/* Campos de metadata */}
-            <Group grow align="flex-start">
-              {periodos.length > 0 ? (
-                <Select
-                  label="Periodo"
-                  placeholder="Selecciona el periodo"
-                  value={periodo || null}
-                  onChange={(v) => setPeriodo(v ?? "")}
-                  data={periodos.map((p) => ({ value: p.periodo, label: p.periodo }))}
-                  size="sm"
-                  radius="md"
-                  clearable
-                />
-              ) : (
+              <Box
+                onClick={() => hayPeriodosDisponibles && fileInputRef.current?.click()}
+                style={{
+                  cursor: hayPeriodosDisponibles ? "pointer" : "not-allowed",
+                  border: `2px dashed ${file ? "#7c3aed" : "#d7e0ee"}`,
+                  borderRadius: 18,
+                  padding: "18px 16px",
+                  background: file ? "#faf5ff" : "#f8fbff",
+                  transition: "border-color 0.2s, background 0.2s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  opacity: hayPeriodosDisponibles ? 1 : 0.65,
+                }}
+              >
+                <Box style={{
+                  width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+                  background: file ? "#ede9fe" : "#eef4ff",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <IconFileTypePdf size={24} color={file ? "#7c3aed" : BLUE.main} />
+                </Box>
+                <Box style={{ flex: 1, minWidth: 0 }}>
+                  <Text size="sm" fw={700} c={file ? "violet" : BLUE.dark} truncate="end">
+                    {file ? file.name : "Seleccionar PDF"}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "Máximo 20 MB · Solo PDF"}
+                  </Text>
+                </Box>
+                {file && (
+                  <ActionIcon
+                    size="sm" variant="subtle" color="red" radius="xl"
+                    onClick={(e) => { e.stopPropagation(); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                  >
+                    <IconX size={13} />
+                  </ActionIcon>
+                )}
+              </Box>
+              <input ref={fileInputRef} type="file" accept="application/pdf"
+                style={{ display: "none" }} onChange={handleFileChange} />
+
+              <Group grow align="flex-start">
+                {periodos.length > 0 ? (
+                  <Select
+                    label="Periodo"
+                    placeholder={hayPeriodosDisponibles ? "Selecciona el periodo" : "Sin periodos disponibles"}
+                    value={periodo || null}
+                    onChange={(v) => setPeriodo(v ?? "")}
+                    data={periodosDisponibles.map((p) => ({ value: p.periodo, label: p.periodo }))}
+                    size="sm"
+                    radius="lg"
+                    clearable
+                    disabled={!hayPeriodosDisponibles}
+                  />
+                ) : (
+                  <TextInput
+                    label="Periodo"
+                    placeholder="Ej: 2026A"
+                    value={periodo}
+                    onChange={(e) => setPeriodo(e.currentTarget.value)}
+                    size="sm"
+                    radius="lg"
+                  />
+                )}
                 <TextInput
-                  label="Periodo"
-                  placeholder="Ej: 2026A"
-                  value={periodo}
-                  onChange={(e) => setPeriodo(e.currentTarget.value)}
+                  label="Descripción"
+                  placeholder="Descripción de la evidencia"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.currentTarget.value)}
                   size="sm"
-                  radius="md"
+                  radius="lg"
                 />
+              </Group>
+
+              {periodos.length > 0 && !hayPeriodosDisponibles && (
+                <Paper withBorder radius="lg" p="sm" style={{ background: "#fff7ed", borderColor: "#fdba74" }}>
+                  <Text size="xs" fw={600} c="orange">
+                    Todos los periodos ya tienen evidencia vigente. Solo podrás volver a subir si existe un periodo sin evidencia o si una evidencia es rechazada.
+                  </Text>
+                </Paper>
               )}
-              <TextInput
-                label="Descripción"
-                placeholder="Descripción de la evidencia"
-                value={descripcion}
-                onChange={(e) => setDescripcion(e.currentTarget.value)}
+
+              {uploading && (
+                <Box>
+                  <Text size="xs" c="dimmed" mb={4}>Subiendo {uploadProgress}%</Text>
+                  <Progress value={uploadProgress} color="violet" size="xs" radius="xl" animated />
+                </Box>
+              )}
+
+              <Button
+                leftSection={<IconUpload size={14} />}
+                color="violet"
+                variant={puedeSubir ? "filled" : "light"}
+                loading={uploading}
+                onClick={handleUpload}
+                disabled={!puedeSubir}
                 size="sm"
-                radius="md"
-              />
-            </Group>
-
-            {uploading && (
-              <Box>
-                <Text size="xs" c="dimmed" mb={4}>Subiendo {uploadProgress}%</Text>
-                <Progress value={uploadProgress} color="violet" size="xs" radius="xl" animated />
-              </Box>
-            )}
-
-            <Button
-              leftSection={<IconUpload size={14} />}
-              color="violet"
-              variant={file ? "filled" : "light"}
-              loading={uploading}
-              onClick={handleUpload}
-              disabled={!file}
-              size="sm"
-              radius="md"
-              fullWidth
-            >
-              Subir evidencia
-            </Button>
-          </Stack>
+                radius="xl"
+                fullWidth
+              >
+                Subir evidencia
+              </Button>
+            </Stack>
+          </Paper>
         )}
 
         {/* ── Lista de evidencias ── */}
@@ -307,6 +362,7 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
             {evidencias.map((ev) => {
               const estado = ev.estado ?? "En Revisión";
               const rechazada = estado === "Rechazado";
+              const puedeEliminar = !readOnly && estado === "Rechazado";
 
               // Responsable ve evidencia rechazada: solo aviso, sin archivo ni botón
               if (!readOnly && rechazada) return (
@@ -360,7 +416,7 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
                     <Tooltip label="Descargar" withArrow>
                       <ActionIcon component="a" href={ev.url} download={ev.nombre_original} color="indigo" variant="light" size="md"><IconDownload size={16} /></ActionIcon>
                     </Tooltip>
-                    {!readOnly && (
+                    {puedeEliminar && (
                       <Tooltip label="Eliminar" withArrow>
                         <ActionIcon color="red" variant="light" size="md" onClick={() => handleDelete(ev._id)}><IconTrash size={16} /></ActionIcon>
                       </Tooltip>
@@ -368,8 +424,8 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
                   </Group>
                 </Group>
 
-                {/* Panel de revisión — solo admin (readOnly=true) */}
-                {readOnly && (
+                {/* Panel de revisión — solo admin cuando sigue pendiente */}
+                {readOnly && estado === "En Revisión" && (
                   <Box mt="xs" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 8 }}>
                     <Group align="flex-end" gap="sm">
                       <Select

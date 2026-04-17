@@ -812,13 +812,13 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
               <Center><IconTarget size={80} /></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Indicadores PDI</Text>
+                <Text ta={"center"} w={500}>Proyectos PDI</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los indicadores PDI asignados a ti.
+                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Indicadores PDI
+                Ir a Mis Proyectos PDI
               </Button>
             </Card>
           </Grid.Col>,
@@ -900,13 +900,13 @@ useEffect(() => {
             <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
               <Center><IconTarget size={80} /></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Indicadores PDI</Text>
+                <Text ta={"center"} w={500}>Proyectos PDI</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los indicadores PDI asignados a ti.
+                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Indicadores PDI
+                Ir a Mis Proyectos PDI
               </Button>
             </Card>
           </Grid.Col>,

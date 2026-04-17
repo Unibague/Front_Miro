@@ -32,6 +32,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
 
   const [periodoNombre, setPeriodoNombre]           = useState("");
   const [avance, setAvance]                         = useState<number | string>("");
+  const [presupuestoEjecutado, setPresupuestoEjecutado] = useState<number | string>("");
   const [resultados, setResultados]                 = useState("");
   const [logros, setLogros]                         = useState("");
   const [alertas, setAlertas]                       = useState("");
@@ -45,6 +46,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
     if (periodoActual) {
       setPeriodoNombre(periodoActual.periodo);
       setAvance(periodoActual.avance ?? "");
+      setPresupuestoEjecutado(periodoActual.presupuesto_ejecutado ?? "");
       setResultados(periodoActual.resultados_alcanzados ?? "");
       setLogros(periodoActual.logros ?? "");
       setAlertas(periodoActual.alertas ?? "");
@@ -52,7 +54,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
       setEstadoReporte(periodoActual.estado_reporte ?? "Borrador");
       setReportadoPor(periodoActual.reportado_por ?? "");
     } else {
-      setPeriodoNombre(""); setAvance(""); setResultados(""); setLogros(""); setAlertas("");
+      setPeriodoNombre(""); setAvance(""); setPresupuestoEjecutado(""); setResultados(""); setLogros(""); setAlertas("");
       setJustificacion(""); setEstadoReporte("Borrador"); setReportadoPor("");
     }
   }, [opened, periodo, indicador]);
@@ -68,6 +70,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
       const res = await axios.patch(PDI_ROUTES.indicadorPeriodo(indicador._id), {
         periodo: periodoFinal,
         avance:                 avance !== "" ? Number(avance) : undefined,
+        presupuesto_ejecutado:  presupuestoEjecutado !== "" ? Number(presupuestoEjecutado) : 0,
         resultados_alcanzados:  resultados,
         logros,
         alertas,
@@ -141,6 +144,18 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
             decimalSeparator=","
             disabled={estadoBloqueado}
           />
+          <NumberInput
+            label="Presupuesto ejecutado"
+            placeholder="Valor ejecutado en este periodo"
+            value={presupuestoEjecutado}
+            onChange={setPresupuestoEjecutado}
+            decimalSeparator=","
+            thousandSeparator="."
+            min={0}
+            disabled={estadoBloqueado}
+          />
+        </Group>
+        <Group grow>
           <TextInput
             label="Reportado por"
             placeholder="Nombre del responsable"

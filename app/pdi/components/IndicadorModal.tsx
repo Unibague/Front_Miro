@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack,
-  Textarea, Select, MultiSelect, Tabs, ActionIcon, Paper,
+  Textarea, Select, MultiSelect, Tabs, ActionIcon, Paper, NumberInput,
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
@@ -40,6 +40,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [cortesSegimiento, setCortesSegimiento] = useState<string[]>([]);
   const [tipoCalculo, setTipoCalculo] = useState("promedio");
   const [metaFinal, setMetaFinal] = useState("");
+  const [presupuesto, setPresupuesto] = useState<number | string>("");
   const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [periodos, setPeriodos] = useState<PeriodoForm[]>([]);
@@ -75,6 +76,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       );
       setTipoCalculo(selected.tipo_calculo ?? "promedio");
       setMetaFinal(selected.meta_final_2029 != null ? String(selected.meta_final_2029) : "");
+      setPresupuesto(selected.presupuesto ?? "");
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
       setPeriodos((selected.periodos ?? []).map((p) => ({
@@ -95,6 +97,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setCortesSegimiento([]);
     setTipoCalculo("promedio");
     setMetaFinal("");
+    setPresupuesto("");
     setFechaInicio(null);
     setFechaFin(null);
     setPeriodos(cortesData.map((c) => ({ periodo: c.nombre, meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null })));
@@ -141,6 +144,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         responsable: "",
         responsable_email: "",
         entregable: entregable.trim(),
+        presupuesto: presupuesto !== "" ? Number(presupuesto) : 0,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin: fechaFin ? fechaFin.toISOString() : null,
         observaciones: "",
@@ -188,6 +192,15 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               onChange={(e) => setEntregable(e.currentTarget.value)}
               rows={2}
             />
+            <NumberInput
+              label="Presupuesto asignado (COP)"
+              placeholder="Ej: 12000000"
+              value={presupuesto}
+              onChange={setPresupuesto}
+              thousandSeparator="."
+              decimalSeparator=","
+              min={0}
+            />
             <Group grow>
               <DatePickerInput
                 label="Fecha de inicio"
@@ -214,20 +227,6 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
 
         <Tabs.Panel value="seguimiento">
           <Stack gap="sm">
-            <Select
-              label="Tipo de seguimiento"
-              description="Frecuencia con la que se reporta este indicador"
-              placeholder="Selecciona el tipo"
-              data={[
-                { value: "Semestral", label: "Semestral" },
-                { value: "Anual", label: "Anual" },
-                { value: "Trimestral", label: "Trimestral" },
-                { value: "Mensual", label: "Mensual" },
-              ]}
-              value={tipoSeguimiento || null}
-              onChange={(v) => setTipoSeguimiento(v ?? "")}
-              clearable
-            />
             <MultiSelect
               label="Cortes de seguimiento"
               description="Selecciona en cuáles cortes del año se califica este indicador"

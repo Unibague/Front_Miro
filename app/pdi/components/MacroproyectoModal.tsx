@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack, Autocomplete } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import type { Macroproyecto } from "../types";
@@ -19,17 +19,36 @@ const toNum = (v: string) => Number(v.replace(',', '.'));
 export default function MacroproyectoModal({ opened, onClose, selected, onSaved }: Props) {
   const [codigo, setCodigo]   = useState("");
   const [nombre, setNombre]   = useState("");
+  const [lider, setLider]     = useState("");
+  const [usuarios, setUsuarios] = useState<string[]>([]);
   const [peso, setPeso]       = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
+      .then((res) => {
+        const lista = Array.isArray(res.data) ? res.data : (res.data.users ?? []);
+        const nombres = Array.from(
+          new Set(
+            lista
+              .filter((u: any) => u.full_name)
+              .map((u: any) => u.full_name as string)
+          )
+        );
+        setUsuarios(nombres);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!opened) return;
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
+      setLider(selected.lider ?? "");
       setPeso(String(selected.peso));
     } else {
-      setCodigo(""); setNombre(""); setPeso("");
+      setCodigo(""); setNombre(""); setLider(""); setPeso("");
     }
   }, [opened]);
 
@@ -40,7 +59,12 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     }
     setLoading(true);
     try {
-      const payload = { codigo: codigo.trim(), nombre: nombre.trim(), peso: toNum(peso) };
+      const payload = {
+        codigo: codigo.trim(),
+        nombre: nombre.trim(),
+        lider: lider.trim(),
+        peso: toNum(peso),
+      };
       const res = selected
         ? await axios.put(PDI_ROUTES.macroproyecto(selected._id), payload)
         : await axios.post(PDI_ROUTES.macroproyectos(), payload);
@@ -59,6 +83,14 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
       <Stack gap="sm">
         <TextInput label="Código" placeholder="Ej: 1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
         <TextInput label="Nombre" placeholder="Nombre del macroproyecto" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <Autocomplete
+          label="Lider"
+          placeholder="Buscar usuario..."
+          value={lider}
+          onChange={setLider}
+          data={usuarios}
+          limit={8}
+        />
         <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
         <Group justify="flex-end" mt="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
