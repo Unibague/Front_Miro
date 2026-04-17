@@ -163,8 +163,8 @@ function formatPeriodoAvance(ind: Indicador, avance: Periodo["avance"]) {
 }
 
 function getProgressColor(avance: number) {
-  if (avance >= 70) return "green";
-  if (avance >= 40) return "orange";
+  if (avance >= 90) return "green";
+  if (avance >= 60) return "orange";
   return "red";
 }
 

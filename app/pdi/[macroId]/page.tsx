@@ -355,7 +355,6 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                <SemaforoBadge semaforo={semaforoAccion} />
               <MetaBadge label={`Peso ${accion.peso}%`} />
               {accion.presupuesto > 0 && <MetaBadge label={formatCOP(accion.presupuesto)} color="green" />}
-              {accion.responsable && <MetaBadge label={accion.responsable} color="blue" />}
             </Group>
             <Text fw={700} size="md" lh={1.35}>{accion.nombre}</Text>
            
