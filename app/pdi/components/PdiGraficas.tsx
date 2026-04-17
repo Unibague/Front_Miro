@@ -18,6 +18,18 @@ import type { Macroproyecto, Proyecto, Accion, Indicador } from "../types";
 
 const COLORS = ["#7950f2", "#228be6", "#40c057", "#fab005", "#fa5252", "#fd7e14", "#15aabf", "#e64980", "#845ef7", "#339af0"];
 const SEMAFORO_COLOR: Record<string, string> = { verde: "#40c057", amarillo: "#fab005", rojo: "#fa5252" };
+
+function getAvancePorcentaje(ind: Indicador): number {
+  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
+  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
+  let pct: number;
+  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
+    pct = Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
+  } else {
+    pct = Number(ind.avance_total_real ?? ind.avance ?? 0);
+  }
+  return Math.min(Math.max(pct, 0), 100);
+}
 const SEMAFORO_LABEL: Record<string, string> = { verde: "Cumplimiento adecuado", amarillo: "Requiere atención", rojo: "Crítico" };
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -91,6 +103,55 @@ export default function PdiGraficas() {
     const aid = typeof i.accion_id === "object" ? i.accion_id._id : i.accion_id;
     return accionIds.has(typeof aid === "object" ? (aid as any)._id : aid);
   }), [indicadores, accionIds, verTodos]);
+  // ── Datos para cada gráfica ──────────────────────────────────────────────
+
+  // Replica exacta de getWeightedProgress del [macroId] page: divide por 100, no por totalPeso
+  function wp<T extends { peso: number }>(items: T[], getValue: (i: T) => number) {
+    const total = items.reduce((s, i) => s + (Number(i.peso) || 0), 0);
+    if (total <= 0) return 0;
+    return Math.round(items.reduce((s, i) => s + getValue(i) * (Number(i.peso) || 0), 0) / 100);
+  }
+
+  // 1. Barras horizontales: avance por macroproyecto
+  // Cadena: indicadores → acciones (hidratadas) → proyectos → macro  (igual que [macroId] page)
+  const barrasHorizMacros = macros.map(m => {
+    const proysMacro = proyectos.filter(p =>
+      (typeof p.macroproyecto_id === 'object' ? p.macroproyecto_id._id : p.macroproyecto_id) === m._id
+    );
+    if (!proysMacro.length) return { name: m.codigo, fullName: m.nombre, Avance: Number(m.avance) || 0, semaforo: m.semaforo };
+
+    const proyectosHidratados = proysMacro.map(p => {
+      const acsProy = acciones.filter(a =>
+        (typeof a.proyecto_id === 'object' ? a.proyecto_id._id : a.proyecto_id) === p._id
+      );
+      if (!acsProy.length) return { peso: p.peso, avance: Number(p.avance) || 0 };
+
+      // Hidratar cada acción con sus indicadores (igual que hydrateAcciones en [macroId])
+      const accionesHidratadas = acsProy.map(a => {
+        const indsAc = indicadores.filter(i => {
+          const aid = typeof i.accion_id === 'string' ? i.accion_id : (i.accion_id as any)?._id;
+          return aid === a._id;
+        });
+        const avAc = indsAc.length
+          ? wp(indsAc, ind => getAvancePorcentaje(ind))
+          : Number(a.avance) || 0;
+        return { peso: a.peso, avance: avAc };
+      });
+
+      return { peso: p.peso, avance: wp(accionesHidratadas, ac => ac.avance) };
+    });
+
+    const avance = wp(proyectosHidratados, p => p.avance);
+    const semaforo = avance >= 90 ? 'verde' : avance >= 60 ? 'amarillo' : 'rojo';
+    return { name: m.codigo, fullName: m.nombre, Avance: avance, semaforo };
+  });
+
+  // 2. Barras: avance vs peso por macroproyecto
+  const barrasMacros = macros.map(m => ({
+    name: m.codigo,
+    Avance: m.avance,
+    Peso: m.peso,
+  }));
 
   // Al cambiar macro, seleccionar primer indicador disponible
   useEffect(() => {
@@ -155,6 +216,22 @@ export default function PdiGraficas() {
     }));
   }, [indActual]);
 
+  // 6. Torta: distribución semáforo de indicadores
+  const semaforoCount = indicadores.reduce((acc, i) => {
+    acc[i.semaforo] = (acc[i.semaforo] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const tortaSemaforo = Object.entries(semaforoCount).map(([k, v]) => ({
+    name: k === "verde" ? "Cumplimiento adecuado" : k === "amarillo" ? "Requiere atención" : "Crítico",
+    value: v,
+    color: SEMAFORO_COLOR[k],
+  }));
+
+  // 7. Barras horizontales: top indicadores por avance (% real, máx 100)
+  const topIndicadores = [...indicadores]
+    .map(i => ({ name: i.codigo, Avance: getAvancePorcentaje(i), semaforo: i.semaforo }))
+    .sort((a, b) => b.Avance - a.Avance)
+    .slice(0, 8);
   // Línea jerárquica: avance por nivel
   const avanceGlobalMacro = verTodos
     ? (macros.length ? Math.round(macros.reduce((s, m) => s + m.avance, 0) / macros.length) : 0)
@@ -261,6 +338,51 @@ export default function PdiGraficas() {
       {verTodos && (
         <ChartCard title="Avance por Macroproyecto" subtitle="Comparación del avance consolidado de todos los macroproyectos">
           <ResponsiveContainer width="100%" height={260}>
+      <SimpleGrid cols={2} spacing="md">
+
+        {/* 1. Barras horizontales avance macroproyectos */}
+        <ChartCard title="Avance por Macroproyecto (%)">
+          <ResponsiveContainer width="100%" height={Math.max(200, barrasHorizMacros.length * 44)}>
+            <BarChart
+              data={barrasHorizMacros}
+              layout="vertical"
+              margin={{ top: 4, right: 48, left: 8, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fontWeight: 700 }} width={40} />
+              <Tooltip
+                formatter={(v) => [`${v}%`, "Avance"]}
+                labelFormatter={(label) => {
+                  const m = barrasHorizMacros.find(x => x.name === label);
+                  return m ? `${m.name} — ${m.fullName}` : label;
+                }}
+              />
+              <Bar dataKey="Avance" radius={[0, 6, 6, 0]} label={{ position: "right", formatter: (v: number) => `${v}%`, fontSize: 12, fontWeight: 700 }}>
+                {barrasHorizMacros.map((entry, i) => (
+                  <Cell key={i} fill={SEMAFORO_COLOR[entry.semaforo] ?? "#7950f2"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        {/* 2. Semáforo indicadores */}
+        <ChartCard title="Estado de Indicadores (Semáforo)">
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={tortaSemaforo} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} label={({ value }) => value}>
+                {tortaSemaforo.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        {/* 3. Barras: avance vs peso macroproyectos */}
+        <ChartCard title="Avance vs Peso — Macroproyectos">
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={barrasMacros} margin={{ top: 4, right: 8, left: -10, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />

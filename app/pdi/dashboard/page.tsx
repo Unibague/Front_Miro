@@ -2,82 +2,88 @@
 
 import { useEffect, useState } from "react";
 import {
-  ActionIcon, Badge, Center, Container, Group, Loader, Paper,
-  Progress, RingProgress, Select, SimpleGrid, Stack, Text,
-  ThemeIcon, Title, Tooltip, Divider,
+  ActionIcon, Badge, Box, Center, Container, Divider, Group,
+  Loader, Paper, Progress, SimpleGrid, Stack, Text,
+  ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
 import {
-  IconArrowLeft, IconAlertTriangle, IconBuildingFactory2,
-  IconChartDonut3, IconClockHour4, IconCurrencyDollar,
-  IconLayoutDashboard, IconRefresh,
+  IconArrowLeft, IconAlertTriangle, IconCurrencyDollar,
+  IconLayoutDashboard, IconRefresh, IconTarget, IconTrendingUp,
+  IconListCheck, IconBulb, IconChartDonut3, IconClockHour4,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
-import type { DashboardResumen, DashboardCorte, ConteoSemaforos, Semaforo } from "../types";
+import type { DashboardResumen, Macroproyecto, Semaforo } from "../types";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const SEMAFORO_COLOR: Record<Semaforo, string> = {
-  verde:    "teal",
-  amarillo: "yellow",
-  rojo:     "red",
+  verde: "teal", amarillo: "yellow", rojo: "red",
 };
-
 const SEMAFORO_LABEL: Record<Semaforo, string> = {
-  verde:    "En meta",
-  amarillo: "En riesgo",
-  rojo:     "Crítico",
+  verde: "En meta", amarillo: "En riesgo", rojo: "Crítico",
 };
-const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
-  anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
-
+const SEMAFORO_HEX: Record<Semaforo, string> = {
+  verde: "#0d9488", amarillo: "#d97706", rojo: "#ef4444",
+};
 
 function fmtCOP(n: number) {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
 }
+const formatAnioRange = (a?: number, b?: number) =>
+  a && b ? `${a} - ${b}` : "Sin rango definido";
 
-function SemaforoBar({ conteo }: { conteo: ConteoSemaforos }) {
-  const total = conteo.verde + conteo.amarillo + conteo.rojo;
-  if (!total) return <Text size="xs" c="dimmed">Sin datos</Text>;
+function getSemaforoByAvance(avance: number): Semaforo {
+  if (avance >= 90) return "verde";
+  if (avance >= 60) return "amarillo";
+  return "rojo";
+}
+
+// ── Sub-componentes ────────────────────────────────────────────────────────
+
+function EstructuraCol({ label, total, icon }: { label: string; total: number; icon: React.ReactNode }) {
   return (
-    <Group gap={8}>
-      {(["verde", "amarillo", "rojo"] as Semaforo[]).map((s) => (
-        conteo[s] > 0 && (
-          <Tooltip key={s} label={`${SEMAFORO_LABEL[s]}: ${conteo[s]}`}>
-            <Badge color={SEMAFORO_COLOR[s]} variant="light" size="sm">
-              {conteo[s]}
-            </Badge>
-          </Tooltip>
-        )
-      ))}
-    </Group>
+    <Box style={{ textAlign: "center" }}>
+      <ThemeIcon size={32} radius="xl" color="violet" variant="light" mx="auto" mb={4}>
+        {icon}
+      </ThemeIcon>
+      <Text fw={800} size="xl" lh={1}>{total}</Text>
+      <Text size="xs" c="dimmed" mt={2}>{label}</Text>
+    </Box>
   );
 }
 
-function KpiCard({
-  icon, title, value, sub, color = "violet",
+function StatCard({
+  title, value, sub, color = "violet", icon, badge,
 }: {
-  icon: React.ReactNode;
   title: string;
   value: React.ReactNode;
   sub?: string;
   color?: string;
+  icon: React.ReactNode;
+  badge?: string;
 }) {
   return (
-    <Paper withBorder radius="md" p="md">
-      <Group gap={12} align="flex-start">
-        <ThemeIcon size={40} radius="xl" color={color} variant="light">
-          {icon}
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text size="xs" c="dimmed" fw={600} tt="uppercase">{title}</Text>
-          <Text fw={700} size="xl" lh={1.2}>{value}</Text>
-          {sub && <Text size="xs" c="dimmed" mt={2}>{sub}</Text>}
-        </div>
-      </Group>
+    <Paper withBorder radius="xl" p="md" style={{ position: "relative", overflow: "hidden" }}>
+      {badge && (
+        <Badge
+          size="xs"
+          color={color}
+          variant="filled"
+          style={{ position: "absolute", top: 10, right: 10 }}
+        >
+          {badge}
+        </Badge>
+      )}
+      <ThemeIcon size={36} radius="xl" color={color} variant="light" mb={8}>
+        {icon}
+      </ThemeIcon>
+      <Text size="xs" c="dimmed" fw={600} tt="uppercase" mb={2}>{title}</Text>
+      <Text fw={800} size="1.4rem" lh={1}>{value}</Text>
+      {sub && <Text size="xs" c="dimmed" mt={4}>{sub}</Text>}
     </Paper>
   );
 }
@@ -88,40 +94,31 @@ export default function DashboardPage() {
   const router = useRouter();
   const { config } = usePdiConfig();
 
-  const [resumen, setResumen]     = useState<DashboardResumen | null>(null);
-  const [corteData, setCorteData] = useState<DashboardCorte | null>(null);
-  const [cortes, setCortes]       = useState<{ value: string; label: string }[]>([]);
-  const [periodoSel, setPeriodoSel] = useState<string | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [loadingCorte, setLoadingCorte] = useState(false);
+  const [resumen, setResumen] = useState<DashboardResumen | null>(null);
+  const [macros, setMacros] = useState<Macroproyecto[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const cargarResumen = async () => {
+  const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [rRes, rCortes] = await Promise.all([
+      const [rResumen, rMacros] = await Promise.all([
         axios.get(PDI_ROUTES.dashboardResumen()),
-        axios.get(PDI_ROUTES.cortesActivos()),
+        axios.get(PDI_ROUTES.macroproyectos()),
       ]);
-      setResumen(rRes.data);
-      const sorted = [...rRes.data ? [] : [], ...rCortes.data]
-        .sort((a: any, b: any) => a.nombre.localeCompare(b.nombre, undefined, { numeric: true }));
-      const opts = sorted.map((c: any) => ({ value: c.nombre, label: c.descripcion ? `${c.nombre} — ${c.descripcion}` : c.nombre }));
-      setCortes(opts);
-      if (opts.length && !periodoSel) setPeriodoSel(opts[opts.length - 1].value);
+      setResumen(rResumen.data);
+      setMacros(rMacros.data ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { cargarResumen(); }, []);
+  useEffect(() => { cargarDatos(); }, []);
 
-  useEffect(() => {
-    if (!periodoSel) return;
-    setLoadingCorte(true);
-    axios.get(PDI_ROUTES.dashboardCorte(periodoSel))
-      .then(res => setCorteData(res.data))
-      .catch(console.error)
-      .finally(() => setLoadingCorte(false));
-  }, [periodoSel]);
+  // Avance ponderado calculado igual que el Panorama general
+  const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
+  const avancePonderado = pesosTotal > 0
+    ? Math.round(macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal)
+    : 0;
+  const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -140,10 +137,12 @@ export default function DashboardPage() {
               </ThemeIcon>
               <div>
                 <Title order={3}>Tablero de control PDI</Title>
-                <Text size="sm" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
+                <Text size="sm" c="dimmed">
+                  {config.nombre} — {formatAnioRange(config.anio_inicio, config.anio_fin)}
+                </Text>
               </div>
             </Group>
-            <ActionIcon variant="light" color="violet" size="lg" onClick={cargarResumen} title="Actualizar">
+            <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
               <IconRefresh size={18} />
             </ActionIcon>
           </Group>
@@ -155,87 +154,91 @@ export default function DashboardPage() {
           ) : (
             <Stack gap="xl">
 
-              {/* Avance global */}
-              <Paper withBorder radius="xl" p="xl" shadow="sm">
+              {/* Bloque principal — avance + estructura */}
+              <Paper
+                withBorder
+                radius="xl"
+                p="xl"
+                shadow="xs"
+                style={{
+                  background: "linear-gradient(135deg, rgba(124,58,237,0.05) 0%, rgba(255,255,255,0.98) 60%)",
+                }}
+              >
                 <Group gap={32} align="center" wrap="wrap">
+
+                  {/* Anillo */}
                   <RingProgress
-                    size={120}
-                    thickness={12}
+                    size={130}
+                    thickness={13}
                     roundCaps
-                    sections={[{ value: resumen.avance_global, color: SEMAFORO_COLOR[resumen.semaforo_global] }]}
+                    sections={[{ value: avancePonderado, color: SEMAFORO_HEX[semaforo] }]}
                     label={
                       <Center>
-                        <Text fw={700} size="lg">{resumen.avance_global}%</Text>
+                        <Stack gap={0} align="center">
+                          <Text fw={800} size="xl" lh={1}>{avancePonderado}%</Text>
+                          <Text size="10px" c="dimmed" tt="uppercase">avance</Text>
+                        </Stack>
                       </Center>
                     }
                   />
+
+                  {/* Texto avance */}
                   <div>
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={600}>Avance global PDI</Text>
-                    <Title order={2} c={SEMAFORO_COLOR[resumen.semaforo_global]}>
-                      {resumen.avance_global}%
+                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Avance global PDI</Text>
+                    <Title order={1} c={SEMAFORO_HEX[semaforo]} lh={1}>
+                      {avancePonderado}%
                     </Title>
-                    <Badge color={SEMAFORO_COLOR[resumen.semaforo_global]} variant="light" mt={4}>
-                      {SEMAFORO_LABEL[resumen.semaforo_global]}
+                    <Badge color={SEMAFORO_COLOR[semaforo]} variant="light" radius="xl" mt={6} size="md">
+                      {SEMAFORO_LABEL[semaforo]}
                     </Badge>
                   </div>
-                  <Divider orientation="vertical" />
-                  <SimpleGrid cols={4} spacing="lg">
-                    <div>
-                      <Text size="xs" c="dimmed">Macroproyectos</Text>
-                      <Text fw={700} size="xl">{resumen.estructura.macroproyectos}</Text>
-                      <SemaforoBar conteo={resumen.semaforos.macroproyectos} />
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">Proyectos</Text>
-                      <Text fw={700} size="xl">{resumen.estructura.proyectos}</Text>
-                      <SemaforoBar conteo={resumen.semaforos.proyectos} />
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">Acciones</Text>
-                      <Text fw={700} size="xl">{resumen.estructura.acciones}</Text>
-                      <SemaforoBar conteo={resumen.semaforos.acciones} />
-                    </div>
-                    <div>
-                      <Text size="xs" c="dimmed">Indicadores</Text>
-                      <Text fw={700} size="xl">{resumen.estructura.indicadores}</Text>
-                      <SemaforoBar conteo={resumen.semaforos.indicadores} />
-                    </div>
+
+                  <Divider orientation="vertical" style={{ height: 80 }} />
+
+                  {/* Contadores estructura */}
+                  <SimpleGrid cols={4} spacing="xl" style={{ flex: 1 }}>
+                    <EstructuraCol label="Macros"      total={resumen.estructura.macroproyectos} icon={<IconChartDonut3 size={16} />} />
+                    <EstructuraCol label="Proyectos"   total={resumen.estructura.proyectos}      icon={<IconListCheck size={16} />} />
+                    <EstructuraCol label="Acciones"    total={resumen.estructura.acciones}       icon={<IconBulb size={16} />} />
+                    <EstructuraCol label="Indicadores" total={resumen.estructura.indicadores}    icon={<IconTarget size={16} />} />
                   </SimpleGrid>
+
                 </Group>
               </Paper>
 
-              {/* KPIs */}
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
-                <KpiCard
-                  icon={<IconCurrencyDollar size={20} />}
+              {/* KPI cards */}
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+                <StatCard
+                  icon={<IconCurrencyDollar size={18} />}
                   title="Presupuesto asignado"
                   value={fmtCOP(resumen.presupuesto.total)}
                   color="blue"
                 />
-                <KpiCard
-                  icon={<IconBuildingFactory2 size={20} />}
+                <StatCard
+                  icon={<IconTrendingUp size={18} />}
                   title="Presupuesto ejecutado"
                   value={fmtCOP(resumen.presupuesto.ejecutado)}
                   sub={`${resumen.presupuesto.porcentaje_ejecucion}% del total`}
                   color={resumen.presupuesto.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
                 />
-                <KpiCard
-                  icon={<IconAlertTriangle size={20} />}
+                <StatCard
+                  icon={<IconAlertTriangle size={18} />}
                   title="Indicadores con alertas"
                   value={resumen.alertas.indicadores_con_alertas}
                   color="orange"
+                  badge={resumen.alertas.indicadores_con_alertas > 0 ? "Revisar" : undefined}
                 />
-                <KpiCard
-                  icon={<IconClockHour4 size={20} />}
+                <StatCard
+                  icon={<IconClockHour4 size={18} />}
                   title="Indicadores con retrasos"
                   value={resumen.retrasos.indicadores_con_retrasos}
                   color="red"
                 />
               </SimpleGrid>
 
-              {/* Ejecución presupuestal */}
+              {/* Barra presupuestal */}
               {resumen.presupuesto.total > 0 && (
-                <Paper withBorder radius="md" p="md">
+                <Paper withBorder radius="xl" p="md">
                   <Text size="sm" fw={600} mb="sm">Ejecución presupuestal</Text>
                   <Progress
                     value={resumen.presupuesto.porcentaje_ejecucion}
@@ -243,176 +246,13 @@ export default function DashboardPage() {
                     radius="xl"
                     color={resumen.presupuesto.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
                   />
-                  <Group justify="space-between" mt={4}>
-                    <Text size="xs" c="dimmed">Ejecutado: {fmtCOP(resumen.presupuesto.ejecutado)}</Text>
-                    <Text size="xs" c="dimmed">Total: {fmtCOP(resumen.presupuesto.total)}</Text>
+                  <Group justify="space-between" mt={6}>
+                    <Text size="xs" c="dimmed">Ejecutado: <b>{fmtCOP(resumen.presupuesto.ejecutado)}</b></Text>
+                    <Text size="xs" c="dimmed">Total: <b>{fmtCOP(resumen.presupuesto.total)}</b></Text>
                   </Group>
                 </Paper>
               )}
 
-              {/* Alertas activas */}
-              {resumen.alertas.detalle.length > 0 && (
-                <Paper withBorder radius="md" p="md">
-                  <Group gap={8} mb="sm">
-                    <IconAlertTriangle size={16} color="orange" />
-                    <Text size="sm" fw={600}>Alertas activas en indicadores</Text>
-                  </Group>
-                  <Stack gap="xs">
-                    {resumen.alertas.detalle.map((ind) => (
-                      <Paper key={ind._id} withBorder radius="sm" p="sm" style={{ borderColor: "var(--mantine-color-orange-3)" }}>
-                        <Group justify="space-between" mb={4}>
-                          <Group gap={6}>
-                            <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
-                            <Text size="sm" fw={600}>{ind.nombre}</Text>
-                          </Group>
-                          <Badge color={SEMAFORO_COLOR[ind.semaforo]} variant="light" size="xs">
-                            {ind.avance}%
-                          </Badge>
-                        </Group>
-                        {ind.alertas.map((a, i) => (
-                          <Text key={i} size="xs" c="dimmed">
-                            <strong>{a.periodo}:</strong> {a.alertas}
-                          </Text>
-                        ))}
-                      </Paper>
-                    ))}
-                  </Stack>
-                </Paper>
-              )}
-
-              <Divider label="Seguimiento por corte" labelPosition="center" />
-
-              {/* Selector de corte */}
-              <Group gap={12} align="flex-end">
-                <Select
-                  label="Corte de seguimiento"
-                  placeholder="Selecciona un periodo"
-                  data={cortes}
-                  value={periodoSel}
-                  onChange={setPeriodoSel}
-                  style={{ width: 260 }}
-                />
-                {corteData && (
-                  <Badge size="lg" color="violet" variant="light">
-                    {corteData.porcentaje_cobertura}% cobertura
-                  </Badge>
-                )}
-              </Group>
-
-              {loadingCorte && <Center py="md"><Loader size="sm" /></Center>}
-
-              {!loadingCorte && corteData && (
-                <Stack gap="md">
-                  {/* KPIs del corte */}
-                  <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
-                    <Paper withBorder radius="md" p="md" ta="center">
-                      <Text size="xs" c="dimmed">Con reporte</Text>
-                      <Text fw={700} size="xl" c="teal">{corteData.con_reporte}</Text>
-                    </Paper>
-                    <Paper withBorder radius="md" p="md" ta="center">
-                      <Text size="xs" c="dimmed">Sin reporte</Text>
-                      <Text fw={700} size="xl" c="red">{corteData.sin_reporte}</Text>
-                    </Paper>
-                    <Paper withBorder radius="md" p="md" ta="center">
-                      <Text size="xs" c="dimmed">Con alertas</Text>
-                      <Text fw={700} size="xl" c="orange">{corteData.con_alertas}</Text>
-                    </Paper>
-                    <Paper withBorder radius="md" p="md" ta="center">
-                      <Text size="xs" c="dimmed">Con retrasos</Text>
-                      <Text fw={700} size="xl" c="red">{corteData.con_retrasos}</Text>
-                    </Paper>
-                  </SimpleGrid>
-
-                  {/* Cobertura */}
-                  <Paper withBorder radius="md" p="md">
-                    <Text size="sm" fw={600} mb="sm">
-                      Cobertura de reportes — {corteData.periodo}
-                    </Text>
-                    <Progress
-                      value={corteData.porcentaje_cobertura}
-                      size="lg"
-                      radius="xl"
-                      color={corteData.porcentaje_cobertura >= 80 ? "teal" : corteData.porcentaje_cobertura >= 50 ? "yellow" : "red"}
-                    />
-                    <Group justify="space-between" mt={4}>
-                      <Text size="xs" c="dimmed">{corteData.con_reporte} reportados</Text>
-                      <Text size="xs" c="dimmed">{corteData.total_indicadores} total</Text>
-                    </Group>
-                  </Paper>
-
-                  {/* Indicadores pendientes */}
-                  {corteData.indicadores_pendientes.length > 0 && (
-                    <Paper withBorder radius="md" p="md">
-                      <Group gap={8} mb="sm">
-                        <IconClockHour4 size={16} color="#fa5252" />
-                        <Text size="sm" fw={600} c="red">
-                          Indicadores sin reporte ({corteData.indicadores_pendientes.length})
-                        </Text>
-                      </Group>
-                      <Stack gap={4}>
-                        {corteData.indicadores_pendientes.map((ind) => (
-                          <Group key={ind._id} justify="space-between" px="sm" py={4}
-                            style={{ borderRadius: 6, background: "var(--mantine-color-red-0)" }}>
-                            <Group gap={8}>
-                              <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
-                              <Text size="sm">{ind.nombre}</Text>
-                            </Group>
-                            <Text size="xs" c="dimmed">{ind.responsable || "Sin responsable"}</Text>
-                          </Group>
-                        ))}
-                      </Stack>
-                    </Paper>
-                  )}
-
-                  {/* Indicadores reportados */}
-                  {corteData.indicadores_reportados.length > 0 && (
-                    <Paper withBorder radius="md" p="md">
-                      <Group gap={8} mb="sm">
-                        <IconChartDonut3 size={16} />
-                        <Text size="sm" fw={600}>
-                          Indicadores reportados ({corteData.indicadores_reportados.length})
-                        </Text>
-                      </Group>
-                      <Stack gap={6}>
-                        {corteData.indicadores_reportados.map((ind) => (
-                          <Paper key={ind._id} withBorder radius="sm" p="sm">
-                            <Group justify="space-between" mb={4}>
-                              <Group gap={8}>
-                                <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
-                                <Text size="sm" fw={600}>{ind.nombre}</Text>
-                              </Group>
-                              <Group gap={6}>
-                                {ind.tiene_alertas && (
-                                  <Tooltip label="Tiene alertas">
-                                    <IconAlertTriangle size={14} color="orange" />
-                                  </Tooltip>
-                                )}
-                                {ind.tiene_retrasos && (
-                                  <Tooltip label="Tiene retrasos justificados">
-                                    <IconClockHour4 size={14} color="#fa5252" />
-                                  </Tooltip>
-                                )}
-                                <Badge color={SEMAFORO_COLOR[ind.semaforo]} variant="light" size="xs">
-                                  {ind.avance ?? "—"}
-                                </Badge>
-                                <Badge
-                                  color={ind.estado_reporte === "Aprobado" ? "teal" : ind.estado_reporte === "Enviado" ? "blue" : "gray"}
-                                  variant="light" size="xs"
-                                >
-                                  {ind.estado_reporte}
-                                </Badge>
-                              </Group>
-                            </Group>
-                            {ind.resultados_alcanzados && (
-                              <Text size="xs" c="dimmed" lineClamp={2}>{ind.resultados_alcanzados}</Text>
-                            )}
-                          </Paper>
-                        ))}
-                      </Stack>
-                    </Paper>
-                  )}
-                </Stack>
-              )}
             </Stack>
           )}
         </Container>
