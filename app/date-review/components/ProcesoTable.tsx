@@ -1,16 +1,15 @@
 "use client";
 
-import { Paper, Text, ScrollArea, Table, Stack, Badge } from "@mantine/core";
+import { Paper, Text, ScrollArea, Table, Stack, Badge, Anchor } from "@mantine/core";
 import FaseBadge from "./FaseBadge";
 import { COLS_9 } from "../constants";
 import type { ProcesoRow, Program } from "../types";
 
-const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro, onRowClick }: {
+const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro }: {
   title: string;
   rows: ProcesoRow[];
   tipoProceso: string;
   programaFiltro: string;
-  onRowClick: (p: Program) => void;
 }) => {
   const modoPrograma = programaFiltro !== "Todos";
   const mostrarRC    = !modoPrograma && (tipoProceso === "Todos" || tipoProceso === "Registro calificado");
@@ -45,30 +44,50 @@ const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro, onRowClick }: 
               </Table.Tr>
             ) : (
               rows.map((row, i) => (
-                <Table.Tr key={i} style={{ cursor: "pointer" }} onClick={() => onRowClick(row.programa)}>
-                  <Table.Td>
-                    <Text size="xs" fw={600}>{row.programa.nombre}</Text>
-                    <Text size="xs" c={row.programa.codigo_snies ? "dimmed" : "red"}>
-                      {row.programa.codigo_snies ? `SNIES: ${row.programa.codigo_snies}` : "No tiene SNIES"}
-                    </Text>
+                <Table.Tr key={i}>
+                  <Table.Td style={{ verticalAlign: "middle" }}>
+                    <Stack align="center" gap={4} justify="center">
+                      <Anchor href={`/date-review/program/${row.programa._id}`} size="xs" fw={600} underline="hover" ta="center" display="block">
+                        {row.programa.nombre}
+                      </Anchor>
+                      <Text size="xs" c={row.programa.codigo_snies ? "dimmed" : "red"} ta="center">
+                        {row.programa.codigo_snies ? `SNIES: ${row.programa.codigo_snies}` : "No tiene SNIES"}
+                      </Text>
+                    </Stack>
                   </Table.Td>
                   {modoPrograma
-                    ? COLS_9.map((n) => <Table.Td key={n} ta="center"><Text size="xs" c="dimmed">—</Text></Table.Td>)
+                    ? COLS_9.map((n) => (
+                        <Table.Td key={n} style={{ verticalAlign: "middle", textAlign: "center" }}>
+                          <Text size="xs" c="dimmed">—</Text>
+                        </Table.Td>
+                      ))
                     : <>
-                        {mostrarRC && <Table.Td><FaseBadge fase={row.registro} /></Table.Td>}
-                        {mostrarAV && <Table.Td><FaseBadge fase={row.acreditacion} /></Table.Td>}
+                        {mostrarRC && (
+                          <Table.Td style={{ verticalAlign: "middle" }}>
+                            <Stack align="center" justify="center">
+                              <FaseBadge fase={row.registro} actividad={row.actividadRc ?? null} />
+                            </Stack>
+                          </Table.Td>
+                        )}
+                        {mostrarAV && (
+                          <Table.Td style={{ verticalAlign: "middle" }}>
+                            <Stack align="center" justify="center">
+                              <FaseBadge fase={row.acreditacion} actividad={row.actividadAv ?? null} />
+                            </Stack>
+                          </Table.Td>
+                        )}
                         {mostrarPM && (
-                          <Table.Td ta="center">
+                          <Table.Td style={{ verticalAlign: "middle", textAlign: "center" }}>
                             {row.pmFase !== null ? (
                               <Stack gap={2} align="center">
                                 <Badge size="xs" color="green" variant="light">Activo</Badge>
                                 {row.pmLigadoA && (
-                                  <Text size="xs" c="dimmed">
+                                  <Text size="xs" c="dimmed" ta="center">
                                     Ligado a {row.pmLigadoA === "RC" ? "Registro" : "Acreditación"}
                                   </Text>
                                 )}
                                 {row.pmSubtipo && (
-                                  <Text size="xs" c="dimmed" fs="italic">{row.pmSubtipo}</Text>
+                                  <Text size="xs" c="dimmed" fs="italic" ta="center">{row.pmSubtipo}</Text>
                                 )}
                               </Stack>
                             ) : (

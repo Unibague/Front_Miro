@@ -1,24 +1,27 @@
 "use client";
 
-import { Text, Tooltip } from "@mantine/core";
+import { Text, Stack } from "@mantine/core";
 import { faseColors } from "../constants";
 
-const FaseBadge = ({ fase }: { fase: number | null }) => {
+const FaseBadge = ({ fase, actividad }: { fase: number | null; actividad?: string | null }) => {
   if (fase === null || fase === undefined)
     return <Text size="xs" c="dimmed" ta="center">—</Text>;
 
   const info  = faseColors[fase];
   const color = info?.color ?? "#ced4da";
-  const label = info?.fullName ?? `Fase ${fase}`;
+  const fullName = info?.fullName ?? `Fase ${fase}`;
 
   return (
-    <Tooltip label={label} withArrow>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <div style={{ backgroundColor: color, borderRadius: "6px", padding: "2px 10px" }}>
-          <Text size="xs" fw={600} c="#333">Fase {fase}</Text>
-        </div>
+    <Stack gap={4} align="center" style={{ maxWidth: 240 }}>
+      <div style={{ backgroundColor: color, borderRadius: "6px", padding: "2px 10px", width: "100%" }}>
+        <Text size="xs" fw={600} c="#333" ta="center">{fullName}</Text>
       </div>
-    </Tooltip>
+      {actividad ? (
+        <Text size="sm" c="dimmed" ta="center" lineClamp={3} style={{ lineHeight: 1.35 }}>
+          {actividad}
+        </Text>
+      ) : null}
+    </Stack>
   );
 };
 

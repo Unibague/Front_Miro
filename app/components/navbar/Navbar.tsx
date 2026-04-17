@@ -17,22 +17,20 @@ import {
   Avatar,
   Image,
   useMantineColorScheme,
-  Select,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
-import { usePeriod } from "@/app/context/PeriodContext";
-
 // Components
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 
 // Styles
 import classes from "./Navbar.module.css";
-import { IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconArrowLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -73,16 +71,20 @@ const linksByRole: Record<Roles, LinkItem[]> = {
 const home = [{ link: "/dashboard", label: "Inicio" }];
 
 export default function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
-type ImpersonatedUser = {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  role?: string;
-  isImpersonating?: boolean;
-};
+  const showDateReviewVolver = pathname?.startsWith("/date-review") ?? false;
 
-const user = session?.user as ImpersonatedUser;
+  type ImpersonatedUser = {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+    role?: string;
+    isImpersonating?: boolean;
+  };
+
+  const user = session?.user as ImpersonatedUser;
 
   const [opened, { toggle }] = useDisclosure(false);
   const [modalOpened, setModalOpened] = useState(false);
@@ -92,11 +94,6 @@ const user = session?.user as ImpersonatedUser;
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
   const { colorScheme } = useMantineColorScheme();
-  const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
-  const [tempPeriod, setTempPeriod] = useState<string>(selectedPeriodId || "");
-  const [periodModalOpened, setPeriodModalOpened] = useState(false);
-
-
   const titles = session
     ? [{ link: "/dashboard", label: "MIRÓ" }]
     : [{ link: "/", label: "MIRÓ" }];
@@ -121,13 +118,6 @@ const user = session?.user as ImpersonatedUser;
         });
     }
   }, [session]);
-
-  useEffect(() => {
-    if (periodModalOpened) {
-      setTempPeriod(selectedPeriodId || "");
-    }
-  }, [periodModalOpened, selectedPeriodId]);
-  
 
   const handleRoleChange = async (role: string) => {
     if (!session?.user?.email) return;
@@ -224,13 +214,28 @@ const user = session?.user as ImpersonatedUser;
     <>
       <header className={classes.header}>
         <Container size="xl" className={classes.inner}>
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Group>{titleButton}</Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            {showDateReviewVolver && (
+              <Button
+                variant="light"
+                color="blue"
+                size="sm"
+                leftSection={<IconArrowLeft size={16} />}
+                onClick={() => router.push("/dashboard?gestionProcesos=1")}
+                style={{ flexShrink: 0 }}
+              >
+                Volver
+              </Button>
+            )}
+            <Group gap="xs" wrap="nowrap">
+              {titleButton}
+            </Group>
+          </Group>
 
           {session?.user ? (
             <>
-              <Group gap={8} visibleFrom="xs">
-              
+              <Group gap={8} visibleFrom="xs" wrap="nowrap">
 {user?.isImpersonating ? (
   <Badge color="red" size="lg" m={20} variant="light">
     Estás impersonando al usuario: {user.name}
@@ -295,21 +300,6 @@ const user = session?.user as ImpersonatedUser;
                       className={classes.avatarClickable}
                     />
                   </Menu.Target>
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <Button 
-                      size="xs"
-                      style={{
-                        marginTop: "40px",
-                        position: "absolute",
-                        top: "110%",
-                        left: "70%",
-                        transform: "translateX(-100%)",
-                        zIndex: 1,
-                      }} onClick={() => setPeriodModalOpened(true)} variant="light" fw={700}>
-                        Periodo: {availablePeriods.find((p) => p._id === selectedPeriodId)?.name || "Seleccionar"}
-                    </Button>
-                  </div>
-                  {/* Menu Dropdown */}
                   <Menu.Dropdown>
                     <Menu.Item
                       color="red"
@@ -345,6 +335,20 @@ const user = session?.user as ImpersonatedUser;
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
+              {showDateReviewVolver && (
+                <Button
+                  variant="light"
+                  color="blue"
+                  size="sm"
+                  leftSection={<IconArrowLeft size={16} />}
+                  onClick={() => {
+                    router.push("/dashboard?gestionProcesos=1");
+                    toggle();
+                  }}
+                >
+                  Volver
+                </Button>
+              )}
               {itemsDrawer}
               <ThemeChangerMobile />
               {session?.user && (
@@ -395,39 +399,6 @@ const user = session?.user as ImpersonatedUser;
             Cerrar Sesión
           </Button>
         </Group>
-      </Modal>
-      <Modal
-        opened={periodModalOpened}
-        onClose={() => setPeriodModalOpened(false)}
-        title="Selecciona un Periodo"
-      >
-        <Select
-          label="Periodo"
-          placeholder="Selecciona un periodo"
-          value={tempPeriod}
-          onChange={(value) =>{
-            console.log("Periodo seleccionado en navbar:", value);
-            setTempPeriod(value || "")
-          }}
-          searchable
-          allowDeselect={false}
-          data={availablePeriods.map((period) => ({
-            value: period._id,
-            label: period.name,
-          }))}
-        />
-        <Button
-          fullWidth
-          mt="md"
-          onClick={() => {
-            if (tempPeriod) {
-              setSelectedPeriodId(tempPeriod);
-              setPeriodModalOpened(false);
-            }
-          }}
-        >
-          Confirmar
-        </Button>
       </Modal>
     </>
   );

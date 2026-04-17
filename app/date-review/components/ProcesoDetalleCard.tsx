@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, Notification, SimpleGrid, Anchor, Divider, Loader,
@@ -28,7 +28,22 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso } from "../types";
+import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso, CasoFechaKey } from "../types";
+import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
+import {
+  LABEL_PROCESO, COLOR_PROCESO,
+  COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
+  faseColors,
+} from "../constants";
+
+const CASO_FECHA_LABELS: Record<CasoFechaKey, string> = {
+  fecha_solicitud_radicado: "Solicitud de radicado",
+  fecha_notificacion_completitud: "Notificación de completitud",
+  fecha_respuesta_completitud: "Respuesta de completitud",
+  fecha_resolucion: "Acto administrativo MEN",
+  fecha_resolucion_apelacion: "Apelación envío MEN",
+  fecha_respuesta_men: "Apelación respuesta MEN",
+};
 
 const esActoAdministrativo = (nombre: string) => nombre.trim().toLowerCase() === "acto administrativo";
 
@@ -369,11 +384,6 @@ const SortableActividad = ({
     </div>
   );
 };
-import {
-  LABEL_PROCESO, COLOR_PROCESO,
-  COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
-  faseColors,
-} from "../constants";
 
 const ProcesoDetalleCard = ({
   proceso, programa, fases, onUpdateProceso, onUpdateFases, onUpdatePrograma, onRefreshProcesos,
@@ -387,6 +397,28 @@ const ProcesoDetalleCard = ({
   const [savingRes, setSavingRes]             = useState(false);
   const [cerrarProcesoOpen, setCerrarProcesoOpen] = useState(false);
   const [cerrandoProceso, setCerrandoProceso] = useState(false);
+  const [cierreForm, setCierreForm] = useState({ fecha: "", codigo: "", duracion: "" });
+  const [cierreError, setCierreError] = useState<string | null>(null);
+
+  const abrirModalCerrar = () => {
+    setCierreError(null);
+    if (proceso.tipo_proceso === "RC") {
+      setCierreForm({
+        fecha: programa.fecha_resolucion_rc ?? "",
+        codigo: programa.codigo_resolucion_rc ?? "",
+        duracion: programa.duracion_resolucion_rc != null ? String(programa.duracion_resolucion_rc) : "",
+      });
+    } else if (proceso.tipo_proceso === "AV") {
+      setCierreForm({
+        fecha: programa.fecha_resolucion_av ?? "",
+        codigo: programa.codigo_resolucion_av ?? "",
+        duracion: programa.duracion_resolucion_av != null ? String(programa.duracion_resolucion_av) : "",
+      });
+    } else {
+      setCierreForm({ fecha: "", codigo: "", duracion: "" });
+    }
+    setCerrarProcesoOpen(true);
+  };
 
   /* ── PDF de resolución vigente / documentos de proceso ── */
   const [resolucionDoc, setResolucionDoc]                   = useState<ProcessDocument | null>(null);
@@ -421,16 +453,41 @@ const ProcesoDetalleCard = ({
   };
 
   const cerrarProceso = async () => {
+    setCierreError(null);
     setCerrandoProceso(true);
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/close`);
+      try {
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/close`, {
+          fecha_resolucion: cierreForm.fecha || undefined,
+          codigo_resolucion: cierreForm.codigo || undefined,
+          duracion_resolucion: cierreForm.duracion ? Number(cierreForm.duracion) : undefined,
+        });
+      } catch (e: unknown) {
+        console.error("Error cerrando proceso (API):", e);
+        const ax = e as {
+          message?: string;
+          response?: { status?: number; data?: { error?: string; detalle?: string; message?: string } };
+        };
+        const d = ax.response?.data;
+        const fromApi = [d?.error, d?.detalle].filter(Boolean).join(": ")
+          || (typeof d?.message === "string" ? d.message : "");
+        const net = !ax.response && typeof ax.message === "string" ? ax.message : "";
+        const msg = fromApi
+          || (ax.response?.status ? `Respuesta ${ax.response.status} del servidor.` : "")
+          || net
+          || "No se pudo cerrar el proceso. Revisa la consola o el log del API.";
+        setCierreError(msg);
+        return;
+      }
       setPmProceso(null);
-      const progRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}`);
-      onUpdatePrograma(progRes.data);
-      await onRefreshProcesos(programa.dep_code_programa);
       setCerrarProcesoOpen(false);
-    } catch (e) {
-      console.error("Error cerrando proceso:", e);
+      try {
+        const progRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}`);
+        onUpdatePrograma(progRes.data);
+      } catch (e) {
+        console.error("Cierre OK pero falló recargar programa; refrescando listado:", e);
+      }
+      await onRefreshProcesos(programa.dep_code_programa);
     } finally {
       setCerrandoProceso(false);
     }
@@ -645,6 +702,13 @@ const ProcesoDetalleCard = ({
   const [caso, setCaso]                       = useState<Caso | null>(null);
   const [savingCaso, setSavingCaso]           = useState(false);
   const [editingCasoDateKey, setEditingCasoDateKey] = useState<string | null>(null);
+  const [casoFechaModalField, setCasoFechaModalField] = useState<CasoFechaKey | null>(null);
+  const [casoFechaObsTexto, setCasoFechaObsTexto]         = useState("");
+  const [savingCasoFechaObs, setSavingCasoFechaObs]       = useState(false);
+  const [casoFechaDocs, setCasoFechaDocs]                 = useState<ProcessDocument[]>([]);
+  const [loadingCasoFechaDocs, setLoadingCasoFechaDocs]   = useState(false);
+  const [uploadingCasoFechaDoc, setUploadingCasoFechaDoc] = useState(false);
+  const [casoFechaDocCounts, setCasoFechaDocCounts]       = useState<Record<string, number>>({});
 
   const cargarCaso = async () => {
     try {
@@ -680,6 +744,80 @@ const ProcesoDetalleCard = ({
     const fechaStr = val ? val.toISOString().split("T")[0] : null;
     await saveCasoField(field, fechaStr);
     setEditingCasoDateKey(null);
+  };
+
+  const refreshCasoFechaDocCounts = async () => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+        params: { process_id: proceso._id },
+      });
+      const docs = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+      const counts: Record<string, number> = {};
+      for (const d of docs) {
+        if (d.caso_date_key) counts[d.caso_date_key] = (counts[d.caso_date_key] ?? 0) + 1;
+      }
+      setCasoFechaDocCounts(counts);
+    } catch { /* silencioso */ }
+  };
+
+  useEffect(() => {
+    void refreshCasoFechaDocCounts();
+  }, [proceso._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const abrirCasoFechaModal = async (field: CasoFechaKey) => {
+    if (!caso) return;
+    setCasoFechaModalField(field);
+    const obsK = `obs_${field}` as keyof Caso;
+    setCasoFechaObsTexto(String((caso[obsK] as string | undefined) ?? ""));
+    setLoadingCasoFechaDocs(true);
+    setCasoFechaDocs([]);
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+        params: { process_id: proceso._id, caso_date_key: field },
+      });
+      setCasoFechaDocs(Array.isArray(res.data) ? (res.data as ProcessDocument[]) : []);
+    } catch { setCasoFechaDocs([]); }
+    finally { setLoadingCasoFechaDocs(false); }
+  };
+
+  const guardarCasoFechaObs = async () => {
+    if (!caso || !casoFechaModalField) return;
+    setSavingCasoFechaObs(true);
+    try {
+      const obsK = `obs_${casoFechaModalField}`;
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${caso._id}`, {
+        [obsK]: casoFechaObsTexto,
+      });
+      setCaso(res.data);
+    } catch { /* silencioso */ }
+    finally { setSavingCasoFechaObs(false); }
+  };
+
+  const subirCasoFechaDoc = async (files: File[]) => {
+    if (!casoFechaModalField || files.length === 0) return;
+    setUploadingCasoFechaDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("caso_date_key", casoFechaModalField);
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      const newDoc = res.data as ProcessDocument;
+      setCasoFechaDocs(prev => [newDoc, ...prev]);
+      await refreshCasoFechaDocCounts();
+    } catch (e) { console.error(e); }
+    finally { setUploadingCasoFechaDoc(false); }
+  };
+
+  const eliminarCasoFechaDoc = async (docId: string) => {
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
+      setCasoFechaDocs(prev => prev.filter(d => d._id !== docId));
+      await refreshCasoFechaDocCounts();
+    } catch (e) { console.error(e); }
   };
 
   // "No renovación" siempre tiene caso automáticamente
@@ -771,20 +909,6 @@ const ProcesoDetalleCard = ({
   const [loadingDocs, setLoadingDocs]   = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
 
-  const intentarAvanzarFaseSiCorresponde = async (fase: Phase, faseActualizada: Phase) => {
-    if (fase.numero !== proceso.fase_actual) return;
-    if (!faseActualizada.actividades.every(actividadResuelta)) return;
-    const siguienteFase = proceso.fase_actual + 1;
-    if (siguienteFase > 6) return;
-    try {
-      const procRes = await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}`,
-        { fase_actual: siguienteFase }
-      );
-      onUpdateProceso(procRes.data);
-    } catch (e) { console.error(e); }
-  };
-
   const toggleCompletada = async (fase: Phase, act: Actividad) => {
     try {
       const nuevaCompletada = !act.completada;
@@ -804,7 +928,6 @@ const ProcesoDetalleCard = ({
           act.nombre.trim().toLowerCase() === 'información del caso') {
         setTimeout(() => cargarCaso(), 300);
       }
-      if (nuevaCompletada) await intentarAvanzarFaseSiCorresponde(fase, faseActualizada);
     } catch (e) { console.error(e); }
   };
 
@@ -819,7 +942,6 @@ const ProcesoDetalleCard = ({
       );
       const faseActualizada: Phase = res.data;
       onUpdateFases(fases.map(f => f._id === fase._id ? faseActualizada : f));
-      if (siguiente) await intentarAvanzarFaseSiCorresponde(fase, faseActualizada);
     } catch (e) { console.error(e); }
   };
 
@@ -1154,20 +1276,48 @@ const ProcesoDetalleCard = ({
     } catch (e) { console.error(e); }
   };
 
+  const [marcandoTodoFase, setMarcandoTodoFase] = useState(false);
+  const marcarTodoFase = async (fase: Phase) => {
+    setMarcandoTodoFase(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/mark-all-completed`);
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
+    } catch (e) { console.error(e); }
+    finally { setMarcandoTodoFase(false); }
+  };
+
   const finalizarFase = async (fase: Phase) => {
     setFinalizandoFase(true);
     try {
-      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/complete-all`);
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/finish-phase`);
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
       if (res.data.proceso) onUpdateProceso(res.data.proceso);
       setChecklistOpen(false);
-    } catch (e) { console.error(e); }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (msg) alert(msg);
+      else console.error(e);
+    }
     finally { setFinalizandoFase(false); }
+  };
+
+  const [marcandoNaFase6, setMarcandoNaFase6] = useState(false);
+  const marcarFase6NoAplicaCompleta = async (fase: Phase) => {
+    if (fase.numero !== 6) return;
+    setMarcandoNaFase6(true);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/mark-all-no-aplica-fase6`);
+      onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (msg) alert(msg);
+      else console.error(e);
+    } finally { setMarcandoNaFase6(false); }
   };
 
   const [revirtiendoFase, setRevirtiendoFase] = useState(false);
   const revertirFase = async (fase: Phase) => {
-    if (!confirm("¿Seguro que quieres volver a la fase anterior? Se desmarcarán todas las actividades de esta fase.")) return;
+    if (!confirm("¿Volver a la fase anterior? Las actividades de esta fase se mantienen como están.")) return;
     setRevirtiendoFase(true);
     try {
       const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/revert-all`);
@@ -1182,39 +1332,54 @@ const ProcesoDetalleCard = ({
   const renderCasoTabla = () => {
     if (!caso) return null;
     const mostrarApelacion = caso.resolucion_aprobada === false;
-    const COLS_FECHAS = [
-      { key: "fecha_solicitud_radicado",       label: "Solicitud radicado" },
-      { key: "fecha_notificacion_completitud", label: "Notificación completitud" },
-      { key: "fecha_respuesta_completitud",    label: "Respuesta completitud" },
-      { key: "fecha_resolucion",               label: "Acto administrativo MEN" },
+    const COLS_FECHAS: { key: CasoFechaKey; label: string }[] = [
+      { key: "fecha_solicitud_radicado", label: CASO_FECHA_LABELS.fecha_solicitud_radicado },
+      { key: "fecha_notificacion_completitud", label: CASO_FECHA_LABELS.fecha_notificacion_completitud },
+      { key: "fecha_respuesta_completitud",    label: CASO_FECHA_LABELS.fecha_respuesta_completitud },
+      { key: "fecha_resolucion",               label: CASO_FECHA_LABELS.fecha_resolucion },
     ];
-    const minWidth = (mostrarApelacion ? 900 : 720) + (caso.codigo_caso !== null ? 120 : 0);
+    const minWidth = (mostrarApelacion ? 980 : 640) + (caso.codigo_caso !== null ? 40 : 0);
+    const cellFont: CSSProperties = { fontSize: 12, lineHeight: 1.35 };
+    const headStyle: CSSProperties = { ...cellFont, whiteSpace: "normal", wordBreak: "normal", hyphens: "none" };
 
-    const renderDateCell = (field: string, bgColor?: string) => {
-      const fecha     = caso[field as keyof Caso] as string | null | undefined;
+    const renderDateCell = (field: CasoFechaKey, bgColor?: string) => {
+      const fecha     = caso[field] as string | null | undefined;
       const isEditing = editingCasoDateKey === field;
       const dateVal   = fecha ? new Date(fecha + "T12:00:00") : null;
-      const isApelacion = field === "fecha_resolucion_apelacion";
+      const isApelacion = field === "fecha_resolucion_apelacion" || field === "fecha_respuesta_men";
+      const nDocs = casoFechaDocCounts[field] ?? 0;
+      const obsK = `obs_${field}` as keyof Caso;
+      const tieneObs = !!String((caso[obsK] as string | undefined) ?? "").trim();
       return (
-        <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 130, ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
+        <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 108, maxWidth: 132, padding: "8px 6px", ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
           <Stack gap={2} align="center">
             {isEditing ? (
               <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
                 valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
-                style={{ width: 130 }} clearable disabled={savingCaso}
+                style={{ width: 118 }} clearable disabled={savingCaso}
                 onKeyDown={e => e.preventDefault()}
-                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
+                styles={{ input: { caretColor: "transparent", cursor: "pointer", fontSize: 12, minHeight: 28 } }} />
             ) : (
-              <Text size="xs" fw={600} ta="center" style={{
-                cursor: "pointer", padding: "2px 8px", borderRadius: 4,
+              <Text fw={600} ta="center" style={{
+                ...cellFont,
+                cursor: "pointer", padding: "2px 6px", borderRadius: 4,
                 border: isApelacion ? "1px dashed #fd7014" : "1px dashed #4dabf7",
                 backgroundColor: isApelacion ? "#fff3e0" : "#e7f5ff",
                 color: fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
               }}
                 title="Clic para editar fecha" onClick={() => setEditingCasoDateKey(field)}>
-                {fecha ?? <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+                {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
               </Text>
             )}
+            <Text c="blue" ta="center" style={{ ...cellFont, cursor: "pointer", textDecoration: "underline", whiteSpace: "normal", maxWidth: 128 }}
+              onClick={e => { e.stopPropagation(); void abrirCasoFechaModal(field); }}>
+              Observaciones y documentos
+              {(nDocs > 0 || tieneObs) && (
+                <span style={{ color: "#495057", fontWeight: 500 }}>
+                  {nDocs > 0 ? ` (${nDocs})` : ""}{tieneObs ? " · notas" : ""}
+                </span>
+              )}
+            </Text>
           </Stack>
         </Table.Td>
       );
@@ -1226,56 +1391,70 @@ const ProcesoDetalleCard = ({
           <Table.Thead>
             <Table.Tr>
               {/* Código del caso como primera columna */}
-              <Table.Th style={{ backgroundColor: "#f8f9fa", minWidth: 140 }}>
-                <Text size="xs" fw={700} ta="center">Código del caso</Text>
+              <Table.Th style={{ backgroundColor: "#f8f9fa", width: 120, padding: "8px 6px", verticalAlign: "top" }}>
+                <Text fw={700} ta="center" style={headStyle}>Código del caso</Text>
               </Table.Th>
               {COLS_FECHAS.map(col => (
-                <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
-                  <Text size="xs" fw={700} ta="center">{col.label}</Text>
+                <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa", padding: "8px 6px", verticalAlign: "top", maxWidth: 140 }}>
+                  <Text fw={700} ta="center" style={headStyle}>{col.label}</Text>
                 </Table.Th>
               ))}
-              <Table.Th style={{ backgroundColor: "#f8f9fa", minWidth: 120 }}>
-                <Text size="xs" fw={700} ta="center">Estado</Text>
+              <Table.Th style={{ backgroundColor: "#f8f9fa", width: 118, maxWidth: 124, padding: "8px 6px", verticalAlign: "top" }}>
+                <Text fw={700} ta="center" style={headStyle}>Estado de la solicitud</Text>
               </Table.Th>
               {mostrarApelacion && (
-                <Table.Th style={{ backgroundColor: "#fff3e0" }}>
-                  <Group gap={4} justify="center">
-                    <Badge size="xs" color="orange" variant="light">Apelación</Badge>
-                    <Text size="xs" fw={700} ta="center">Resolución apelación</Text>
-                  </Group>
-                </Table.Th>
+                <>
+                  <Table.Th style={{ backgroundColor: "#fff3e0", padding: "8px 6px", verticalAlign: "top", maxWidth: 132 }}>
+                    <Text fw={700} ta="center" style={headStyle}>{CASO_FECHA_LABELS.fecha_resolucion_apelacion}</Text>
+                  </Table.Th>
+                  <Table.Th style={{ backgroundColor: "#fff3e0", padding: "8px 6px", verticalAlign: "top", maxWidth: 132 }}>
+                    <Text fw={700} ta="center" style={headStyle}>{CASO_FECHA_LABELS.fecha_respuesta_men}</Text>
+                  </Table.Th>
+                </>
               )}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             <Table.Tr>
               {/* Input código */}
-              <Table.Td style={{ verticalAlign: "middle" }}>
+              <Table.Td style={{ verticalAlign: "middle", padding: "8px 6px" }}>
                 <TextInput
                   size="xs" placeholder="Ej: 2024-RC-001" ta="center"
                   value={caso.codigo_caso ?? ""}
                   onChange={e => setCaso({ ...caso, codigo_caso: e.currentTarget.value })}
                   onBlur={() => saveCasoField("codigo_caso", caso.codigo_caso)}
                   disabled={savingCaso}
-                  styles={{ input: { textAlign: "center" } }}
+                  styles={{ input: { textAlign: "center", fontSize: 12, minHeight: 30 } }}
                 />
               </Table.Td>
               {COLS_FECHAS.map(col => renderDateCell(col.key))}
-              {/* Estado */}
-              <Table.Td style={{ verticalAlign: "middle", minWidth: 120 }}>
-                <Stack gap={4} align="center">
-                  <Switch size="sm"
-                    checked={caso.resolucion_aprobada === true}
-                    onChange={e => saveCasoField("resolucion_aprobada", e.currentTarget.checked)}
-                    color="green" />
-                  {caso.resolucion_aprobada !== null && (
-                    <Badge size="xs" color={caso.resolucion_aprobada ? "green" : "red"} variant="light">
-                      {caso.resolucion_aprobada ? "Satisfactorio" : "No satisfactorio"}
-                    </Badge>
-                  )}
+              {/* Estado de la solicitud — dos casillas excluyentes */}
+              <Table.Td style={{ verticalAlign: "middle", width: 118, maxWidth: 124, padding: "6px 4px" }}>
+                <Stack gap={4} align="stretch" justify="center">
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer", ...cellFont, lineHeight: 1.25 }}>
+                    <input
+                      type="checkbox"
+                      checked={caso.resolucion_aprobada === true}
+                      onChange={() => saveCasoField("resolucion_aprobada", true)}
+                      disabled={savingCaso}
+                      style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
+                    />
+                    <span>Satisfactorio</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer", ...cellFont, lineHeight: 1.25 }}>
+                    <input
+                      type="checkbox"
+                      checked={caso.resolucion_aprobada === false}
+                      onChange={() => saveCasoField("resolucion_aprobada", false)}
+                      disabled={savingCaso}
+                      style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
+                    />
+                    <span>No satisfactorio</span>
+                  </label>
                 </Stack>
               </Table.Td>
               {mostrarApelacion && renderDateCell("fecha_resolucion_apelacion", "#fff8f0")}
+              {mostrarApelacion && renderDateCell("fecha_respuesta_men", "#fff8f0")}
             </Table.Tr>
           </Table.Tbody>
         </Table>
@@ -1284,7 +1463,7 @@ const ProcesoDetalleCard = ({
   };
 
   /* ── Datos derivados ── */
-  const color           = COLOR_PROCESO[proceso.tipo_proceso];
+  const color           = COLOR_PROCESO[proceso.tipo_proceso] ?? "#868e96";
   const maxCondicion    = proceso.tipo_proceso === "RC" ? 9 : proceso.tipo_proceso === "AV" ? 12 : null;
   const resolucionFecha = proceso.tipo_proceso === "RC" ? programa.fecha_resolucion_rc : programa.fecha_resolucion_av;
   const resolucionCodigo = proceso.tipo_proceso === "RC" ? programa.codigo_resolucion_rc : programa.codigo_resolucion_av;
@@ -1304,7 +1483,7 @@ const ProcesoDetalleCard = ({
             <Text fw={700} c="#333" size="md">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
             <Badge color="gray" variant="filled" size="sm">No renovación</Badge>
           </Group>
-          <Button size="xs" variant="white" color="red" onClick={() => setCerrarProcesoOpen(true)}>Cerrar proceso</Button>
+          <Button size="xs" variant="white" color="red" onClick={abrirModalCerrar}>Cerrar proceso</Button>
         </div>
 
         {/* Fila de resolución + PDF */}
@@ -1316,11 +1495,11 @@ const ProcesoDetalleCard = ({
             </div>
             <div>
               <Text size="xs" c="dimmed" fw={600}>Fecha resolución</Text>
-              <Text size="sm" fw={500}>{resolucionFecha ?? "—"}</Text>
+              <Text size="sm" fw={500}>{resolucionFecha ? formatFechaDDMMYY(resolucionFecha) : "—"}</Text>
             </div>
             <div>
               <Text size="xs" c="dimmed" fw={600}>Fecha vencimiento</Text>
-              <Text size="sm" fw={500}>{proceso.fecha_vencimiento ?? "—"}</Text>
+              <Text size="sm" fw={500}>{proceso.fecha_vencimiento ? formatFechaDDMMYY(proceso.fecha_vencimiento) : "—"}</Text>
             </div>
             {/* PDF de resolución — al lado de fecha vencimiento */}
             <div>
@@ -1526,10 +1705,35 @@ const ProcesoDetalleCard = ({
         </Modal>
 
         {/* Modal cerrar proceso */}
-        <Modal opened={cerrarProcesoOpen} onClose={() => setCerrarProcesoOpen(false)}
-          title="Cerrar proceso" centered size="sm" radius="md" zIndex={300}>
+        <Modal opened={cerrarProcesoOpen} onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
+          title="Cerrar proceso" centered size="md" radius="md" zIndex={300}>
           <Stack gap="sm">
-            <Text size="sm">¿Estás seguro de que deseas cerrar este proceso de No renovación? Se moverá al historial.</Text>
+            {cierreError && (
+              <Alert color="red" title="Error al cerrar" onClose={() => setCierreError(null)} withCloseButton>
+                {cierreError}
+              </Alert>
+            )}
+            <Text size="sm">Al cerrar se guarda el historial y se genera una <strong>alerta</strong> con fechas fijas. Confirma resolución y vigencia; el PDF debe estar cargado en el proceso si aplica.</Text>
+            <div>
+              <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
+              <DateInput
+                value={cierreForm.fecha ? new Date(cierreForm.fecha + "T12:00:00") : null}
+                onChange={(val) => setCierreForm((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
+                valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
+                onKeyDown={(e) => e.preventDefault()}
+                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+              />
+            </div>
+            <TextInput label="Código de resolución" value={cierreForm.codigo}
+              onChange={(e) => {
+                const codigo = e.currentTarget.value;
+                setCierreForm((f) => ({ ...f, codigo }));
+              }} />
+            <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
+              onChange={(e) => {
+                const duracion = e.currentTarget.value.replace(/\D/g, "");
+                setCierreForm((f) => ({ ...f, duracion }));
+              }} />
             <Group justify="flex-end">
               <Button variant="default" size="sm" onClick={() => setCerrarProcesoOpen(false)}>Cancelar</Button>
               <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
@@ -1591,7 +1795,7 @@ const ProcesoDetalleCard = ({
       <div style={{ backgroundColor: color, padding: "10px 16px", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "flex-start", gap: 8 }}>
           <Button size="xs" variant="white" color="dark" onClick={() => setOffsetsModalOpen(true)}>Editar meses</Button>
-          <Button size="xs" variant="white" color="red" onClick={() => setCerrarProcesoOpen(true)}>Cerrar proceso</Button>
+          <Button size="xs" variant="white" color="red" onClick={abrirModalCerrar}>Cerrar proceso</Button>
         </div>
         <Text fw={700} c="#333" size="md" ta="center">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -1611,7 +1815,7 @@ const ProcesoDetalleCard = ({
         <Table withTableBorder withColumnBorders style={{ minWidth: 800 }}>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
+              <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa", padding: "8px 6px" }}>
                 <Text size="xs" fw={700} ta="center">Resolución vigente</Text>
               </Table.Th>
               {(proceso.tipo_proceso === "AV" ? COLUMNAS_FECHA_AV : COLUMNAS_FECHA_RC_PM).map(col => {
@@ -1621,12 +1825,15 @@ const ProcesoDetalleCard = ({
                   col.key === "fecha_digitacion_saces" ? offsets.digitacion :
                   col.key === "fecha_radicado_men"     ? offsets.radicado : null;
                 return (
-                  <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
-                    <Text size="xs" fw={700} ta="center">{col.label}</Text>
+                  <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa", padding: "8px 6px", minWidth: 120 }}>
+                    <Text size="xs" fw={700} ta="center" style={{ whiteSpace: "normal" }}>{col.label}</Text>
                     {col.key === "fecha_vencimiento"
-                      ? <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
+                      ? (col.sub                        ? <Text size="xs" c="dimmed" ta="center" style={{ whiteSpace: "normal" }}>({col.sub})</Text>
+                        : null)
                       : (proceso.subtipo !== "Nuevo" && proceso.subtipo !== "Primera vez") &&
-                        <Text size="xs" c="dimmed" ta="center">{offsetValue != null ? `(${offsetValue} meses antes del vencimiento)` : ""}</Text>
+                        <Text size="xs" c="dimmed" ta="center" style={{ whiteSpace: "normal" }}>
+                          {offsetValue != null ? `(${offsetValue} meses antes del vencimiento)` : ""}
+                        </Text>
                     }
                   </Table.Th>
                 );
@@ -1635,26 +1842,26 @@ const ProcesoDetalleCard = ({
           </Table.Thead>
           <Table.Tbody>
             <Table.Tr>
-              <Table.Td style={{ verticalAlign: "top" }}>
+              <Table.Td style={{ verticalAlign: "top", padding: "8px 6px" }}>
                 <Stack gap={4} align="center">
                   {proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez" ? (
-                    <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
+                    <Text c="dimmed" fw={600} ta="center" fs="italic" size="xs">Inexistente</Text>
                   ) : (
                     <>
                       {resolucionFecha ? (
                         <>
-                          <Text size="xs" fw={600} ta="center">{resolucionFecha}</Text>
-                          <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
+                          <Text fw={600} ta="center" size="xs">{formatFechaDDMMYY(resolucionFecha)}</Text>
+                          <Text c="dimmed" ta="center" size="xs">{resolucionCodigo ?? "—"}</Text>
                         </>
                       ) : (
-                        <Text size="xs" c="orange" fw={600} ta="center">Pendiente</Text>
+                        <Text c="orange" fw={600} ta="center" size="xs">Pendiente</Text>
                       )}
                       <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc} onClick={() => setResolucionDocModalOpen(true)}>
-                        {resolucionDoc ? "Ver / cambiar PDF resolución" : "Subir PDF resolución"}
+                        {resolucionDoc ? "Cambiar PDF" : "Subir PDF"}
                       </Button>
                       {resolucionDoc && (
                         <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                          Abrir PDF en nueva pestaña
+                          Ver PDF
                         </Anchor>
                       )}
                     </>
@@ -1670,11 +1877,11 @@ const ProcesoDetalleCard = ({
                   (col.key === "fecha_radicado_men" && proceso.subtipo !== "Nuevo" && proceso.subtipo !== "Primera vez");
                 const obsValor     = proceso[col.obsKey as keyof Process] as string ?? "";
                 return (
-                  <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
+                  <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 120, padding: "8px 6px" }}>
                     <Stack gap={4} align="center">
                       {/* Fecha vencimiento inexistente para Nuevo / Primera vez */}
                       {col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez") ? (
-                        <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
+                        <Text c="dimmed" fw={600} ta="center" fs="italic" size="xs">Inexistente</Text>
                       ) : isEditing && !esSoloLectura ? (
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
                           valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
@@ -1692,12 +1899,12 @@ const ProcesoDetalleCard = ({
                           title={esSoloLectura ? (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente") : "Clic para editar fecha"}
                           onClick={() => { if (!esSoloLectura) setEditingDateKey(col.key); }}
                         >
-                          {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+                          {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
                         </Text>
                       )}
                       {!(col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez")) && (
                         <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
-                          style={{ cursor: "pointer" }} onClick={() => abrirObsFecha(col.obsKey, col.label)}>
+                          style={{ cursor: "pointer", textAlign: "center" }} onClick={() => abrirObsFecha(col.obsKey, col.label)}>
                           {obsValor ? "Ver observaciones" : "Observaciones"}
                         </Text>
                       )}
@@ -1888,7 +2095,7 @@ const ProcesoDetalleCard = ({
                                 color: fecha ? "#1c7ed6" : "#adb5bd",
                               }}
                                 title="Clic para editar fecha" onClick={() => setEditingPmDateKey(col.key)}>
-                                {fecha ? fecha : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+                                {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
                               </Text>
                             )}
                             <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
@@ -1925,7 +2132,7 @@ const ProcesoDetalleCard = ({
       <div style={{ padding: "12px 16px", borderTop: "1px solid #dee2e6", display: "flex", gap: 16, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
           <Group gap="sm" align="center">
-            <div style={{ backgroundColor: faseColors[proceso.fase_actual]?.color ?? "#ced4da", borderRadius: 6, padding: "2px 10px" }}>
+            <div style={{ backgroundColor: faseColors.find(fc => fc.fase === proceso.fase_actual)?.color ?? "#ced4da", borderRadius: 6, padding: "2px 10px" }}>
               <Text size="xs" fw={600} c="#333">Fase {proceso.fase_actual}</Text>
             </div>
             {faseActual && <Text size="xs" c="dimmed">{faseActual.nombre}</Text>}
@@ -1966,14 +2173,39 @@ const ProcesoDetalleCard = ({
 
       {/* ── Modales ── */}
 
-      <Modal opened={cerrarProcesoOpen} onClose={() => setCerrarProcesoOpen(false)}
-        title={`Cerrar proceso — ${LABEL_PROCESO[proceso.tipo_proceso]}`} centered size="sm" radius="md">
-        <Stack>
-          <Text size="sm">Al cerrar el proceso, toda la información actual quedará guardada en el <strong>historial</strong> y el proceso volverá a estado inicial.</Text>
-          <Text size="xs" c="dimmed">Esta acción no se puede deshacer.</Text>
+      <Modal opened={cerrarProcesoOpen} onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
+        title={`Cerrar proceso — ${LABEL_PROCESO[proceso.tipo_proceso]}`} centered size="md" radius="md">
+        <Stack gap="sm">
+          {cierreError && (
+            <Alert color="red" title="Error al cerrar" onClose={() => setCierreError(null)} withCloseButton>
+              {cierreError}
+            </Alert>
+          )}
+          <Text size="sm">Se archiva en <strong>historial</strong> y se crea una <strong>alerta</strong> (tipo de proceso aparte) con fechas fijas hasta que inicies un nuevo RC/AV.</Text>
+          <Text size="xs" c="dimmed">Ajusta resolución y vigencia si hace falta. Carga el PDF de resolución en el proceso antes de cerrar si aún no está.</Text>
+          <div>
+            <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
+            <DateInput
+              value={cierreForm.fecha ? new Date(cierreForm.fecha + "T12:00:00") : null}
+              onChange={(val) => setCierreForm((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
+              valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
+              onKeyDown={(e) => e.preventDefault()}
+              styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+            />
+          </div>
+          <TextInput label="Código de resolución" value={cierreForm.codigo}
+            onChange={(e) => {
+              const codigo = e.currentTarget.value;
+              setCierreForm((f) => ({ ...f, codigo }));
+            }} />
+          <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
+            onChange={(e) => {
+              const duracion = e.currentTarget.value.replace(/\D/g, "");
+              setCierreForm((f) => ({ ...f, duracion }));
+            }} />
           <Group justify="flex-end" gap="sm">
             <Button variant="default" size="sm" onClick={() => setCerrarProcesoOpen(false)}>Cancelar</Button>
-            <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Sí, cerrar proceso</Button>
+            <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
           </Group>
         </Stack>
       </Modal>
@@ -2109,6 +2341,50 @@ const ProcesoDetalleCard = ({
         )}
       </Modal>
 
+      {/* Modal: observaciones y documentos por fecha — Información del caso */}
+      <Modal opened={casoFechaModalField !== null} onClose={() => setCasoFechaModalField(null)}
+        title={casoFechaModalField ? `${CASO_FECHA_LABELS[casoFechaModalField]} — observaciones y documentos` : ""}
+        centered size="lg" radius="md" zIndex={400}>
+        <Stack gap="md">
+          <div>
+            <Text size="xs" fw={600} mb={6}>Observaciones</Text>
+            <textarea value={casoFechaObsTexto} onChange={e => setCasoFechaObsTexto(e.target.value)} rows={4}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+              placeholder="Notas para esta fecha..." />
+            <Group justify="flex-end" mt={8}>
+              <Button size="xs" loading={savingCasoFechaObs} onClick={() => void guardarCasoFechaObs()}>Guardar observaciones</Button>
+            </Group>
+          </div>
+          <Divider label="Documentos" labelPosition="center" />
+          <DropzoneCustomComponent
+            text={uploadingCasoFechaDoc ? "Subiendo..." : "Haz clic o arrastra archivos para esta fecha"}
+            onDrop={files => void subirCasoFechaDoc(files)}
+          />
+          {loadingCasoFechaDocs ? (
+            <Group justify="center"><Loader size="sm" /></Group>
+          ) : casoFechaDocs.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center">No hay documentos adjuntos.</Text>
+          ) : (
+            <ScrollArea style={{ maxHeight: 220 }}>
+              <Stack gap="xs">
+                {casoFechaDocs.map(doc => (
+                  <Group key={doc._id} justify="space-between" align="center">
+                    <div style={{ maxWidth: "65%" }}>
+                      <Text size="sm" fw={500} truncate="end">{doc.name}</Text>
+                      {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
+                    </div>
+                    <Group gap="xs">
+                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Button size="xs" variant="outline" color="red" onClick={() => void eliminarCasoFechaDoc(doc._id)}>Eliminar</Button>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
+        </Stack>
+      </Modal>
+
       {/* Modal: observaciones de actividad — zIndex alto para quedar encima del checklist */}
       <Modal opened={actObsOpen} onClose={() => setActObsOpen(false)}
         title={`Observaciones — ${actObsTarget?.act.nombre ?? ""}`} centered size="md" radius="md" zIndex={400}>
@@ -2207,7 +2483,24 @@ const ProcesoDetalleCard = ({
 
       <Modal opened={checklistOpen}
         onClose={() => { setChecklistOpen(false); setEditActividadId(null); setNuevaActividad(""); }}
-        title={faseActual ? `${faseActual.nombre} — Fase ${proceso.fase_actual}` : "Actividades"}
+        title={faseActual ? (
+          <Group gap="sm" align="center" wrap="wrap" pr="md">
+            <Text fw={700} size="lg" component="span">
+              {faseActual.nombre} — Fase {proceso.fase_actual}
+            </Text>
+            {faseActual.numero === 6 && (
+              <Button
+                size="xs"
+                color="orange"
+                variant="outline"
+                loading={marcandoNaFase6}
+                onClick={() => marcarFase6NoAplicaCompleta(faseActual)}
+              >
+                No aplica (fase completa)
+              </Button>
+            )}
+          </Group>
+        ) : "Actividades"}
         centered size="lg" radius="md">
         {faseActual && (
           <Stack gap="sm">
@@ -2268,7 +2561,7 @@ const ProcesoDetalleCard = ({
                 })}
               </SortableContext>
             </DndContext>
-            <Group justify="flex-end" mt="xs">
+            <Group justify="flex-end" mt="xs" wrap="wrap">
               {proceso.fase_actual > 0 && (
                 <Button
                   size="xs"
@@ -2282,13 +2575,24 @@ const ProcesoDetalleCard = ({
               )}
               <Button
                 size="xs"
-                color="green"
+                color="blue"
                 variant="light"
-                loading={finalizandoFase}
-                onClick={() => finalizarFase(faseActual)}
+                loading={marcandoTodoFase}
+                onClick={() => marcarTodoFase(faseActual)}
               >
-                ✓ Finalizar fase
+                Marcar todo
               </Button>
+              {faseActual.numero < 6 && (
+                <Button
+                  size="xs"
+                  color="green"
+                  variant="light"
+                  loading={finalizandoFase}
+                  onClick={() => finalizarFase(faseActual)}
+                >
+                  Siguiente fase
+                </Button>
+              )}
             </Group>
 
             <Divider label="Agregar actividad" labelPosition="center" />

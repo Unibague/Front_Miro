@@ -15,7 +15,8 @@ interface Template {
 const DependencyTemplatesPage = () => {
   const params = useParams();
   const { selectedPeriodId } = usePeriod();
-  const { id } = params;
+  const rawId = params?.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [dependencyName, setDependencyName] = useState<string>("");

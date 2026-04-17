@@ -30,7 +30,6 @@
     "exceljs": "^4.4.0",
     "fecha": "^4.2.3",
     "file-saver": "^2.0.5",
-    "front": "file:",
     "linkify-react": "^4.2.0",
     "linkifyjs": "^4.2.0",
     "lottie-react": "^2.4.0",

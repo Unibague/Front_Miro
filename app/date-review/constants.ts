@@ -22,17 +22,71 @@ export const estadoColor: Record<string, string> = {
   "Fecha Límite":                    "#ff6b6b",
 };
 
+/**
+ * DEBT: RC usa «Nuevo» y AV usa «Primera vez» para el mismo concepto; el API/BD los guarda distinto
+ * (ver Back_Miro/controllers/processes.js). Unificar criterio y migrar datos cuando toque.
+ */
 export const SUBTIPOS: Record<"RC" | "AV" | "PM", string[]> = {
   RC: ["Nuevo", "Renovación", "No renovación", "Renovación + reforma", "Reforma curricular"],
   AV: ["Primera vez", "Renovación"],
   PM: ["Autoevaluación Registro calificado", "Autoevaluación Acreditación"],
 };
 
+const sortEs = (a: string, b: string) => a.localeCompare(b, "es");
+
+/**
+ * En el API: RC usa subtipo «Nuevo» y AV usa «Primera vez» (no son el mismo string).
+ * Para el filtro con tipo «Todos», una sola opción agrupa ambos casos.
+ */
+export const SUBTIPO_FILTRO_PRIMERA_INSTANCIA = "Nuevo o Primera vez";
+
+/** Valores del Select «Subtipo» (tablero y alertas): «Todos» + lista ordenada alfabéticamente (es). */
+export function subtipoOpcionesFiltro(
+  tipoProcesoUi: "Todos" | "Registro calificado" | "Acreditación voluntaria",
+): string[] {
+  if (tipoProcesoUi === "Registro calificado") {
+    return ["Todos", ...[...SUBTIPOS.RC].sort(sortEs)];
+  }
+  if (tipoProcesoUi === "Acreditación voluntaria") {
+    return ["Todos", ...[...SUBTIPOS.AV].sort(sortEs)];
+  }
+  const mezcla = [
+    ...SUBTIPOS.RC.filter((s) => s !== "Nuevo"),
+    ...SUBTIPOS.AV.filter((s) => s !== "Primera vez"),
+  ];
+  const u = [...new Set(mezcla)];
+  u.push(SUBTIPO_FILTRO_PRIMERA_INSTANCIA);
+  return ["Todos", ...u.sort(sortEs)];
+}
+
+/** Comprueba si el subtipo de un proceso RC/AV coincide con el filtro (incluye SUBTIPO_FILTRO_PRIMERA_INSTANCIA). */
+export function procesoCumpleSubtipoFiltro(
+  subtipo: string | null | undefined,
+  tipoProceso: "RC" | "AV",
+  filtro: string,
+  tipoFiltroUI: string,
+): boolean {
+  if (filtro === "Todos") return true;
+  if (filtro === SUBTIPO_FILTRO_PRIMERA_INSTANCIA) {
+    if (tipoFiltroUI === "Todos") {
+      return (tipoProceso === "RC" && subtipo === "Nuevo") || (tipoProceso === "AV" && subtipo === "Primera vez");
+    }
+    if (tipoFiltroUI === "Registro calificado") return tipoProceso === "RC" && subtipo === "Nuevo";
+    if (tipoFiltroUI === "Acreditación voluntaria") return tipoProceso === "AV" && subtipo === "Primera vez";
+    return false;
+  }
+  return (subtipo ?? "") === filtro;
+}
+
 export const LABEL_PROCESO: Record<string, string> = {
   RC: "Registro calificado",
   AV: "Acreditación voluntaria",
   PM: "Plan de mejoramiento",
+  ALERTA: "Alerta",
 };
+
+/** Periodicidad de admisión (programa académico) */
+export const PERIODICIDAD_ADMISION = ["Anual", "Semestral", "Trimestral", "Bimensual", "Mensual"] as const;
 
 export const COLOR_PROCESO: Record<string, string> = {
   RC: "#74c0fc",
@@ -41,19 +95,19 @@ export const COLOR_PROCESO: Record<string, string> = {
 };
 
 export const COLUMNAS_FECHA_RC_PM = [
-  { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha vencimiento",              sub: "calculada con duración resolución" },
-  { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Inicio proceso",                 sub: "" },
+  { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha vencimiento",                    sub: "calculada con duración resolución" },
+  { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Inicio proceso", sub: "" },
   { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura de vicerrectoría", sub: "" },
-  { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en el SACES",         sub: "" },
-  { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Fecha radicado en el MEN",       sub: "" },
+  { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en el SACES",             sub: "" },
+  { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Fecha radicado en el MEN",           sub: "" },
 ] as const;
 
 export const COLUMNAS_FECHA_AV = [
-  { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha de la resolución AV / vencimiento", sub: "resolución + duración (años)" },
-  { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Iniciación proceso A.V.",                 sub: "" },
-  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura de vicerrectoría",  sub: "" },
-  { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en SACES-CNA",                 sub: "" },
-  { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Fecha radicación solicitud AV",           sub: "" },
+  { key: "fecha_vencimiento",      obsKey: "obs_vencimiento",      label: "Fecha vencimiento",                    sub: "calculada con años de vigencia" },
+  { key: "fecha_inicio",           obsKey: "obs_inicio",           label: "Inicio proceso",                     sub: "" },
+  { key: "fecha_documento_par",    obsKey: "obs_documento_par",    label: "Documento para lectura de vicerrectoría", sub: "" },
+  { key: "fecha_digitacion_saces", obsKey: "obs_digitacion_saces", label: "Digitación en el SACES-CNA",         sub: "" },
+  { key: "fecha_radicado_men",     obsKey: "obs_radicado_men",     label: "Radicación solicitud AV",            sub: "" },
 ] as const;
 
 export const COLUMNAS_FECHA_PM = [
@@ -92,5 +146,18 @@ export const selectorStyle = {
     borderBottom: "1px solid #dee2e6",
     paddingTop: "8px",
     paddingBottom: "8px",
+  },
+};
+
+/** Misma apariencia que `selectorStyle`, con un poco menos de padding horizontal (filas de filtros del tablero). */
+export const selectorStyleFilters = {
+  ...selectorStyle,
+  root: {
+    ...selectorStyle.root,
+    padding: "7px 8px 9px",
+  },
+  label: {
+    ...selectorStyle.label,
+    marginBottom: 4,
   },
 };

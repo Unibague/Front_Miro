@@ -31,8 +31,13 @@ export type Process = {
   _id: string;
   name: string;
   program_code: string;
-  tipo_proceso: "RC" | "AV" | "PM";
+  tipo_proceso: "RC" | "AV" | "PM" | "ALERTA";
   subtipo?: string | null;
+  alert_para_tipo?: "RC" | "AV" | null;
+  cerrado_process_history_id?: string | null;
+  snapshot_codigo_resolucion?: string | null;
+  snapshot_fecha_resolucion?: string | null;
+  snapshot_duracion_anos?: number | null;
   parent_process_id?: string | null;
   parent_tipo_proceso?: "RC" | "AV" | null;
   fase_actual: number;
@@ -77,6 +82,8 @@ export type ProcessDocument = {
   phase_id: string | null;
   process_id?: string | null;
   doc_type?: 'resolucion' | 'proceso';
+  /** Campo de fecha del caso al que pertenecen (información del caso) */
+  caso_date_key?: string | null;
   name: string;
   drive_id: string;
   view_link: string;
@@ -108,6 +115,15 @@ export type Actividad = {
   subactividades: Subactividad[];
 };
 
+/** Campos de fecha en «Información del caso» (observaciones: obs_<clave>) */
+export type CasoFechaKey =
+  | "fecha_solicitud_radicado"
+  | "fecha_notificacion_completitud"
+  | "fecha_respuesta_completitud"
+  | "fecha_resolucion"
+  | "fecha_resolucion_apelacion"
+  | "fecha_respuesta_men";
+
 export type Caso = {
   _id: string;
   proceso_id: string;
@@ -119,6 +135,13 @@ export type Caso = {
   resolucion_aprobada: boolean | null;
   aplica_apelacion?: boolean;
   fecha_resolucion_apelacion?: string | null;
+  fecha_respuesta_men?: string | null;
+  obs_fecha_solicitud_radicado?: string;
+  obs_fecha_notificacion_completitud?: string;
+  obs_fecha_respuesta_completitud?: string;
+  obs_fecha_resolucion?: string;
+  obs_fecha_resolucion_apelacion?: string;
+  obs_fecha_respuesta_men?: string;
 };
 
 export type Phase = {
@@ -131,6 +154,8 @@ export type Phase = {
 
 export type BarRow = {
   nombre: string;
+  /** Código de facultad para filtrar programas al hacer clic en un segmento */
+  dep_code: string;
   fase_0: number; fase_1: number; fase_2: number;
   fase_3: number; fase_4: number; fase_5: number; fase_6: number;
   /** Procesos en fase 7 (plan de contingencia / no renovación); se dibuja al final de la barra */
@@ -144,6 +169,10 @@ export type ProcesoRow = {
   pmFase: number | null;
   pmLigadoA: string | null;
   pmSubtipo: string | null;
+  /** Actividad actual (texto breve) bajo la fase RC */
+  actividadRc?: string | null;
+  /** Actividad actual bajo la fase AV */
+  actividadAv?: string | null;
 };
 
 export type ProcesoDetalleProps = {
@@ -168,6 +197,36 @@ export type PQR = {
   observacion_respuesta?: string | null;
   cerrado: boolean;
   createdAt?: string;
+};
+
+/** Fechas proyectadas al cerrar un proceso (para notificaciones por correo). */
+export type ProcessReminderRecord = {
+  _id: string;
+  process_history_id: string;
+  program_code: string;
+  dep_code_facultad: string | null;
+  nombre_programa: string;
+  nivel_academico: string | null;
+  tipo_proceso: "RC" | "AV";
+  /** Subtipo del proceso ALERTA (si aplica); legacy puede venir sin valor. */
+  subtipo?: string | null;
+  codigo_resolucion: string | null;
+  fecha_resolucion: string | null;
+  duracion_resolucion: number | null;
+  fecha_vencimiento: string | null;
+  fecha_inicio: string | null;
+  fecha_documento_par: string | null;
+  fecha_digitacion_saces: string | null;
+  fecha_radicado_men: string | null;
+  documentos: Array<{ name: string; view_link: string }>;
+  createdAt?: string;
+  __origen?: "ALERTA" | "legacy";
+  /** Observaciones congeladas al cierre (alerta) */
+  obs_vencimiento?: string | null;
+  obs_inicio?: string | null;
+  obs_documento_par?: string | null;
+  obs_digitacion_saces?: string | null;
+  obs_radicado_men?: string | null;
 };
 
 export type ProcessHistoryRecord = {

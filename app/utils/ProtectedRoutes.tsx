@@ -9,31 +9,30 @@ import LoadingScreen from "@/app/components/LoadingScreen";
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
   const { userRole } = useRole();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [isVerifying, setIsVerifying] = useState(true);
 
-  useEffect(() => {
-    if (!userRole) {
-      return;
-    }
+  /* Rol efectivo: evita quedarse en “cargando” si en algún flujo userRole llega vacío */
+  const role = userRole?.trim() ? userRole : "Usuario";
 
+  useEffect(() => {
     const adminRoutes = /^\/admin/;
     const responsibleRoutes = /^\/responsible/;
     const producerRoutes = /^\/producer/;
     const templateRoutes = /^\/templates/;
     const reportRoutes = /^\/reports/;
     const templatesWithFiltersRoute = /^\/templates-with-filters/;
-    const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/; // Ruta específica para detalles de template
+    const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/;
 
     if (
-      (adminRoutes.test(pathname) && userRole !== "Administrador") ||
-      (responsibleRoutes.test(pathname) && userRole !== "Responsable") ||
-      (producerRoutes.test(pathname) && userRole !== "Productor") ||
-      (templateRoutes.test(pathname) && 
-       !templatesWithFiltersRoute.test(pathname) && 
-       !templateDetailRoute.test(pathname) && 
-       !["Administrador", "Responsable"].includes(userRole)) ||
-      (reportRoutes.test(pathname) && !["Administrador", "Responsable"].includes(userRole))
+      (adminRoutes.test(pathname) && role !== "Administrador") ||
+      (responsibleRoutes.test(pathname) && role !== "Responsable") ||
+      (producerRoutes.test(pathname) && role !== "Productor") ||
+      (templateRoutes.test(pathname) &&
+        !templatesWithFiltersRoute.test(pathname) &&
+        !templateDetailRoute.test(pathname) &&
+        !["Administrador", "Responsable"].includes(role)) ||
+      (reportRoutes.test(pathname) && !["Administrador", "Responsable"].includes(role))
     ) {
       showNotification({
         title: "Acceso denegado",
@@ -44,9 +43,9 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     } else {
       setIsVerifying(false);
     }
-  }, [userRole, pathname, router]);
+  }, [role, pathname, router]);
 
-  if (isVerifying || !userRole) {
+  if (isVerifying) {
     return <LoadingScreen />;
   }
 
