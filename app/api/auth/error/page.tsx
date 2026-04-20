@@ -19,7 +19,7 @@ const Lottie = dynamic(() => import("lottie-react").then((mod) => mod.default), 
 export default function ErrorPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const error = searchParams.get("error");
+  const error = searchParams?.get("error");
 
   return (
     <Container

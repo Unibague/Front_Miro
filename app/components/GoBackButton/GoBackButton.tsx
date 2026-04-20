@@ -11,6 +11,12 @@ const GoBackButton = () => {
   const pathname = usePathname();
 
   if (pathname === "/" || pathname === "/dashboard") return null;
+  /* En date-review el botón vive en el Navbar */
+  if (pathname?.startsWith("/date-review")) return null;
+
+  const handleVolver = () => {
+    router.back();
+  };
 
   return (
     <div
@@ -22,6 +28,15 @@ const GoBackButton = () => {
         backdropFilter: "blur(10px)",
       }}
     >
+      <Button
+        onClick={handleVolver}
+        variant="light"
+        color="blue"
+        size="sm"
+        leftSection={<IconArrowLeft size={16}/>}
+      >
+        Volver
+      </Button>
     </div>
   );
 };

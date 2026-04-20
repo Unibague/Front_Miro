@@ -11,6 +11,7 @@ import { IconArrowLeft, IconBulb, IconChevronsLeft, IconCirclePlus, IconCloud, I
 import classes from "../../../responsible/reports/ResponsibleReportsPage.module.css";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Report {
   _id: string;
@@ -87,7 +88,8 @@ const StatusColor: Record<string, string> = {
 
 const ResponsibleReportPage = () => {
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const { data: session } = useSession();
   const [publishedReport, setPublishedReport] = useState<PublishedReport>();
   const [sendsHistory, setSendsHistory] = useState<FilledReport[]>([]);

@@ -23,7 +23,8 @@ import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
-import styles from './AdminValidationUpdatePage.module.css';
+import styles from "./AdminValidationUpdatePage.module.css";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Column {
   name: string;
@@ -35,7 +36,7 @@ interface Column {
 const AdminValidationUpdatePage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const id = paramId(params);
   const { data: session } = useSession();
 
   const [name, setName] = useState<string>("");

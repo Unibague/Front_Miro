@@ -5,6 +5,7 @@ import axios from "axios";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Report {
   _id: string;
@@ -16,7 +17,7 @@ const DependencyReportsPage = () => {
   const params = useParams();
   const router = useRouter();
   const { selectedPeriodId } = usePeriod();
-  const { id } = params;
+  const id = paramId(params);
 
   const [reports, setReports] = useState<Report[]>([]);
   const [dependencyName, setDependencyName] = useState<string>("");

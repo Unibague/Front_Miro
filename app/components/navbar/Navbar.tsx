@@ -21,6 +21,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
@@ -28,7 +29,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 import classes from "./Navbar.module.css";
-import { IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconArrowLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -82,7 +83,10 @@ const linksByRole: Record<Roles, LinkItem[]> = {
 const home = [{ link: "/dashboard", label: "Inicio" }];
 
 export default function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
+  const showDateReviewVolver = pathname?.startsWith("/date-review") ?? false;
   const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
@@ -236,12 +240,33 @@ export default function Navbar() {
     <>
       <header className={classes.header}>
         <Container size="xl" className={classes.inner}>
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Group>{titleButton}</Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            {showDateReviewVolver && (
+              <Button
+                variant="light"
+                color="blue"
+                size="sm"
+                leftSection={<IconArrowLeft size={16} />}
+                onClick={() => router.push("/dashboard?gestionProcesos=1")}
+                style={{ flexShrink: 0 }}
+              >
+                Volver
+              </Button>
+            )}
+            <Group gap="xs" wrap="nowrap">
+              {titleButton}
+            </Group>
+          </Group>
 
           {session?.user ? (
             <>
-              <Group gap={8} visibleFrom="xs">
+              <Group gap={8} visibleFrom="xs" wrap="nowrap">
+                {user?.isImpersonating ? (
+                  <Badge color="red" size="lg" m={20} variant="light">
+                    Estás impersonando al usuario: {user.name}
+                  </Badge>
+                ) : null}
                 <Badge m={20} variant="light">
                   {userRole}
                 </Badge>
@@ -331,7 +356,9 @@ export default function Navbar() {
                       variant="light"
                       fw={700}
                     >
-                      Periodo: {availablePeriods.find((p) => p._id === selectedPeriodId)?.name || "Seleccionar"}
+                      Periodo:{" "}
+                      {availablePeriods.find((p) => p._id === selectedPeriodId)?.name ||
+                        "Seleccionar"}
                     </Button>
                   </div>
 
@@ -380,6 +407,20 @@ export default function Navbar() {
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
+              {showDateReviewVolver && (
+                <Button
+                  variant="light"
+                  color="blue"
+                  size="sm"
+                  leftSection={<IconArrowLeft size={16} />}
+                  onClick={() => {
+                    router.push("/dashboard?gestionProcesos=1");
+                    toggle();
+                  }}
+                >
+                  Volver
+                </Button>
+              )}
               {itemsDrawer}
               <ThemeChangerMobile />
               {session?.user && user?.isImpersonating ? (

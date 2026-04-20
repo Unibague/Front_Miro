@@ -15,7 +15,8 @@ import {
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { useSession } from 'next-auth/react';
+import { useSession } from "next-auth/react";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Member {
   email: string;
@@ -27,7 +28,7 @@ const AdminUpdateDependencyPage = () => {
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const id = paramId(params);
 
   const [dependency, setDependency] = useState({
     dep_code: "",

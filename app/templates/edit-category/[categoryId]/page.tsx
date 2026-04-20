@@ -9,6 +9,7 @@ import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useParams } from "next/navigation";
+import { paramKey } from "@/app/utils/routeParams";
 
 interface Template {
   _id: string;
@@ -21,7 +22,8 @@ const EditCategoryPage = () => {
   const [fields, setFields] = useState<any[]>([]);
   const { data: session } = useSession();
   const router = useRouter();
-  const { categoryId } = useParams();
+  const params = useParams();
+  const categoryId = paramKey(params, "categoryId");
 
   useEffect(() => {
     const fetchTemplates = async () => {

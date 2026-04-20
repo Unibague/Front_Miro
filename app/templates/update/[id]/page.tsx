@@ -13,6 +13,7 @@ import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChang
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Field {
   name: string;
@@ -75,7 +76,8 @@ const UpdateTemplatePage = () => {
   const [loading, setLoading] = useState(true);
   const [originalTemplate, setOriginalTemplate] = useState<any>(null);
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const { data: session } = useSession();
   const { userRole } = useRole();
 

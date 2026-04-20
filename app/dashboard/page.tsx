@@ -11,12 +11,18 @@ import { useColorScheme } from "@mantine/hooks";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const params = useParams();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const id = paramId(params);
+
   const [opened, setOpened] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
@@ -37,9 +43,13 @@ const DashboardPage = () => {
 
   const [avRcOpen, setAvRcOpen] = useState(false);
 
-  const params = useParams();
-  const { id } = params ?? {};
-  const pathname = usePathname();
+  useEffect(() => {
+    if (searchParams?.get("gestionProcesos") === "1") {
+      setAvRcOpen(true);
+      router.replace("/dashboard", { scroll: false });
+    }
+  }, [searchParams, router]);
+
   const activeModule: "home" | "reports" | "snies" | "cna" =
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
@@ -111,7 +121,9 @@ const DashboardPage = () => {
             // const totalReports = reportsResponse.data.publishedReports.length;
 
             // Se filtran los reportes pendientes
-            const pendingReportsData = reportsResponse.data.pendingReports 
+            const pendingReportsData = Array.isArray(reportsResponse.data?.pendingReports)
+              ? reportsResponse.data.pendingReports
+              : [];
 
             // Se establece el nÃºmero de reportes pendientes
             setPendingReports(pendingReportsData.length);
@@ -126,13 +138,15 @@ const DashboardPage = () => {
                     { params: { email: session.user.email, periodId: selectedPeriodId, limit: 10000 } }
                 );
 
-                // Se obtiene el total de plantillas
-                const totalTemplates = templatesResponse.data.templates.length;
+                const templatesList = Array.isArray(templatesResponse.data?.templates)
+                  ? templatesResponse.data.templates
+                  : [];
+                const totalTemplates = templatesList.length;
 
                 // Se establece el nÃºmero total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
                 setNextTemplateDeadline(
-                    totalTemplates > 0 ? dayjs(templatesResponse.data.templates[0].deadline).format("DD/MM/YYYY") : null
+                    totalTemplates > 0 ? dayjs(templatesList[0].deadline).format("DD/MM/YYYY") : null
                 );
             } else {
                 setPendingTemplates(0);
@@ -153,11 +167,16 @@ const fetchVisualizers = async () => {
       `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
     );
 
-    console.log("ðŸ” Respuesta del backend corregida:", response.data.dependencies); // ðŸ‘€ DEBUG
+    const raw = response.data;
+    const dependencies: unknown[] = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object" && Array.isArray((raw as { dependencies?: unknown[] }).dependencies)
+        ? (raw as { dependencies: unknown[] }).dependencies
+        : [];
 
     // Verificar si el usuario estÃ¡ en la lista de visualizadores
-    const isUserVisualizer = response.data.dependencies.some((dep: any) =>
-      Array.isArray(dep.visualizers) && dep.visualizers.includes(session?.user?.email)
+    const isUserVisualizer = dependencies.some((dep: any) =>
+      Array.isArray(dep?.visualizers) && dep.visualizers.includes(session?.user?.email)
     );
 
     setIsVisualizer(isUserVisualizer);
@@ -176,13 +195,6 @@ useEffect(() => {
 
 
 
-
-
-useEffect(() => {
-    if (status === "authenticated" && selectedPeriodId) {
-        fetchPendingItems(userRole);
-    }
-}, [session, status, userRole, selectedPeriodId]);
 
 
   useEffect(() => {

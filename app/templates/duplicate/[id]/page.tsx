@@ -9,6 +9,7 @@ import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Field {
   name: string;
@@ -64,7 +65,8 @@ const UpdateTemplatePage = () => {
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const { data: session } = useSession();
   const { userRole } = useRole();
 
