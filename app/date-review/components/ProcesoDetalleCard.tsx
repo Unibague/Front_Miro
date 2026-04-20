@@ -34,7 +34,9 @@ import {
   LABEL_PROCESO, COLOR_PROCESO,
   COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
   faseColors,
+  etiquetaSubtipoCompacta,
 } from "../constants";
+import HistorialActivoModal from "./HistorialActivoModal";
 
 const CASO_FECHA_LABELS: Record<CasoFechaKey, string> = {
   fecha_solicitud_radicado: "Solicitud de radicado",
@@ -396,6 +398,7 @@ const ProcesoDetalleCard = ({
   const [resForm, setResForm]                 = useState({ fecha: "", codigo: "", duracion: "" });
   const [savingRes, setSavingRes]             = useState(false);
   const [cerrarProcesoOpen, setCerrarProcesoOpen] = useState(false);
+  const [historialActivoOpen, setHistorialActivoOpen] = useState(false);
   const [cerrandoProceso, setCerrandoProceso] = useState(false);
   const [cierreForm, setCierreForm] = useState({ fecha: "", codigo: "", duracion: "" });
   const [cierreError, setCierreError] = useState<string | null>(null);
@@ -1798,14 +1801,20 @@ const ProcesoDetalleCard = ({
           <Button size="xs" variant="white" color="red" onClick={abrirModalCerrar}>Cerrar proceso</Button>
         </div>
         <Text fw={700} c="#333" size="md" ta="center">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {proceso.subtipo ? (
             <Badge variant="light" color="dark" size="sm"
-              style={{ backgroundColor: "rgba(255,255,255,0.85)", color: "#333", fontSize: 11 }}>
-              {proceso.subtipo}
+              style={{ backgroundColor: "rgba(255,255,255,0.85)", color: "#333", fontSize: 11 }}
+              styles={{ label: { textTransform: "none" } }}>
+              {etiquetaSubtipoCompacta(proceso.subtipo)}
             </Badge>
           ) : (
             <Text size="xs" c="#555" fs="italic">Sin subtipo</Text>
+          )}
+          {fases.length > 0 && (
+            <Button size="xs" variant="white" color="dark" onClick={() => setHistorialActivoOpen(true)}>
+              Historial activo
+            </Button>
           )}
         </div>
       </div>
@@ -1929,7 +1938,11 @@ const ProcesoDetalleCard = ({
             <Group gap="xs">
               <Text size="sm" fw={600}>Plan de Mejoramiento</Text>
               {pmProceso && <Badge size="xs" color="green">Activo</Badge>}
-              {pmProceso?.subtipo && <Badge size="sm" color="gray" variant="outline">{pmProceso.subtipo}</Badge>}
+              {pmProceso?.subtipo && (
+                <Badge size="sm" color="gray" variant="outline" styles={{ label: { textTransform: "none" } }}>
+                  {etiquetaSubtipoCompacta(pmProceso.subtipo)}
+                </Badge>
+              )}
             </Group>
             <Group gap="xs">
               {/* Solo RC puede quitar el PM manualmente; en AV es permanente */}
@@ -2209,6 +2222,13 @@ const ProcesoDetalleCard = ({
           </Group>
         </Stack>
       </Modal>
+
+      <HistorialActivoModal
+        opened={historialActivoOpen}
+        onClose={() => setHistorialActivoOpen(false)}
+        proceso={proceso}
+        fases={fases}
+      />
 
       <Modal opened={resolucionDocModalOpen} onClose={() => setResolucionDocModalOpen(false)}
         title="PDF de resolución vigente" centered size="md" radius="md">
