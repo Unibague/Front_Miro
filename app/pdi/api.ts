@@ -26,6 +26,13 @@ export const PDI_ROUTES = {
   corte: (id: string)      => `${BASE()}/pdi/cortes/${id}`,
   corteResumen: (id: string) => `${BASE()}/pdi/cortes/${id}/resumen`,
 
+  // Formularios
+  formularios:                          () => `${BASE()}/pdi/formularios`,
+  formulario: (id: string)              => `${BASE()}/pdi/formularios/${id}`,
+  formularioRespuestas: (id: string)    => `${BASE()}/pdi/formularios/${id}/respuestas`,
+  formularioRespuesta: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}`,
+  formularioArchivo: (id: string, rId: string, cId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/archivos/${cId}`,
+
 
   // Tableros de control
   dashboardResumen:                   () => `${BASE()}/pdi/dashboard/resumen`,
