@@ -17,6 +17,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconDownload } from "@tabler/icons-react";
 import { useParams, useRouter } from "next/navigation";
+import { paramId } from "@/app/utils/routeParams";
 import { useSession } from "next-auth/react";
 
 interface SourceTemplate {
@@ -47,7 +48,7 @@ export default function SniesTemplateDetailPage() {
   const [data, setData] = useState<ConnectedDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const templateId = params?.id as string;
+  const templateId = paramId(params);
 
   const fetchConnectedData = async () => {
     if (!session?.user?.email || !templateId) return;

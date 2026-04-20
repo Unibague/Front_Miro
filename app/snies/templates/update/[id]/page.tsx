@@ -25,6 +25,7 @@ import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Field {
   name: string;
@@ -101,7 +102,8 @@ const allowedDataTypes = [
 
 export default function UpdateSniesTemplatePage() {
   const router = useRouter();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams();
+  const id = paramId(params);
   const { data: session } = useSession();
 
   const [name, setName] = useState("");

@@ -62,7 +62,7 @@ export function subtipoOpcionesFiltro(
 /** Comprueba si el subtipo de un proceso RC/AV coincide con el filtro (incluye SUBTIPO_FILTRO_PRIMERA_INSTANCIA). */
 export function procesoCumpleSubtipoFiltro(
   subtipo: string | null | undefined,
-  tipoProceso: "RC" | "AV",
+  tipoProceso: string,
   filtro: string,
   tipoFiltroUI: string,
 ): boolean {

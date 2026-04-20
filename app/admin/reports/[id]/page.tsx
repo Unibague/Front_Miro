@@ -6,6 +6,7 @@ import { IconCancel, IconCheck, IconDeviceFloppy, IconX } from "@tabler/icons-re
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
+import { paramId } from "@/app/utils/routeParams";
 import { useEffect, useState } from "react";
 
 interface Dimension {
@@ -38,7 +39,8 @@ interface Report {
 const ProducerReportCreatePage = () => {
   const { data: session } = useSession();
   const router = useRouter();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams();
+  const id = paramId(params);
   const [loading, setLoading] = useState<boolean>(false);
 
   const [name, setName] = useState<string>("");
@@ -58,6 +60,7 @@ const ProducerReportCreatePage = () => {
   });
 
   const fetchReport = async () => {
+    if (!id) return;
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/reports/${id}`, {
         params: { email: session?.user?.email }
@@ -113,6 +116,11 @@ const ProducerReportCreatePage = () => {
         message: "Por favor, completa todos los campos requeridos.",
         color: "red",
       });
+      setLoading(false);
+      return;
+    }
+
+    if (!id) {
       setLoading(false);
       return;
     }

@@ -22,6 +22,7 @@ import {
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy, IconTrash } from "@tabler/icons-react";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Dimension {
   _id: string;
@@ -45,7 +46,7 @@ interface User {
 const AdminDimensionEditPage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const id = paramId(params);
   const [dimension, setDimension] = useState<Dimension | null>(null);
   const [dimensionName, setDimensionName] = useState<string>("");
   const [allDependencies, setAllDependencies] = useState<Dependency[]>([]);

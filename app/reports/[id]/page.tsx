@@ -9,6 +9,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Report {
   _id: string;
@@ -89,7 +90,8 @@ const UploadedReportsPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
   const { userRole, setUserRole } = useRole();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams();
+  const id = paramId(params);
   const [publishedReport, setPublishedReport] = useState<PublishedReport>();
   const [collapseOpened, setCollapseOpened] = useState(false);
   const [status, setStatus] = useState<string | null>("");
@@ -391,7 +393,8 @@ const UploadedReportsPage = () => {
   return (
     <Container size={"xl"}>
       <DateConfig/>
-      <Title ta="center">{`Envíos para: ${publishedReport?.report.name}`}</Title>
+      <Title ta="center">{`Envíos para: ${publishedReport?.report.name}`}</Title>
+
       <Accordion>
         {items}
         {missingItems}

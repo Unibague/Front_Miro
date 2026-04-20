@@ -29,6 +29,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
+import { paramId } from "@/app/utils/routeParams";
 
 interface RowData {
   [key: string]: any;
@@ -53,7 +54,8 @@ interface ResumeData {
 
 const UploadedTemplatePage = () => {
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const [tableData, setTableData] = useState<RowData[]>([]);
   const [originalTableData, setOriginalTableData] = useState<RowData[]>([]);
   const [templateName, setTemplateName] = useState("");
@@ -61,7 +63,7 @@ const UploadedTemplatePage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([])
   const searchParams = useSearchParams();
   const [resume, setResume] = useState<boolean>(
-    searchParams.get("resume") === "true"
+    searchParams?.get("resume") === "true"
   );
   const { data: session } = useSession();
   const { userRole } = useRole();
@@ -263,7 +265,7 @@ const UploadedTemplatePage = () => {
   }, [id, session, userRole]);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
     params.set("resume", `${resume}`);
     window.history.pushState(null, "", `?${params.toString()}`);
   }, [resume]);

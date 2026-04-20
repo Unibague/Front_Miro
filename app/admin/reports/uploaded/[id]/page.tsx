@@ -7,6 +7,7 @@ import { IconArrowLeft, IconCancel, IconCheckupList, IconChevronsLeft, IconDevic
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
+import { paramId } from "@/app/utils/routeParams";
 import { useEffect, useState } from "react";
 
 interface Report {
@@ -79,7 +80,8 @@ const StatusColor: Record<string, string> = {
 const UploadedReportsPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
-  const { id } = useParams<{ id: string }>();
+  const params = useParams();
+  const id = paramId(params);
   const [publishedReport, setPublishedReport] = useState<PublishedReport>();
   const [frameFile, setFrameFile] = useState<DriveFile | null>();
   const [collapseOpened, setCollapseOpened] = useState(false);

@@ -5,6 +5,7 @@ import axios from "axios";
 import { useParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Template {
   _id: string;
@@ -15,8 +16,7 @@ interface Template {
 const DependencyTemplatesPage = () => {
   const params = useParams();
   const { selectedPeriodId } = usePeriod();
-  const rawId = params?.id;
-  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  const id = paramId(params);
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [dependencyName, setDependencyName] = useState<string>("");

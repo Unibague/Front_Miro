@@ -5,14 +5,15 @@ import {
   Title, Button, Text, Paper, Stack, Group, Loader, Modal, TextInput, Select, SimpleGrid, Divider, Badge,
 } from "@mantine/core";
 import { useParams, useRouter } from "next/navigation";
+import { paramKey } from "@/app/utils/routeParams";
 import axios, { isAxiosError } from "axios";
 import type { Program, Dependency, Process } from "../../types";
 import { LABEL_PROCESO, PERIODICIDAD_ADMISION } from "../../constants";
 import { formatFechaDDMMYY } from "../../utils/formatFechaCorta";
 
 export default function ProgramaDateReviewPage() {
-  const params = useParams<{ programId?: string | string[] }>();
-  const programId = Array.isArray(params.programId) ? params.programId[0] : params.programId;
+  const params = useParams();
+  const programId = paramKey(params, "programId");
   const router = useRouter();
 
   const [programa, setPrograma] = useState<Program | null>(null);

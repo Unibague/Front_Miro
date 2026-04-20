@@ -12,6 +12,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
+import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 
 const DashboardPage = () => {
@@ -20,7 +21,7 @@ const DashboardPage = () => {
   const params = useParams();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { id } = params ?? {};
+  const id = paramId(params);
 
   const [opened, setOpened] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -43,7 +44,7 @@ const DashboardPage = () => {
   const [avRcOpen, setAvRcOpen] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("gestionProcesos") === "1") {
+    if (searchParams?.get("gestionProcesos") === "1") {
       setAvRcOpen(true);
       router.replace("/dashboard", { scroll: false });
     }
