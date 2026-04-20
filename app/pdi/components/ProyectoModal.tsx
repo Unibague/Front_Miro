@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Modal, TextInput, Button, Group, Stack, Select, Autocomplete } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 import "dayjs/locale/es";
 import type { Proyecto, Macroproyecto } from "../types";
 import { PDI_ROUTES } from "../api";
@@ -29,6 +30,7 @@ export default function ProyectoModal({
   onSaved,
   onCreated,
 }: Props) {
+  const { data: session } = useSession();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
   const [responsable, setResponsable] = useState("");
@@ -91,13 +93,26 @@ export default function ProyectoModal({
       return;
     }
 
+    const sessionUser = session?.user as { full_name?: string; name?: string; email?: string } | undefined;
+    const formulador = selected?.formulador
+      ?? sessionUser?.full_name
+      ?? sessionUser?.name
+      ?? responsable.trim()
+      ?? sessionUser?.email
+      ?? "";
+
+    if (!formulador.trim()) {
+      showNotification({ title: "Error", message: "No se pudo determinar el formulador del proyecto", color: "red" });
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
         codigo: codigo.trim(),
         nombre: nombre.trim(),
         descripcion: proposito.trim(),
-        formulador: selected?.formulador ?? "",
+        formulador: formulador.trim(),
         responsable: responsable.trim(),
         responsable_email: responsableEmail.trim(),
         peso: toNum(peso),

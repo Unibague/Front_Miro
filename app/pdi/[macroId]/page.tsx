@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
   ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, Divider,
@@ -9,13 +9,14 @@ import {
   IconArrowLeft, IconTarget, IconBulb, IconTrendingUp,
   IconEdit, IconTrash, IconPlus, IconChevronRight,
   IconChartBarPopular, IconFolderOpen,
+  IconUpload, IconFileSpreadsheet,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter, useParams } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador } from "../types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, ImportBudgetResponse, ImportExecutedResponse } from "../types";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import MacroproyectoModal from "../components/MacroproyectoModal";
@@ -101,6 +102,286 @@ function MetaBadge({ label, color = "gray" }: { label: string; color?: string })
     <Badge variant="light" color={color} radius="sm">
       {label}
     </Badge>
+  );
+}
+
+function BudgetImportPanel({
+  macro,
+  selectedFile,
+  uploading,
+  importResult,
+  onPickFile,
+  onImport,
+}: {
+  macro: Macroproyecto;
+  selectedFile: File | null;
+  uploading: boolean;
+  importResult: ImportBudgetResponse | null;
+  onPickFile: (file: File | null) => void;
+  onImport: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <Paper
+      withBorder
+      radius="xl"
+      p="lg"
+      shadow="xs"
+      style={{
+        background: "linear-gradient(135deg, rgba(34,197,94,0.06), rgba(255,255,255,0.98) 58%)",
+      }}
+    >
+      <Group justify="space-between" align="flex-start" wrap="wrap" mb="md">
+        <Group gap={12} align="flex-start">
+          <ThemeIcon size={42} radius="xl" color="green" variant="light">
+            <IconFileSpreadsheet size={20} />
+          </ThemeIcon>
+          <div>
+            <Text fw={700}>Importar presupuesto desde Excel</Text>
+            <Text size="sm" c="dimmed" mt={4}>
+              Carga la hoja de presupuesto del macroproyecto <b>{macro.codigo}</b>. El sistema consolidara
+              presupuesto asignado y ejecutado por proyecto.
+            </Text>
+          </div>
+        </Group>
+
+        <Group gap={8}>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xlsm"
+            style={{ display: "none" }}
+            onChange={(event) => onPickFile(event.currentTarget.files?.[0] ?? null)}
+          />
+          <Button
+            variant="default"
+            leftSection={<IconFolderOpen size={14} />}
+            onClick={() => inputRef.current?.click()}
+          >
+            {selectedFile ? "Cambiar archivo" : "Seleccionar Excel"}
+          </Button>
+          <Button
+            color="green"
+            leftSection={<IconUpload size={14} />}
+            loading={uploading}
+            disabled={!selectedFile}
+            onClick={onImport}
+          >
+            Importar presupuesto
+          </Button>
+        </Group>
+      </Group>
+
+      {selectedFile && (
+        <Paper withBorder radius="lg" p="sm" mb="md" style={{ background: "var(--mantine-color-body)" }}>
+          <Group justify="space-between" align="center" wrap="wrap">
+            <div>
+              <Text size="xs" c="dimmed">Archivo seleccionado</Text>
+              <Text fw={700}>{selectedFile.name}</Text>
+            </div>
+            <Badge variant="light" color="green" radius="xl">
+              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+            </Badge>
+          </Group>
+        </Paper>
+      )}
+
+      {importResult && (
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{importResult.proyectos_actualizados}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Proyectos actualizados</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{importResult.acciones_actualizadas}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Acciones actualizadas</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{formatCOP(importResult.totales_importados.presupuesto)}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Presupuesto asignado</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>Pendiente</Text>
+              <Text size="xs" c="dimmed" mt={4}>Ejecucion se importa aparte</Text>
+            </Paper>
+          </SimpleGrid>
+
+          <Paper withBorder radius="lg" p="md">
+            <Group justify="space-between" align="center" mb="xs" wrap="wrap">
+              <Text fw={700}>Resultado de la importacion</Text>
+              <Badge variant="outline" color="green" radius="xl">
+                {importResult.archivo}
+              </Badge>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Hoja: <b>{importResult.hoja}</b>
+              {" · "}
+              Proyecto Excel: <b>{importResult.proyecto_excel || "Sin nombre"}</b>
+              {" · "}
+              Acciones del Excel detectadas: <b>{importResult.acciones_detectadas}</b>
+            </Text>
+            <Text size="xs" c="dimmed" mt={6}>
+              Esto indica cuantas acciones estrategicas con codigo tipo M1-P1-AE1 fueron leidas del archivo.
+              Si esas acciones ya existen en el sistema, tambien se actualiza su presupuesto individual.
+            </Text>
+            {importResult.observacion && (
+              <Text size="xs" c="blue" mt={6} fw={600}>
+                {importResult.observacion}
+              </Text>
+            )}
+          </Paper>
+
+          {importResult.actualizados.length > 0 && (
+            <Paper withBorder radius="lg" p="md">
+              <Text fw={700} mb="sm">Proyectos actualizados</Text>
+              <Stack gap={8}>
+                {importResult.actualizados.map((item) => (
+                  <Group key={item.codigo} justify="space-between" wrap="wrap">
+                    <div>
+                      <Text size="sm" fw={700}>{item.codigo}{item.nombre ? ` · ${item.nombre}` : ""}</Text>
+                      <Text size="xs" c="dimmed">
+                        {item.acciones_importadas} acciones leidas del Excel · {item.acciones_actualizadas} acciones actualizadas en el sistema
+                      </Text>
+                    </div>
+                    <Group gap={10} wrap="wrap">
+                      <Badge color="blue" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            </Paper>
+          )}
+
+          {importResult.no_encontrados.length > 0 && (
+            <Paper withBorder radius="lg" p="md" style={{ borderColor: "var(--mantine-color-orange-4)" }}>
+              <Text fw={700} mb="sm">Proyectos no encontrados en la base</Text>
+              <Stack gap={8}>
+                {importResult.no_encontrados.map((item) => (
+                  <Group key={item.codigo} justify="space-between" wrap="wrap">
+                    <div>
+                      <Text size="sm" fw={700}>{item.codigo}</Text>
+                      <Text size="xs" c="dimmed">{item.acciones_importadas} acciones leidas en el Excel</Text>
+                    </div>
+                    <Group gap={10} wrap="wrap">
+                      <Badge color="gray" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
+                    </Group>
+                  </Group>
+                ))}
+              </Stack>
+            </Paper>
+          )}
+        </Stack>
+      )}
+
+    </Paper>
+  );
+}
+
+function ExecutedImportPanel({
+  macro,
+  selectedFile,
+  uploading,
+  importResult,
+  onPickFile,
+  onImport,
+}: {
+  macro: Macroproyecto;
+  selectedFile: File | null;
+  uploading: boolean;
+  importResult: ImportExecutedResponse | null;
+  onPickFile: (file: File | null) => void;
+  onImport: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <Paper
+      withBorder
+      radius="lg"
+      p="md"
+      mt="md"
+      style={{
+        background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(255,255,255,0.98) 58%)",
+      }}
+    >
+      <Group justify="space-between" align="flex-start" wrap="wrap" mb="md">
+        <div>
+          <Text fw={700}>Importar ejecucion presupuestal</Text>
+          <Text size="sm" c="dimmed" mt={4}>
+            Carga el ejecutado real del macroproyecto <b>{macro.codigo}</b>. Este flujo solo actualiza la ejecucion.
+          </Text>
+        </div>
+        <Group gap={8}>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xlsm"
+            style={{ display: "none" }}
+            onChange={(event) => onPickFile(event.currentTarget.files?.[0] ?? null)}
+          />
+          <Button variant="default" leftSection={<IconFolderOpen size={14} />} onClick={() => inputRef.current?.click()}>
+            {selectedFile ? "Cambiar archivo" : "Seleccionar Excel"}
+          </Button>
+          <Button color="blue" leftSection={<IconUpload size={14} />} loading={uploading} disabled={!selectedFile} onClick={onImport}>
+            Importar ejecutado
+          </Button>
+        </Group>
+      </Group>
+
+      {selectedFile && (
+        <Paper withBorder radius="lg" p="sm" mb="md" style={{ background: "var(--mantine-color-body)" }}>
+          <Group justify="space-between" align="center" wrap="wrap">
+            <div>
+              <Text size="xs" c="dimmed">Archivo seleccionado</Text>
+              <Text fw={700}>{selectedFile.name}</Text>
+            </div>
+            <Badge variant="light" color="blue" radius="xl">
+              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+            </Badge>
+          </Group>
+        </Paper>
+      )}
+
+      {importResult && (
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{importResult.proyectos_actualizados}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Proyectos actualizados</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{importResult.acciones_actualizadas}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Acciones actualizadas</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{formatCOP(importResult.totales_importados.presupuesto_ejecutado)}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Ejecutado importado</Text>
+            </Paper>
+            <Paper withBorder radius="lg" p="sm">
+              <Text size="lg" fw={800} lh={1}>{importResult.acciones_detectadas}</Text>
+              <Text size="xs" c="dimmed" mt={4}>Acciones detectadas</Text>
+            </Paper>
+          </SimpleGrid>
+
+          <Paper withBorder radius="lg" p="md">
+            <Group justify="space-between" align="center" mb="xs" wrap="wrap">
+              <Text fw={700}>Resultado de la importacion</Text>
+              <Badge variant="outline" color="blue" radius="xl">{importResult.archivo}</Badge>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Hoja: <b>{importResult.hoja}</b>
+              {" · "}
+              Proyecto Excel: <b>{importResult.proyecto_excel || "Sin nombre"}</b>
+            </Text>
+            {importResult.observacion && (
+              <Text size="xs" c="blue" mt={6} fw={600}>{importResult.observacion}</Text>
+            )}
+          </Paper>
+        </Stack>
+      )}
+    </Paper>
   );
 }
 
@@ -561,10 +842,20 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const avanceProyecto = acciones.length
     ? getWeightedProgress(acciones, (accion) => Number(accion.avance) || 0)
     : proyecto.avance;
-  const presupuestoProyecto = acciones.reduce(
+  const presupuestoDesdeAcciones = acciones.reduce(
     (total, accion) => total + (Number(accion.presupuesto) || 0),
     0,
   );
+  const presupuestoEjecutadoDesdeAcciones = acciones.reduce(
+    (total, accion) => total + (Number(accion.presupuesto_ejecutado) || 0),
+    0,
+  );
+  const presupuestoProyecto = presupuestoDesdeAcciones > 0
+    ? presupuestoDesdeAcciones
+    : Number(proyecto.presupuesto || 0);
+  const presupuestoEjecutadoProyecto = presupuestoEjecutadoDesdeAcciones > 0
+    ? presupuestoEjecutadoDesdeAcciones
+    : Number(proyecto.presupuesto_ejecutado || 0);
   const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
   const estadoProyectoColorReal = semaforoProyecto === "verde"
     ? "green"
@@ -604,6 +895,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
             <Group gap={12} mt={6} wrap="wrap">
               <Text size="sm" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
               <Text size="sm" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
+              <Text size="sm" c="dimmed">Ejecutado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
               <Group gap={8} align="center">
                 <Text size="sm" c="dimmed">Avance global</Text>
                 <Box style={{ width: 110 }}>
@@ -722,6 +1014,12 @@ export default function MacroproyectoDetallePage() {
   const [macroModal, setMacroModal] = useState(false);
   const [proyectoModal, setProyectoModal] = useState(false);
   const [selectedProyecto, setSelectedProyecto] = useState<Proyecto | null>(null);
+  const [budgetFile, setBudgetFile] = useState<File | null>(null);
+  const [uploadingBudget, setUploadingBudget] = useState(false);
+  const [budgetImportResult, setBudgetImportResult] = useState<ImportBudgetResponse | null>(null);
+  const [executedFile, setExecutedFile] = useState<File | null>(null);
+  const [uploadingExecuted, setUploadingExecuted] = useState(false);
+  const [executedImportResult, setExecutedImportResult] = useState<ImportExecutedResponse | null>(null);
 
   useEffect(() => {
     if (!macroId) return;
@@ -749,6 +1047,88 @@ export default function MacroproyectoDetallePage() {
       setProyectos(resProyectos.data);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleImportBudget = async () => {
+    if (!budgetFile) {
+      showNotification({ title: "Archivo requerido", message: "Selecciona un Excel antes de importar", color: "orange" });
+      return;
+    }
+
+    const fileName = budgetFile.name.toLowerCase();
+    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
+      showNotification({ title: "Formato invalido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", budgetFile);
+
+    setUploadingBudget(true);
+    try {
+      const res = await axios.post<ImportBudgetResponse>(
+        PDI_ROUTES.importarPresupuestoProyecto(),
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      setBudgetImportResult(res.data);
+      await refrescarMacro();
+      showNotification({
+        title: "Importacion completada",
+        message: `${res.data.proyectos_actualizados} proyecto(s) actualizados desde ${budgetFile.name}`,
+        color: "teal",
+      });
+    } catch (e: any) {
+      showNotification({
+        title: "Error al importar",
+        message: e.response?.data?.error ?? "No se pudo procesar el archivo de presupuesto",
+        color: "red",
+      });
+    } finally {
+      setUploadingBudget(false);
+    }
+  };
+
+  const handleImportExecuted = async () => {
+    if (!executedFile) {
+      showNotification({ title: "Archivo requerido", message: "Selecciona un Excel antes de importar", color: "orange" });
+      return;
+    }
+
+    const fileName = executedFile.name.toLowerCase();
+    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
+      showNotification({ title: "Formato invalido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", executedFile);
+
+    setUploadingExecuted(true);
+    try {
+      const res = await axios.post<ImportExecutedResponse>(
+        PDI_ROUTES.importarEjecutadoProyecto(),
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      setExecutedImportResult(res.data);
+      await refrescarMacro();
+      showNotification({
+        title: "Ejecucion importada",
+        message: `${res.data.proyectos_actualizados} proyecto(s) actualizados desde ${executedFile.name}`,
+        color: "teal",
+      });
+    } catch (e: any) {
+      showNotification({
+        title: "Error al importar",
+        message: e.response?.data?.error ?? "No se pudo procesar el archivo de ejecucion",
+        color: "red",
+      });
+    } finally {
+      setUploadingExecuted(false);
     }
   };
 
@@ -898,6 +1278,26 @@ export default function MacroproyectoDetallePage() {
             </Center>
           ) : (
             <Stack gap="xl">
+              {admin && macro && (
+                <BudgetImportPanel
+                  macro={macro}
+                  selectedFile={budgetFile}
+                  uploading={uploadingBudget}
+                  importResult={budgetImportResult}
+                  onPickFile={setBudgetFile}
+                  onImport={handleImportBudget}
+                />
+              )}
+              {admin && macro && (
+                <ExecutedImportPanel
+                  macro={macro}
+                  selectedFile={executedFile}
+                  uploading={uploadingExecuted}
+                  importResult={executedImportResult}
+                  onPickFile={setExecutedFile}
+                  onImport={handleImportExecuted}
+                />
+              )}
               {proyectos.map((proyecto) => (
                 <ProyectoSeccion
                   key={proyecto._id}

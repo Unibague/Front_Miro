@@ -38,6 +38,94 @@ export interface Proyecto {
   macroproyecto_id: { _id: string; codigo: string; nombre: string };
 }
 
+export interface PresupuestoProyectoImportado {
+  _id?: string;
+  codigo: string;
+  nombre?: string;
+  presupuesto: number;
+  acciones_importadas: number;
+  acciones_actualizadas?: number;
+}
+
+export interface PresupuestoAccionImportada {
+  _id?: string;
+  codigo?: string;
+  codigo_accion?: string;
+  codigo_proyecto?: string;
+  nombre?: string;
+  nombre_accion?: string;
+  fila?: number;
+  proyecto_codigo?: string;
+  presupuesto: number;
+}
+
+export interface ImportBudgetResponse {
+  archivo: string;
+  hoja: string;
+  proyecto_excel: string | null;
+  filas_leidas: number;
+  acciones_detectadas: number;
+  acciones_actualizadas: number;
+  proyectos_detectados: number;
+  proyectos_actualizados: number;
+  proyectos_no_encontrados: number;
+  totales_importados: {
+    presupuesto: number;
+  };
+  actualizados: PresupuestoProyectoImportado[];
+  acciones: PresupuestoAccionImportada[];
+  acciones_actualizadas_detalle: PresupuestoAccionImportada[];
+  no_encontrados: PresupuestoProyectoImportado[];
+  criterio: {
+    presupuesto: string;
+  };
+  observacion?: string;
+}
+
+export interface EjecutadoProyectoImportado {
+  _id?: string;
+  codigo: string;
+  nombre?: string;
+  presupuesto_ejecutado: number;
+  acciones_importadas: number;
+  acciones_actualizadas?: number;
+}
+
+export interface EjecutadoAccionImportada {
+  _id?: string;
+  codigo?: string;
+  codigo_accion?: string;
+  codigo_proyecto?: string;
+  nombre?: string;
+  nombre_accion?: string;
+  fila?: number;
+  proyecto_codigo?: string;
+  presupuesto_ejecutado: number;
+}
+
+export interface ImportExecutedResponse {
+  archivo: string;
+  hoja: string;
+  proyecto_excel: string | null;
+  filas_leidas: number;
+  acciones_detectadas: number;
+  acciones_actualizadas: number;
+  proyectos_detectados: number;
+  proyectos_actualizados: number;
+  proyectos_no_encontrados: number;
+  totales_importados: {
+    presupuesto_ejecutado: number;
+  };
+  actualizados: EjecutadoProyectoImportado[];
+  acciones: EjecutadoAccionImportada[];
+  acciones_actualizadas_detalle: EjecutadoAccionImportada[];
+  no_encontrados: EjecutadoProyectoImportado[];
+  criterio: {
+    presupuesto_ejecutado: string;
+  };
+  observacion?: string;
+}
+
 export interface Accion {
   _id: string;
   codigo: string;

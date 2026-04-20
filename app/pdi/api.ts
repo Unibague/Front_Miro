@@ -6,6 +6,8 @@ export const PDI_ROUTES = {
 
   proyectos:                   () => `${BASE()}/pdi/proyectos`,
   proyecto: (id: string)       => `${BASE()}/pdi/proyectos/${id}`,
+  importarPresupuestoProyecto: () => `${BASE()}/pdi/proyectos/importar-presupuesto`,
+  importarEjecutadoProyecto:   () => `${BASE()}/pdi/proyectos/importar-ejecutado`,
 
   acciones:                    () => `${BASE()}/pdi/acciones`,
   accion: (id: string)         => `${BASE()}/pdi/acciones/${id}`,
