@@ -56,6 +56,18 @@ interface User {
   dep_code: string;
 }
 
+interface SessionUser {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
+}
+
 interface Dependency {
   _id: string;
   dep_code: string;
@@ -79,6 +91,7 @@ interface PendingChange {
 
 const AdminUsersPage = () => {
   const { data: session } = useSession();
+  const sessionUser = session?.user as SessionUser | undefined;
   const [users, setUsers] = useState<User[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [page, setPage] = useState(1);
@@ -345,6 +358,10 @@ const AdminUsersPage = () => {
         id: _id,
         userEmail: email,
         userName: full_name,
+        originalUserId: sessionUser?.originalUserId || sessionUser?.id,
+        originalUserEmail: sessionUser?.originalUserEmail || sessionUser?.email,
+        originalUserName: sessionUser?.originalUserName || sessionUser?.name,
+        originalUserImage: sessionUser?.originalUserImage || sessionUser?.image || "",
         isImpersonating: true,
       });
     } catch (error) {
@@ -472,7 +489,7 @@ const AdminUsersPage = () => {
           
 
 
-          {session?.user?.image ? (
+          {session?.user?.email && (
             <Tooltip
               label="Impersonar usuario"
               position="top"
@@ -488,7 +505,7 @@ const AdminUsersPage = () => {
                 <IconUser size={16} />
               </Button>
             </Tooltip>
-          ) : null}
+          )}
         </Stack>
       </Table.Td>
       <Table.Td>

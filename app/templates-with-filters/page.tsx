@@ -149,7 +149,7 @@ const TemplatesWithFiltersPage = () => {
         email,
         periodId: selectedPeriodId,
         filterByUserScope: true, // Nuevo parámetro para filtrar por ámbito del usuario
-        userRole: userRole, // Enviar el rol del usuario para filtrado correcto
+        userRole: userRole, // Enviar el rol del usuario 
       };
       
       // Add filter parameters

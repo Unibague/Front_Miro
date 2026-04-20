@@ -59,6 +59,12 @@ interface ValidatorOption {
   preview_values?: string[];
 }
 
+type ValidatorSelectOption = {
+  value: string;
+  label: string;
+  option: ValidatorOption;
+};
+
 interface WorkbookSheet {
   worksheetName: string;
   headers: string[];
@@ -129,7 +135,7 @@ export default function UpdateSniesTemplatePage() {
     value: sheet.worksheetName,
     label: sheet.worksheetName,
   }));
-  const validatorSelectOptions = validatorOptions.map((option) => ({
+  const validatorSelectOptions: ValidatorSelectOption[] = validatorOptions.map((option) => ({
     value: option.name,
     label: option.name,
     option,
@@ -248,7 +254,7 @@ export default function UpdateSniesTemplatePage() {
       const selectedOption = validatorOptions.find((option) => option.name === value);
 
       if (selectedOption) {
-        if (selectedOption.type === "NÃƒÂºmero") {
+        if (selectedOption.type === "Número") {
           updatedFields[index].datatype = "Entero";
         } else if (selectedOption.type === "Texto") {
           updatedFields[index].datatype = "Texto Largo";
@@ -334,7 +340,7 @@ export default function UpdateSniesTemplatePage() {
         ...getOriginalFieldConfig(worksheetName, fieldName),
         [fieldKey]: value,
         datatype: selectedOption
-          ? selectedOption.type === "NÃƒÆ’Ã‚Âºmero"
+          ? selectedOption.type === "Número"
             ? "Entero"
             : "Texto Largo"
           : "Texto Corto",
@@ -392,7 +398,7 @@ export default function UpdateSniesTemplatePage() {
       { value: "", label: "Al final de la hoja" },
       ...uniqueOptions.map((fieldName) => ({
         value: fieldName,
-        label: `DespuÃƒÂ©s de: ${fieldName}`,
+        label: `Después de: ${fieldName}`,
       })),
     ];
   };
@@ -403,7 +409,7 @@ export default function UpdateSniesTemplatePage() {
     if (!name.trim() || !fileName.trim() || selectedDimensions.length === 0 || selectedDependencies.length === 0) {
       showNotification({
         title: "Faltan datos",
-        message: "Debes completar nombre, archivo, ÃƒÂ¡mbitos y productores.",
+        message: "Debes completar nombre, archivo, ámbitos y productores.",
         color: "red",
       });
       return;
@@ -447,7 +453,7 @@ export default function UpdateSniesTemplatePage() {
 
       showNotification({
         title: "Plantilla actualizada",
-        message: "La configuraciÃƒÂ³n SNIES se guardÃƒÂ³ correctamente.",
+        message: "La configuración SNIES se guardó correctamente.",
         color: "teal",
       });
 
@@ -487,14 +493,14 @@ export default function UpdateSniesTemplatePage() {
         mb="md"
       />
       <TextInput
-        label="DescripciÃƒÂ³n del Archivo"
+        label="Descripción del Archivo"
         value={fileDescription}
         onChange={(event) => setFileDescription(event.currentTarget.value)}
         mb="md"
       />
       <MultiSelect
-        label="ÃƒÂmbitos"
-        placeholder="Seleccionar ÃƒÂ¡mbitos"
+        label="Ámbitos"
+        placeholder="Seleccionar Ámbitos"
         data={dimensions.map((dimension) => ({ value: dimension._id, label: dimension.name }))}
         value={selectedDimensions}
         onChange={setSelectedDimensions}
@@ -611,12 +617,12 @@ export default function UpdateSniesTemplatePage() {
                   maxDropdownHeight={260}
                   comboboxProps={{ withinPortal: true }}
                   renderOption={({ option }) => {
-                    const validatorOption = option.option as ValidatorOption | undefined;
-                    const columnsLabel = validatorOption?.columns?.length
-                      ? validatorOption.columns.join(", ")
+                    const validatorOption = option as ValidatorSelectOption;
+                    const columnsLabel = validatorOption.option?.columns?.length
+                      ? validatorOption.option.columns.join(", ")
                       : "Sin columnas relacionadas";
-                    const previewLabel = validatorOption?.preview_values?.length
-                      ? validatorOption.preview_values.join(", ")
+                    const previewLabel = validatorOption.option?.preview_values?.length
+                      ? validatorOption.option.preview_values.join(", ")
                       : "Sin valores de ejemplo";
 
                     return (
@@ -651,10 +657,10 @@ export default function UpdateSniesTemplatePage() {
                 <Table.Tr>
                   <Table.Th>Arrastrar</Table.Th>
                   <Table.Th>Hoja</Table.Th>
-                  <Table.Th>PosiciÃƒÂ³n</Table.Th>
+                  <Table.Th>Posición</Table.Th>
                   <Table.Th>Nombre Campo</Table.Th>
                   <Table.Th>Tipo de Campo</Table.Th>
-                  <Table.Th>Ã‚Â¿Obligatorio?</Table.Th>
+                  <Table.Th>¿Obligatorio?</Table.Th>
                   <Table.Th w={rem(280)}>Validar con Base de Datos</Table.Th>
                   <Table.Th w={rem(120)}>Lo llena productor</Table.Th>
                   <Table.Th w={rem(120)}>Exporta a SNIES</Table.Th>
@@ -723,12 +729,12 @@ export default function UpdateSniesTemplatePage() {
                             maxDropdownHeight={260}
                             comboboxProps={{ withinPortal: true }}
                             renderOption={({ option }) => {
-                              const validatorOption = option.option as ValidatorOption | undefined;
-                              const columnsLabel = validatorOption?.columns?.length
-                                ? validatorOption.columns.join(", ")
+                              const validatorOption = option as ValidatorSelectOption;
+                              const columnsLabel = validatorOption.option?.columns?.length
+                                ? validatorOption.option.columns.join(", ")
                                 : "Sin columnas relacionadas";
-                              const previewLabel = validatorOption?.preview_values?.length
-                                ? validatorOption.preview_values.join(", ")
+                              const previewLabel = validatorOption.option?.preview_values?.length
+                                ? validatorOption.option.preview_values.join(", ")
                                 : "Sin valores de ejemplo";
 
                               return (

@@ -1,6 +1,4 @@
 .header {
-  height: rem(56px);
-  margin-bottom: rem(30px);
   background-color: var(--mantine-color-body);
   border-bottom: rem(1px) solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
   margin-bottom: rem(50px);
@@ -9,10 +7,38 @@
 }
 
 .inner {
-  height: rem(56px);
+  min-height: rem(56px);
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.impersonationBar {
+  width: 100%;
+  padding: 0 0 rem(10px);
+}
+
+.impersonationContent {
+  max-width: var(--mantine-breakpoint-xl);
+  margin: 0 auto;
+  padding: 0 rem(16px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: rem(12px);
+  flex-wrap: wrap;
+}
+
+.impersonationBadge {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.impersonationButton {
+  flex-shrink: 0;
 }
 
 .link {
@@ -37,4 +63,18 @@
 
 .avatarClickable {
   cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .impersonationBar {
+    padding: 0 rem(12px) rem(10px);
+  }
+
+  .impersonationContent {
+    gap: rem(8px);
+  }
+
+  .impersonationButton {
+    width: 100%;
+  }
 }

@@ -336,15 +336,6 @@ const ResponsibleReportPage = () => {
           </Text>
         )}
 
-          <Group mb="md">
-          <Button
-            variant="outline"
-            leftSection={<IconArrowLeft />}
-            onClick={() => router.back()}
-          >
-            Ir atrás
-          </Button>
-        </Group>
         <Group align="flex-start" grow>
           <Text size={'md'}>
             <Text fw="700">Periodo:</Text> 

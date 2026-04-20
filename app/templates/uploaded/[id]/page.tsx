@@ -43,7 +43,7 @@ interface Dependency {
   dep_code: string,
   name: string,
   responsible: string
-  visualizers: string[]
+  visualizers?: string[]
 }
 
 interface ResumeData {
@@ -69,6 +69,12 @@ const UploadedTemplatePage = () => {
   const [appliedFilters, setAppliedFilters] = useState<Record<string, string[]>>({});
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
   const [fieldComments, setFieldComments] = useState<Record<string, string>>({});
+
+  const normalizeDependencies = (items: any[] = []): Dependency[] =>
+    items.map((dependency) => ({
+      ...dependency,
+      visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
+    }));
 
 
 
@@ -100,7 +106,9 @@ const UploadedTemplatePage = () => {
           return {dependency: data.dependency, send_by: data.send_by}
         })
         setResumeData(sentDepedencies)
-        setDependencies(response.data.publishedTemplate.template.producers)
+        setDependencies(
+          normalizeDependencies(response.data.publishedTemplate?.template?.producers)
+        )
         
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
@@ -772,18 +780,19 @@ const renderCellContent = (value: any, fieldName?: string) => {
 
   const resumeRows = dependencies.map((dependency) => {
     const hasSentData = resumeData?.some(data => data.dependency===dependency.dep_code)
+    const visualizers = Array.isArray(dependency.visualizers) ? dependency.visualizers : [];
     return (
       <Table.Tr key={dependency.dep_code} c={!hasSentData ? "red" : undefined}>
         <Table.Td>{dependency.name}</Table.Td>
         <Table.Td>
-          {dependency.visualizers.length > 0 ? (
+          {visualizers.length > 0 ? (
             <Group gap={5}>
-              {dependency.visualizers.slice(0, 1).map((v, index) => (
+              {visualizers.slice(0, 1).map((v, index) => (
                 <Text key={index}> {v} </Text>
               ))}
-              {dependency.visualizers.length > 1 && (
+              {visualizers.length > 1 && (
                 <Badge variant="outline">
-                  +{dependency.visualizers.length - 1} más
+                  +{visualizers.length - 1} más
                 </Badge>
               )}
             </Group>

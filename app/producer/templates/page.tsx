@@ -138,6 +138,7 @@ const ProducerTemplatesPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(20); // Nuevo estado para el tamaño de página
   const [producerEndDate, setProducerEndDate] = useState<Date | undefined>();
   const [nextDeadline, setNextDeadline] = useState<Date | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
@@ -165,12 +166,12 @@ const ProducerTemplatesPage = () => {
   //   fetchPublishedTemplates();
   // }, []);
   
-  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string) => {
+  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string, limit?: number) => {
     try {
       const params: any = {
         email: session?.user?.email,
         page,
-        limit: 20,
+        limit: limit || pageSize, // Usar el pageSize seleccionado
         search,
         periodId: selectedPeriodId,
       };
@@ -235,14 +236,22 @@ const ProducerTemplatesPage = () => {
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
     if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedDependency, pageSize);
       fetchUserDependencies();
     }
-  }, [page, search, session, selectedPeriodId, selectedDependency]);  
+  }, [page, search, session, selectedPeriodId, selectedDependency, pageSize]); // Agregar pageSize a las dependencias  
 
   const refreshTemplates = () => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedDependency, pageSize);
+    }
+  };
+  
+  // Función para manejar el cambio de tamaño de página
+  const handlePageSizeChange = (newPageSize: string | null) => {
+    if (newPageSize) {
+      setPageSize(parseInt(newPageSize));
+      setPage(1); // Resetear a la primera página cuando cambie el tamaño
     }
   };
 
@@ -258,14 +267,14 @@ const ProducerTemplatesPage = () => {
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedDependency, pageSize);
     }
   }, [page, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search, selectedDependency);
+        fetchTemplates(page, search, selectedDependency, pageSize);
       }
     }, 500);
 
@@ -823,6 +832,20 @@ if (field.multiple) {
           searchable
           style={{ minWidth: 300 }}
         />
+        <Select
+          label="Plantillas por página"
+          placeholder="Seleccionar cantidad"
+          data={[
+            { value: '10', label: '10 por página' },
+            { value: '15', label: '15 por página' },
+            { value: '20', label: '20 por página' },
+            { value: '25', label: '25 por página' },
+            { value: '50', label: '50 por página' }
+          ]}
+          value={pageSize.toString()}
+          onChange={handlePageSizeChange}
+          style={{ minWidth: 150 }}
+        />
       </Group>
       <Table striped withTableBorder mt="md">
         <Table.Thead>
@@ -930,14 +953,18 @@ if (field.multiple) {
         </Table.Tbody>
       </Table>
       <Center>
-        <Pagination
-          mt={15}
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          siblings={1}
-          boundaries={3}
-        />
+        <Group mt={15} align="center">
+          <Pagination
+            value={page}
+            onChange={setPage}
+            total={totalPages}
+            siblings={1}
+            boundaries={3}
+          />
+          <Text size="sm" c="dimmed">
+            Mostrando {pageSize} plantillas por página
+          </Text>
+        </Group>
       </Center>
 
       <Modal
