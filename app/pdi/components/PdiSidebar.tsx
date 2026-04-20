@@ -3,7 +3,7 @@
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBar, IconChartBarPopular, IconHistory, IconCalendarStats,
-  IconLayoutDashboard, IconGitPullRequest, IconCalendarEvent,
+  IconLayoutDashboard, IconGitPullRequest, IconCalendarEvent, IconForms,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -49,6 +49,19 @@ export default function PdiSidebar() {
         active={pathname === "/pdi/cambios"}
         color="violet"
         onClick={() => router.push("/pdi/cambios")}
+        style={{ borderRadius: 8 }}
+      />
+
+      <Divider />
+
+      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>FORMULARIOS</Text>
+
+      <NavLink
+        label="Formularios PDI"
+        leftSection={<IconForms size={16} />}
+        active={pathname.startsWith("/pdi/formularios")}
+        color="teal"
+        onClick={() => router.push("/pdi/formularios")}
         style={{ borderRadius: 8 }}
       />
 

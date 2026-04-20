@@ -192,15 +192,6 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               onChange={(e) => setEntregable(e.currentTarget.value)}
               rows={2}
             />
-            <NumberInput
-              label="Presupuesto asignado (COP)"
-              placeholder="Ej: 12000000"
-              value={presupuesto}
-              onChange={setPresupuesto}
-              thousandSeparator="."
-              decimalSeparator=","
-              min={0}
-            />
             <Group grow>
               <DatePickerInput
                 label="Fecha de inicio"
