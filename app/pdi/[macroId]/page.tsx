@@ -134,9 +134,7 @@ function BudgetImportPanel({
     >
       <Group justify="space-between" align="flex-start" wrap="wrap" mb="md">
         <Group gap={12} align="flex-start">
-          <ThemeIcon size={42} radius="xl" color="green" variant="light">
-            <IconFileSpreadsheet size={20} />
-          </ThemeIcon>
+          
           <div>
             <Text fw={700}>Importar presupuesto desde Excel</Text>
             <Text size="sm" c="dimmed" mt={4}>
