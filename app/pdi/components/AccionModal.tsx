@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack, NumberInput } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import "dayjs/locale/es";
@@ -26,7 +26,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [peso, setPeso] = useState("");
   const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
-  const [presupuesto, setPresupuesto] = useState<number | string>("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -40,7 +39,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       setPeso(String(selected.peso));
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
-      setPresupuesto(selected.presupuesto ?? "");
       return;
     }
 
@@ -51,7 +49,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     setPeso("");
     setFechaInicio(null);
     setFechaFin(null);
-    setPresupuesto("");
   }, [opened, selected]);
 
   const handleSave = async () => {
@@ -70,8 +67,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         proyecto_id: defaultProyectoId,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin: fechaFin ? fechaFin.toISOString() : null,
-        presupuesto: presupuesto !== "" ? Number(presupuesto) : 0,
-        presupuesto_ejecutado: 0,
       };
 
       if (selected) {
@@ -108,15 +103,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
           <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
         </Group>
         <TextInput label="Nombre" placeholder="Nombre de la accion" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
-        <NumberInput
-          label="Presupuesto asignado (COP)"
-          placeholder="Ej: 20000000"
-          value={presupuesto}
-          onChange={setPresupuesto}
-          thousandSeparator="."
-          decimalSeparator=","
-          min={0}
-        />
       </Stack>
 
       <Group justify="flex-end" mt="lg">

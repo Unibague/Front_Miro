@@ -15,7 +15,6 @@ import {
   Paper,
   Select,
   Stack,
-  Switch,
   Text,
   TextInput,
   Textarea,
@@ -54,6 +53,7 @@ interface Formulario {
   nombre: string;
   descripcion: string;
   activo: boolean;
+  alcance: "indicador" | "general";
   indicador_id: { _id: string; codigo: string; nombre: string } | null;
   campos: Campo[];
   creado_por: string;
@@ -83,25 +83,8 @@ function FormularioModal({
 }) {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
-  const [activo, setActivo] = useState(true);
-  const [indicadorId, setIndicadorId] = useState<string | null>(null);
   const [campos, setCampos] = useState<Campo[]>([]);
   const [loading, setLoading] = useState(false);
-  const [indicadores, setIndicadores] = useState<{ value: string; label: string }[]>([]);
-
-  useEffect(() => {
-    axios
-      .get(PDI_ROUTES.indicadores())
-      .then((r) =>
-        setIndicadores(
-          r.data.map((i: any) => ({
-            value: i._id,
-            label: `${i.codigo} - ${i.nombre}`.slice(0, 90),
-          })),
-        ),
-      )
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!opened) return;
@@ -109,16 +92,12 @@ function FormularioModal({
     if (selected) {
       setNombre(selected.nombre);
       setDescripcion(selected.descripcion);
-      setActivo(selected.activo);
-      setIndicadorId(selected.indicador_id?._id ?? null);
       setCampos(selected.campos.map((campo) => ({ ...campo })));
       return;
     }
 
     setNombre("");
     setDescripcion("");
-    setActivo(true);
-    setIndicadorId(null);
     setCampos([]);
   }, [opened, selected]);
 
@@ -146,18 +125,14 @@ function FormularioModal({
       return;
     }
 
-    if (!indicadorId) {
-      showNotification({ title: "Error", message: "Selecciona un indicador", color: "red" });
-      return;
-    }
-
     setLoading(true);
     try {
       const payload = {
         nombre: nombre.trim(),
         descripcion: descripcion.trim(),
-        activo,
-        indicador_id: indicadorId,
+        activo: true,
+        alcance: "general",
+        indicador_id: null,
         campos: campos.map((campo, index) => ({ ...campo, orden: index })),
       };
 
@@ -206,24 +181,10 @@ function FormularioModal({
           rows={2}
         />
 
-        <Divider label="Indicador asociado" labelPosition="left" />
-        <Select
-          label="Indicador"
-          placeholder="Buscar indicador"
-          data={indicadores}
-          value={indicadorId}
-          onChange={setIndicadorId}
-          searchable
-          clearable
-          description="Cada indicador puede tener un unico formulario"
-        />
-
-        <Switch
-          label="Formulario activo"
-          checked={activo}
-          onChange={(e) => setActivo(e.currentTarget.checked)}
-          color="teal"
-        />
+        <Divider label="Alcance del formulario" labelPosition="left" />
+        <Text size="xs" c="dimmed">
+          Este formulario sera general y aparecera en todos los indicadores.
+        </Text>
 
         <Divider label="Campos del formulario" labelPosition="left" />
 
@@ -306,17 +267,15 @@ function FormularioCard({
   form,
   onEdit,
   onDelete,
-  onToggle,
 }: {
   form: Formulario;
   onEdit: () => void;
   onDelete: () => void;
-  onToggle: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const asociado = form.indicador_id
     ? `Indicador: ${form.indicador_id.codigo} - ${form.indicador_id.nombre}`
-    : "Sin indicador asociado";
+    : "General para todos los indicadores";
 
   return (
     <Paper
@@ -324,11 +283,11 @@ function FormularioCard({
       radius="lg"
       p="lg"
       shadow="xs"
-      style={{ borderLeft: `4px solid ${form.activo ? "#0d9488" : "#adb5bd"}` }}
+      style={{ borderLeft: "4px solid #0d9488" }}
     >
       <Group justify="space-between" align="flex-start">
         <Group gap={10}>
-          <ThemeIcon size={36} radius="xl" color={form.activo ? "teal" : "gray"} variant="light">
+          <ThemeIcon size={36} radius="xl" color="teal" variant="light">
             <IconForms size={18} />
           </ThemeIcon>
           <div>
@@ -336,8 +295,8 @@ function FormularioCard({
               <Text fw={700} size="sm">
                 {form.nombre}
               </Text>
-              <Badge size="xs" color={form.activo ? "teal" : "gray"} variant="light">
-                {form.activo ? "Activo" : "Inactivo"}
+              <Badge size="xs" color="blue" variant="light">
+                General
               </Badge>
               <Badge size="xs" color="violet" variant="outline">
                 {form.campos.length} campo{form.campos.length !== 1 ? "s" : ""}
@@ -355,7 +314,6 @@ function FormularioCard({
         </Group>
 
         <Group gap={6}>
-          <Switch size="sm" checked={form.activo} onChange={onToggle} color="teal" />
           <ActionIcon variant="subtle" color="blue" onClick={onEdit}>
             <IconEdit size={15} />
           </ActionIcon>
@@ -430,22 +388,6 @@ export default function FormulariosPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleToggle = async (form: Formulario) => {
-    try {
-      const payload = {
-        nombre: form.nombre,
-        descripcion: form.descripcion,
-        activo: !form.activo,
-        indicador_id: form.indicador_id?._id ?? null,
-        campos: form.campos,
-      };
-      const res = await axios.put(PDI_ROUTES.formulario(form._id), payload);
-      setFormularios((prev) => prev.map((item) => (item._id === form._id ? res.data : item)));
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo actualizar", color: "red" });
-    }
-  };
-
   const handleDelete = (id: string) => {
     modals.openConfirmModal({
       title: "Eliminar formulario",
@@ -468,9 +410,6 @@ export default function FormulariosPage() {
     });
   };
 
-  const activos = formularios.filter((formulario) => formulario.activo).length;
-  const inactivos = formularios.filter((formulario) => !formulario.activo).length;
-
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
@@ -487,7 +426,7 @@ export default function FormulariosPage() {
               <div>
                 <Title order={3}>Formularios PDI</Title>
                 <Text size="xs" c="dimmed">
-                  Crea un formulario personalizado para cada indicador
+                  Crea un formulario general para todos los indicadores
                 </Text>
               </div>
             </Group>
@@ -505,33 +444,6 @@ export default function FormulariosPage() {
 
           <Divider mb="lg" />
 
-          <Group mb="lg" gap="md">
-            <Paper withBorder radius="md" p="md" style={{ minWidth: 120, textAlign: "center" }}>
-              <Text size="xl" fw={800} c="teal">
-                {formularios.length}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Total
-              </Text>
-            </Paper>
-            <Paper withBorder radius="md" p="md" style={{ minWidth: 120, textAlign: "center" }}>
-              <Text size="xl" fw={800} c="green">
-                {activos}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Activos
-              </Text>
-            </Paper>
-            <Paper withBorder radius="md" p="md" style={{ minWidth: 120, textAlign: "center" }}>
-              <Text size="xl" fw={800} c="dimmed">
-                {inactivos}
-              </Text>
-              <Text size="xs" c="dimmed">
-                Inactivos
-              </Text>
-            </Paper>
-          </Group>
-
           {loading ? (
             <Center py="xl">
               <Loader color="teal" />
@@ -544,7 +456,7 @@ export default function FormulariosPage() {
                 </ThemeIcon>
                 <Text fw={600}>No hay formularios creados</Text>
                 <Text size="sm" c="dimmed">
-                  Crea el primer formulario para que los responsables lo diligencien por indicador
+                  Crea el formulario general para que los responsables lo diligencien en sus indicadores
                 </Text>
                 <Button
                   leftSection={<IconPlus size={14} />}
@@ -570,7 +482,6 @@ export default function FormulariosPage() {
                     setModal(true);
                   }}
                   onDelete={() => handleDelete(formulario._id)}
-                  onToggle={() => handleToggle(formulario)}
                 />
               ))}
             </Stack>

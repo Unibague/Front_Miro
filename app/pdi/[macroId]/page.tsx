@@ -139,7 +139,7 @@ function BudgetImportPanel({
             <Text fw={700}>Importar presupuesto desde Excel</Text>
             <Text size="sm" c="dimmed" mt={4}>
               Carga la hoja de presupuesto del macroproyecto <b>{macro.codigo}</b>. El sistema consolidara
-              presupuesto asignado y ejecutado por proyecto.
+              presupuesto asignado.
             </Text>
           </div>
         </Group>
@@ -187,65 +187,14 @@ function BudgetImportPanel({
 
       {importResult && (
         <Stack gap="md">
-          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{importResult.proyectos_actualizados}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Proyectos actualizados</Text>
-            </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{importResult.acciones_actualizadas}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Acciones actualizadas</Text>
-            </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{formatCOP(importResult.totales_importados.presupuesto)}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Presupuesto asignado</Text>
-            </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>Pendiente</Text>
-              <Text size="xs" c="dimmed" mt={4}>Ejecucion se importa aparte</Text>
-            </Paper>
-          </SimpleGrid>
-
-          <Paper withBorder radius="lg" p="md">
-            <Group justify="space-between" align="center" mb="xs" wrap="wrap">
-              <Text fw={700}>Resultado de la importacion</Text>
-              <Badge variant="outline" color="green" radius="xl">
-                {importResult.archivo}
-              </Badge>
-            </Group>
-            <Text size="sm" c="dimmed">
-              Hoja: <b>{importResult.hoja}</b>
-              {" · "}
-              Proyecto Excel: <b>{importResult.proyecto_excel || "Sin nombre"}</b>
-              {" · "}
-              Acciones del Excel detectadas: <b>{importResult.acciones_detectadas}</b>
-            </Text>
-            <Text size="xs" c="dimmed" mt={6}>
-              Esto indica cuantas acciones estrategicas con codigo tipo M1-P1-AE1 fueron leidas del archivo.
-              Si esas acciones ya existen en el sistema, tambien se actualiza su presupuesto individual.
-            </Text>
-            {importResult.observacion && (
-              <Text size="xs" c="blue" mt={6} fw={600}>
-                {importResult.observacion}
-              </Text>
-            )}
-          </Paper>
-
           {importResult.actualizados.length > 0 && (
             <Paper withBorder radius="lg" p="md">
-              <Text fw={700} mb="sm">Proyectos actualizados</Text>
+              <Text fw={700} mb="sm">Resultado</Text>
               <Stack gap={8}>
                 {importResult.actualizados.map((item) => (
                   <Group key={item.codigo} justify="space-between" wrap="wrap">
-                    <div>
-                      <Text size="sm" fw={700}>{item.codigo}{item.nombre ? ` · ${item.nombre}` : ""}</Text>
-                      <Text size="xs" c="dimmed">
-                        {item.acciones_importadas} acciones leidas del Excel · {item.acciones_actualizadas} acciones actualizadas en el sistema
-                      </Text>
-                    </div>
-                    <Group gap={10} wrap="wrap">
-                      <Badge color="blue" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
-                    </Group>
+                    <Text size="sm" fw={700}>{item.codigo}{item.nombre ? ` - ${item.nombre}` : ""}</Text>
+                    <Badge color="green" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
                   </Group>
                 ))}
               </Stack>
@@ -254,17 +203,12 @@ function BudgetImportPanel({
 
           {importResult.no_encontrados.length > 0 && (
             <Paper withBorder radius="lg" p="md" style={{ borderColor: "var(--mantine-color-orange-4)" }}>
-              <Text fw={700} mb="sm">Proyectos no encontrados en la base</Text>
+              <Text fw={700} mb="sm">No encontrado</Text>
               <Stack gap={8}>
                 {importResult.no_encontrados.map((item) => (
                   <Group key={item.codigo} justify="space-between" wrap="wrap">
-                    <div>
-                      <Text size="sm" fw={700}>{item.codigo}</Text>
-                      <Text size="xs" c="dimmed">{item.acciones_importadas} acciones leidas en el Excel</Text>
-                    </div>
-                    <Group gap={10} wrap="wrap">
-                      <Badge color="gray" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
-                    </Group>
+                    <Text size="sm" fw={700}>{item.codigo}</Text>
+                    <Badge color="gray" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
                   </Group>
                 ))}
               </Stack>
@@ -308,7 +252,7 @@ function ExecutedImportPanel({
         <div>
           <Text fw={700}>Importar ejecucion presupuestal</Text>
           <Text size="sm" c="dimmed" mt={4}>
-            Carga el ejecutado real del macroproyecto <b>{macro.codigo}</b>. Este flujo solo actualiza la ejecucion.
+            Carga el ejecutado real del macroproyecto <b>{macro.codigo}</b>. El sistema actualiza la ejecucion del presupuesto.
           </Text>
         </div>
         <Group gap={8}>
@@ -344,39 +288,33 @@ function ExecutedImportPanel({
 
       {importResult && (
         <Stack gap="md">
-          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{importResult.proyectos_actualizados}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Proyectos actualizados</Text>
+          {importResult.actualizados.length > 0 && (
+            <Paper withBorder radius="lg" p="md">
+              <Text fw={700} mb="sm">Resultado</Text>
+              <Stack gap={8}>
+                {importResult.actualizados.map((item) => (
+                  <Group key={item.codigo} justify="space-between" wrap="wrap">
+                    <Text size="sm" fw={700}>{item.codigo}{item.nombre ? ` - ${item.nombre}` : ""}</Text>
+                    <Badge color="blue" variant="light" radius="xl">{formatCOP(item.presupuesto_ejecutado)}</Badge>
+                  </Group>
+                ))}
+              </Stack>
             </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{importResult.acciones_actualizadas}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Acciones actualizadas</Text>
-            </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{formatCOP(importResult.totales_importados.presupuesto_ejecutado)}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Ejecutado importado</Text>
-            </Paper>
-            <Paper withBorder radius="lg" p="sm">
-              <Text size="lg" fw={800} lh={1}>{importResult.acciones_detectadas}</Text>
-              <Text size="xs" c="dimmed" mt={4}>Acciones detectadas</Text>
-            </Paper>
-          </SimpleGrid>
+          )}
 
-          <Paper withBorder radius="lg" p="md">
-            <Group justify="space-between" align="center" mb="xs" wrap="wrap">
-              <Text fw={700}>Resultado de la importacion</Text>
-              <Badge variant="outline" color="blue" radius="xl">{importResult.archivo}</Badge>
-            </Group>
-            <Text size="sm" c="dimmed">
-              Hoja: <b>{importResult.hoja}</b>
-              {" · "}
-              Proyecto Excel: <b>{importResult.proyecto_excel || "Sin nombre"}</b>
-            </Text>
-            {importResult.observacion && (
-              <Text size="xs" c="blue" mt={6} fw={600}>{importResult.observacion}</Text>
-            )}
-          </Paper>
+          {importResult.no_encontrados.length > 0 && (
+            <Paper withBorder radius="lg" p="md" style={{ borderColor: "var(--mantine-color-orange-4)" }}>
+              <Text fw={700} mb="sm">No encontrado</Text>
+              <Stack gap={8}>
+                {importResult.no_encontrados.map((item) => (
+                  <Group key={item.codigo} justify="space-between" wrap="wrap">
+                    <Text size="sm" fw={700}>{item.codigo}</Text>
+                    <Badge color="gray" variant="light" radius="xl">{formatCOP(item.presupuesto_ejecutado)}</Badge>
+                  </Group>
+                ))}
+              </Stack>
+            </Paper>
+          )}
         </Stack>
       )}
     </Paper>
@@ -633,7 +571,6 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
               <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
                <SemaforoBadge semaforo={semaforoAccion} />
               <MetaBadge label={`Peso ${accion.peso}%`} />
-              {accion.presupuesto > 0 && <MetaBadge label={formatCOP(accion.presupuesto)} color="green" />}
             </Group>
             <Text fw={700} size="md" lh={1.35}>{accion.nombre}</Text>
            
@@ -840,20 +777,8 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const avanceProyecto = acciones.length
     ? getWeightedProgress(acciones, (accion) => Number(accion.avance) || 0)
     : proyecto.avance;
-  const presupuestoDesdeAcciones = acciones.reduce(
-    (total, accion) => total + (Number(accion.presupuesto) || 0),
-    0,
-  );
-  const presupuestoEjecutadoDesdeAcciones = acciones.reduce(
-    (total, accion) => total + (Number(accion.presupuesto_ejecutado) || 0),
-    0,
-  );
-  const presupuestoProyecto = presupuestoDesdeAcciones > 0
-    ? presupuestoDesdeAcciones
-    : Number(proyecto.presupuesto || 0);
-  const presupuestoEjecutadoProyecto = presupuestoEjecutadoDesdeAcciones > 0
-    ? presupuestoEjecutadoDesdeAcciones
-    : Number(proyecto.presupuesto_ejecutado || 0);
+  const presupuestoProyecto = Number(proyecto.presupuesto || 0);
+  const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado || 0);
   const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
   const estadoProyectoColorReal = semaforoProyecto === "verde"
     ? "green"
@@ -1062,6 +987,7 @@ export default function MacroproyectoDetallePage() {
 
     const formData = new FormData();
     formData.append("file", budgetFile);
+    formData.append("macroproyecto_id", macroId);
 
     setUploadingBudget(true);
     try {
@@ -1103,6 +1029,7 @@ export default function MacroproyectoDetallePage() {
 
     const formData = new FormData();
     formData.append("file", executedFile);
+    formData.append("macroproyecto_id", macroId);
 
     setUploadingExecuted(true);
     try {

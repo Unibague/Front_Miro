@@ -195,6 +195,8 @@ interface FormularioPDI {
   _id: string;
   nombre: string;
   descripcion: string;
+  alcance?: "indicador" | "general";
+  indicador_id?: { _id: string; codigo: string; nombre: string } | null;
   campos: CampoFormulario[];
 }
 interface RespuestaCampo {
@@ -394,6 +396,9 @@ function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
                 <div>
                   <Text fw={700} size="sm">{form.nombre}</Text>
                   {form.descripcion && <Text size="xs" c="dimmed">{form.descripcion}</Text>}
+                  {form.alcance === "general" && (
+                    <Badge size="xs" color="blue" variant="light" mt={4}>Formulario general</Badge>
+                  )}
                 </div>
               </Group>
               <Badge color={enviado ? "teal" : resp ? "yellow" : "gray"} variant="light" size="sm">
