@@ -81,6 +81,8 @@ export type ProcessDocument = {
   _id: string;
   phase_id: string | null;
   process_id?: string | null;
+  actividad_id?: string | null;
+  subactividad_id?: string | null;
   doc_type?: 'resolucion' | 'proceso';
   /** Campo de fecha del caso al que pertenecen (información del caso) */
   caso_date_key?: string | null;

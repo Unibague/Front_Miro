@@ -8,7 +8,7 @@ import {
 import { DateInput } from "@mantine/dates";
 import axios from "axios";
 import type { Dependency, Program, Process } from "../types";
-import { PERIODICIDAD_ADMISION } from "../constants";
+import { PERIODICIDAD_ADMISION, etiquetaSubtipoCompacta } from "../constants";
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -447,7 +447,9 @@ export default function AgregarProcesoModal({
             <Badge color={tipo === "RC" ? "blue" : "violet"} variant="light">{tipo}</Badge>
           )}
           {!esSoloCrearPrograma && subtipo && (
-            <Badge color="gray" variant="outline" size="sm">{subtipo}</Badge>
+            <Badge color="gray" variant="outline" size="sm" styles={{ label: { textTransform: "none" } }}>
+              {etiquetaSubtipoCompacta(subtipo)}
+            </Badge>
           )}
         </Group>
       }

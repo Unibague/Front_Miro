@@ -32,6 +32,12 @@ export const SUBTIPOS: Record<"RC" | "AV" | "PM", string[]> = {
   PM: ["Autoevaluación Registro calificado", "Autoevaluación Acreditación"],
 };
 
+/** Texto corto en badges/tablas. El valor guardado en BD sigue siendo «Renovación + reforma». */
+export function etiquetaSubtipoCompacta(subtipo: string): string {
+  if (subtipo === "Renovación + reforma") return "Renovacion+Ref.";
+  return subtipo;
+}
+
 const sortEs = (a: string, b: string) => a.localeCompare(b, "es");
 
 /**

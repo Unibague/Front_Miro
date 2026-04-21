@@ -27,8 +27,10 @@ import {
   selectorStyleFilters,
   subtipoOpcionesFiltro,
   procesoCumpleSubtipoFiltro,
+  etiquetaSubtipoCompacta,
 } from "./constants";
 import { formatFechaDDMMYY } from "./utils/formatFechaCorta";
+import { mismoId } from "./utils/idMongoose";
 import FaseBadge from "./components/FaseBadge";
 import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
@@ -645,8 +647,8 @@ const DateReviewPage = () => {
     return programasFiltradosCompleto.map((p) => {
       const procRC = getProceso(p.dep_code_programa, "RC");
       const procAV = getProceso(p.dep_code_programa, "AV");
-      const faseRC = tablePhases.find((f) => f.proceso_id === procRC?._id && f.numero === procRC?.fase_actual);
-      const faseAV = tablePhases.find((f) => f.proceso_id === procAV?._id && f.numero === procAV?.fase_actual);
+      const faseRC = tablePhases.find((f) => mismoId(f.proceso_id, procRC?._id) && f.numero === procRC?.fase_actual);
+      const faseAV = tablePhases.find((f) => mismoId(f.proceso_id, procAV?._id) && f.numero === procAV?.fase_actual);
       const allPMs = procesos.filter((pr) => pr.program_code === p.dep_code_programa && pr.tipo_proceso === "PM" && pr.parent_process_id != null);
       const pmProc = allPMs[0] ?? null;
       const parentTipo = pmProc?.parent_tipo_proceso ?? null;
@@ -1135,9 +1137,11 @@ const DateReviewPage = () => {
                           key={tipo}
                           proceso={proc}
                           programa={progObj}
-                          fases={fases.filter(f => f.proceso_id === proc._id)}
+                          fases={fases.filter((f) => mismoId(f.proceso_id, proc._id))}
                           onUpdateProceso={updated => setProcesos(prev => prev.map(p => p._id === updated._id ? updated : p))}
-                          onUpdateFases={updated => setFases(prev => [...prev.filter(f => f.proceso_id !== proc._id), ...updated])}
+                          onUpdateFases={updated =>
+                            setFases((prev) => [...prev.filter((f) => !mismoId(f.proceso_id, proc._id)), ...updated])
+                          }
                           onUpdatePrograma={updated => {
                             setProgramas(prev => prev.map(p => p._id === updated._id ? updated : p));
                           }}
@@ -1272,7 +1276,9 @@ const DateReviewPage = () => {
                                   <Badge size="xs" color={proc.tipo_proceso === "RC" ? "blue" : "violet"} variant="light">{proc.tipo_proceso}</Badge>
                                   <Badge size="xs" variant="outline" color="cyan">Activo</Badge>
                                   {proc.subtipo && (
-                                    <Badge size="xs" variant="outline" color="gray">{proc.subtipo}</Badge>
+                                    <Badge size="xs" variant="outline" color="gray" styles={{ label: { textTransform: "none" } }}>
+                                      {etiquetaSubtipoCompacta(proc.subtipo)}
+                                    </Badge>
                                   )}
                                 </Group>
                               </td>
@@ -1317,7 +1323,9 @@ const DateReviewPage = () => {
                                   <Badge size="xs" color={r.tipo_proceso === "RC" ? "blue" : "violet"} variant="light">{r.tipo_proceso}</Badge>
                                   <Badge size="xs" variant="outline" color={esAlertaApi ? "orange" : "gray"}>Alerta</Badge>
                                   {r.subtipo ? (
-                                    <Badge size="xs" variant="outline" color="gray">{r.subtipo}</Badge>
+                                    <Badge size="xs" variant="outline" color="gray" styles={{ label: { textTransform: "none" } }}>
+                                      {etiquetaSubtipoCompacta(r.subtipo)}
+                                    </Badge>
                                   ) : null}
                                 </Group>
                               </td>
@@ -1459,7 +1467,11 @@ const DateReviewPage = () => {
           <Stack gap="sm">
             <Group gap="xs">
               <Badge color="blue" variant="light" size="sm">{LABEL_PROCESO[historialDetalle.tipo_proceso]}</Badge>
-              {historialDetalle.subtipo && <Badge color="gray" variant="outline" size="sm">{historialDetalle.subtipo}</Badge>}
+              {historialDetalle.subtipo && (
+                <Badge color="gray" variant="outline" size="sm" styles={{ label: { textTransform: "none" } }}>
+                  {etiquetaSubtipoCompacta(historialDetalle.subtipo)}
+                </Badge>
+              )}
               {historialDetalle.condicion && (
                 <Badge color="violet" variant="light" size="sm">
                   {historialDetalle.tipo_proceso === "RC" ? "Condición" : "Factor"} {historialDetalle.condicion}
@@ -1511,7 +1523,11 @@ const DateReviewPage = () => {
                 <Divider label="Plan de Mejoramiento (activo al cierre)" labelPosition="left" />
                 <Group gap="xs" mb={4}>
                   <Badge color="green" variant="light" size="sm">Activo al cierre</Badge>
-                  {historialDetalle.pm_ligado.subtipo && <Badge color="gray" variant="outline" size="sm">{historialDetalle.pm_ligado.subtipo}</Badge>}
+                  {historialDetalle.pm_ligado.subtipo && (
+                  <Badge color="gray" variant="outline" size="sm" styles={{ label: { textTransform: "none" } }}>
+                    {etiquetaSubtipoCompacta(historialDetalle.pm_ligado.subtipo)}
+                  </Badge>
+                )}
                 </Group>
                 <SimpleGrid cols={2} spacing="sm">
                   {[
