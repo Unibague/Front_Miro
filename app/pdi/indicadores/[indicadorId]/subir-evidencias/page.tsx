@@ -101,12 +101,13 @@ export default function SubirEvidenciasPage() {
   const router = useRouter();
   const params = useParams();
   const pathname = usePathname();
+  const currentPath = pathname ?? "";
   const searchParams = useSearchParams();
   const indicadorId = params?.indicadorId as string;
   const { data: session, status } = useSession();
   const { config } = usePdiConfig();
-  const vieneDeMisIndicadores = pathname.startsWith("/pdi/mis-indicadores/");
-  const esLiderDesdeListado = searchParams.get("esLider") === "1";
+  const vieneDeMisIndicadores = currentPath.startsWith("/pdi/mis-indicadores/");
+  const esLiderDesdeListado = (searchParams?.get("esLider") ?? "") === "1";
 
   // Indicador y cortes
   const [indicador, setIndicador] = useState<Indicador | null>(null);
