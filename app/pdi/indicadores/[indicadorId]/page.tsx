@@ -976,15 +976,17 @@ export default function IndicadorEvidenciasPage() {
   const pathname = usePathname();
   const currentPath = pathname ?? "";
   const searchParams = useSearchParams();
+  const origen = searchParams?.get("origen") ?? "";
+  const modo = searchParams?.get("modo") ?? "";
+  const preferredPeriodo = searchParams?.get("periodo") ?? "";
   const indicadorId = params?.indicadorId as string;
   const { config } = usePdiConfig();
   const { userRole } = useRole();
   const { data: session } = useSession();
   const vieneDeMisIndicadores =
     currentPath.startsWith("/pdi/mis-indicadores/") ||
-    searchParams.get("origen") === "mis-indicadores";
-  const fuerzaVistaEvaluacion = searchParams.get("modo") === "evaluar";
-  const preferredPeriodo = searchParams.get("periodo") ?? "";
+    origen === "mis-indicadores";
+  const fuerzaVistaEvaluacion = modo === "evaluar";
   const admin = !vieneDeMisIndicadores && isAdmin(userRole);
 
   const [indicador, setIndicador] = useState<Indicador | null>(null);
