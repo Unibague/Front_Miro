@@ -175,7 +175,7 @@ const AdminTemplatesPage = () => {
       title: 'Confirmar eliminación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas eliminar la plantilla "{templateToDelete?.name}"? 
+          ¿Estás seguro de que deseas eliminar la plantilla &quot;{templateToDelete?.name}&quot;? 
           Esta acción no se puede deshacer.
         </Text>
       ),
@@ -642,7 +642,7 @@ const AdminTemplatesPage = () => {
       title: 'Confirmar asignación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas asignar la plantilla "{selectedTemplate?.name}" 
+          ¿Estás seguro de que deseas asignar la plantilla &quot;{selectedTemplate?.name}&quot; 
           al período seleccionado? Los productores podrán acceder a esta plantilla.
         </Text>
       ),

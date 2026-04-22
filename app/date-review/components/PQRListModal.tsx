@@ -207,7 +207,7 @@ export default function PQRListModal({ opened, onClose, pqrs, programas, onUpdat
       <Modal opened={opened} onClose={onClose} title="PQR activos" size="95vw" radius="md" centered
         styles={{ body: { padding: "12px 16px" } }}>
         {activosPqrs.length === 0 ? (
-          <Text size="sm" c="dimmed" ta="center" py="xl">No hay PQRs activos. Usa "+ Agregar PQR" para crear uno.</Text>
+          <Text size="sm" c="dimmed" ta="center" py="xl">No hay PQRs activos. Usa &quot;+ Agregar PQR&quot; para crear uno.</Text>
         ) : (
           <Table withTableBorder withColumnBorders style={{ width: "100%", tableLayout: "fixed" }}>
             <Table.Thead>

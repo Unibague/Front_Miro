@@ -207,7 +207,7 @@ const SortableActividad = ({
                     {usaModoExterno ? (
                       /* Modo derivado del caso — solo informativo */
                       modoActual === null ? (
-                        <Text size="xs" c="orange" fs="italic">Define el estado en "Información del caso" para ver las subactividades</Text>
+                        <Text size="xs" c="orange" fs="italic">Define el estado en &quot;Información del caso&quot; para ver las subactividades</Text>
                       ) : (
                         <Badge size="xs" color={modoActual === 'satisfactorio' ? 'green' : 'red'} variant="light">
                           {modoActual === 'satisfactorio' ? 'Satisfactorio' : 'No satisfactorio'}

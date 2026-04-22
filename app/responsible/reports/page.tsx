@@ -375,7 +375,7 @@ label={validPeriod[pRep.period._id] === false ? "Plazo terminado para acceder a 
       <Text c="dimmed" size="xs" ta="center" mt="md">
         <IconBulb color="#797979" size={20} />
         <br />
-        Si quieres ver el detalle o cargar un informe, toca el botón de "Ver informe".
+        Si quieres ver el detalle o cargar un informe, toca el botón de &quot;Ver informe&quot;.
       </Text>
     </Container>
   );
