@@ -15,6 +15,7 @@ import {
   Paper,
   Select,
   Stack,
+  Switch,
   Text,
   TextInput,
   Textarea,
@@ -181,10 +182,6 @@ function FormularioModal({
           rows={2}
         />
 
-        <Divider label="Alcance del formulario" labelPosition="left" />
-        <Text size="xs" c="dimmed">
-          Este formulario sera general y aparecera en todos los indicadores.
-        </Text>
 
         <Divider label="Campos del formulario" labelPosition="left" />
 
@@ -424,22 +421,24 @@ export default function FormulariosPage() {
                 <IconForms size={22} />
               </ThemeIcon>
               <div>
-                <Title order={3}>Formularios PDI</Title>
+                <Title order={3}>Formulario PDI</Title>
                 <Text size="xs" c="dimmed">
                   Crea un formulario general para todos los indicadores
                 </Text>
               </div>
             </Group>
-            <Button
-              leftSection={<IconPlus size={15} />}
-              color="teal"
-              onClick={() => {
-                setSelected(null);
-                setModal(true);
-              }}
-            >
-              Nuevo formulario
-            </Button>
+            {formularios.length === 0 && (
+              <Button
+                leftSection={<IconPlus size={15} />}
+                color="teal"
+                onClick={() => {
+                  setSelected(null);
+                  setModal(true);
+                }}
+              >
+                Nuevo formulario
+              </Button>
+            )}
           </Group>
 
           <Divider mb="lg" />

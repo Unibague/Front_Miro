@@ -14,9 +14,41 @@ export interface Macroproyecto {
   codigo: string;
   nombre: string;
   lider?: string;
+  lider_email?: string;
   peso: number;
   avance: number;
   semaforo: Semaforo;
+}
+
+export type EstadoAval = "Pendiente" | "Aprobado" | "Rechazado";
+
+export interface RespuestaCampo {
+  campo_id: string;
+  etiqueta: string;
+  tipo: string;
+  valor_texto: string;
+  nombre_original: string;
+  filename: string;
+  url: string;
+}
+
+export interface RespuestaFormulario {
+  _id: string;
+  formulario_id: string | { _id: string; nombre: string; campos: any[] };
+  indicador_id: string | { _id: string; codigo: string; nombre: string } | null;
+  respondido_por: string;
+  corte: string;
+  respuestas: RespuestaCampo[];
+  estado: "Borrador" | "Enviado";
+  fecha_envio: string | null;
+  word_filename: string;
+  word_url: string;
+  estado_aval: EstadoAval | null;
+  lider_email_aval: string;
+  aval_por: string;
+  aval_comentario: string;
+  aval_fecha: string | null;
+  createdAt: string;
 }
 
 export interface Proyecto {

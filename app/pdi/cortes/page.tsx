@@ -9,7 +9,7 @@ import {
 import { DatePickerInput } from "@mantine/dates";
 import {
   IconCalendarStats, IconArrowLeft, IconPlus, IconEdit,
-  IconTrash, IconCheck, IconX, IconLock, IconLockOpen,
+  IconTrash, IconCheck, IconX, IconLock, IconLockOpen, IconCopy,
 } from "@tabler/icons-react";
 
 import { modals } from "@mantine/modals";
@@ -70,10 +70,11 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin:    fechaFin    ? fechaFin.toISOString()    : null,
       };
-      const res = selected
-        ? await axios.put(PDI_ROUTES.corte(selected._id), payload)
+      const isEditing = Boolean(selected?._id);
+      const res = isEditing
+        ? await axios.put(PDI_ROUTES.corte(selected!._id), payload)
         : await axios.post(PDI_ROUTES.cortes(), payload);
-      showNotification({ title: selected ? "Actualizado" : "Creado", message: "Corte guardado", color: "teal" });
+      showNotification({ title: isEditing ? "Actualizado" : "Creado", message: "Corte guardado", color: "teal" });
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -84,9 +85,9 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
   };
 
   return (
-    <Modal
+      <Modal
       opened={opened} onClose={onClose}
-      title={selected ? "Editar Corte" : "Nuevo Corte PDI"}
+      title={selected?._id ? "Editar Corte" : "Nuevo Corte PDI"}
       centered size="sm"
     >
       <Stack gap="sm">
@@ -145,6 +146,19 @@ export default function CortesPage() {
   const [modal, setModal]     = useState(false);
   const [selected, setSelected] = useState<Corte | null>(null);
 
+  const buildDuplicateName = (baseName: string) => {
+    const trimmed = baseName.trim();
+    let candidate = `${trimmed}_copia`;
+    let index = 2;
+
+    while (cortes.some((c) => c.nombre.toLowerCase() === candidate.toLowerCase())) {
+      candidate = `${trimmed}_copia_${index}`;
+      index += 1;
+    }
+
+    return candidate;
+  };
+
   useEffect(() => {
     axios.get(PDI_ROUTES.cortes())
       .then(res => setCortes(res.data))
@@ -177,6 +191,17 @@ export default function CortesPage() {
         }
       },
     });
+  };
+
+  const handleDuplicate = (corte: Corte) => {
+    setSelected({
+      ...corte,
+      _id: "",
+      nombre: buildDuplicateName(corte.nombre),
+      descripcion: corte.descripcion ? `${corte.descripcion} (copia)` : "Copia del corte",
+      activo: false,
+    });
+    setModal(true);
   };
 
   const activos   = cortes.filter(c => c.activo).length;
@@ -292,6 +317,9 @@ export default function CortesPage() {
                       <ActionIcon variant="subtle" color="blue" onClick={() => { setSelected(c); setModal(true); }}>
                         <IconEdit size={15} />
                       </ActionIcon>
+                      <ActionIcon variant="subtle" color="violet" onClick={() => handleDuplicate(c)} title="Duplicar corte">
+                        <IconCopy size={15} />
+                      </ActionIcon>
                       <ActionIcon variant="subtle" color="red" onClick={() => handleDelete(c._id)}>
                         <IconTrash size={15} />
                       </ActionIcon>
@@ -309,7 +337,7 @@ export default function CortesPage() {
         onClose={() => setModal(false)}
         selected={selected}
         onSaved={doc => {
-          setCortes(prev => selected
+          setCortes(prev => selected?._id
             ? prev.map(c => c._id === doc._id ? doc : c)
             : [...prev, doc]
           );

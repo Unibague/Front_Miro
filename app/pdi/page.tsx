@@ -335,7 +335,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
       <Group gap={8} mt={4}>
         <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
-        {accion.presupuesto > 0 && (
+        {admin && accion.presupuesto > 0 && (
           <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(accion.presupuesto)}</b></Text>
         )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
@@ -395,9 +395,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
-  const presupuestoProyecto = acciones.length
-    ? acciones.reduce((total, accion) => total + (Number(accion.presupuesto) || 0), 0)
-    : Number(proyecto.presupuesto) || 0;
+  const presupuestoProyecto = Number(proyecto.presupuesto) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }

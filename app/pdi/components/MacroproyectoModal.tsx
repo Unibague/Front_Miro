@@ -17,25 +17,27 @@ interface Props {
 const toNum = (v: string) => Number(v.replace(',', '.'));
 
 export default function MacroproyectoModal({ opened, onClose, selected, onSaved }: Props) {
-  const [codigo, setCodigo]   = useState("");
-  const [nombre, setNombre]   = useState("");
-  const [lider, setLider]     = useState("");
-  const [usuarios, setUsuarios] = useState<string[]>([]);
-  const [peso, setPeso]       = useState("");
-  const [loading, setLoading] = useState(false);
+  const [codigo, setCodigo]         = useState("");
+  const [nombre, setNombre]         = useState("");
+  const [lider, setLider]           = useState("");
+  const [liderEmail, setLiderEmail] = useState("");
+  const [usuarios, setUsuarios]     = useState<{ name: string; email: string }[]>([]);
+  const [peso, setPeso]             = useState("");
+  const [loading, setLoading]       = useState(false);
 
   useEffect(() => {
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
       .then((res) => {
         const lista = Array.isArray(res.data) ? res.data : (res.data.users ?? []);
-        const nombres = Array.from(
-          new Set(
-            lista
-              .filter((u: any) => u.full_name)
-              .map((u: any) => u.full_name as string)
-          )
-        );
-        setUsuarios(nombres);
+        const vistos = new Set<string>();
+        const unicos: { name: string; email: string }[] = [];
+        for (const u of lista) {
+          if (u.full_name && u.email && !vistos.has(u.email)) {
+            vistos.add(u.email);
+            unicos.push({ name: u.full_name, email: u.email });
+          }
+        }
+        setUsuarios(unicos);
       })
       .catch(() => {});
   }, []);
@@ -46,11 +48,19 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
       setLider(selected.lider ?? "");
+      setLiderEmail(selected.lider_email ?? "");
       setPeso(String(selected.peso));
     } else {
-      setCodigo(""); setNombre(""); setLider(""); setPeso("");
+      setCodigo(""); setNombre(""); setLider(""); setLiderEmail(""); setPeso("");
     }
   }, [opened]);
+
+  const handleLiderChange = (name: string) => {
+    setLider(name);
+    const found = usuarios.find((u) => u.name === name);
+    if (found) setLiderEmail(found.email);
+    else setLiderEmail("");
+  };
 
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim()) {
@@ -60,10 +70,11 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     setLoading(true);
     try {
       const payload = {
-        codigo: codigo.trim(),
-        nombre: nombre.trim(),
-        lider: lider.trim(),
-        peso: toNum(peso),
+        codigo:      codigo.trim(),
+        nombre:      nombre.trim(),
+        lider:       lider.trim(),
+        lider_email: liderEmail.trim().toLowerCase(),
+        peso:        toNum(peso),
       };
       const res = selected
         ? await axios.put(PDI_ROUTES.macroproyecto(selected._id), payload)
@@ -84,13 +95,16 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
         <TextInput label="Código" placeholder="Ej: 1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
         <TextInput label="Nombre" placeholder="Nombre del macroproyecto" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
         <Autocomplete
-          label="Lider"
+          label="Líder"
           placeholder="Buscar usuario..."
           value={lider}
-          onChange={setLider}
-          data={usuarios}
+          onChange={handleLiderChange}
+          data={usuarios.map((u) => u.name)}
           limit={8}
         />
+        {liderEmail && (
+          <TextInput label="Email del líder" value={liderEmail} readOnly styles={{ input: { color: "gray" } }} />
+        )}
         <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
         <Group justify="flex-end" mt="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>

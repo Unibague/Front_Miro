@@ -4,21 +4,21 @@ import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Modal, Tabs, NumberInput, Select, Textarea, FileButton,
+  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
   IconEdit, IconChevronDown, IconChevronUp,
   IconCheck, IconAlertTriangle, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf, IconGitPullRequest,
-  IconForms, IconUpload, IconTrash, IconExternalLink,
+  IconForms, IconUpload, IconTrash, IconExternalLink, IconShieldCheck,
 } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { PDI_ROUTES } from "../api";
-import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio } from "../types";
+import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio, RespuestaFormulario as RespuestaFormularioAval } from "../types";
 import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 
@@ -169,6 +169,19 @@ function getProgressColor(avance: number) {
   return "red";
 }
 
+function getPeriodoSugeridoParaEvaluacion(indicador: Indicador) {
+  const periodosOrdenados = [...(indicador.periodos ?? [])].sort((a, b) => b.periodo.localeCompare(a.periodo));
+
+  const conReporte = periodosOrdenados.find((p) =>
+    p.estado_reporte !== "Borrador" ||
+    Boolean(p.fecha_envio) ||
+    Boolean(String(p.reportado_por ?? "").trim()) ||
+    p.avance != null
+  );
+
+  return conReporte?.periodo ?? periodosOrdenados[0]?.periodo ?? "";
+}
+
 function getSemaforoByAvance(avance: number) {
   if (avance >= 90) return "verde";
   if (avance >= 60) return "amarillo";
@@ -211,10 +224,12 @@ interface RespuestaCampo {
 interface RespuestaFormulario {
   _id: string;
   formulario_id: string;
+  indicador_id?: string;
   respondido_por: string;
   corte: string;
   respuestas: RespuestaCampo[];
   estado: "Borrador" | "Enviado";
+  fecha_envio?: string | null;
 }
 
 function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
@@ -241,7 +256,7 @@ function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
         await Promise.all(forms.map(async f => {
           try {
             const res = await axios.get(PDI_ROUTES.formularioRespuestas(f._id), {
-              params: { respondido_por: email, corte: corteActivo },
+              params: { respondido_por: email, corte: corteActivo, indicador_id: indicadorId },
             });
             const resp: RespuestaFormulario | null = res.data[0] ?? null;
             respMap[f._id] = resp;
@@ -281,6 +296,7 @@ function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
       const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
         respondido_por: email,
         corte: corteActivo,
+        indicador_id: indicadorId,
         respuestas: respuestasPayload,
         estado: enviar ? "Enviado" : "Borrador",
       });
@@ -300,7 +316,7 @@ function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
     if (!respActual) {
       try {
         const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
-          respondido_por: email, corte: corteActivo,
+          respondido_por: email, corte: corteActivo, indicador_id: indicadorId,
           respuestas: form.campos.map(c => ({
             campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
             valor_texto: "", nombre_original: "", filename: "", url: "",
@@ -499,9 +515,9 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
   anioMeta: number;
   email: string;
 }) {
+  const router = useRouter();
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
   const [avancesStr, setAvancesStr] = useState<Record<string, string>>({});
-  const [presupuestoEjecutado, setPresupuestoEjecutado] = useState<number | string>("");
   const [loading, setLoading] = useState(false);
   const avanceActual = getIndicadorAvanceMostrado(indicador);
 
@@ -514,7 +530,6 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
         strs[p.periodo] = p.avance != null ? String(p.avance) : "";
       });
       setAvancesStr(strs);
-      setPresupuestoEjecutado(indicador.presupuesto_ejecutado ?? "");
     }
   }, [opened, indicador]);
 
@@ -537,13 +552,10 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
     try {
       const periodosPayload = periodos.map(p => {
         const val = parseAvance(avancesStr[p.periodo] ?? "");
-        const editable = esPeriodoEditable(p.periodo, cortesVigentes);
         return {
           periodo: p.periodo,
           meta: p.meta,
-          presupuesto_ejecutado: editable
-            ? (presupuestoEjecutado !== "" ? Number(presupuestoEjecutado) : 0)
-            : (p.presupuesto_ejecutado ?? 0),
+          presupuesto_ejecutado: p.presupuesto_ejecutado ?? 0,
           avance: (val === 0 && !esPeriodoEditable(p.periodo, cortesVigentes)) ? null : val,
           resultados_alcanzados: p.resultados_alcanzados ?? "",
           logros: p.logros ?? "",
@@ -612,169 +624,141 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
           </Group>
         </Paper>
 
-        <Tabs defaultValue="avances" color="violet">
-        <Tabs.List mb="md">
-          <Tabs.Tab value="avances">Avances por periodo</Tabs.Tab>
-          <Tabs.Tab value="formularios" leftSection={<IconForms size={14} />}>
-            Formularios
-          </Tabs.Tab>
-          <Tabs.Tab value="evidencias" leftSection={<IconFileTypePdf size={14} />}>
-            Evidencias
-          </Tabs.Tab>
-        </Tabs.List>
+        <Stack gap="md">
+          <div style={{
+            display: "flex",
+            gap: 0,
+            borderRadius: 14,
+            overflow: "hidden",
+            border: "1px solid #ede9fe",
+            background: "#faf8ff",
+          }}>
+            {[
+              { label: `Meta ${anioMeta}`, value: String(indicador.meta_final_2029 ?? "—") },
+              { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
+              { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
+              { label: indicador.avance_total_real != null ? "Avance total real" : "Avance actual", value: `${avanceActual}%` },
+            ].map((s, i, arr) => (
+              <div key={s.label} style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRight: i < arr.length - 1 ? "1px solid #ede9fe" : "none",
+              }}>
+                <Text size="xs" fw={600} c="violet.6">{s.label}</Text>
+                <Text size="lg" fw={600} c="dimmed" mt={2} style={{ textTransform: "capitalize" }}>{s.value}</Text>
+              </div>
+            ))}
+          </div>
 
-        <Tabs.Panel value="avances">
-          <Stack gap="md">
-            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-              {[
-                { label: `Meta ${anioMeta}`, value: indicador.meta_final_2029 ?? "-" },
-                { label: "Seguimiento", value: indicador.tipo_seguimiento || "—" },
-                { label: "Calculo", value: indicador.tipo_calculo ?? "—" },
-                { label: indicador.avance_total_real != null ? "Avance total real" : "Avance actual", value: `${avanceActual}%` },
-              ].map((s) => (
-                <Paper
-                  key={s.label}
-                  withBorder
-                  radius="lg"
-                  p="sm"
-                  style={{ background: "rgba(248,245,255,0.95)" }}
-                >
-                  <Text size="xs" c="dimmed">{s.label}</Text>
-                  <Text size="lg" fw={600} mt={4}>{String(s.value)}</Text>
-                </Paper>
-              ))}
-            </SimpleGrid>
-
-            {periodos.length === 0 ? (
-              <Paper withBorder radius="lg" p="md">
-                <Text size="sm" c="dimmed" ta="center">Sin periodos registrados</Text>
-              </Paper>
-            ) : (
-              periodos.map((p) => {
-                const editable = esPeriodoEditable(p.periodo, cortesVigentes);
-                const metaNumerica = p.meta != null ? parseAvance(String(p.meta)) : null;
-                const avanceNumerico = parseAvance(avancesStr[p.periodo] ?? "");
-                const porcentaje = metaNumerica && metaNumerica > 0 && avanceNumerico != null
-                  ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
-                  : null;
-
-                return (
-                  <Paper
-                    key={p.periodo}
-                    withBorder
-                    radius="xl"
-                    p="md"
-                    style={{
-                      borderLeft: `4px solid ${editable ? "#7c3aed" : "#cbd5e1"}`,
-                      background: editable ? "rgba(255,255,255,0.96)" : "rgba(248,250,252,0.96)",
-                    }}
-                  >
-                    <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
-                      <div>
-                        <Group gap={8}>
-                          <Text size="lg" fw={800}>{p.periodo}</Text>
-                          <Badge size="sm" radius="xl" color={editable ? "violet" : "gray"} variant="light">
-                            {editable ? "Abierto" : "Cerrado"}
-                          </Badge>
-                        </Group>
-                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
-                      </div>
-                      <TextInput
-                        label="Avance reportado"
-                        placeholder={editable
-                          ? (String(p.meta ?? "").includes("%") ? "Ej: 2%" : "Ej: 1")
-                          : "Periodo cerrado"}
-                        value={avancesStr[p.periodo] ?? ""}
-                        onChange={(e) => editable && updateAvanceStr(p.periodo, e.currentTarget.value)}
-                        style={{ width: 150 }}
-                        size="sm"
-                        disabled={!editable}
-                      />
-                    </Group>
-
-                    {porcentaje != null && (
-                      <>
-                        <Group justify="space-between" mb={6}>
-                          <Text size="xs" c="dimmed">Progreso del periodo</Text>
-                          <Text size="xs" fw={700}>{Math.round(porcentaje)}%</Text>
-                        </Group>
-                        <Progress
-                          value={porcentaje}
-                          color={editable ? "violet" : "gray"}
-                          size="sm"
-                          radius="xl"
-                        />
-                      </>
-                    )}
-                  </Paper>
-                );
-              })
-            )}
-
-            <Paper withBorder radius="xl" p="md" style={{ background: "rgba(255,255,255,0.92)" }}>
-              <Text size="sm" fw={700} mb={8}>Presupuesto ejecutado</Text>
-              <NumberInput
-                placeholder="Ej: 2500000"
-                value={presupuestoEjecutado}
-                onChange={setPresupuestoEjecutado}
-                thousandSeparator="."
-                decimalSeparator=","
-                min={0}
-                radius="md"
-                styles={{ input: { background: "#fbfbfe" } }}
-              />
+          {periodos.length === 0 ? (
+            <Paper withBorder radius="lg" p="md">
+              <Text size="sm" c="dimmed" ta="center">Sin periodos registrados</Text>
             </Paper>
+          ) : (
+            periodos.map((p) => {
+              const editable = esPeriodoEditable(p.periodo, cortesVigentes);
+              const metaNumerica = p.meta != null ? parseAvance(String(p.meta)) : null;
+              const avanceNumerico = parseAvance(avancesStr[p.periodo] ?? "");
+              const porcentaje = metaNumerica && metaNumerica > 0 && avanceNumerico != null
+                ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
+                : null;
 
-            <Group justify="flex-end" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
-              <Button variant="default" radius="xl" onClick={onClose}>Cancelar</Button>
-              <Button
-                loading={loading}
-                onClick={handleSave}
-                color="violet"
-                radius="xl"
-                disabled={periodos.length > 0 && periodos.every(p => !esPeriodoEditable(p.periodo, cortesVigentes))}
-              >
-                Guardar avances
-              </Button>
-            </Group>
-          </Stack>
-        </Tabs.Panel>
+              return (
+                <Paper
+                  key={p.periodo}
+                  withBorder
+                  radius="xl"
+                  p="md"
+                  style={{
+                    borderLeft: `4px solid ${editable ? "#7c3aed" : "#cbd5e1"}`,
+                    background: editable ? "rgba(255,255,255,0.96)" : "rgba(248,250,252,0.96)",
+                  }}
+                >
+                  <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                    <div>
+                      <Group gap={8}>
+                        <Text size="lg" fw={800}>{p.periodo}</Text>
+                        <Badge size="sm" radius="xl" color={editable ? "violet" : "gray"} variant="light">
+                          {editable ? "Abierto" : "Cerrado"}
+                        </Badge>
+                      </Group>
+                      <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
+                    </div>
+                    <TextInput
+                      label="Avance reportado"
+                      placeholder={editable
+                        ? (String(p.meta ?? "").includes("%") ? "Ej: 2%" : "Ej: 1")
+                        : "Periodo cerrado"}
+                      value={avancesStr[p.periodo] ?? ""}
+                      onChange={(e) => editable && updateAvanceStr(p.periodo, e.currentTarget.value)}
+                      style={{ width: 150 }}
+                      size="sm"
+                      disabled={!editable}
+                    />
+                  </Group>
 
-        <Tabs.Panel value="formularios">
-          <FormulariosIndicadorPanel
-            indicadorId={indicador._id}
-            email={email}
-            corteActivo={cortesVigentes[0]?.nombre ?? ""}
-          />
-        </Tabs.Panel>
+                  {porcentaje != null && (
+                    <>
+                      <Group justify="space-between" mb={6}>
+                        <Text size="xs" c="dimmed">Progreso del periodo</Text>
+                        <Text size="xs" fw={700}>{Math.round(porcentaje)}%</Text>
+                      </Group>
+                      <Progress
+                        value={porcentaje}
+                        color={editable ? "violet" : "gray"}
+                        size="sm"
+                        radius="xl"
+                      />
+                    </>
+                  )}
+                </Paper>
+              );
+            })
+          )}
 
-        <Tabs.Panel value="evidencias">
-          <Paper withBorder radius="xl" p="md" style={{ background: "rgba(255,255,255,0.96)" }}>
-            <Text size="sm" fw={700} mb="sm">Soportes y archivos del indicador</Text>
-            <Text size="xs" c="dimmed" mb="md">
-              Adjunta evidencias por periodo y gestiona los documentos que respaldan el avance reportado.
-            </Text>
-            <EvidenciasPanel indicadorId={indicador._id} periodos={indicador.periodos} />
-          </Paper>
-        </Tabs.Panel>
-      </Tabs>
+          <Button
+            variant="light"
+            color="violet"
+            radius="xl"
+            fullWidth
+            leftSection={<IconForms size={16} />}
+            onClick={() => { onClose(); router.push(`/pdi/indicadores/${indicador._id}`); }}
+          >
+            Subir evidencias y formularios
+          </Button>
+
+          <Group justify="flex-end" pt="xs" style={{ borderTop: "1px solid var(--mantine-color-gray-2)" }}>
+            <Button variant="default" radius="xl" onClick={onClose}>Cancelar</Button>
+            <Button
+              loading={loading}
+              onClick={handleSave}
+              color="violet"
+              radius="xl"
+              disabled={periodos.length > 0 && periodos.every(p => !esPeriodoEditable(p.periodo, cortesVigentes))}
+            >
+              Guardar avances
+            </Button>
+          </Group>
+        </Stack>
       </Stack>
     </Modal>
   );
 }
 
 // ── Card de indicador ──────────────────────────────────────────────────────
-function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, aniosPdi, anioMeta, email }: {
+function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, aniosPdi, anioMeta, email, esLider = false, esResponsable = true }: {
   indicador: Indicador;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
   aniosPdi: number[];
   anioMeta: number;
   email: string;
+  esLider?: boolean;
+  esResponsable?: boolean;
 }) {
+  const router = useRouter();
   const [ind, setInd] = useState(indInicial);
   const [open, setOpen] = useState(false);
-  const [modalAbierto, setModalAbierto] = useState(false);
   const [showAnios, setShowAnios] = useState(false);
 
   useEffect(() => { setInd(indInicial); }, [indInicial]);
@@ -790,6 +774,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
   const avanceVisible = avanceBarra;
   const avanceTotalReal = getIndicadorAvanceTotalReal(ind);
   const barColor = avanceMostrado >= 70 ? "#22c55e" : avanceMostrado >= 40 ? "#f59e0b" : "#ef4444";
+  const periodoSugeridoEvaluacion = getPeriodoSugeridoParaEvaluacion(ind);
 
   return (
     <Paper withBorder radius="xl" p="lg" shadow="xs"
@@ -899,7 +884,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
       <SimpleGrid cols={3} mb="md">
         {[
           { label: "Peso", value: `${ind.peso}%` },
-          { label: "Seguimiento", value: ind.tipo_seguimiento || "—" },
+          { label: "Seguimiento", value: ind.tipo_seguimiento || "Semestral" },
           { label: "Total actual", value: formatIndicadorTotalActual(ind) },
         ].map(s => (
           <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
@@ -959,28 +944,36 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
       )}
 
       {/* Botón principal de gestión */}
-      <Button
-        mt="sm"
-        fullWidth
-        variant="gradient"
-        gradient={{ from: "violet", to: "blue", deg: 135 }}
-        radius="xl"
-        size="sm"
-        leftSection={<IconEdit size={15} />}
-        onClick={() => setModalAbierto(true)}
-      >
-        Actualizar avances y evidencias
-      </Button>
-
-      <ResponsableIndicadorModal
-        opened={modalAbierto}
-        onClose={() => setModalAbierto(false)}
-        indicador={ind}
-        cortesVigentes={cortesVigentes}
-        onSaved={handleSaved}
-        anioMeta={anioMeta}
-        email={email}
-      />
+      <Stack gap="xs" mt="sm">
+        {esResponsable && (
+          <Button
+            fullWidth
+            variant="gradient"
+            gradient={{ from: "violet", to: "blue", deg: 135 }}
+            radius="xl"
+            size="sm"
+            leftSection={<IconEdit size={15} />}
+            onClick={() => router.push(`/pdi/mis-indicadores/${ind._id}/subir-evidencias?origen=mis-indicadores&esLider=${esLider ? "1" : "0"}`)}
+          >
+            Actualizar avances y evidencias
+          </Button>
+        )}
+        {esLider && !esResponsable && (
+          <Button
+            fullWidth
+            variant="light"
+            color="teal"
+            radius="xl"
+            size="sm"
+            leftSection={<IconListCheck size={15} />}
+            onClick={() => router.push(
+              `/pdi/mis-indicadores/${ind._id}?modo=evaluar&origen=mis-indicadores${periodoSugeridoEvaluacion ? `&periodo=${encodeURIComponent(periodoSugeridoEvaluacion)}` : ""}`
+            )}
+          >
+            Ver reportes y evaluar
+          </Button>
+        )}
+      </Stack>
     </Paper>
   );
 }
@@ -1310,7 +1303,7 @@ function SolicitudCambioModal({
   );
 }
 
-function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email }: {
+function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLider = false, esResponsable = true }: {
   accion: Accion;
   indicadores: Indicador[];
   cortesVigentes: CorteVigente[];
@@ -1319,6 +1312,8 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   anioMeta: number;
   onSolicitarCambio: (entity: CambioEntityContext) => void;
   email: string;
+  esLider?: boolean;
+  esResponsable?: boolean;
 }) {
   const avanceAccion = indicadores.length
     ? getWeightedProgress(indicadores, (indicador) => getIndicadorAvancePonderado(indicador))
@@ -1376,12 +1371,11 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="md">
+      <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm" mb="md">
         {[
           { label: "Avance", value: `${avanceAccion}%` },
           { label: "Peso", value: `${accion.peso}%` },
           { label: "Indicadores", value: indicadores.length },
-          { label: "Presupuesto", value: accion.presupuesto > 0 ? formatCOP(accion.presupuesto) : "Sin dato" },
         ].map((item) => (
           <Box
             key={item.label}
@@ -1424,6 +1418,8 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
               anioMeta={anioMeta}
               onUpdated={onUpdated}
               email={email}
+              esLider={esLider}
+              esResponsable={esResponsable}
             />
           ))}
         </SimpleGrid>
@@ -1432,7 +1428,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   );
 }
 
-function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email }: {
+function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLiderProyecto = false, esResponsableProyecto = false }: {
   vista: ProyectoResponsableView;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
@@ -1440,6 +1436,8 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   anioMeta: number;
   onSolicitarCambio: (entity: CambioEntityContext) => void;
   email: string;
+  esLiderProyecto?: boolean;
+  esResponsableProyecto?: boolean;
 }) {
   const indicadoresCount = vista.acciones.reduce((acc, item) => acc + item.indicadores.length, 0);
   const accionesConAvance = vista.acciones.map((item) => ({
@@ -1486,12 +1484,13 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="lg">
+      <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="lg">
         {[
           { label: "Avance", value: `${avanceProyecto}%` },
           { label: "Peso", value: `${vista.proyecto.peso}%` },
           { label: "Acciones", value: vista.acciones.length },
           { label: "Indicadores", value: indicadoresCount },
+          { label: "Presupuesto", value: vista.proyecto.presupuesto > 0 ? formatCOP(vista.proyecto.presupuesto) : "Pendiente" },
         ].map((item) => (
           <Box
             key={item.label}
@@ -1537,10 +1536,149 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
               onUpdated={onUpdated}
               onSolicitarCambio={onSolicitarCambio}
               email={email}
+              esLider={esLiderProyecto}
+              esResponsable={esResponsableProyecto}
             />
           ))}
         </Stack>
       )}
+    </Paper>
+  );
+}
+
+// ── Panel de avales pendientes (vista del lider) ──────────────────────────
+function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string; onAvalDone: () => void }) {
+  const [avales, setAvales] = useState<RespuestaFormularioAval[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!liderEmail) return;
+    setLoading(true);
+    axios.get(PDI_ROUTES.formularioRespuestasPendientesAval(), { params: { lider_email: liderEmail } })
+      .then((r) => setAvales(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [liderEmail]);
+
+  const handleAval = async (respuesta: RespuestaFormularioAval, estado_aval: "Aprobado" | "Rechazado") => {
+    const formId = typeof respuesta.formulario_id === "string"
+      ? respuesta.formulario_id
+      : (respuesta.formulario_id as any)._id;
+    setSavingId(respuesta._id);
+    try {
+      await axios.put(PDI_ROUTES.formularioAval(formId, respuesta._id), {
+        estado_aval,
+        aval_por: liderEmail,
+        aval_comentario: comentarios[respuesta._id] ?? "",
+      });
+      setAvales((prev) => prev.filter((a) => a._id !== respuesta._id));
+      showNotification({ title: estado_aval, message: `Formulario ${estado_aval.toLowerCase()} correctamente`, color: estado_aval === "Aprobado" ? "teal" : "red" });
+      onAvalDone();
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo guardar el aval", color: "red" });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (loading) return <Center py="md"><Loader size="sm" /></Center>;
+  if (avales.length === 0) return null;
+
+  const formularioNombre = (r: RespuestaFormularioAval) =>
+    typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+  const indicadorNombre = (r: RespuestaFormularioAval) =>
+    !r.indicador_id ? "—" : typeof r.indicador_id === "string" ? r.indicador_id : `${(r.indicador_id as any).codigo} · ${(r.indicador_id as any).nombre}`;
+  const getCampos = (r: RespuestaFormularioAval): any[] =>
+    typeof r.formulario_id === "string" ? [] : (r.formulario_id as any).campos ?? [];
+
+  return (
+    <Paper withBorder radius="xl" p="xl" mb="xl"
+      style={{ borderLeft: "4px solid #7c3aed", background: "linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(255,255,255,0.98) 100%)" }}>
+      <Group gap={10} mb="lg">
+        <ThemeIcon size={38} radius="xl" color="violet" variant="light">
+          <IconShieldCheck size={20} />
+        </ThemeIcon>
+        <div>
+          <Text fw={800} size="lg">Formularios pendientes de aval</Text>
+          <Text size="xs" c="dimmed">Como líder del macroproyecto, debes revisar y avalar estos formularios enviados por responsables.</Text>
+        </div>
+        <Badge color="violet" variant="filled" radius="xl" ml="auto">{avales.length}</Badge>
+      </Group>
+
+      <Stack gap="md">
+        {avales.map((r) => {
+          const expanded = expandedId === r._id;
+          const campos = getCampos(r);
+          return (
+            <Paper key={r._id} withBorder radius="lg" p="md" style={{ background: "rgba(255,255,255,0.95)" }}>
+              <Group justify="space-between" align="flex-start" mb="sm" wrap="nowrap">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Text fw={700} size="sm">{formularioNombre(r)}</Text>
+                  <Text size="xs" c="dimmed">Indicador: <b>{indicadorNombre(r)}</b></Text>
+                  <Text size="xs" c="dimmed">Enviado por: <b>{r.respondido_por}</b> · Corte: <b>{r.corte}</b></Text>
+                  {r.fecha_envio && (
+                    <Text size="xs" c="dimmed">Fecha envío: {new Date(r.fecha_envio).toLocaleDateString("es-CO")}</Text>
+                  )}
+                </div>
+                <Button
+                  size="xs" variant="subtle" color="violet"
+                  rightSection={expanded ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                  onClick={() => setExpandedId(expanded ? null : r._id)}
+                >
+                  {expanded ? "Ocultar" : "Ver respuestas"}
+                </Button>
+              </Group>
+
+              {expanded && (
+                <Stack gap="sm" mb="md">
+                  {r.respuestas.length === 0 ? (
+                    <Text size="xs" c="dimmed">Sin respuestas registradas</Text>
+                  ) : r.respuestas.map((resp, i) => (
+                    <Paper key={i} withBorder radius="md" p="sm" style={{ background: "rgba(248,245,255,0.8)" }}>
+                      <Text size="xs" fw={700} mb={4}>{resp.etiqueta}</Text>
+                      {resp.tipo === "texto_largo"
+                        ? <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>{resp.valor_texto || <span style={{ color: "#aaa" }}>Sin respuesta</span>}</Text>
+                        : resp.url
+                          ? <Button size="xs" variant="light" color="blue" component="a" href={resp.url} target="_blank" leftSection={<IconFileTypePdf size={13} />}>
+                              {resp.nombre_original || "Ver archivo"}
+                            </Button>
+                          : <Text size="xs" c="dimmed">Sin archivo</Text>
+                      }
+                    </Paper>
+                  ))}
+                </Stack>
+              )}
+
+              <Textarea
+                placeholder="Comentario para el responsable (opcional)..."
+                value={comentarios[r._id] ?? ""}
+                onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                rows={2}
+                radius="md"
+                mb="sm"
+                size="xs"
+              />
+              <Group gap="sm" justify="flex-end">
+                <Button size="xs" color="red" variant="light" radius="xl"
+                  loading={savingId === r._id}
+                  leftSection={<IconX size={13} />}
+                  onClick={() => handleAval(r, "Rechazado")}>
+                  Rechazar
+                </Button>
+                <Button size="xs" color="teal" radius="xl"
+                  loading={savingId === r._id}
+                  leftSection={<IconCheck size={13} />}
+                  onClick={() => handleAval(r, "Aprobado")}>
+                  Aprobar
+                </Button>
+              </Group>
+            </Paper>
+          );
+        })}
+      </Stack>
     </Paper>
   );
 }
@@ -1554,19 +1692,24 @@ export default function MisIndicadoresPage() {
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
   const [cambioModalAbierto, setCambioModalAbierto] = useState(false);
   const [cambioEntity, setCambioEntity] = useState<CambioEntityContext | null>(null);
+  const [macroIdsLiderados, setMacroIdsLiderados] = useState<Set<string>>(new Set());
+  const [macroNombresLiderados, setMacroNombresLiderados] = useState<string[]>([]);
+  const [userFullName, setUserFullName] = useState("");
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) return;
     const email = (session.user.email ?? "").toLowerCase().trim();
 
     Promise.all([
+      axios.get(PDI_ROUTES.macroproyectos()),
       axios.get(PDI_ROUTES.indicadores()),
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
       axios.get(PDI_ROUTES.cortesVigentes()),
     ])
-      .then(([resInd, resAcc, resProy, resUser, resCortes]) => {
+      .then(([resMacros, resInd, resAcc, resProy, resUser, resCortes]) => {
+        const todosMacros: Array<{ _id: string; codigo: string; nombre: string; lider?: string }> = resMacros.data;
         const todosIndicadores: Indicador[] = resInd.data;
         const todasAcciones: Accion[] = resAcc.data;
         const todosProyectos: Proyecto[] = resProy.data;
@@ -1574,16 +1717,31 @@ export default function MisIndicadoresPage() {
 
         const accionesById = new Map(todasAcciones.map((accion) => [accion._id, accion]));
         const proyectosById = new Map(todosProyectos.map((proyecto) => [proyecto._id, proyecto]));
+        const macrosById = new Map(todosMacros.map((macro) => [macro._id, macro]));
+        const macroIdsSet = new Set(
+          todosMacros
+            .filter((macro) => matchesUserResponsable(email, fullName, macro.lider))
+            .map((macro) => macro._id)
+        );
+        const macroNombres = todosMacros
+          .filter((macro) => matchesUserResponsable(email, fullName, macro.lider))
+          .map((macro) => macro.nombre)
+          .filter(Boolean);
+        setMacroIdsLiderados(macroIdsSet);
+        setMacroNombresLiderados(macroNombres);
+        setUserFullName(fullName);
 
         const indicadoresRelacionados = todosIndicadores
           .filter((indicador) => {
             const accion = accionesById.get(getAccionId(indicador) ?? "");
             const proyecto = accion?.proyecto_id?._id ? proyectosById.get(accion.proyecto_id._id) : undefined;
+            const macro = proyecto?.macroproyecto_id?._id ? macrosById.get(proyecto.macroproyecto_id._id) : undefined;
 
             return (
               matchesUserResponsable(email, fullName, indicador.responsable, indicador.responsable_email) ||
               (accion && matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email)) ||
-              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email))
+              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email)) ||
+              (macro && macroIdsSet.has(macro._id))
             );
           })
           .sort(sortByCodigo);
@@ -1591,12 +1749,14 @@ export default function MisIndicadoresPage() {
         const accionesRelacionadas = todasAcciones
           .filter((accion) => {
             const proyecto = accion.proyecto_id?._id ? proyectosById.get(accion.proyecto_id._id) : undefined;
+            const macro = proyecto?.macroproyecto_id?._id ? macrosById.get(proyecto.macroproyecto_id._id) : undefined;
             const tieneIndicadores = indicadoresRelacionados.some((indicador) => getAccionId(indicador) === accion._id);
 
             return (
               tieneIndicadores ||
               matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email) ||
-              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email))
+              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email)) ||
+              (macro && macroIdsSet.has(macro._id))
             );
           })
           .sort(sortByCodigo);
@@ -1612,7 +1772,8 @@ export default function MisIndicadoresPage() {
             return (
               tieneAcciones ||
               tieneIndicadores ||
-              matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email)
+              matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email) ||
+              macroIdsSet.has(proyecto.macroproyecto_id?._id)
             );
           })
           .sort(sortByCodigo);
@@ -1639,13 +1800,42 @@ export default function MisIndicadoresPage() {
   const indicadores = proyectosVista.flatMap((proyecto) => proyecto.acciones.flatMap((accion) => accion.indicadores));
   const acciones = proyectosVista.flatMap((proyecto) => proyecto.acciones.map((accion) => accion.accion));
   const alertas = indicadores.filter((indicador) => indicador.semaforo === "rojo" || indicador.semaforo === "amarillo").length;
+  const requesterName =
+    (session?.user as { full_name?: string } | undefined)?.full_name ||
+    session?.user?.name ||
+    session?.user?.email ||
+    "Responsable PDI";
+  const requesterEmail = session?.user?.email ?? "";
 
-  const statCards = [
-    { label: "Mis proyectos", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
-    { label: "Mis acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
-    { label: "Mis indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
-    { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
-  ];
+  const isLider = macroIdsLiderados.size > 0;
+  const macroLiderLabel = macroNombresLiderados.length === 1
+    ? macroNombresLiderados[0]
+    : macroNombresLiderados.length > 1
+    ? `${macroNombresLiderados[0]} y ${macroNombresLiderados.length - 1} mas`
+    : "Macroproyecto";
+  const isDirectlyResponsable = proyectosVista.some(v =>
+    matchesUserResponsable(requesterEmail, userFullName, v.proyecto.responsable, v.proyecto.responsable_email)
+  );
+
+  const pageTitle = isLider && !isDirectlyResponsable
+    ? "Mi Macroproyecto PDI"
+    : isLider
+    ? "Mi PDI"
+    : "Mis Proyectos PDI";
+
+  const statCards = isLider
+    ? [
+        { label: "Macroproyectos que lidero", value: macroIdsLiderados.size, color: "violet", icon: <IconListCheck size={22} /> },
+        { label: "Proyectos a cargo", value: proyectosVista.length, color: "blue", icon: <IconTrendingUp size={22} /> },
+        { label: "Indicadores para evaluar", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
+        { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+      ]
+    : [
+        { label: "Mis proyectos", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
+        { label: "Mis acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
+        { label: "Mis indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
+        { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+      ];
 
   const handleIndicadorUpdated = (updated: Indicador) => {
     setProyectosVista((prev) =>
@@ -1659,12 +1849,12 @@ export default function MisIndicadoresPage() {
     );
   };
 
-  const requesterName =
-    (session?.user as { full_name?: string } | undefined)?.full_name ||
-    session?.user?.name ||
-    session?.user?.email ||
-    "Responsable PDI";
-  const requesterEmail = session?.user?.email ?? "";
+  const unifiedStatCards = [
+    { label: "Proyectos a cargo", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
+    { label: "Acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
+    { label: "Indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
+    { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+  ];
 
   const handleSolicitarCambio = (entity: CambioEntityContext) => {
     setCambioEntity(entity);
@@ -1682,7 +1872,7 @@ export default function MisIndicadoresPage() {
             <IconTarget size={22} />
           </ThemeIcon>
           <div>
-            <Title order={3}>Mis Proyectos PDI</Title>
+            <Title order={3}>{pageTitle}</Title>
             <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
@@ -1690,8 +1880,40 @@ export default function MisIndicadoresPage() {
 
       <Divider mb="lg" />
 
+      {isLider && (
+        <Paper
+          withBorder
+          radius="xl"
+          p="md"
+          mb="lg"
+          style={{
+            background: "rgba(20,184,166,0.06)",
+            borderColor: "rgba(13,148,136,0.28)",
+          }}
+        >
+          <Group gap="sm" wrap="wrap">
+            <ThemeIcon size={38} radius="xl" color="teal" variant="light">
+              <IconShieldCheck size={20} />
+            </ThemeIcon>
+            <div>
+              <Text fw={800} c="teal.7">
+                {macroLiderLabel} · Lider del macroproyecto
+              </Text>
+             
+            </div>
+          </Group>
+        </Paper>
+      )}
+
+      {requesterEmail && (
+        <AvalesPendientesPanel
+          liderEmail={requesterEmail}
+          onAvalDone={() => {}}
+        />
+      )}
+
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
-        {statCards.map((s) => (
+        {unifiedStatCards.map((s) => (
           <Paper key={s.label} withBorder radius="lg" p="lg" shadow="xs">
             <Group justify="space-between" align="flex-start" mb="sm">
               <ThemeIcon size={48} radius="xl" color={s.color} variant="light">
@@ -1723,9 +1945,19 @@ export default function MisIndicadoresPage() {
         <>
           <Group justify="space-between" mb="md">
             <div>
-              <Text fw={700} size="xl">Tus proyectos, acciones e indicadores</Text>
+              <Text fw={700} size="xl">
+                {isLider && !isDirectlyResponsable
+                  ? "Proyectos y acciones de tu macroproyecto"
+                  : isLider
+                  ? "Tus proyectos, acciones e indicadores"
+                  : "Tus proyectos, acciones e indicadores"}
+              </Text>
               <Text size="sm" c="dimmed">
-                Vista jerárquica por responsable para gestionar el PDI con el mismo estilo de tarjetas.
+                {isLider && isDirectlyResponsable
+                  ? "Tienes un rol mixto: reportas como responsable y también puedes revisar avales como líder del macroproyecto."
+                  : isLider
+                  ? "Como líder puedes revisar los reportes enviados por los responsables y avalarlos."
+                  : "Vista jerárquica para gestionar y reportar el avance del PDI."}
               </Text>
             </div>
             <Badge variant="outline" color="violet" radius="xl">
@@ -1733,18 +1965,29 @@ export default function MisIndicadoresPage() {
             </Badge>
           </Group>
           <Stack gap="lg">
-            {proyectosVista.map((vista) => (
-              <ProyectoResponsableCard
-                key={vista.proyecto._id}
-                vista={vista}
-                cortesVigentes={cortesVigentes}
-                aniosPdi={config.anios}
-                anioMeta={config.anio_fin}
-                onUpdated={handleIndicadorUpdated}
-                onSolicitarCambio={handleSolicitarCambio}
-                email={requesterEmail}
-              />
-            ))}
+            {proyectosVista.map((vista) => {
+              const esResponsableProyecto = matchesUserResponsable(
+                requesterEmail,
+                userFullName,
+                vista.proyecto.responsable,
+                vista.proyecto.responsable_email
+              );
+              const esLiderProyecto = macroIdsLiderados.has(vista.proyecto.macroproyecto_id?._id);
+              return (
+                <ProyectoResponsableCard
+                  key={vista.proyecto._id}
+                  vista={vista}
+                  cortesVigentes={cortesVigentes}
+                  aniosPdi={config.anios}
+                  anioMeta={config.anio_fin}
+                  onUpdated={handleIndicadorUpdated}
+                  onSolicitarCambio={handleSolicitarCambio}
+                  email={requesterEmail}
+                  esLiderProyecto={esLiderProyecto}
+                  esResponsableProyecto={esResponsableProyecto}
+                />
+              );
+            })}
           </Stack>
         </>
       )}
