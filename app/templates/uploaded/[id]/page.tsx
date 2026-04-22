@@ -206,7 +206,6 @@ const UploadedTemplatePage = () => {
               if (finalDependencies.length === 1) {
                 showNotification({
                   title: "Filtrado aplicado",
-                  titles: "Información",
                   message: `Mostrando datos de ${finalDependencies.length} dependencias. Si solo necesitas ver tu dependencia, contacta al administrador.`,
                   color: "blue",
                   autoClose: 5000,
