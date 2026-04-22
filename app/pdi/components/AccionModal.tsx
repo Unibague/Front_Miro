@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack, Textarea } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
+import "dayjs/locale/es";
 import type { Accion } from "../types";
 import { PDI_ROUTES } from "../api";
 
@@ -15,39 +16,76 @@ interface Props {
   onSaved: (doc: Accion) => void;
 }
 
-const toNum = (v: string) => Number(v.replace(',', '.'));
+const toNum = (v: string) => Number(v.replace(",", "."));
 
 export default function AccionModal({ opened, onClose, selected, defaultProyectoId, onSaved }: Props) {
-  const [codigo, setCodigo]   = useState("");
-  const [nombre, setNombre]   = useState("");
-  const [alcance, setAlcance] = useState("");
-  const [peso, setPeso]       = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [responsable, setResponsable] = useState("");
+  const [responsableEmail, setResponsableEmail] = useState("");
+  const [peso, setPeso] = useState("");
+  const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
+  const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!opened) return;
+
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
-      setAlcance(selected.alcance ?? "");
+      setResponsable(selected.responsable ?? "");
+      setResponsableEmail(selected.responsable_email ?? "");
       setPeso(String(selected.peso));
-    } else {
-      setCodigo(""); setNombre(""); setAlcance(""); setPeso("");
+      setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
+      setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
+      return;
     }
-  }, [opened]);
+
+    setCodigo("");
+    setNombre("");
+    setResponsable("");
+    setResponsableEmail("");
+    setPeso("");
+    setFechaInicio(null);
+    setFechaFin(null);
+  }, [opened, selected]);
 
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim()) {
-      showNotification({ title: "Error", message: "Código y nombre son requeridos", color: "red" });
+      showNotification({ title: "Error", message: "Codigo y nombre son requeridos", color: "red" });
       return;
     }
+
     setLoading(true);
     try {
-      const payload = { codigo: codigo.trim(), nombre: nombre.trim(), alcance: alcance.trim(), peso: toNum(peso), proyecto_id: defaultProyectoId };
+      const payload = {
+        codigo: codigo.trim(),
+        nombre: nombre.trim(),
+        alcance: selected?.alcance ?? "",
+        peso: toNum(peso),
+        proyecto_id: defaultProyectoId,
+        fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
+        fecha_fin: fechaFin ? fechaFin.toISOString() : null,
+      };
+
+      if (selected) {
+        Object.assign(payload, {
+          responsable: selected.responsable ?? "",
+          responsable_email: selected.responsable_email ?? "",
+        });
+      } else {
+        Object.assign(payload, {
+          responsable: "",
+          responsable_email: "",
+        });
+      }
+
       const res = selected
         ? await axios.put(PDI_ROUTES.accion(selected._id), payload)
         : await axios.post(PDI_ROUTES.acciones(), payload);
-      showNotification({ title: selected ? "Actualizado" : "Creada", message: "Acción estratégica guardada", color: "teal" });
+
+      showNotification({ title: selected ? "Actualizado" : "Creada", message: "Accion estrategica guardada", color: "teal" });
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -58,17 +96,19 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Acción Estratégica" : "Nueva Acción Estratégica"} centered>
+    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Accion Estrategica" : "Nueva Accion Estrategica"} centered size="lg">
       <Stack gap="sm">
-        <TextInput label="Código" placeholder="Ej: 1.1.1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
-        <TextInput label="Nombre" placeholder="Nombre de la acción" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
-        <Textarea label="Alcance" placeholder="Descripción del alcance" value={alcance} onChange={(e) => setAlcance(e.currentTarget.value)} rows={3} />
-        <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
-        <Group justify="flex-end" mt="sm">
-          <Button variant="default" onClick={onClose}>Cancelar</Button>
-          <Button loading={loading} onClick={handleSave}>Guardar</Button>
+        <Group grow>
+          <TextInput label="Codigo" placeholder="Ej: 1.1.1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
+          <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
         </Group>
+        <TextInput label="Nombre" placeholder="Nombre de la accion" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
       </Stack>
+
+      <Group justify="flex-end" mt="lg">
+        <Button variant="default" onClick={onClose}>Cancelar</Button>
+        <Button loading={loading} onClick={handleSave}>Guardar</Button>
+      </Group>
     </Modal>
   );
 }

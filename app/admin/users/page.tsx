@@ -238,7 +238,7 @@ const AdminUsersPage = () => {
           email: selectedUser.email,
           roles,
           adminEmail: session?.user?.email
-        });
+        }, { headers: { "user-email": session?.user?.email } });
         showNotification({
           title: "Actualizado",
           message: "Roles del usuario actualizados exitosamente",
@@ -293,7 +293,7 @@ const AdminUsersPage = () => {
         userId,
         isActive,
         adminEmail: session?.user?.email
-      });
+      }, { headers: { "user-email": session?.user?.email } });
       showNotification({
         title: "Actualizado",
         message: "Estado del usuario actualizado exitosamente",
@@ -313,7 +313,11 @@ const AdminUsersPage = () => {
   const handleSyncUsers = async () => {
     setIsLoading(true);
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`);
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`,
+        {},
+        { headers: { "user-email": session?.user?.email } }
+      );
       showNotification({
         title: "Sincronizado",
         message: "Usuarios sincronizados exitosamente",
@@ -338,10 +342,8 @@ const AdminUsersPage = () => {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate`,
         {
-          params: {
-            id: userId,
-            adminEmail: session?.user?.email
-          }
+          params: { id: userId, adminEmail: session?.user?.email },
+          headers: { "user-email": session?.user?.email }
         }
       );
 
