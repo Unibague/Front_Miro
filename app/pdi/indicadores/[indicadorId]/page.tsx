@@ -974,13 +974,14 @@ export default function IndicadorEvidenciasPage() {
   const router      = useRouter();
   const params      = useParams();
   const pathname = usePathname();
+  const currentPath = pathname ?? "";
   const searchParams = useSearchParams();
   const indicadorId = params?.indicadorId as string;
   const { config } = usePdiConfig();
   const { userRole } = useRole();
   const { data: session } = useSession();
   const vieneDeMisIndicadores =
-    pathname.startsWith("/pdi/mis-indicadores/") ||
+    currentPath.startsWith("/pdi/mis-indicadores/") ||
     searchParams.get("origen") === "mis-indicadores";
   const fuerzaVistaEvaluacion = searchParams.get("modo") === "evaluar";
   const preferredPeriodo = searchParams.get("periodo") ?? "";
