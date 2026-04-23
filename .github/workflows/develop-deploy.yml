@@ -51,19 +51,22 @@ jobs:
     - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          set -e;
           echo "Checking PM2 processes...";
-          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
-          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
+          pm2 list | grep Front_Dev && pm2 stop Front_Dev || true;
+          pm2 list | grep Front_Dev && pm2 delete Front_Dev || true;
           cd ~/MIRO_TEST;
           echo "Backing up .env...";
-          [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env || echo "No .env to backup";
-          echo "Removing old directory to ensure clean clone...";
+          [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env && echo "Backup OK" || echo "No .env to backup";
+          echo "Removing old directory...";
           rm -rf Front_Miro_Test;
           echo "Cloning repository...";
-          git clone --branch develop https://github.com/Unibague/Front_Miro.git Front_Miro_Test;
+          git clone --branch develop https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/Unibague/Front_Miro.git Front_Miro_Test;
+          echo "Verifying clone...";
+          ls Front_Miro_Test/package.json;
           echo "Restoring .env...";
-          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env Front_Miro_Test/.env || echo "No .env backup found";
-          echo "Repository cloned successfully"'
+          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env Front_Miro_Test/.env && echo "Env restored" || echo "No .env backup found";
+          echo "Repository ready"'
 
     - name: Fix environment and build
       run: |
@@ -94,7 +97,7 @@ jobs:
     - name: Run Semantic Release
       working-directory: ./    
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
       run: npx semantic-release
 
     - name: Post Checkout repository
