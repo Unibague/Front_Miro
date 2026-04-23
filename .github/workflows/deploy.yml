@@ -54,11 +54,15 @@ jobs:
     - name: Clone repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          # Detener PM2 antes de tocar archivos para evitar Permission denied
+          pm2 stop Front_Miro || echo "Front_Miro no estaba corriendo";
           cd ~/MIRO/Front_Miro || exit;
           if [ ! -d ".git" ]; then
             git clone https://github.com/Unibague/Front_Miro.git
           else
             git fetch origin main;
+            # Forzar permisos antes del reset por si hay archivos bloqueados
+            chmod -R u+w . 2>/dev/null || true;
             git reset --hard origin/main;
           fi'
 
