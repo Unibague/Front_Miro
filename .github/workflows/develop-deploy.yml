@@ -57,7 +57,7 @@ jobs:
           cd ~/MIRO_TEST;
           if [ ! -d "Front_Miro_Test" ]; then
             echo "Directory does not exist, cloning repository...";
-            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
+            git clone --branch develop https://github.com/Unibague/Front_Miro.git Front_Miro_Test;
           else
             echo "Updating existing repository...";
             cd Front_Miro_Test;
