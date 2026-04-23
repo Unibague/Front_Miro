@@ -335,7 +335,7 @@ function FormulariosIndicadorPanel({ indicadorId, email, corteActivo }: {
         PDI_ROUTES.formularioArchivo(form._id, respActual!._id, campo._id),
         fd, { headers: { "Content-Type": "multipart/form-data" } }
       );
-      // Actualizar respuesta local
+      // Actualizar respuesta 
       setRespuestas(prev => {
         const r = prev[form._id];
         if (!r) return prev;
