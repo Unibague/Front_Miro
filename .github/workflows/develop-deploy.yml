@@ -51,22 +51,20 @@ jobs:
     - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          set -e;
           echo "Checking PM2 processes...";
-          pm2 list | grep Front_Dev && pm2 stop Front_Dev || true;
-          pm2 list | grep Front_Dev && pm2 delete Front_Dev || true;
+          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
+          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
           cd ~/MIRO_TEST;
-          echo "Backing up .env...";
-          [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env && echo "Backup OK" || echo "No .env to backup";
-          echo "Removing old directory...";
-          sudo rm -rf Front_Miro_Test;
-          echo "Cloning repository...";
-          git clone --branch develop https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/Unibague/Front_Miro.git Front_Miro_Test;
-          echo "Verifying clone...";
-          ls Front_Miro_Test/package.json;
-          echo "Restoring .env...";
-          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env Front_Miro_Test/.env && echo "Env restored" || echo "No .env backup found";
-          echo "Repository ready"'
+          if [ ! -d "Front_Miro_Test" ]; then
+            echo "Directory does not exist, cloning repository...";
+            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
+          else
+            echo "Updating existing repository...";
+            cd Front_Miro_Test;
+            git fetch origin develop;
+            git reset --hard origin/develop;
+          fi;
+          echo "Repository updated successfully"'
 
     - name: Fix environment and build
       run: |
@@ -79,8 +77,7 @@ jobs:
           echo "=== TESTING VARIABLE LOADING ===";
           export $(cat .env | grep -v "^#" | xargs);
           echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
-          rm -f package-lock.json;
-          npm install --legacy-peer-deps;
+          npm install;
           echo "=== BUILD OUTPUT ===";
           npm run build'
 
@@ -98,7 +95,7 @@ jobs:
     - name: Run Semantic Release
       working-directory: ./    
       env:
-        GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx semantic-release
 
     - name: Post Checkout repository
