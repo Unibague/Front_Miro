@@ -29,11 +29,13 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
       .then((res) => {
         const lista = Array.isArray(res.data) ? res.data : (res.data.users ?? []);
-        const vistos = new Set<string>();
+        const vistosEmail = new Set<string>();
+        const vistosNombre = new Set<string>();
         const unicos: { name: string; email: string }[] = [];
         for (const u of lista) {
-          if (u.full_name && u.email && !vistos.has(u.email)) {
-            vistos.add(u.email);
+          if (u.full_name && u.email && !vistosEmail.has(u.email) && !vistosNombre.has(u.full_name)) {
+            vistosEmail.add(u.email);
+            vistosNombre.add(u.full_name);
             unicos.push({ name: u.full_name, email: u.email });
           }
         }
