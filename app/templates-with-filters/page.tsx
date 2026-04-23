@@ -102,7 +102,7 @@ const TemplatesWithFiltersPage = () => {
   const { selectedPeriodId } = usePeriod();
   const { data: session } = useSession();
   
-  // Verificar acceso
+  // Verifica acceso
   useEffect(() => {
     if (userRole && !['Administrador', 'Responsable', 'Productor'].includes(userRole)) {
       router.push('/dashboard');
