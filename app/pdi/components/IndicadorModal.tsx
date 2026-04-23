@@ -54,8 +54,15 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         const sorted = [...res.data].sort((a: any, b: any) =>
           a.nombre.localeCompare(b.nombre, undefined, { numeric: true, sensitivity: "base" })
         );
-        setCortesData(sorted.map((c: any) => ({ nombre: c.nombre, descripcion: c.descripcion ?? "" })));
-        setCortes(sorted.map((c: any) => c.nombre));
+        // Deduplicar por nombre para evitar opciones duplicadas en Mantine
+        const vistos = new Set<string>();
+        const unicos = sorted.filter((c: any) => {
+          if (vistos.has(c.nombre)) return false;
+          vistos.add(c.nombre);
+          return true;
+        });
+        setCortesData(unicos.map((c: any) => ({ nombre: c.nombre, descripcion: c.descripcion ?? "" })));
+        setCortes(unicos.map((c: any) => c.nombre));
       })
       .catch(() => {});
   }, []);
