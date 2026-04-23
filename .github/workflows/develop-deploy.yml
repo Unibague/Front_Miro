@@ -20,7 +20,7 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20.14.0'
+        node-version: '22.14.0'
 
     - name: Install OpenConnect
       run: sudo apt-get install -y openconnect
