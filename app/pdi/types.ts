@@ -273,6 +273,12 @@ export interface ConteoSemaforos {
 export interface DashboardResumen {
   avance_global: number;
   semaforo_global: Semaforo;
+  avances_por_nivel: {
+    macroproyectos: number;
+    proyectos: number;
+    acciones: number;
+    indicadores: number;
+  };
   estructura: {
     macroproyectos: number;
     proyectos: number;
@@ -304,6 +310,41 @@ export interface DashboardResumen {
   retrasos: {
     indicadores_con_retrasos: number;
   };
+}
+
+export interface DashboardMacroproyecto {
+  macroproyecto: Macroproyecto;
+  avances_por_nivel: {
+    macroproyecto: number;
+    proyectos: number;
+    acciones: number;
+    indicadores: number;
+  };
+  estructura: {
+    proyectos: number;
+    acciones: number;
+    indicadores: number;
+  };
+  semaforos: {
+    proyectos: ConteoSemaforos;
+    acciones: ConteoSemaforos;
+    indicadores: ConteoSemaforos;
+  };
+  avances_por_anio: Record<string, number>;
+  presupuesto: {
+    total: number;
+    ejecutado: number;
+    porcentaje_ejecucion: number;
+  };
+  proyectos: {
+    _id: string;
+    codigo: string;
+    nombre: string;
+    avance: number;
+    semaforo: Semaforo;
+    presupuesto: number;
+    presupuesto_ejecutado: number;
+  }[];
 }
 
 export interface DashboardCorte {

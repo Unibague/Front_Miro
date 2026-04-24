@@ -123,7 +123,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setPeriodos((p) => p.map((item, i) => i === idx ? { ...item, [field]: value } : item));
 
   const toNum = (val: string) => {
-    const normalizado = val.replace(",", ".");
+    const normalizado = val
+      .replace(/%/g, "")
+      .replace(/\s+/g, "")
+      .replace(",", ".");
     return isNaN(Number(normalizado)) ? null : Number(normalizado);
   };
 

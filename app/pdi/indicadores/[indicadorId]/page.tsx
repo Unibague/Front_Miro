@@ -36,13 +36,6 @@ const SEMAFORO_COLORS: Record<string, string> = {
 const isAdmin = (role: string) => role === "Administrador";
 
 function getIndicadorAvanceMostrado(indicador: Indicador) {
-  const metaFinal = indicador.meta_final_2029 != null ? Number(indicador.meta_final_2029) : null;
-  const avanceActual = indicador.avance != null ? Number(indicador.avance) : null;
-
-  if (indicador.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
-  }
-
   return indicador.avance_total_real ?? indicador.avance;
 }
 
@@ -66,6 +59,12 @@ function getPeriodosReportados(periodos: Periodo[]) {
     Boolean(String(p.reportado_por ?? "").trim()) ||
     p.avance != null
   );
+}
+
+function isAutoApprovedByLeader(respondidoPor?: string | null, liderEmail?: string | null) {
+  const responsable = String(respondidoPor ?? "").toLowerCase().trim();
+  const lider = String(liderEmail ?? "").toLowerCase().trim();
+  return Boolean(responsable) && Boolean(lider) && responsable === lider;
 }
 
 function resolvePeriodoForRespuesta(periodos: Periodo[], respuesta: RespuestaFormulario, preferredPeriodo?: string | null) {
@@ -132,6 +131,83 @@ function PeriodoCard({
   const pct       = avanceNum != null && metaNum && metaNum > 0
     ? Math.min(Math.round((avanceNum / metaNum) * 100), 100)
     : null;
+  const estadoMostradoAdmin =
+    admin && p.estado_reporte !== "Aprobado"
+      ? "Aprobado"
+      : (p.estado_reporte ?? "Borrador");
+
+  if (admin) {
+    return (
+      <Paper
+        withBorder
+        radius="xl"
+        p="md"
+        style={{
+          borderLeft: "4px solid #cbd5e1",
+          background: "rgba(248,250,252,0.96)",
+        }}
+      >
+        <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+          <div>
+            <Group gap={8}>
+              <Text size="lg" fw={800}>{p.periodo}</Text>
+              <Badge size="sm" radius="xl" color={ESTADO_COLORS[estadoMostradoAdmin]} variant="light">
+                {estadoMostradoAdmin}
+              </Badge>
+            </Group>
+            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
+          </div>
+
+          <Box
+            style={{
+              minWidth: 160,
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "rgba(124,58,237,0.08)",
+              border: "1px solid rgba(124,58,237,0.18)",
+            }}
+          >
+            <Text size="xs" c="violet" fw={700}>Avance reportado</Text>
+            <Text fw={700} mt={2} c="violet">{avanceNum ?? "Sin dato"}</Text>
+          </Box>
+        </Group>
+
+        {pct != null && (
+          <>
+            <Group justify="space-between" mb={4}>
+              <Text size="xs" c="dimmed">Progreso del periodo</Text>
+              <Text size="xs" fw={700}>{pct}%</Text>
+            </Group>
+            <Progress value={pct} color="violet" size="sm" radius="xl" />
+          </>
+        )}
+
+        {evidenciasPeriodo.length > 0 && (
+          <Paper withBorder radius="md" p="sm" mt="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+            <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>Evidencia enviada</Text>
+            <Stack gap={6}>
+              {evidenciasPeriodo.map((ev) => (
+                <Group key={ev._id} justify="space-between" wrap="nowrap">
+                  <Box style={{ minWidth: 0 }}>
+                    <Text size="sm" fw={600} truncate="end">{ev.nombre_original}</Text>
+                    <Group gap={8} mt={4}>
+                      <Badge size="xs" variant="light" color={ev.estado === "Aprobado" ? "teal" : ev.estado === "Rechazado" ? "red" : "blue"}>
+                        {ev.estado}
+                      </Badge>
+                      <Text size="xs" c="dimmed">{new Date(ev.fecha_subida).toLocaleDateString("es-CO")}</Text>
+                    </Group>
+                  </Box>
+                  <Button component="a" href={ev.url} target="_blank" rel="noopener noreferrer" size="xs" variant="light">
+                    Ver PDF
+                  </Button>
+                </Group>
+              ))}
+            </Stack>
+          </Paper>
+        )}
+      </Paper>
+    );
+  }
 
   return (
     <Paper withBorder radius="md" p="md">
@@ -162,10 +238,6 @@ function PeriodoCard({
         <div>
           <Text size="xs" c="dimmed">Avance</Text>
           <Text fw={600} size="sm">{avanceNum ?? "—"}</Text>
-        </div>
-        <div>
-          <Text size="xs" c="dimmed">Presupuesto ejecutado</Text>
-          <Text fw={600} size="sm">{formatCOP(p.presupuesto_ejecutado ?? 0)}</Text>
         </div>
         {pct !== null && (
           <div style={{ flex: 1 }}>
@@ -647,6 +719,7 @@ function LiderRevisionPanelV2({
   permitirEvaluacion = false,
   readOnly = false,
   onlyApproved = false,
+  onlyEvaluated = false,
   preferredPeriodo = "",
 }: {
   indicadorId: string;
@@ -655,6 +728,7 @@ function LiderRevisionPanelV2({
   permitirEvaluacion?: boolean;
   readOnly?: boolean;
   onlyApproved?: boolean;
+  onlyEvaluated?: boolean;
   preferredPeriodo?: string;
 }) {
   const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
@@ -669,14 +743,15 @@ function LiderRevisionPanelV2({
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
       .then((r) => setRespuestas(
         r.data.filter((item: RespuestaFormulario) =>
-          item.estado === "Enviado" && (!onlyApproved || item.estado_aval === "Aprobado")
+          item.estado === "Enviado" && (!onlyApproved || item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
+          && (!onlyEvaluated || (item.estado_aval != null && item.estado_aval !== "Pendiente"))
         )
       ))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [indicadorId, onlyApproved]);
+  useEffect(() => { load(); }, [indicadorId, onlyApproved, onlyEvaluated]);
 
   const handleAval = async (r: RespuestaFormulario) => {
     const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
@@ -1011,9 +1086,11 @@ export default function IndicadorEvidenciasPage() {
     axios.get(PDI_ROUTES.formularioLiderEmailIndicador(), { params: { indicador_id: indicadorId } })
       .then((r) => {
         const le = (r.data.lider_email ?? "").toLowerCase().trim();
+        setLiderEmail(le);
         if (le && le === email) {
           setIsLider(true);
-          setLiderEmail(le);
+        } else {
+          setIsLider(false);
         }
       })
       .catch(() => {});
@@ -1023,6 +1100,13 @@ export default function IndicadorEvidenciasPage() {
   const emailSesion = (session?.user?.email ?? "").toLowerCase().trim();
   const semColor = indicador ? SEMAFORO_COLORS[indicador.semaforo] : "#aaa";
   const avanceMostrado = indicador ? getIndicadorAvanceMostrado(indicador) : null;
+  const periodosVisibles = indicador
+    ? (
+        admin
+          ? getPeriodosReportados(indicador.periodos ?? [])
+          : (indicador.periodos ?? [])
+      )
+    : [];
   const evidenciasPendientes = indicador?.evidencias?.filter((ev) => ev.estado === "En Revisión") ?? [];
 
   return (
@@ -1040,8 +1124,10 @@ export default function IndicadorEvidenciasPage() {
               <IconTarget size={20} />
             </ThemeIcon>
             <div>
-              <Title order={3}>Indicador de resultado</Title>
-              <Text size="sm" c="dimmed">{config.nombre} - Seguimiento, reportes y evidencias</Text>
+              <Title order={3}>{admin && !mostrarVistaLider ? "Avances y evidencias" : "Indicador de resultado"}</Title>
+              <Text size="sm" c="dimmed">
+                {admin && !mostrarVistaLider ? config.nombre : `${config.nombre} - Seguimiento, reportes y evidencias`}
+              </Text>
             </div>
           </Group>
 
@@ -1053,23 +1139,59 @@ export default function IndicadorEvidenciasPage() {
             <Stack gap="lg">
 
               {/* Ficha del indicador */}
-              <Paper withBorder radius="xl" p="xl" shadow="sm">
+              <Paper withBorder radius="xl" p={admin && !mostrarVistaLider ? "lg" : "xl"} shadow="sm">
                 <Group gap={12} align="flex-start" mb="md">
                   <div
                     style={{
-                      width: 12, height: 12, borderRadius: "50%",
-                      background: semColor, marginTop: 6, flexShrink: 0,
+                      width: admin && !mostrarVistaLider ? 10 : 12,
+                      height: admin && !mostrarVistaLider ? 10 : 12,
+                      borderRadius: "50%",
+                      background: semColor,
+                      marginTop: admin && !mostrarVistaLider ? 4 : 6,
+                      flexShrink: 0,
                     }}
                   />
                   <div style={{ flex: 1 }}>
                     <Text size="xs" fw={700} c="dimmed">{indicador.codigo}</Text>
-                    <Title order={4}>{indicador.nombre}</Title>
+                    {admin && !mostrarVistaLider ? (
+                      <Text fw={700} size="md">{indicador.nombre}</Text>
+                    ) : (
+                      <Title order={4}>{indicador.nombre}</Title>
+                    )}
                   </div>
-                  <Badge color={indicador.semaforo === "verde" ? "teal" : indicador.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
-                    {`${avanceMostrado}%`}
-                  </Badge>
+                  {(!admin || mostrarVistaLider) && (
+                    <Badge color={indicador.semaforo === "verde" ? "teal" : indicador.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
+                      {`${avanceMostrado}%`}
+                    </Badge>
+                  )}
                 </Group>
 
+                {admin && !mostrarVistaLider ? (
+                  <div style={{
+                    display: "flex",
+                    gap: 0,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: "1px solid #ede9fe",
+                    background: "#faf8ff",
+                  }}>
+                    {[
+                      { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
+                      { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
+                      { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
+                      { label: "Avance actual", value: `${avanceMostrado}%` },
+                    ].map((s, i, arr) => (
+                      <div key={s.label} style={{
+                        flex: 1,
+                        padding: "10px 14px",
+                        borderRight: i < arr.length - 1 ? "1px solid #ede9fe" : "none",
+                      }}>
+                        <Text size="xs" fw={600} c="violet.6">{s.label}</Text>
+                        <Text size="md" fw={600} c="dimmed" mt={2} style={{ textTransform: "capitalize" }}>{s.value}</Text>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <Group gap={32}>
                   <div>
                     <Text size="xs" c="dimmed">Meta final {config.anio_fin}</Text>
@@ -1086,6 +1208,7 @@ export default function IndicadorEvidenciasPage() {
                     </div>
                   )}
                 </Group>
+                )}
 
                 {indicador.entregable && (
                   <Paper withBorder radius="md" p="md" mt="md" style={{ background: "var(--mantine-color-default-hover)" }}>
@@ -1116,9 +1239,10 @@ export default function IndicadorEvidenciasPage() {
                 </div>
               ) : (
                 <>
+                  {!admin && (
                   <div>
                     <Group justify="space-between" mb="sm">
-                      <Title order={5}>{admin ? "Reportes y evidencias por periodo" : "Reportes de avance por corte"}</Title>
+                      <Title order={5}>{admin ? "Avance por periodo" : "Reportes de avance por corte"}</Title>
                       {!admin && (
                         <Button
                           size="xs"
@@ -1132,7 +1256,7 @@ export default function IndicadorEvidenciasPage() {
                       )}
                     </Group>
 
-                    {indicador.periodos.length === 0 ? (
+                    {periodosVisibles.length === 0 ? (
                       <Paper withBorder radius="md" p="lg">
                         <Text c="dimmed" ta="center" size="sm">
                           {admin
@@ -1142,7 +1266,7 @@ export default function IndicadorEvidenciasPage() {
                       </Paper>
                     ) : (
                       <Stack gap="sm">
-                        {[...indicador.periodos]
+                        {[...periodosVisibles]
                           .sort((a, b) => a.periodo.localeCompare(b.periodo))
                           .map((p) => (
                             <PeriodoCard
@@ -1156,10 +1280,11 @@ export default function IndicadorEvidenciasPage() {
                       </Stack>
                     )}
                   </div>
+                  )}
 
-                  <Divider />
+                  {!admin && <Divider />}
 
-                  {(!admin || evidenciasPendientes.length > 0) && (
+                  {!admin && (
                     <div>
                       <Title order={5} mb="sm">
                         <Group gap={6}>
