@@ -58,7 +58,7 @@ jobs:
           echo "Backing up .env...";
           [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env && echo "Backup OK" || echo "No .env to backup";
           echo "Removing old directory...";
-          sudo rm -rf Front_Miro_Test;
+          rm -rf Front_Miro_Test;
           echo "Cloning repository...";
           git clone --branch develop https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/Unibague/Front_Miro.git Front_Miro_Test;
           echo "Verifying clone...";
