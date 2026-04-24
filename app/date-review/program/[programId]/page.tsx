@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import {
   Title, Button, Text, Paper, Stack, Group, Loader, Modal, TextInput, Select, SimpleGrid, Divider, Badge,
+  ActionIcon, Tooltip,
 } from "@mantine/core";
 import { useParams, useRouter } from "next/navigation";
+import { IconChevronLeft } from "@tabler/icons-react";
 import { paramKey } from "@/app/utils/routeParams";
 import axios, { isAxiosError } from "axios";
 import type { Program, Dependency, Process } from "../../types";
@@ -188,9 +190,17 @@ export default function ProgramaDateReviewPage() {
     <Stack p="md" pt="xl" maw={960} mx="auto">
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
-          <Button variant="subtle" size="xs" mb={8} onClick={() => router.back()}>
-            ← Volver
-          </Button>
+          <Tooltip label="Volver" withArrow>
+            <ActionIcon
+              variant="default"
+              size="sm"
+              mb={8}
+              onClick={() => router.back()}
+              aria-label="Volver"
+            >
+              <IconChevronLeft size={16} />
+            </ActionIcon>
+          </Tooltip>
           <Group gap="sm" align="center">
             <Title order={2}>{programa.nombre}</Title>
             <Badge color={programa.estado === "Activo" ? "green" : "red"} variant="light">{programa.estado}</Badge>
@@ -238,7 +248,7 @@ export default function ProgramaDateReviewPage() {
               onChange={(v) => setEditForm((f) => ({ ...f, admision_estudiantes: v ?? null }))}
               clearable
               styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
-            <TextInput label="Admisión estudiantes (número)" type="number"
+            <TextInput label="Número de estudiantes en el primer periodo" type="number"
               value={editForm.num_estudiantes_saces != null ? String(editForm.num_estudiantes_saces) : ""}
               onChange={(e) => setEditForm((f) => ({ ...f, num_estudiantes_saces: Number(e.currentTarget.value || 0) }))} />
             <TextInput label="Créditos" type="number" value={editForm.num_creditos ?? ""}
@@ -262,7 +272,7 @@ export default function ProgramaDateReviewPage() {
             { label: "Créditos", value: programa.num_creditos },
             { label: "Semestres", value: programa.num_semestres },
             { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
-            { label: "Admisión estudiantes", value: programa.num_estudiantes_saces },
+            { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
           ].map(({ label, value }) => (
             <Paper key={label} withBorder radius="sm" p="sm">
               <Text size="xs" c="dimmed" mb={2}>{label}</Text>

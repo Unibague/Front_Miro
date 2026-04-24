@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -1081,20 +1081,42 @@ useEffect(() => {
 
   const renderAvRcCards = () => {
     return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Center><IconCalendarMonth size={80} /></Center>
-          <Group mt="md" mb="xs">
-            <Text ta={"center"} w={500}>Gestión de procesos</Text>
-          </Group>
-          <Text ta={"center"} size="sm" color="dimmed">
-            Gestión de procesos de Registro Calificado y Acreditación Voluntaria.
-          </Text>
-          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
-            Ir a gestión de procesos
-          </Button>
-        </Card>
-      </Grid.Col>
+      <>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Center><IconCalendarMonth size={80} /></Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Registro calificado, acreditación voluntaria y seguimiento por facultad.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+              Ir a gestión de procesos MEN
+            </Button>
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Gestión de PQR ante el MEN
+            </Text>
+            <Button
+              variant="light"
+              fullWidth
+              mt="md"
+              radius="md"
+              onClick={() => router.push("/date-review?modulo=comunicaciones")}
+            >
+              Ir a comunicaciones MEN
+            </Button>
+          </Card>
+        </Grid.Col>
+      </>
     );
   };
 
@@ -1231,10 +1253,10 @@ useEffect(() => {
                       <IconCalendarMonth size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      Gestión de Procesos
+                      Procesos de calidad MEN
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Gestión de RC y AV.
+                      RC, AV y comunicaciones MEN (por facultad y programa).
                     </Text>
                   </Stack>
                   <Button variant="white" color="green" radius="xl">

@@ -31,6 +31,16 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso, CasoFechaKey } from "../types";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import {
+  getCasoFechaKeyForActividad,
+  getCasoFechaKeyForSubactividad,
+  findActividadByCasoKey,
+  findSubactividadByCasoKey,
+  mergeDocsUniq,
+  getCasoFechaString,
+  getCasoObsString,
+} from "../utils/casoActividadMap";
+import { dateParserEspanol } from "../utils/parseFlexibleDate";
+import {
   LABEL_PROCESO, COLOR_PROCESO,
   COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
   faseColors,
@@ -43,8 +53,8 @@ const CASO_FECHA_LABELS: Record<CasoFechaKey, string> = {
   fecha_notificacion_completitud: "Notificación de completitud",
   fecha_respuesta_completitud: "Respuesta de completitud",
   fecha_resolucion: "Acto administrativo MEN",
-  fecha_resolucion_apelacion: "Apelación envío MEN",
-  fecha_respuesta_men: "Apelación respuesta MEN",
+  fecha_resolucion_apelacion: "Recurso de reposición radicado",
+  fecha_respuesta_men: "Recurso reposición respuesta MEN",
 };
 
 const esActoAdministrativo = (nombre: string) => nombre.trim().toLowerCase() === "acto administrativo";
@@ -63,14 +73,11 @@ const getModoActoAdminEfectivo = (act: Actividad, caso: Caso | null): string | n
   return act.acto_admin_modo ?? null;
 };
 
-/** Permite marcar “Hecha” el acto administrativo: modo definido y todas las subactividades del ramal resueltas. */
+/** Permite marcar “Hecho” el acto administrativo: basta con tener definido satisfactorio / no satisfactorio (no exige subactividades). */
 const puedeMarcarHechaActoAdminActividad = (act: Actividad, caso: Caso | null): boolean => {
   if (!esActoAdministrativo(act.nombre)) return true;
   const modo = getModoActoAdminEfectivo(act, caso);
-  if (modo === null) return false;
-  const subs = act.subactividades.filter((s) => s.grupo === modo);
-  if (subs.length === 0) return true;
-  return subs.every((s) => s.completada || s.no_aplica);
+  return modo !== null;
 };
 
 /* ── Fila sortable de actividad (drag & drop) con subactividades ── */
@@ -162,10 +169,10 @@ const SortableActividad = ({
                     <input type="checkbox" checked={act.completada && !act.no_aplica}
                       onChange={() => canToggleCompletada && onToggle()}
                       disabled={!canToggleCompletada}
-                      title="Hecha"
+                      title="Hecho"
                       style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
                     />
-                    <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecha</Text>
+                    <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
                   </Group>
                 </span>
               </Tooltip>
@@ -174,10 +181,10 @@ const SortableActividad = ({
                 <input type="checkbox" checked={act.completada && !act.no_aplica}
                   onChange={() => canToggleCompletada && onToggle()}
                   disabled={!canToggleCompletada}
-                  title="Hecha"
+                  title="Hecho"
                   style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
                 />
-                <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecha</Text>
+                <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
               </Group>
             )}
             {editActividadId === act._id ? (
@@ -297,7 +304,7 @@ const SortableActividad = ({
                         <input type="checkbox" checked={sub.completada && !subNaEfectivo}
                           onChange={() => onToggleSubactividad(sub)}
                           disabled={subNaEfectivo}
-                          title="Hecha"
+                          title="Hecho"
                           style={{
                             marginTop: 4,
                             cursor: subNaEfectivo ? "not-allowed" : "pointer",
@@ -401,10 +408,44 @@ const ProcesoDetalleCard = ({
   const [historialActivoOpen, setHistorialActivoOpen] = useState(false);
   const [cerrandoProceso, setCerrandoProceso] = useState(false);
   const [cierreForm, setCierreForm] = useState({ fecha: "", codigo: "", duracion: "" });
+  const [cierreFormRc, setCierreFormRc] = useState({ fecha: "", codigo: "", duracion: "" });
+  const [cierreResultado, setCierreResultado] = useState<"aprobado" | "negado">("aprobado");
+  /** Solo AV: al cerrar, ¿la resolución trae también RC de oficio? (doble resolución / dos alertas) */
+  const [incluirRcOficioAlCierre, setIncluirRcOficioAlCierre] = useState(false);
   const [cierreError, setCierreError] = useState<string | null>(null);
+
+  /* ── PDF de resolución vigente / documentos de proceso ── */
+  const [resolucionDoc, setResolucionDoc]                   = useState<ProcessDocument | null>(null);
+  const [resolucionRcoDoc, setResolucionRcoDoc]            = useState<ProcessDocument | null>(null);
+  const [procesoDocs, setProcesoDocs]                       = useState<ProcessDocument[]>([]);
+  const [loadingResolucionDoc, setLoadingResolucionDoc]     = useState(false);
+  const [resolucionDocModalOpen, setResolucionDocModalOpen] = useState(false);
+  const [fase7DocsOpen, setFase7DocsOpen]                   = useState(false);
+  const [deletingDocId, setDeletingDocId]                   = useState<string | null>(null);
+
+  const fetchProcesoDocs = async () => {
+    try {
+      setLoadingResolucionDoc(true);
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+        params: { process_id: proceso._id },
+      });
+      const data = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+      // 'resolucion' va en la fila de info; todo lo demás va en la lista del proceso
+      setResolucionDoc(data.find(d => d.doc_type === "resolucion") ?? null);
+      setResolucionRcoDoc(data.find(d => d.doc_type === "resolucion_rc_oficio") ?? null);
+      setProcesoDocs(data.filter(d => d.doc_type !== "resolucion" && d.doc_type !== "resolucion_rc_oficio"));
+    } catch (e) {
+      console.error("Error cargando documentos del proceso:", e);
+    } finally {
+      setLoadingResolucionDoc(false);
+    }
+  };
+
+  useEffect(() => { fetchProcesoDocs(); }, [proceso._id]);
 
   const abrirModalCerrar = () => {
     setCierreError(null);
+    setCierreResultado("aprobado");
     if (proceso.tipo_proceso === "RC") {
       setCierreForm({
         fecha: programa.fecha_resolucion_rc ?? "",
@@ -420,35 +461,14 @@ const ProcesoDetalleCard = ({
     } else {
       setCierreForm({ fecha: "", codigo: "", duracion: "" });
     }
+    setCierreFormRc({
+      fecha: programa.fecha_resolucion_rc ?? "",
+      codigo: programa.codigo_resolucion_rc ?? "",
+      duracion: programa.duracion_resolucion_rc != null ? String(programa.duracion_resolucion_rc) : "",
+    });
+    setIncluirRcOficioAlCierre(!!proceso.av_espera_rc_oficio);
     setCerrarProcesoOpen(true);
   };
-
-  /* ── PDF de resolución vigente / documentos de proceso ── */
-  const [resolucionDoc, setResolucionDoc]                   = useState<ProcessDocument | null>(null);
-  const [procesoDocs, setProcesoDocs]                       = useState<ProcessDocument[]>([]);
-  const [loadingResolucionDoc, setLoadingResolucionDoc]     = useState(false);
-  const [resolucionDocModalOpen, setResolucionDocModalOpen] = useState(false);
-  const [fase7DocsOpen, setFase7DocsOpen]                   = useState(false);
-  const [deletingDocId, setDeletingDocId]                   = useState<string | null>(null);
-
-  const fetchProcesoDocs = async () => {
-    try {
-      setLoadingResolucionDoc(true);
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
-        params: { process_id: proceso._id },
-      });
-      const data = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
-      // 'resolucion' va en la fila de info; todo lo demás va en la lista del proceso
-      setResolucionDoc(data.find(d => d.doc_type === 'resolucion') ?? null);
-      setProcesoDocs(data.filter(d => d.doc_type !== 'resolucion'));
-    } catch (e) {
-      console.error("Error cargando documentos del proceso:", e);
-    } finally {
-      setLoadingResolucionDoc(false);
-    }
-  };
-
-  useEffect(() => { fetchProcesoDocs(); }, [proceso._id]);
 
   const abrirResolucion = () => {
     setResForm({ fecha: "", codigo: "", duracion: "" });
@@ -460,11 +480,21 @@ const ProcesoDetalleCard = ({
     setCerrandoProceso(true);
     try {
       try {
-        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/close`, {
+        const body: Record<string, unknown> = {
           fecha_resolucion: cierreForm.fecha || undefined,
           codigo_resolucion: cierreForm.codigo || undefined,
           duracion_resolucion: cierreForm.duracion ? Number(cierreForm.duracion) : undefined,
-        });
+          estado_solicitud: cierreResultado === "negado" ? "NEGADO" : "APROBADO",
+        };
+        if (proceso.tipo_proceso === "AV" && cierreResultado === "aprobado" && incluirRcOficioAlCierre) {
+          body.incluir_rc_de_oficio = true;
+          body.rc_oficio = {
+            fecha_resolucion: cierreFormRc.fecha || undefined,
+            codigo_resolucion: cierreFormRc.codigo || undefined,
+            duracion_resolucion: cierreFormRc.duracion ? Number(cierreFormRc.duracion) : undefined,
+          };
+        }
+        await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/processes/${proceso._id}/close`, body);
       } catch (e: unknown) {
         console.error("Error cerrando proceso (API):", e);
         const ax = e as {
@@ -731,6 +761,19 @@ const ProcesoDetalleCard = ({
     } catch { /* silencioso */ }
   };
 
+  /** Leer caso desde API (evita cierres obsoletos al sincronizar con el checklist). */
+  const loadCasoFresh = async (): Promise<Caso | null> => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/casos`, {
+        params: { proceso_id: proceso._id },
+      });
+      setCaso(res.data);
+      return res.data;
+    } catch {
+      return null;
+    }
+  };
+
   const saveCasoField = async (field: string, value: string | boolean | null) => {
     if (!caso) return;
     setSavingCaso(true);
@@ -744,8 +787,31 @@ const ProcesoDetalleCard = ({
   };
 
   const saveCasoDate = async (field: string, val: Date | null) => {
+    if (!caso) return;
     const fechaStr = val ? val.toISOString().split("T")[0] : null;
     await saveCasoField(field, fechaStr);
+    const key = field as CasoFechaKey;
+    const hitAct = findActividadByCasoKey(fases, key);
+    try {
+      if (hitAct) {
+        const res = await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/phases/${hitAct.fase._id}/actividades/${hitAct.act._id}`,
+          { fecha_completado: fechaStr }
+        );
+        onUpdateFases(fases.map(f => f._id === hitAct.fase._id ? res.data : f));
+      } else {
+        const hitSub = findSubactividadByCasoKey(fases, key);
+        if (hitSub) {
+          const res = await axios.put(
+            `${process.env.NEXT_PUBLIC_API_URL}/phases/${hitSub.fase._id}/actividades/${hitSub.act._id}/subactividades/${hitSub.sub._id}`,
+            { fecha_completado: fechaStr }
+          );
+          onUpdateFases(fases.map(f => f._id === hitSub.fase._id ? res.data : f));
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
     setEditingCasoDateKey(null);
   };
 
@@ -770,15 +836,31 @@ const ProcesoDetalleCard = ({
   const abrirCasoFechaModal = async (field: CasoFechaKey) => {
     if (!caso) return;
     setCasoFechaModalField(field);
-    const obsK = `obs_${field}` as keyof Caso;
-    setCasoFechaObsTexto(String((caso[obsK] as string | undefined) ?? ""));
+    setCasoFechaObsTexto(getCasoObsString(caso, field));
     setLoadingCasoFechaDocs(true);
     setCasoFechaDocs([]);
     try {
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+      const resC = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
         params: { process_id: proceso._id, caso_date_key: field },
       });
-      setCasoFechaDocs(Array.isArray(res.data) ? (res.data as ProcessDocument[]) : []);
+      const fromCaso = Array.isArray(resC.data) ? (resC.data as ProcessDocument[]) : [];
+      const hitA = findActividadByCasoKey(fases, field);
+      const hitS = !hitA ? findSubactividadByCasoKey(fases, field) : null;
+      if (hitA) {
+        const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+          params: { phase_id: hitA.fase._id, actividad_id: hitA.act._id },
+        });
+        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
+        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
+      } else if (hitS) {
+        const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+          params: { phase_id: hitS.fase._id, actividad_id: hitS.act._id, subactividad_id: hitS.sub._id },
+        });
+        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
+        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
+      } else {
+        setCasoFechaDocs(fromCaso);
+      }
     } catch { setCasoFechaDocs([]); }
     finally { setLoadingCasoFechaDocs(false); }
   };
@@ -792,6 +874,24 @@ const ProcesoDetalleCard = ({
         [obsK]: casoFechaObsTexto,
       });
       setCaso(res.data);
+      const key = casoFechaModalField;
+      const hitAct = findActividadByCasoKey(fases, key);
+      if (hitAct) {
+        const resF = await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/phases/${hitAct.fase._id}/actividades/${hitAct.act._id}`,
+          { observaciones: casoFechaObsTexto }
+        );
+        onUpdateFases(fases.map(f => f._id === hitAct.fase._id ? resF.data : f));
+        return;
+      }
+      const hitSub = findSubactividadByCasoKey(fases, key);
+      if (hitSub) {
+        const resF = await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/phases/${hitSub.fase._id}/actividades/${hitSub.act._id}/subactividades/${hitSub.sub._id}`,
+          { observaciones: casoFechaObsTexto }
+        );
+        onUpdateFases(fases.map(f => f._id === hitSub.fase._id ? resF.data : f));
+      }
     } catch { /* silencioso */ }
     finally { setSavingCasoFechaObs(false); }
   };
@@ -916,20 +1016,39 @@ const ProcesoDetalleCard = ({
     try {
       const nuevaCompletada = !act.completada;
       const hoy = new Date().toISOString().split("T")[0];
+      const keyMapeo = getCasoFechaKeyForActividad(fase.numero, act.nombre);
+      let fechaCompletado: string | null = nuevaCompletada ? hoy : null;
+      let cMap: Caso | null = null;
+      if (nuevaCompletada && keyMapeo) {
+        cMap = await loadCasoFresh();
+        if (!cMap) { await autoCrearCaso(); cMap = await loadCasoFresh(); }
+        if (cMap) {
+          const existente = getCasoFechaString(cMap, keyMapeo);
+          if (existente) {
+            fechaCompletado = existente.slice(0, 10);
+          }
+        }
+      }
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}`,
         {
           completada: nuevaCompletada,
-          fecha_completado: nuevaCompletada ? hoy : null,
+          fecha_completado: fechaCompletado,
           ...(nuevaCompletada ? { no_aplica: false } : {}),
         }
       );
       const faseActualizada: Phase = res.data;
       const fasesActualizadas = fases.map(f => f._id === fase._id ? faseActualizada : f);
       onUpdateFases(fasesActualizadas);
+      if (nuevaCompletada && keyMapeo && cMap && !getCasoFechaString(cMap, keyMapeo)) {
+        const resC = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${cMap._id}`, {
+          [keyMapeo]: hoy,
+        });
+        setCaso(resC.data);
+      }
       if (nuevaCompletada && fase.numero === 4 &&
           act.nombre.trim().toLowerCase() === 'información del caso') {
-        setTimeout(() => cargarCaso(), 300);
+        setTimeout(() => void cargarCaso(), 300);
       }
     } catch (e) { console.error(e); }
   };
@@ -983,7 +1102,16 @@ const ProcesoDetalleCard = ({
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
         params: { phase_id: fase._id, actividad_id: act._id },
       });
-      const data = Array.isArray(res.data) ? res.data as ProcessDocument[] : [];
+      const fromFase = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+      const key = getCasoFechaKeyForActividad(fase.numero, act.nombre);
+      let data = fromFase;
+      if (key) {
+        const resC = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+          params: { process_id: proceso._id, caso_date_key: key },
+        });
+        const fromCaso = Array.isArray(resC.data) ? (resC.data as ProcessDocument[]) : [];
+        data = mergeDocsUniq(fromFase, fromCaso);
+      }
       setActDocs(data);
       setActDocCounts(prev => ({ ...prev, [act._id]: data.length }));
     } catch (e) { console.error(e); }
@@ -997,14 +1125,23 @@ const ProcesoDetalleCard = ({
       const formData = new FormData();
       formData.append("file", files[0]);
       formData.append("actividad_id", actDocsTarget.act._id);
+      const k = getCasoFechaKeyForActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre);
+      if (k) {
+        formData.append("caso_date_key", k);
+        formData.append("process_id", proceso._id);
+      }
       const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/process-documents/${actDocsTarget.fase._id}`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
       const newDoc = res.data as ProcessDocument;
-      setActDocs(prev => [newDoc, ...prev]);
-      setActDocCounts(prev => ({ ...prev, [actDocsTarget.act._id]: (prev[actDocsTarget.act._id] ?? 0) + 1 }));
+      setActDocs(prev => {
+        const merged = mergeDocsUniq([newDoc], prev);
+        setActDocCounts(c => ({ ...c, [actDocsTarget.act._id]: merged.length }));
+        return merged;
+      });
+      await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
     finally { setUploadingActDoc(false); }
   };
@@ -1017,13 +1154,15 @@ const ProcesoDetalleCard = ({
         if (actDocsTarget) setActDocCounts(c => ({ ...c, [actDocsTarget.act._id]: updated.length }));
         return updated;
       });
+      await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
   };
 
   /* ── Abrir observaciones de actividad ── */
   const abrirObsActividad = (fase: Phase, act: Actividad) => {
     setActObsTarget({ fase, act });
-    setActObsTexto(act.observaciones ?? "");
+    const k = getCasoFechaKeyForActividad(fase.numero, act.nombre);
+    setActObsTexto(k && caso ? getCasoObsString(caso, k) : (act.observaciones ?? ""));
     setActObsOpen(true);
   };
 
@@ -1036,6 +1175,14 @@ const ProcesoDetalleCard = ({
         { observaciones: actObsTexto }
       );
       onUpdateFases(fases.map(f => f._id === actObsTarget.fase._id ? res.data : f));
+      const k = getCasoFechaKeyForActividad(actObsTarget.fase.numero, actObsTarget.act.nombre);
+      if (k && caso) {
+        const obsK = `obs_${k}` as const;
+        const resC = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${caso._id}`, {
+          [obsK]: actObsTexto,
+        });
+        setCaso(resC.data);
+      }
       setActObsOpen(false);
     } catch (e) { console.error(e); }
     finally { setSavingActObs(false); }
@@ -1056,15 +1203,34 @@ const ProcesoDetalleCard = ({
     try {
       const nuevaCompletada = !sub.completada;
       const hoy = new Date().toISOString().split("T")[0];
+      const keyMapeo = getCasoFechaKeyForSubactividad(fase.numero, sub.nombre);
+      let fechaCompletado: string | null = nuevaCompletada ? hoy : null;
+      let cMap: Caso | null = null;
+      if (nuevaCompletada && keyMapeo) {
+        cMap = await loadCasoFresh();
+        if (!cMap) { await autoCrearCaso(); cMap = await loadCasoFresh(); }
+        if (cMap) {
+          const existente = getCasoFechaString(cMap, keyMapeo);
+          if (existente) {
+            fechaCompletado = existente.slice(0, 10);
+          }
+        }
+      }
       const res = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/actividades/${act._id}/subactividades/${sub._id}`,
         {
           completada: nuevaCompletada,
-          fecha_completado: nuevaCompletada ? hoy : null,
+          fecha_completado: fechaCompletado,
           ...(nuevaCompletada ? { no_aplica: false } : {}),
         }
       );
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data : f));
+      if (nuevaCompletada && keyMapeo && cMap && !getCasoFechaString(cMap, keyMapeo)) {
+        const resC = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${cMap._id}`, {
+          [keyMapeo]: hoy,
+        });
+        setCaso(resC.data);
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -1114,7 +1280,16 @@ const ProcesoDetalleCard = ({
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
         params: { phase_id: fase._id, actividad_id: act._id, subactividad_id: sub._id },
       });
-      const data = Array.isArray(res.data) ? res.data as ProcessDocument[] : [];
+      const fromFase = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
+      const key = getCasoFechaKeyForSubactividad(fase.numero, sub.nombre);
+      let data = fromFase;
+      if (key) {
+        const resC = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
+          params: { process_id: proceso._id, caso_date_key: key },
+        });
+        const fromCaso = Array.isArray(resC.data) ? (resC.data as ProcessDocument[]) : [];
+        data = mergeDocsUniq(fromFase, fromCaso);
+      }
       setSubDocs(data);
       setSubDocCounts(prev => ({ ...prev, [sub._id]: data.length }));
     } catch (e) { console.error(e); }
@@ -1129,14 +1304,23 @@ const ProcesoDetalleCard = ({
       formData.append("file", files[0]);
       formData.append("actividad_id", subDocsTarget.act._id);
       formData.append("subactividad_id", subDocsTarget.sub._id);
+      const k = getCasoFechaKeyForSubactividad(subDocsTarget.fase.numero, subDocsTarget.sub.nombre);
+      if (k) {
+        formData.append("caso_date_key", k);
+        formData.append("process_id", proceso._id);
+      }
       const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/process-documents/${subDocsTarget.fase._id}`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
       const newDoc = res.data as ProcessDocument;
-      setSubDocs(prev => [newDoc, ...prev]);
-      setSubDocCounts(prev => ({ ...prev, [subDocsTarget.sub._id]: (prev[subDocsTarget.sub._id] ?? 0) + 1 }));
+      setSubDocs(prev => {
+        const merged = mergeDocsUniq([newDoc], prev);
+        setSubDocCounts(c => ({ ...c, [subDocsTarget.sub._id]: merged.length }));
+        return merged;
+      });
+      await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
     finally { setUploadingSubDoc(false); }
   };
@@ -1149,13 +1333,15 @@ const ProcesoDetalleCard = ({
         if (subDocsTarget) setSubDocCounts(c => ({ ...c, [subDocsTarget.sub._id]: updated.length }));
         return updated;
       });
+      await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
   };
 
   /* ── Abrir observaciones de subactividad ── */
   const abrirObsSubactividad = (fase: Phase, act: Actividad, sub: Subactividad) => {
     setSubObsTarget({ fase, act, sub });
-    setSubObsTexto(sub.observaciones ?? "");
+    const k = getCasoFechaKeyForSubactividad(fase.numero, sub.nombre);
+    setSubObsTexto(k && caso ? getCasoObsString(caso, k) : (sub.observaciones ?? ""));
     setSubObsOpen(true);
   };
 
@@ -1168,6 +1354,14 @@ const ProcesoDetalleCard = ({
         { observaciones: subObsTexto }
       );
       onUpdateFases(fases.map(f => f._id === subObsTarget.fase._id ? res.data : f));
+      const k = getCasoFechaKeyForSubactividad(subObsTarget.fase.numero, subObsTarget.sub.nombre);
+      if (k && caso) {
+        const obsK = `obs_${k}` as const;
+        const resC = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/casos/${caso._id}`, {
+          [obsK]: subObsTexto,
+        });
+        setCaso(resC.data);
+      }
       setSubObsOpen(false);
     } catch (e) { console.error(e); }
     finally { setSavingSubObs(false); }
@@ -1319,14 +1513,18 @@ const ProcesoDetalleCard = ({
   };
 
   const [revirtiendoFase, setRevirtiendoFase] = useState(false);
-  const revertirFase = async (fase: Phase) => {
-    if (!confirm("¿Volver a la fase anterior? Las actividades de esta fase se mantienen como están.")) return;
+  const [faseParaRevertir, setFaseParaRevertir] = useState<Phase | null>(null);
+
+  const confirmarRevertirFase = async () => {
+    const fase = faseParaRevertir;
+    if (!fase) return;
     setRevirtiendoFase(true);
     try {
       const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/phases/${fase._id}/revert-all`);
       onUpdateFases(fases.map(f => f._id === fase._id ? res.data.fase : f));
       if (res.data.proceso) onUpdateProceso(res.data.proceso);
       setChecklistOpen(false);
+      setFaseParaRevertir(null);
     } catch (e) { console.error(e); }
     finally { setRevirtiendoFase(false); }
   };
@@ -1358,10 +1556,11 @@ const ProcesoDetalleCard = ({
           <Stack gap={2} align="center">
             {isEditing ? (
               <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
-                valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
+                valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
                 style={{ width: 118 }} clearable disabled={savingCaso}
-                onKeyDown={e => e.preventDefault()}
-                styles={{ input: { caretColor: "transparent", cursor: "pointer", fontSize: 12, minHeight: 28 } }} />
+                dateParser={dateParserEspanol}
+                placeholder="dd/mm/aaaa"
+                styles={{ input: { fontSize: 12, minHeight: 28 } }} />
             ) : (
               <Text fw={600} ta="center" style={{
                 ...cellFont,
@@ -1474,6 +1673,220 @@ const ProcesoDetalleCard = ({
   const condicionOpts   = maxCondicion
     ? Array.from({ length: maxCondicion }, (_, i) => ({ value: String(i + 1), label: `${condicionLabel} ${i + 1}` }))
     : [];
+
+  const mostrarBloqueRcOficioCierre = proceso.tipo_proceso === "AV" && incluirRcOficioAlCierre;
+  const etiquetasResolucionAv = proceso.tipo_proceso === "AV" && mostrarBloqueRcOficioCierre;
+  const cierreMuestraEstado = proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV" || proceso.tipo_proceso === "PM";
+  const cierreMuestraResolucionBloque =
+    (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && cierreResultado === "aprobado";
+
+  const cuerpoModalCerrarProceso = (
+    <Stack gap="sm">
+      {cierreError && (
+        <Alert color="red" title="Error al cerrar" onClose={() => setCierreError(null)} withCloseButton>
+          {cierreError}
+        </Alert>
+      )}
+      {cierreMuestraEstado && (
+        <>
+          <Group gap="md" align="flex-start" wrap="wrap">
+            <Text size="sm" fw={600} style={{ minWidth: 150 }}>Estado de la solicitud</Text>
+            <Group gap="lg">
+              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={cierreResultado === "aprobado"}
+                  onChange={() => { setCierreResultado("aprobado"); setCierreError(null); }}
+                  style={{ width: 16, height: 16 }}
+                />
+                <Text size="sm">Aprobado</Text>
+              </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={cierreResultado === "negado"}
+                  onChange={() => {
+                    setCierreResultado("negado");
+                    setIncluirRcOficioAlCierre(false);
+                    setCierreError(null);
+                  }}
+                  style={{ width: 16, height: 16 }}
+                />
+                <Text size="sm">Negado</Text>
+              </label>
+            </Group>
+          </Group>
+          {cierreResultado === "aprobado" ? (
+            proceso.tipo_proceso === "PM" ? (
+              <Text size="sm" c="dimmed">Se archiva el plan de mejoramiento en <strong>historial</strong>.</Text>
+            ) : (
+            <>
+              <Text size="sm">
+                Se archiva en <strong>historial</strong> y se crea una o más <strong>alertas</strong> (proceso tipo aparte) con fechas fijas hasta que inicies un nuevo RC/AV.
+              </Text>
+              <Text size="xs" c="dimmed">
+                Ajusta resolución y vigencia. Puedes subir o cambiar los PDFs aquí o desde la sección de resolución del proceso.
+              </Text>
+            </>
+            )
+          ) : (
+            <Text size="sm" c="dimmed">
+              Solo se guarda en <strong>historial</strong>. No se genera alerta; el programa podrá abrir de nuevo un proceso del mismo tipo.
+            </Text>
+          )}
+        </>
+      )}
+
+      {cierreMuestraResolucionBloque && (
+        <>
+          {proceso.tipo_proceso === "AV" && (
+            <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "#f3f0ff" }}>
+              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={incluirRcOficioAlCierre}
+                  onChange={(e) => { setIncluirRcOficioAlCierre(e.currentTarget.checked); setCierreError(null); }}
+                  style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0 }}
+                />
+                <div>
+                  <Text size="sm" fw={600}>¿Salió también el registro calificado de oficio?</Text>
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Si la resolución de la acreditación vino acompañada de un RC de oficio, márcalo: se pedirán datos y PDF de la <strong>AV</strong> y del <strong>RC de oficio</strong> y se generarán <strong>dos alertas</strong> (el RC queda como si hubieras cerrado ese proceso con esa resolución).
+                  </Text>
+                </div>
+              </label>
+            </Paper>
+          )}
+
+          {etiquetasResolucionAv && (
+            <Text size="sm" fw={700} c="violet" mt="xs">Acreditación voluntaria</Text>
+          )}
+          <div>
+            <Text size="sm" fw={500} mb={4}>
+              {etiquetasResolucionAv ? "Fecha de resolución (AV)" : "Fecha de resolución"}
+            </Text>
+            <DateInput
+              value={cierreForm.fecha ? new Date(cierreForm.fecha + "T12:00:00") : null}
+              onChange={(val) => setCierreForm((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
+              valueFormat="DD/MM/YYYY"
+              placeholder="dd/mm/aaaa"
+              clearable
+              dateParser={dateParserEspanol}
+            />
+          </div>
+          <TextInput label={etiquetasResolucionAv ? "Código de resolución (AV)" : "Código de resolución"} value={cierreForm.codigo}
+            onChange={(e) => { const v = e.currentTarget.value; setCierreForm((f) => ({ ...f, codigo: v })); }} />
+          <TextInput label={etiquetasResolucionAv ? "Duración de la vigencia — años (AV)" : "Duración de la vigencia (años)"} value={cierreForm.duracion}
+            onChange={(e) => {
+              const duracion = e.currentTarget.value.replace(/\D/g, "");
+              setCierreForm((f) => ({ ...f, duracion }));
+            }} />
+          <div>
+            <Text size="sm" fw={500} mb={4}>PDF de resolución {etiquetasResolucionAv ? "(AV)" : ""}</Text>
+            <Group gap="xs" align="center" wrap="wrap">
+              {resolucionDoc && (
+                <Anchor size="sm" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">📄 {resolucionDoc.name}</Anchor>
+              )}
+              <DropzoneCustomComponent
+                text="Subir o reemplazar PDF (resolución principal)"
+                onDrop={async (files) => {
+                  const file = files[0]; if (!file) return;
+                  try {
+                    setLoadingResolucionDoc(true);
+                    const formData = new FormData();
+                    formData.append("file", file);
+                    formData.append("doc_type", "resolucion");
+                    if (resolucionDoc) {
+                      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${resolucionDoc._id}`);
+                    }
+                    await axios.post(
+                      `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+                      formData, { headers: { "Content-Type": "multipart/form-data" } }
+                    );
+                    await fetchProcesoDocs();
+                  } catch (e) { console.error(e); }
+                  finally { setLoadingResolucionDoc(false); }
+                }}
+              />
+            </Group>
+          </div>
+
+          {mostrarBloqueRcOficioCierre && (
+            <>
+              <Divider label="Registro calificado de oficio" labelPosition="left" my="sm" />
+              <Text size="sm" fw={700} c="blue">Resolución otorgada de oficio (RC)</Text>
+              <div>
+                <Text size="sm" fw={500} mb={4}>Fecha de resolución (RC de oficio)</Text>
+                <DateInput
+                  value={cierreFormRc.fecha ? new Date(cierreFormRc.fecha + "T12:00:00") : null}
+                  onChange={(val) => setCierreFormRc((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
+                  valueFormat="DD/MM/YYYY"
+                  placeholder="dd/mm/aaaa"
+                  clearable
+                  dateParser={dateParserEspanol}
+                />
+              </div>
+              <TextInput label="Código de resolución (RC de oficio)" value={cierreFormRc.codigo}
+                onChange={(e) => { const v = e.currentTarget.value; setCierreFormRc(f => ({ ...f, codigo: v })); }} />
+              <TextInput label="Duración de la vigencia — años (RC de oficio)" value={cierreFormRc.duracion}
+                onChange={(e) => {
+                  const d = e.currentTarget.value.replace(/\D/g, "");
+                  setCierreFormRc(f => ({ ...f, duracion: d }));
+                }} />
+              <div>
+                <Text size="sm" fw={500} mb={4}>PDF de resolución (RC de oficio)</Text>
+                <Group gap="xs" align="center" wrap="wrap">
+                  {resolucionRcoDoc && (
+                    <Anchor size="sm" href={resolucionRcoDoc.view_link} target="_blank" rel="noopener noreferrer">📄 {resolucionRcoDoc.name}</Anchor>
+                  )}
+                  <DropzoneCustomComponent
+                    text="Subir o reemplazar PDF (RC de oficio)"
+                    onDrop={async (files) => {
+                      const file = files[0]; if (!file) return;
+                      try {
+                        setLoadingResolucionDoc(true);
+                        const formData = new FormData();
+                        formData.append("file", file);
+                        formData.append("doc_type", "resolucion_rc_oficio");
+                        if (resolucionRcoDoc) {
+                          await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${resolucionRcoDoc._id}`);
+                        }
+                        await axios.post(
+                          `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${proceso._id}`,
+                          formData, { headers: { "Content-Type": "multipart/form-data" } }
+                        );
+                        await fetchProcesoDocs();
+                      } catch (e) { console.error(e); }
+                      finally { setLoadingResolucionDoc(false); }
+                    }}
+                  />
+                </Group>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      <Group justify="flex-end" gap="sm" mt="xs">
+        <Button variant="default" size="sm" onClick={() => { setCerrarProcesoOpen(false); setCierreError(null); }}>Cancelar</Button>
+        <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
+      </Group>
+    </Stack>
+  );
+
+  const modalCerrarProceso = (
+    <Modal
+      opened={cerrarProcesoOpen}
+      onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
+      title={`Cerrar proceso — ${LABEL_PROCESO[proceso.tipo_proceso]}`}
+      centered
+      size={mostrarBloqueRcOficioCierre && cierreResultado === "aprobado" ? "lg" : "md"}
+      radius="md"
+      zIndex={300}
+    >
+      {cuerpoModalCerrarProceso}
+    </Modal>
+  );
 
   /* ── Fase 7: No renovación (proceso permanente, solo documentos) ── */
   if (proceso.fase_actual === 7) {
@@ -1707,48 +2120,13 @@ const ProcesoDetalleCard = ({
           </Stack>
         </Modal>
 
-        {/* Modal cerrar proceso */}
-        <Modal opened={cerrarProcesoOpen} onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
-          title="Cerrar proceso" centered size="md" radius="md" zIndex={300}>
-          <Stack gap="sm">
-            {cierreError && (
-              <Alert color="red" title="Error al cerrar" onClose={() => setCierreError(null)} withCloseButton>
-                {cierreError}
-              </Alert>
-            )}
-            <Text size="sm">Al cerrar se guarda el historial y se genera una <strong>alerta</strong> con fechas fijas. Confirma resolución y vigencia; el PDF debe estar cargado en el proceso si aplica.</Text>
-            <div>
-              <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
-              <DateInput
-                value={cierreForm.fecha ? new Date(cierreForm.fecha + "T12:00:00") : null}
-                onChange={(val) => setCierreForm((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
-                valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
-                onKeyDown={(e) => e.preventDefault()}
-                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
-              />
-            </div>
-            <TextInput label="Código de resolución" value={cierreForm.codigo}
-              onChange={(e) => {
-                const codigo = e.currentTarget.value;
-                setCierreForm((f) => ({ ...f, codigo }));
-              }} />
-            <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
-              onChange={(e) => {
-                const duracion = e.currentTarget.value.replace(/\D/g, "");
-                setCierreForm((f) => ({ ...f, duracion }));
-              }} />
-            <Group justify="flex-end">
-              <Button variant="default" size="sm" onClick={() => setCerrarProcesoOpen(false)}>Cancelar</Button>
-              <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
-            </Group>
-          </Stack>
-        </Modal>
+        {modalCerrarProceso}
       </Paper>
     );
   }
 
   /* ── Vista mínima sin resolución activa (solo procesos legacy sin subtipo) ── */
-  const esSubtipoSinResolucion = ["Nuevo", "Primera vez", "Reforma curricular"].includes(proceso.subtipo ?? "");
+  const esSubtipoSinResolucion = ["Nuevo", "Primera vez", "Reforma curricular", "Registro calificado de oficio"].includes(proceso.subtipo ?? "");
   if (!resolucionFecha && !esSubtipoSinResolucion) {
     return (
       <Paper withBorder radius="md" mb="md" style={{ overflow: "hidden" }}>
@@ -1771,9 +2149,8 @@ const ProcesoDetalleCard = ({
               <DateInput
                 value={resForm.fecha ? new Date(resForm.fecha + "T12:00:00") : null}
                 onChange={(val) => setResForm(f => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
-                valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
-                onKeyDown={(e) => e.preventDefault()}
-                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                valueFormat="DD/MM/YYYY" placeholder="dd/mm/aaaa" clearable
+                dateParser={dateParserEspanol}
               />
             </div>
             <TextInput label="Código de resolución" placeholder="Ej: 12345" value={resForm.codigo}
@@ -1810,6 +2187,11 @@ const ProcesoDetalleCard = ({
             </Badge>
           ) : (
             <Text size="xs" c="#555" fs="italic">Sin subtipo</Text>
+          )}
+          {proceso.tipo_proceso === "AV" && proceso.av_espera_rc_oficio && (
+            <Badge size="xs" color="violet" variant="light" style={{ fontSize: 10 }}>
+              Sugerido RC de oficio (marca al cerrar)
+            </Badge>
           )}
           {fases.length > 0 && (
             <Button size="xs" variant="white" color="dark" onClick={() => setHistorialActivoOpen(true)}>
@@ -1893,10 +2275,10 @@ const ProcesoDetalleCard = ({
                         <Text c="dimmed" fw={600} ta="center" fs="italic" size="xs">Inexistente</Text>
                       ) : isEditing && !esSoloLectura ? (
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
-                          valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
+                          valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
                           style={{ width: 130 }} clearable disabled={savingDate}
-                          onKeyDown={(e) => e.preventDefault()}
-                          styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                          dateParser={dateParserEspanol}
+                          placeholder="dd/mm/aaaa"
                         />
                       ) : (
                         <Text size="xs" fw={600} ta="center" style={{
@@ -2096,10 +2478,10 @@ const ProcesoDetalleCard = ({
                           <Stack gap={4} align="center">
                             {isEditing ? (
                               <DateInput value={dateVal} onChange={(val) => savePmDate(col.key, val)}
-                                valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingPmDateKey(null)}
+                                valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingPmDateKey(null)}
                                 style={{ width: 130 }} clearable disabled={savingPmDate}
-                                onKeyDown={(e) => e.preventDefault()}
-                                styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                                dateParser={dateParserEspanol}
+                                placeholder="dd/mm/aaaa"
                               />
                             ) : (
                               <Text size="xs" fw={600} ta="center" style={{
@@ -2186,42 +2568,7 @@ const ProcesoDetalleCard = ({
 
       {/* ── Modales ── */}
 
-      <Modal opened={cerrarProcesoOpen} onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
-        title={`Cerrar proceso — ${LABEL_PROCESO[proceso.tipo_proceso]}`} centered size="md" radius="md">
-        <Stack gap="sm">
-          {cierreError && (
-            <Alert color="red" title="Error al cerrar" onClose={() => setCierreError(null)} withCloseButton>
-              {cierreError}
-            </Alert>
-          )}
-          <Text size="sm">Se archiva en <strong>historial</strong> y se crea una <strong>alerta</strong> (tipo de proceso aparte) con fechas fijas hasta que inicies un nuevo RC/AV.</Text>
-          <Text size="xs" c="dimmed">Ajusta resolución y vigencia si hace falta. Carga el PDF de resolución en el proceso antes de cerrar si aún no está.</Text>
-          <div>
-            <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
-            <DateInput
-              value={cierreForm.fecha ? new Date(cierreForm.fecha + "T12:00:00") : null}
-              onChange={(val) => setCierreForm((f) => ({ ...f, fecha: val ? val.toISOString().slice(0, 10) : "" }))}
-              valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
-              onKeyDown={(e) => e.preventDefault()}
-              styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
-            />
-          </div>
-          <TextInput label="Código de resolución" value={cierreForm.codigo}
-            onChange={(e) => {
-              const codigo = e.currentTarget.value;
-              setCierreForm((f) => ({ ...f, codigo }));
-            }} />
-          <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
-            onChange={(e) => {
-              const duracion = e.currentTarget.value.replace(/\D/g, "");
-              setCierreForm((f) => ({ ...f, duracion }));
-            }} />
-          <Group justify="flex-end" gap="sm">
-            <Button variant="default" size="sm" onClick={() => setCerrarProcesoOpen(false)}>Cancelar</Button>
-            <Button color="red" size="sm" loading={cerrandoProceso} onClick={cerrarProceso}>Cerrar proceso</Button>
-          </Group>
-        </Stack>
-      </Modal>
+      {modalCerrarProceso}
 
       <HistorialActivoModal
         opened={historialActivoOpen}
@@ -2532,11 +2879,8 @@ const ProcesoDetalleCard = ({
                   const puedeHechaActoAdmin  = puedeMarcarHechaActoAdminActividad(act, caso);
                   const canToggleCompletada  = act.no_aplica ? false : (act.completada || (isFirstIncomplete && puedeHechaActoAdmin));
                   const canToggleNoAplica    = act.completada ? false : (act.no_aplica || isFirstIncomplete);
-                  const modoActoEff          = getModoActoAdminEfectivo(act, caso);
                   const tooltipBloqueoHecha  = esActoAdministrativo(act.nombre) && !act.completada && !act.no_aplica && isFirstIncomplete && !puedeHechaActoAdmin
-                    ? (modoActoEff === null
-                        ? "Indica si el acto administrativo fue satisfactorio o no (tabla del caso o interruptor de estado)."
-                        : "Completa o marca N/A todas las subactividades de este ramal antes de marcar la actividad como hecha.")
+                    ? "Indica si el acto administrativo fue satisfactorio o no (tabla del caso o interruptor de estado)."
                     : null;
                   return (
                     <SortableActividad
@@ -2588,7 +2932,7 @@ const ProcesoDetalleCard = ({
                   color="orange"
                   variant="light"
                   loading={revirtiendoFase}
-                  onClick={() => revertirFase(faseActual)}
+                  onClick={() => setFaseParaRevertir(faseActual)}
                 >
                   ← Volver a fase anterior
                 </Button>
@@ -2624,6 +2968,43 @@ const ProcesoDetalleCard = ({
             </Group>
           </Stack>
         )}
+      </Modal>
+
+      <Modal
+        opened={!!faseParaRevertir}
+        onClose={() => {
+          if (!revirtiendoFase) setFaseParaRevertir(null);
+        }}
+        title={(
+          <Text fw={700} size="md" c="#333" ta="center" w="100%" pr="lg">
+            Volver a fase anterior
+          </Text>
+        )}
+        centered
+        size="md"
+        radius="md"
+        closeOnClickOutside={!revirtiendoFase}
+        closeOnEscape={!revirtiendoFase}
+        zIndex={400}
+        styles={{
+          header: { backgroundColor: color, margin: 0, borderBottom: "1px solid rgba(0,0,0,0.06)", position: "relative" },
+          title: { width: "100%", marginRight: 0 },
+          close: { position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" },
+          content: { overflow: "hidden" },
+        }}
+        overlayProps={{ opacity: 0.5, blur: 2 }}
+      >
+        <Text size="sm" c="dark.7" ta="center" px="xs" mt="md" style={{ lineHeight: 1.6 }}>
+          ¿Desea volver a la fase anterior? Las actividades registradas en esta fase se mantendrán sin modificaciones.
+        </Text>
+        <Group justify="center" gap="sm" mt="lg">
+          <Button variant="default" size="sm" disabled={revirtiendoFase} onClick={() => setFaseParaRevertir(null)}>
+            Cancelar
+          </Button>
+          <Button size="sm" color="blue" loading={revirtiendoFase} onClick={confirmarRevertirFase}>
+            Sí, volver
+          </Button>
+        </Group>
       </Modal>
     </Paper>
   );
