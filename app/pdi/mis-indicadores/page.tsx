@@ -123,29 +123,15 @@ const formatFechaInput = (value?: string | null) => {
 };
 
 function getIndicadorAvanceMostrado(ind: Indicador) {
-  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
-  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
-
-  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
-  }
-
   return ind.avance_total_real ?? ind.avance;
 }
 
 function getIndicadorAvanceTotalReal(ind: Indicador) {
-  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
-  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
-
-  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return (avanceActual / metaFinal) * 100;
-  }
-
-  return ind.avance_total_real != null ? Number(ind.avance_total_real) : getIndicadorAvanceMostrado(ind);
+  return ind.avance_total_real != null ? Number(ind.avance_total_real) : (Number(ind.avance) || 0);
 }
 
 function getIndicadorAvancePonderado(ind: Indicador) {
-  return Math.min(Math.max(getIndicadorAvanceMostrado(ind), 0), 100);
+  return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
 
 function indicadorUsaPorcentaje(ind: Indicador) {
@@ -188,11 +174,14 @@ function getSemaforoByAvance(avance: number) {
   return "rojo";
 }
 
+function normalizePeso(peso: number) {
+  const value = Number(peso) || 0;
+  return value <= 1 ? value * 100 : value;
+}
+
 function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  const totalPeso = items.reduce((acc, item) => acc + (Number(item.peso) || 0), 0);
-  if (totalPeso <= 0) return 0;
   return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * (Number(item.peso) || 0), 0) / 100
+    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
   );
 }
 
