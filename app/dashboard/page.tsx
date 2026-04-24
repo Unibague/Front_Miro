@@ -173,9 +173,12 @@ const DashboardPage = () => {
           ? (raw as { dependencies: unknown[] }).dependencies
           : [];
 
-      const isUserVisualizer = dependencies.some((dep: { visualizers?: string[] }) =>
-        Array.isArray(dep?.visualizers) && dep.visualizers.includes(session.user.email)
-      );
+      const email = session.user.email;
+      const isUserVisualizer = dependencies.some((dep: unknown) => {
+        if (typeof dep !== "object" || dep === null) return false;
+        const v = (dep as { visualizers?: unknown }).visualizers;
+        return Array.isArray(v) && v.includes(email);
+      });
 
       setIsVisualizer(isUserVisualizer);
     } catch (error) {
