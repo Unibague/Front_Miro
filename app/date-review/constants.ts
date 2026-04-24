@@ -22,29 +22,28 @@ export const estadoColor: Record<string, string> = {
   "Fecha Límite":                    "#ff6b6b",
 };
 
-/**
- * DEBT: RC usa «Nuevo» y AV usa «Primera vez» para el mismo concepto; el API/BD los guarda distinto
- * (ver Back_Miro/controllers/processes.js). Unificar criterio y migrar datos cuando toque.
- */
 export const SUBTIPOS: Record<"RC" | "AV" | "PM", string[]> = {
-  RC: ["Nuevo", "Renovación", "No renovación", "Renovación + reforma", "Reforma curricular"],
-  AV: ["Primera vez", "Renovación"],
+  RC: ["Nuevo", "Renovación", "No renovación", "Renovación + reforma", "Reforma curricular", "Registro calificado de oficio"],
+  AV: ["Nuevo", "Renovación"],
   PM: ["Autoevaluación Registro calificado", "Autoevaluación Acreditación"],
 };
 
 /** Texto corto en badges/tablas. El valor guardado en BD sigue siendo «Renovación + reforma». */
 export function etiquetaSubtipoCompacta(subtipo: string): string {
   if (subtipo === "Renovación + reforma") return "Renovacion+Ref.";
+  if (subtipo === "Registro calificado de oficio") return "RC de oficio";
+  /** Procesos viejos con «Primera vez»; se muestra como «Nuevo» (mismo criterio que RC). */
+  if (subtipo === "Primera vez") return "Nuevo";
   return subtipo;
 }
 
 const sortEs = (a: string, b: string) => a.localeCompare(b, "es");
 
 /**
- * En el API: RC usa subtipo «Nuevo» y AV usa «Primera vez» (no son el mismo string).
- * Para el filtro con tipo «Todos», una sola opción agrupa ambos casos.
+ * Misma idea que en RC: acreditación «Nuevo» = primera instancia. El filtro «Nuevo» con tipo «Todos» agrupa RC+AV.
+ * Procesos antiguos con subtipo almacenado «Primera vez» siguen emparejando con el filtro.
  */
-export const SUBTIPO_FILTRO_PRIMERA_INSTANCIA = "Nuevo o Primera vez";
+export const SUBTIPO_FILTRO_PRIMERA_INSTANCIA = "Nuevo";
 
 /** Valores del Select «Subtipo» (tablero y alertas): «Todos» + lista ordenada alfabéticamente (es). */
 export function subtipoOpcionesFiltro(
@@ -58,14 +57,14 @@ export function subtipoOpcionesFiltro(
   }
   const mezcla = [
     ...SUBTIPOS.RC.filter((s) => s !== "Nuevo"),
-    ...SUBTIPOS.AV.filter((s) => s !== "Primera vez"),
+    ...SUBTIPOS.AV.filter((s) => s !== "Nuevo"),
   ];
   const u = [...new Set(mezcla)];
-  u.push(SUBTIPO_FILTRO_PRIMERA_INSTANCIA);
+  u.push("Nuevo");
   return ["Todos", ...u.sort(sortEs)];
 }
 
-/** Comprueba si el subtipo de un proceso RC/AV coincide con el filtro (incluye SUBTIPO_FILTRO_PRIMERA_INSTANCIA). */
+/** Comprueba si el subtipo de un proceso RC/AV coincide con el filtro. */
 export function procesoCumpleSubtipoFiltro(
   subtipo: string | null | undefined,
   tipoProceso: string,
@@ -73,13 +72,19 @@ export function procesoCumpleSubtipoFiltro(
   tipoFiltroUI: string,
 ): boolean {
   if (filtro === "Todos") return true;
-  if (filtro === SUBTIPO_FILTRO_PRIMERA_INSTANCIA) {
-    if (tipoFiltroUI === "Todos") {
-      return (tipoProceso === "RC" && subtipo === "Nuevo") || (tipoProceso === "AV" && subtipo === "Primera vez");
-    }
-    if (tipoFiltroUI === "Registro calificado") return tipoProceso === "RC" && subtipo === "Nuevo";
-    if (tipoFiltroUI === "Acreditación voluntaria") return tipoProceso === "AV" && subtipo === "Primera vez";
-    return false;
+  if (filtro === "Nuevo" && tipoFiltroUI === "Todos") {
+    return (tipoProceso === "RC" && subtipo === "Nuevo")
+      || (tipoProceso === "AV" && (subtipo === "Nuevo" || subtipo === "Primera vez"));
+  }
+  if (filtro === "Nuevo" && tipoFiltroUI === "Registro calificado") {
+    return tipoProceso === "RC" && subtipo === "Nuevo";
+  }
+  if (filtro === "Nuevo" && tipoFiltroUI === "Acreditación voluntaria") {
+    return tipoProceso === "AV" && (subtipo === "Nuevo" || subtipo === "Primera vez");
+  }
+  if (filtro === "Nuevo o Primera vez" && tipoFiltroUI === "Todos") {
+    return (tipoProceso === "RC" && subtipo === "Nuevo")
+      || (tipoProceso === "AV" && (subtipo === "Nuevo" || subtipo === "Primera vez"));
   }
   return (subtipo ?? "") === filtro;
 }
