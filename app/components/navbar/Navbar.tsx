@@ -17,7 +17,8 @@ import {
   Avatar,
   Image,
   useMantineColorScheme,
-  Select,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
@@ -25,11 +26,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
-import { usePeriod } from "@/app/context/PeriodContext";
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 import classes from "./Navbar.module.css";
-import { IconArrowLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -96,9 +96,6 @@ export default function Navbar() {
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
   const { colorScheme } = useMantineColorScheme();
-  const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
-  const [tempPeriod, setTempPeriod] = useState<string>(selectedPeriodId || "");
-  const [periodModalOpened, setPeriodModalOpened] = useState(false);
 
   const titles = session
     ? [{ link: "/dashboard", label: "MIRÓ" }]
@@ -124,12 +121,6 @@ export default function Navbar() {
         });
     }
   }, [session, setUserRole]);
-
-  useEffect(() => {
-    if (periodModalOpened) {
-      setTempPeriod(selectedPeriodId || "");
-    }
-  }, [periodModalOpened, selectedPeriodId]);
 
   const handleRoleChange = async (role: string) => {
     if (!session?.user?.email) return;
@@ -243,16 +234,17 @@ export default function Navbar() {
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
             {showDateReviewVolver && (
-              <Button
-                variant="light"
-                color="blue"
-                size="sm"
-                leftSection={<IconArrowLeft size={16} />}
-                onClick={() => router.push("/dashboard?gestionProcesos=1")}
-                style={{ flexShrink: 0 }}
-              >
-                Volver
-              </Button>
+              <Tooltip label="Volver" withArrow>
+                <ActionIcon
+                  variant="default"
+                  size="sm"
+                  onClick={() => router.push("/dashboard?gestionProcesos=1")}
+                  style={{ flexShrink: 0 }}
+                  aria-label="Volver al panel de gestión de procesos"
+                >
+                  <IconChevronLeft size={16} />
+                </ActionIcon>
+              </Tooltip>
             )}
             <Group gap="xs" wrap="nowrap">
               {titleButton}
@@ -341,27 +333,6 @@ export default function Navbar() {
                     />
                   </Menu.Target>
 
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <Button
-                      size="xs"
-                      style={{
-                        marginTop: "40px",
-                        position: "absolute",
-                        top: "110%",
-                        left: "70%",
-                        transform: "translateX(-100%)",
-                        zIndex: 1,
-                      }}
-                      onClick={() => setPeriodModalOpened(true)}
-                      variant="light"
-                      fw={700}
-                    >
-                      Periodo:{" "}
-                      {availablePeriods.find((p) => p._id === selectedPeriodId)?.name ||
-                        "Seleccionar"}
-                    </Button>
-                  </div>
-
                   <Menu.Dropdown>
                     {user?.isImpersonating ? (
                       <Menu.Item
@@ -408,18 +379,19 @@ export default function Navbar() {
           >
             <Stack align="stretch" justify="center" gap="md">
               {showDateReviewVolver && (
-                <Button
-                  variant="light"
-                  color="blue"
-                  size="sm"
-                  leftSection={<IconArrowLeft size={16} />}
-                  onClick={() => {
-                    router.push("/dashboard?gestionProcesos=1");
-                    toggle();
-                  }}
-                >
-                  Volver
-                </Button>
+                <Tooltip label="Volver" withArrow>
+                  <ActionIcon
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      router.push("/dashboard?gestionProcesos=1");
+                      toggle();
+                    }}
+                    aria-label="Volver al panel de gestión de procesos"
+                  >
+                    <IconChevronLeft size={16} />
+                  </ActionIcon>
+                </Tooltip>
               )}
               {itemsDrawer}
               <ThemeChangerMobile />
@@ -508,40 +480,6 @@ export default function Navbar() {
             Cerrar Sesión
           </Button>
         </Group>
-      </Modal>
-
-      <Modal
-        opened={periodModalOpened}
-        onClose={() => setPeriodModalOpened(false)}
-        title="Selecciona un Periodo"
-      >
-        <Select
-          label="Periodo"
-          placeholder="Selecciona un periodo"
-          value={tempPeriod}
-          onChange={(value) => {
-            console.log("Periodo seleccionado en navbar:", value);
-            setTempPeriod(value || "");
-          }}
-          searchable
-          allowDeselect={false}
-          data={availablePeriods.map((period) => ({
-            value: period._id,
-            label: period.name,
-          }))}
-        />
-        <Button
-          fullWidth
-          mt="md"
-          onClick={() => {
-            if (tempPeriod) {
-              setSelectedPeriodId(tempPeriod);
-              setPeriodModalOpened(false);
-            }
-          }}
-        >
-          Confirmar
-        </Button>
       </Modal>
     </>
   );

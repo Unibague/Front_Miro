@@ -33,6 +33,8 @@ export type Process = {
   program_code: string;
   tipo_proceso: "RC" | "AV" | "PM" | "ALERTA";
   subtipo?: string | null;
+  /** Solo AV: legado; la decisión de RC de oficio es al cerrar en el modal de cierre. */
+  av_espera_rc_oficio?: boolean;
   alert_para_tipo?: "RC" | "AV" | null;
   cerrado_process_history_id?: string | null;
   snapshot_codigo_resolucion?: string | null;
@@ -83,7 +85,7 @@ export type ProcessDocument = {
   process_id?: string | null;
   actividad_id?: string | null;
   subactividad_id?: string | null;
-  doc_type?: 'resolucion' | 'proceso';
+  doc_type?: "resolucion" | "resolucion_rc_oficio" | "proceso";
   /** Campo de fecha del caso al que pertenecen (información del caso) */
   caso_date_key?: string | null;
   name: string;
@@ -197,8 +199,11 @@ export type PQR = {
   medio_realizado?: string | null;
   fecha_respuesta?: string | null;
   observacion_respuesta?: string | null;
+  /** Documento de identidad de quien atiende o gestiona el PQR. */
+  cedula_encargado?: string | null;
   cerrado: boolean;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 /** Fechas proyectadas al cerrar un proceso (para notificaciones por correo). */
@@ -222,6 +227,7 @@ export type ProcessReminderRecord = {
   fecha_radicado_men: string | null;
   documentos: Array<{ name: string; view_link: string }>;
   createdAt?: string;
+  updatedAt?: string;
   __origen?: "ALERTA" | "legacy";
   /** Observaciones congeladas al cierre (alerta) */
   obs_vencimiento?: string | null;
@@ -239,6 +245,13 @@ export type ProcessHistoryRecord = {
   tipo_proceso: "RC" | "AV" | "PM";
   nombre_proceso: string;
   subtipo: string | null;
+  estado_solicitud?: "APROBADO" | "NEGADO";
+  rc_oficio?: {
+    codigo_resolucion: string | null;
+    fecha_resolucion: string | null;
+    duracion_resolucion: number | null;
+    documentos: Array<{ name: string; view_link: string; subido_en?: string | null }>;
+  } | null;
   codigo_resolucion: string | null;
   fecha_resolucion: string | null;
   duracion_resolucion: number | null;

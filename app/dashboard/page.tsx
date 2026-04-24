@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -54,12 +54,12 @@ const DashboardPage = () => {
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
       : pathname === "/snies"
-      ? "snies"
-      : pathname === "/cna"
-      ? "cna"
-      : pathname === "/pdi"
-      ? "pdi"
-      : "home";
+        ? "snies"
+        : pathname === "/cna"
+          ? "cna"
+          : pathname === "/pdi"
+            ? "pdi"
+            : "home";
 
   const shouldRedirectFromDashboardHome =
     pathname === "/dashboard" &&
@@ -87,12 +87,9 @@ const DashboardPage = () => {
     }
   };
 
-      //aalalsd
   const fetchPendingItems = async (role: string) => {
     if (session?.user?.email && selectedPeriodId) {
         try {
-            // Si es Administrador, no hacer nada
-            //nada
             if (role === "Administrador") {
                 setPendingReports(0);
                 setPendingTemplates(0);
@@ -127,7 +124,7 @@ const DashboardPage = () => {
               ? reportsResponse.data.pendingReports
               : [];
 
-            // Se establece el nÃºmero de reportes pendientes
+            // Se establece el número de reportes pendientes
             setPendingReports(pendingReportsData.length);
             setNextReportDeadline(
                 pendingReportsData.length > 0 ? dayjs(pendingReportsData[0].deadline).format("DD/MM/YYYY") : null
@@ -145,7 +142,7 @@ const DashboardPage = () => {
                   : [];
                 const totalTemplates = templatesList.length;
 
-                // Se establece el nÃºmero total de plantillas pendientes
+                // Se establece el número total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
                 setNextTemplateDeadline(
                     totalTemplates > 0 ? dayjs(templatesList[0].deadline).format("DD/MM/YYYY") : null
@@ -161,39 +158,39 @@ const DashboardPage = () => {
 };
 
 
-const fetchVisualizers = async () => {
-  if (!session?.user?.email) return; // Evita errores si el usuario no estÃ¡ autenticado
+  const fetchVisualizers = async () => {
+    if (!session?.user?.email) return;
 
-  try {
-    const response = await axios.get(
-      `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
-    );
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
+      );
 
-    const raw = response.data;
-    const dependencies: unknown[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === "object" && Array.isArray((raw as { dependencies?: unknown[] }).dependencies)
-        ? (raw as { dependencies: unknown[] }).dependencies
-        : [];
+      const raw = response.data;
+      const dependencies: unknown[] = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray((raw as { dependencies?: unknown[] }).dependencies)
+          ? (raw as { dependencies: unknown[] }).dependencies
+          : [];
 
-    // Verificar si el usuario estÃ¡ en la lista de visualizadores
-    const isUserVisualizer = dependencies.some((dep: any) =>
-      Array.isArray(dep?.visualizers) && dep.visualizers.includes(session?.user?.email)
-    );
+      const email = session.user.email;
+      const isUserVisualizer = dependencies.some((dep: unknown) => {
+        if (typeof dep !== "object" || dep === null) return false;
+        const v = (dep as { visualizers?: unknown }).visualizers;
+        return Array.isArray(v) && v.includes(email);
+      });
 
-    setIsVisualizer(isUserVisualizer);
-    console.log("âœ… El usuario es visualizador:", isUserVisualizer); // ðŸ‘€ DEBUG
-  } catch (error) {
-    console.error("âŒ Error fetching visualizers:", error);
-  }
-};
+      setIsVisualizer(isUserVisualizer);
+    } catch (error) {
+      console.error("Error fetching visualizers:", error);
+    }
+  };
 
-
-useEffect(() => {
-  if (status === "authenticated") {
-    fetchVisualizers();
-  }
-}, [session, status]);
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchVisualizers();
+    }
+  }, [session, status]);
 
 
 
@@ -314,14 +311,14 @@ useEffect(() => {
           variant="light"
           style={{
             padding: "10px 15px", // Reduce el padding para ajustarse al texto
-            textAlign: "center", // Asegura que el texto estÃ© alineado al centro
-            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none", // Mantiene el tamaÃ±o adecuado
+            textAlign: "center",
+            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none",
             maxWidth: "max-content", // Ajusta el ancho al contenido
-            whiteSpace: "pre-wrap", // Permite saltos de lÃ­nea si el contenido es muy largo
+            whiteSpace: "pre-wrap",
             margin: "20px auto", // Centra el badge y da margen con otros elementos
             justifyContent: "center", // Centra el contenido horizontalmente
             alignItems: "center", // Centra el contenido verticalmente
-            lineHeight: "normal", // Asegura que la altura de lÃ­nea no sea excesiva
+            lineHeight: "normal",
             height: "auto", // Permite que el `Badge` se adapte al contenido
           }}
         >
@@ -1111,20 +1108,42 @@ useEffect(() => {
 
   const renderAvRcCards = () => {
     return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-          <Center><IconCalendarMonth size={80} /></Center>
-          <Group mt="md" mb="xs">
-            <Text ta={"center"} w={500}>Gestión de procesos</Text>
-          </Group>
-          <Text ta={"center"} size="sm" color="dimmed">
-            Gestión de procesos de Registro Calificado y Acreditación Voluntaria.
-          </Text>
-          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
-            Ir a gestión de procesos
-          </Button>
-        </Card>
-      </Grid.Col>
+      <>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Center><IconCalendarMonth size={80} /></Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Registro calificado, acreditación voluntaria y seguimiento por facultad.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+              Ir a gestión de procesos MEN
+            </Button>
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Gestión de PQR ante el MEN
+            </Text>
+            <Button
+              variant="light"
+              fullWidth
+              mt="md"
+              radius="md"
+              onClick={() => router.push("/date-review?modulo=comunicaciones")}
+            >
+              Ir a comunicaciones MEN
+            </Button>
+          </Card>
+        </Grid.Col>
+      </>
     );
   };
 
@@ -1178,108 +1197,106 @@ useEffect(() => {
             </Grid.Col>
 
             {userRole !== "Responsable" && (
-              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                <Card
-                  radius="xl"
-                  p="xl"
-                  onClick={() => router.push("/snies")}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 260,
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
-                    boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
-                  }}
-                >
-                  <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconHexagon3d size={28} />
-                      </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
-                        SNIES
-                      </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
-                        Gestión SNIES.
-                      </Text>
+              <>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => router.push("/snies")}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
+                      boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconHexagon3d size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          SNIES
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          Gestión SNIES.
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="teal" radius="xl">
+                        Abrir módulo
+                      </Button>
                     </Stack>
-                    <Button variant="white" color="teal" radius="xl">
-                      Abrir módulo
-                    </Button>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-            )}
+                  </Card>
+                </Grid.Col>
 
-            {userRole !== "Responsable" && (
-              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                <Card
-                  radius="xl"
-                  p="xl"
-                  onClick={() => router.push("/cna")}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 260,
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
-                    boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
-                  }}
-                >
-                  <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconReport size={28} />
-                      </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
-                        CNA
-                      </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
-                        Gestión CNA.
-                      </Text>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => router.push("/cna")}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
+                      boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconReport size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          CNA
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          Gestión CNA.
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}>
+                        Abrir módulo
+                      </Button>
                     </Stack>
-                    <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}>
-                      Abrir módulo
-                    </Button>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-            )}
+                  </Card>
+                </Grid.Col>
 
-            {userRole !== "Responsable" && (
-              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                <Card
-                  radius="xl"
-                  p="xl"
-                  onClick={() => setAvRcOpen(true)}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 260,
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
-                    boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
-                  }}
-                >
-                  <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconCalendarMonth size={28} />
-                      </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
-                        Gestión de Procesos
-                      </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
-                        Gestión de RC y AV.
-                      </Text>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => setAvRcOpen(true)}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                      boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconCalendarMonth size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          Procesos de calidad MEN
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          RC, AV y comunicaciones MEN (por facultad y programa).
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>
+                        Abrir módulo
+                      </Button>
                     </Stack>
-                    <Button variant="white" color="green" radius="xl">
-                      Abrir módulo
-                    </Button>
-                  </Stack>
-                </Card>
-              </Grid.Col>
+                  </Card>
+                </Grid.Col>
+              </>
             )}
 
             {(userRole === "Responsable" || userRole === "Administrador") && (
