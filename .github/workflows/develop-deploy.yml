@@ -20,7 +20,7 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '22.14.0'
+        node-version: '20.14.0'
 
     - name: Install OpenConnect
       run: sudo apt-get install -y openconnect
@@ -37,7 +37,6 @@ jobs:
           --servercert pin-sha256:+4XOhCB4GmaXr8/TMWL09EayWRbrz3X8WWAWgu79f9U= \
           ${{ secrets.VPN_HOST }} -b
 
-
     - name: Verify VPN connection
       run: ip a
 
@@ -47,28 +46,31 @@ jobs:
     - name: Test internal connectivity with SSH
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
-        
+
     - name: Update repository on remote server
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          set -e;
           echo "Checking PM2 processes...";
-          pm2 list | grep Front_Dev && pm2 stop Front_Dev || echo "Front_Dev not running";
-          pm2 list | grep Front_Dev && pm2 delete Front_Dev || echo "Front_Dev not found";
+          pm2 list | grep Front_Dev && pm2 stop Front_Dev || true;
+          pm2 list | grep Front_Dev && pm2 delete Front_Dev || true;
           cd ~/MIRO_TEST;
-          if [ ! -d "Front_Miro_Test" ]; then
-            echo "Directory does not exist, cloning repository...";
-            git clone --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test;
-          else
-            echo "Updating existing repository...";
-            cd Front_Miro_Test;
-            git fetch origin develop;
-            git reset --hard origin/develop;
-          fi;
-          echo "Repository updated successfully"'
+          echo "Backing up .env...";
+          [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env && echo "Backup OK" || echo "No .env to backup";
+          echo "Removing old directory...";
+          rm -rf Front_Miro_Test;
+          echo "Cloning repository...";
+          git clone --branch develop https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/Unibague/Front_Miro.git Front_Miro_Test;
+          echo "Verifying clone...";
+          ls Front_Miro_Test/package.json;
+          echo "Restoring .env...";
+          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env Front_Miro_Test/.env && echo "Env restored" || echo "No .env backup found";
+          echo "Repository ready"'
 
     - name: Fix environment and build
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          set -e;
           cd ~/MIRO_TEST/Front_Miro_Test;
           echo "=== FIXING ENV FILE FORMAT ===";
           sed -i "s/ = /=/g" .env;
@@ -77,7 +79,8 @@ jobs:
           echo "=== TESTING VARIABLE LOADING ===";
           export $(cat .env | grep -v "^#" | xargs);
           echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
-          npm install;
+          rm -f package-lock.json;
+          npm install --legacy-peer-deps;
           echo "=== BUILD OUTPUT ===";
           npm run build'
 
@@ -85,18 +88,9 @@ jobs:
       run: |
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO_TEST/Front_Miro_Test;
-          
-          # Start PM2 with fixed port 3001 (already configured in nginx)
           PORT=3001 pm2 start npm --name "Front_Dev" -- start;
           pm2 save;
-          
           echo "Front_Dev started successfully on port 3001"'
-
-    - name: Run Semantic Release
-      working-directory: ./    
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: npx semantic-release
 
     - name: Post Checkout repository
       run: echo "Development deployment complete"

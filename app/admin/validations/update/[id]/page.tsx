@@ -262,7 +262,7 @@ const AdminValidationUpdatePage = () => {
           <Text c="dimmed" size="xs" ta={"center"} mt="md" >
             <IconBulb color="#797979" size={20}></IconBulb>
             <br/>
-            Para el nombre de las columnas no uses "-", en su lugar usa "_"
+            Para el nombre de las columnas no uses &quot;-&quot;, en su lugar usa &quot;_&quot;
           </Text>
           <Center mb="md" mt="md">
             <Button onClick={handleAddColumn} leftSection={<IconPlus size={20} />}>

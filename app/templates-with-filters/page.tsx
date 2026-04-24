@@ -109,16 +109,6 @@ const TemplatesWithFiltersPage = () => {
     }
   }, [userRole, router]);
 
-  // Mostrar loading mientras se carga el rol
-  if (!userRole) {
-    return (
-      <Container size="xl">
-        <Center style={{ height: '50vh' }}>
-          <Text>Cargando...</Text>
-        </Center>
-      </Container>
-    );
-  }
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -149,7 +139,7 @@ const TemplatesWithFiltersPage = () => {
         email,
         periodId: selectedPeriodId,
         filterByUserScope: true, // Nuevo parámetro para filtrar por ámbito del usuario
-        userRole: userRole, // Enviar el rol del usuario 
+        userRole: userRole, // Enviar el rol usuario 
       };
       
       // Add filter parameters
@@ -260,6 +250,17 @@ const TemplatesWithFiltersPage = () => {
     
     return filters;
   };
+
+  // Mostrar loading mientras se carga el rol
+  if (!userRole) {
+    return (
+      <Container size="xl">
+        <Center style={{ height: '50vh' }}>
+          <Text>Cargando...</Text>
+        </Center>
+      </Container>
+    );
+  }
 
   const openFilterModal = (template: PublishedTemplate) => {
     setSelectedTemplateForFilters(template);

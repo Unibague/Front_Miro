@@ -292,7 +292,7 @@ const ResponsibleReportPage = () => {
         <Text size="sm">
           ¿Estás seguro de que deseas enviar este informe?
           <br /><br />
-          <strong>Una vez enviado, el informe pasará a estado "En Revisión" y no podrás realizar modificaciones hasta que sea evaluado.</strong>
+          <strong>Una vez enviado, el informe pasará a estado &quot;En Revisión&quot; y no podrás realizar modificaciones hasta que sea evaluado.</strong>
           <br /><br />
           Asegúrate de que toda la información esté completa y correcta antes de continuar.
         </Text>

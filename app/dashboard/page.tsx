@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -50,14 +50,16 @@ const DashboardPage = () => {
     }
   }, [searchParams, router]);
 
-  const activeModule: "home" | "reports" | "snies" | "cna" =
+  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" =
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
       : pathname === "/snies"
-      ? "snies"
-      : pathname === "/cna"
-      ? "cna"
-      : "home";
+        ? "snies"
+        : pathname === "/cna"
+          ? "cna"
+          : pathname === "/pdi"
+            ? "pdi"
+            : "home";
 
   const shouldRedirectFromDashboardHome =
     pathname === "/dashboard" &&
@@ -85,12 +87,9 @@ const DashboardPage = () => {
     }
   };
 
-      //aalalsd
   const fetchPendingItems = async (role: string) => {
     if (session?.user?.email && selectedPeriodId) {
         try {
-            // Si es Administrador, no hacer nada
-            //nada
             if (role === "Administrador") {
                 setPendingReports(0);
                 setPendingTemplates(0);
@@ -125,7 +124,7 @@ const DashboardPage = () => {
               ? reportsResponse.data.pendingReports
               : [];
 
-            // Se establece el nÃºmero de reportes pendientes
+            // Se establece el número de reportes pendientes
             setPendingReports(pendingReportsData.length);
             setNextReportDeadline(
                 pendingReportsData.length > 0 ? dayjs(pendingReportsData[0].deadline).format("DD/MM/YYYY") : null
@@ -143,7 +142,7 @@ const DashboardPage = () => {
                   : [];
                 const totalTemplates = templatesList.length;
 
-                // Se establece el nÃºmero total de plantillas pendientes
+                // Se establece el número total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
                 setNextTemplateDeadline(
                     totalTemplates > 0 ? dayjs(templatesList[0].deadline).format("DD/MM/YYYY") : null
@@ -159,39 +158,36 @@ const DashboardPage = () => {
 };
 
 
-const fetchVisualizers = async () => {
-  if (!session?.user?.email) return; // Evita errores si el usuario no estÃ¡ autenticado
+  const fetchVisualizers = async () => {
+    if (!session?.user?.email) return;
 
-  try {
-    const response = await axios.get(
-      `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
-    );
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`
+      );
 
-    const raw = response.data;
-    const dependencies: unknown[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === "object" && Array.isArray((raw as { dependencies?: unknown[] }).dependencies)
-        ? (raw as { dependencies: unknown[] }).dependencies
-        : [];
+      const raw = response.data;
+      const dependencies: unknown[] = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray((raw as { dependencies?: unknown[] }).dependencies)
+          ? (raw as { dependencies: unknown[] }).dependencies
+          : [];
 
-    // Verificar si el usuario estÃ¡ en la lista de visualizadores
-    const isUserVisualizer = dependencies.some((dep: any) =>
-      Array.isArray(dep?.visualizers) && dep.visualizers.includes(session?.user?.email)
-    );
+      const isUserVisualizer = dependencies.some((dep: { visualizers?: string[] }) =>
+        Array.isArray(dep?.visualizers) && dep.visualizers.includes(session.user.email)
+      );
 
-    setIsVisualizer(isUserVisualizer);
-    console.log("âœ… El usuario es visualizador:", isUserVisualizer); // ðŸ‘€ DEBUG
-  } catch (error) {
-    console.error("âŒ Error fetching visualizers:", error);
-  }
-};
+      setIsVisualizer(isUserVisualizer);
+    } catch (error) {
+      console.error("Error fetching visualizers:", error);
+    }
+  };
 
-
-useEffect(() => {
-  if (status === "authenticated") {
-    fetchVisualizers();
-  }
-}, [session, status]);
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchVisualizers();
+    }
+  }, [session, status]);
 
 
 
@@ -312,14 +308,14 @@ useEffect(() => {
           variant="light"
           style={{
             padding: "10px 15px", // Reduce el padding para ajustarse al texto
-            textAlign: "center", // Asegura que el texto estÃ© alineado al centro
-            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none", // Mantiene el tamaÃ±o adecuado
+            textAlign: "center",
+            display: pendingReports > 0 || pendingTemplates > 0 ? "inline-flex" : "none",
             maxWidth: "max-content", // Ajusta el ancho al contenido
-            whiteSpace: "pre-wrap", // Permite saltos de lÃ­nea si el contenido es muy largo
+            whiteSpace: "pre-wrap",
             margin: "20px auto", // Centra el badge y da margen con otros elementos
             justifyContent: "center", // Centra el contenido horizontalmente
             alignItems: "center", // Centra el contenido verticalmente
-            lineHeight: "normal", // Asegura que la altura de lÃ­nea no sea excesiva
+            lineHeight: "normal",
             height: "auto", // Permite que el `Badge` se adapte al contenido
           }}
         >
@@ -820,6 +816,20 @@ useEffect(() => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-pdi-indicadores">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
+              <Center><IconTarget size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Proyectos PDI</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
+                Ir a Mis Proyectos PDI
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -891,6 +901,20 @@ useEffect(() => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
                 Ir a Historial de Cambios
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-pdi-indicadores">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
+              <Center><IconTarget size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Proyectos PDI</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
+                Ir a Mis Proyectos PDI
               </Button>
             </Card>
           </Grid.Col>,
@@ -1138,7 +1162,7 @@ useEffect(() => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => router.push("/reports")}
+                onClick={() => router.push(userRole === "Responsable" ? "/responsible/reports" : "/reports")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1157,7 +1181,9 @@ useEffect(() => {
                       Plantillas y reportes
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Gestión plantillas y reportes.
+                      {userRole === "Responsable"
+                        ? "Accede a tus plantillas publicadas y reportes asignados."
+                        : "Gestión plantillas y reportes."}
                     </Text>
                   </Stack>
                   <Button variant="white" color="blue" radius="xl">
@@ -1167,41 +1193,41 @@ useEffect(() => {
               </Card>
             </Grid.Col>
 
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card
-                radius="xl"
-                p="xl"
-                onClick={() => router.push("/snies")}
-                style={{
-                  cursor: "pointer",
-                  minHeight: 260,
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
-                  boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
-                }}
-              >
-                <Stack justify="space-between" h="100%" align="center">
-                  <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconHexagon3d size={28} />
-                    </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
-                      SNIES
-                    </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Gestión SNIES.
-                    </Text>
-                  </Stack>
-                  <Button variant="white" color="teal" radius="xl">
-                    Abrir módulo
-                  </Button>
-                </Stack>
-              </Card>
-            </Grid.Col>
-
             {userRole !== "Responsable" && (
               <>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => router.push("/snies")}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
+                      boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconHexagon3d size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          SNIES
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          Gestión SNIES.
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="teal" radius="xl">
+                        Abrir módulo
+                      </Button>
+                    </Stack>
+                  </Card>
+                </Grid.Col>
+
                 <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                   <Card
                     radius="xl"
