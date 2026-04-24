@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack, NumberInput } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import "dayjs/locale/es";
@@ -24,6 +24,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [responsable, setResponsable] = useState("");
   const [responsableEmail, setResponsableEmail] = useState("");
   const [peso, setPeso] = useState("");
+  const [presupuesto, setPresupuesto] = useState<number | string>(0);
   const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,6 +38,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       setResponsable(selected.responsable ?? "");
       setResponsableEmail(selected.responsable_email ?? "");
       setPeso(String(selected.peso));
+      setPresupuesto(selected.presupuesto ?? 0);
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
       return;
@@ -47,6 +49,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     setResponsable("");
     setResponsableEmail("");
     setPeso("");
+    setPresupuesto(0);
     setFechaInicio(null);
     setFechaFin(null);
   }, [opened, selected]);
@@ -64,6 +67,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         nombre: nombre.trim(),
         alcance: selected?.alcance ?? "",
         peso: toNum(peso),
+        presupuesto: Number(presupuesto) || 0,
         proyecto_id: defaultProyectoId,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin: fechaFin ? fechaFin.toISOString() : null,
@@ -103,6 +107,16 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
           <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
         </Group>
         <TextInput label="Nombre" placeholder="Nombre de la accion" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <NumberInput
+          label="Presupuesto asignado (COP)"
+          placeholder="Ej: 5000000"
+          value={presupuesto}
+          onChange={setPresupuesto}
+          min={0}
+          thousandSeparator="."
+          decimalSeparator=","
+          prefix="$ "
+        />
       </Stack>
 
       <Group justify="flex-end" mt="lg">
