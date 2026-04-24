@@ -107,12 +107,12 @@ export default function PdiResumenSidebar() {
                     <Text size="xs" c="dimmed">{r.total} indicador{r.total !== 1 ? "es" : ""}</Text>
                   </div>
                   <Text size="xs" fw={700} c={
-                    r.avancePromedio >= 70 ? "green" : r.avancePromedio >= 40 ? "yellow" : "red"
+                    r.avancePromedio >= 90 ? "green" : r.avancePromedio >= 60 ? "yellow" : "red"
                   }>{r.avancePromedio}%</Text>
                 </Group>
                 <Progress
                   value={r.avancePromedio}
-                  color={r.avancePromedio >= 70 ? "green" : r.avancePromedio >= 40 ? "yellow" : "red"}
+                  color={r.avancePromedio >= 90 ? "green" : r.avancePromedio >= 60 ? "yellow" : "red"}
                   size="sm"
                   radius="xl"
                 />

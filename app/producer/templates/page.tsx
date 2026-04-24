@@ -539,7 +539,7 @@ if (field.multiple) {
           centered: true,
           children: (
             <Text size="sm">
-              ¿Estás seguro de que deseas cargar información en la plantilla <strong>"{publishedTemplate.name}"</strong>?
+              ¿Estás seguro de que deseas cargar información en la plantilla <strong>&quot;{publishedTemplate.name}&quot;</strong>?
               <br /><br />
               Asegúrate de que el archivo Excel tenga el formato correcto y contenga toda la información necesaria.
             </Text>

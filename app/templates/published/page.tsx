@@ -207,7 +207,7 @@ const PublishedTemplatesPage = () => {
       title: 'Confirmar eliminación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas eliminar la plantilla publicada "{templateToDelete?.name}"? 
+          ¿Estás seguro de que deseas eliminar la plantilla publicada &quot;{templateToDelete?.name}&quot;? 
           Esta acción no se puede deshacer y los productores ya no podrán acceder a ella.
         </Text>
       ),

@@ -56,7 +56,7 @@ jobs:
         sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
           cd ~/MIRO/Front_Miro || exit;
           if [ ! -d ".git" ]; then
-            git clone https://github.com/BrayanD117/Front_Miro.git
+            git clone https://github.com/BrayanD117/Front_Miro.git .
           else
             git fetch origin main;
             git reset --hard origin/main;

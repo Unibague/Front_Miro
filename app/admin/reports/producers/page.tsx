@@ -159,7 +159,7 @@ const ProducerReportPage = () => {
       title: 'Confirmar asignación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas asignar el informe "{selectedReport?.name}" 
+          ¿Estás seguro de que deseas asignar el informe &quot;{selectedReport?.name}&quot; 
           al período seleccionado? Los productores podrán acceder a este informe.
         </Text>
       ),

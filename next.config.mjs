@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* El repo tiene deuda de ESLint (hooks, comillas en JSX, etc.). next build no la bloquea; usar `npm run lint` para ir limpiando. */
-  eslint: {
-    ignoreDuringBuilds: true,
+  webpack: (config) => {
+    config.resolve.alias.canvas = false;
+    return config;
   },
 };
 
