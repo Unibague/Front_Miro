@@ -1200,108 +1200,116 @@ useEffect(() => {
               </Card>
             </Grid.Col>
 
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card
-                radius="xl"
-                p="xl"
-                onClick={() => router.push("/cna")}
-                style={{
-                  cursor: "pointer",
-                  minHeight: 260,
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
-                  boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
-                }}
-              >
-                <Stack justify="space-between" h="100%" align="center">
-                  <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconReport size={28} />
-                    </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
-                      CNA
-                    </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Gestión CNA.
-                    </Text>
-                  </Stack>
-                  <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}> 
-                    Abrir módulo
-                  </Button>
-                </Stack>
-              </Card>
-            </Grid.Col>
+            {userRole !== "Responsable" && (
+              <>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => router.push("/cna")}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
+                      boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconReport size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          CNA
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          Gestión CNA.
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}>
+                        Abrir módulo
+                      </Button>
+                    </Stack>
+                  </Card>
+                </Grid.Col>
 
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card
-                radius="xl"
-                p="xl"
-                onClick={() => setAvRcOpen(true)}
-                style={{
-                  cursor: "pointer",
-                  minHeight: 260,
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
-                  boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
-                }}
-              >
-                <Stack justify="space-between" h="100%" align="center">
-                  <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconCalendarMonth size={28} />
-                    </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
-                      Procesos de calidad MEN
-                    </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
-                      RC, AV y comunicaciones MEN (por facultad y programa).
-                    </Text>
-                  </Stack>
-                  <Button variant="white" color="green" radius="xl">
-                    Abrir módulo
-                  </Button>
-                </Stack>
-              </Card>
-            </Grid.Col>
+                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                  <Card
+                    radius="xl"
+                    p="xl"
+                    onClick={() => setAvRcOpen(true)}
+                    style={{
+                      cursor: "pointer",
+                      minHeight: 260,
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                      boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                    }}
+                  >
+                    <Stack justify="space-between" h="100%" align="center">
+                      <Stack align="center" gap="md">
+                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                          <IconCalendarMonth size={28} />
+                        </ThemeIcon>
+                        <Title order={2} c="white" ta="center">
+                          Procesos de calidad MEN
+                        </Title>
+                        <Text c="rgba(255,255,255,0.82)" ta="center">
+                          RC, AV y comunicaciones MEN (por facultad y programa).
+                        </Text>
+                      </Stack>
+                      <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>
+                        Abrir módulo
+                      </Button>
+                    </Stack>
+                  </Card>
+                </Grid.Col>
+              </>
+            )}
 
-           {/* <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card
-                radius="xl"
-                p="xl"
-                onClick={() => router.push("/pdi")}
-                style={{
-                  cursor: "pointer",
-                  minHeight: 260,
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #9d0c0c 0%, #c73a3a 100%)",
-                  boxShadow: "0 18px 45px rgba(101, 29, 29, 0.22)",
-                }}
-              >
-                <Stack justify="space-between" h="100%" align="center">
-                  <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconChartBarPopular size={28} />
-                    </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
-                      PDI
-                    </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Plan de Desarrollo Institucional.
-                    </Text>
+            {(userRole === "Responsable" || userRole === "Administrador") && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push(userRole === "Responsable" ? "/pdi/mis-indicadores" : "/pdi")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #9d0c0c 0%, #c73a3a 100%)",
+                    boxShadow: "0 18px 45px rgba(101, 29, 29, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconChartBarPopular size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        PDI
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        {userRole === "Responsable"
+                          ? "Seguimiento de tus proyectos, acciones e indicadores PDI."
+                          : "Plan de Desarrollo Institucional."}
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="violet" radius="xl">
+                      Abrir módulo
+                    </Button>
                   </Stack>
-                  <Button variant="white" color="violet" radius="xl">
-                    Abrir módulo
-                  </Button>
-                </Stack>
-              </Card>
-            </Grid.Col>*/}
+                </Card>
+              </Grid.Col>
+            )}
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : renderCnaCards()}
+            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : activeModule === "pdi" ? null : renderCnaCards()}
           </Grid>
         )}
         </Stack>
