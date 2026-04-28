@@ -47,6 +47,14 @@ interface RespuestaFormulario {
   respuestas: RespuestaCampo[];
   estado: "Borrador" | "Enviado";
   fecha_envio?: string | null;
+  word_filename: string;
+  word_url: string;
+  word_nombre_original: string;
+  documento_filename: string;
+  documento_url: string;
+  documento_nombre_original: string;
+  documento_mimetype: string;
+  estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
 }
 
 export default function FormulariosIndicadorPanel({
@@ -64,6 +72,7 @@ export default function FormulariosIndicadorPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [uploadingDoc, setUploadingDoc] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setLoading(true);
@@ -200,6 +209,69 @@ export default function FormulariosIndicadorPanel({
     }
   };
 
+  const handleUploadDoc = async (form: FormularioPDI, file: File | null) => {
+    if (!file) return;
+    let respActual = respuestas[form._id];
+    if (!respActual) {
+      try {
+        const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
+          respondido_por: email, corte: corteActivo, indicador_id: indicadorId,
+          respuestas: form.campos.map(c => ({
+            campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
+            valor_texto: "", nombre_original: "", filename: "", url: "",
+          })),
+          estado: "Borrador",
+        });
+        respActual = res.data;
+        setRespuestas(prev => ({ ...prev, [form._id]: res.data }));
+      } catch { return; }
+    }
+    setUploadingDoc(prev => ({ ...prev, [form._id]: true }));
+    try {
+      const fd = new FormData();
+      fd.append("archivo", file);
+      const res = await axios.post(
+        PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
+        fd, { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      setRespuestas(prev => {
+        const r = prev[form._id];
+        if (!r) return prev;
+        return { ...prev, [form._id]: { ...r, ...res.data } };
+      });
+      showNotification({ title: "Subido", message: "Documento de evidencia adjuntado", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo subir el documento", color: "red" });
+    } finally {
+      setUploadingDoc(prev => ({ ...prev, [form._id]: false }));
+    }
+  };
+
+  const handleDeleteDoc = async (form: FormularioPDI) => {
+    const resp = respuestas[form._id];
+    if (!resp) return;
+    try {
+      await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id));
+      setRespuestas(prev => {
+        const r = prev[form._id];
+        if (!r) return prev;
+        return {
+          ...prev,
+          [form._id]: {
+            ...r,
+            documento_filename: "",
+            documento_url: "",
+            documento_nombre_original: "",
+            documento_mimetype: "",
+          },
+        };
+      });
+      showNotification({ title: "Eliminado", message: "Documento eliminado", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+    }
+  };
+
   if (loading) return <Center py="xl"><Loader size="sm" /></Center>;
 
   if (formularios.length === 0) return (
@@ -309,6 +381,48 @@ export default function FormulariosIndicadorPanel({
                 );
               })}
             </Stack>
+
+            {/* Evidence document upload */}
+            <Paper withBorder radius="md" p="md" mt="md"
+              style={{ borderColor: "#7c3aed", background: "rgba(124,58,237,0.04)" }}>
+              <Group gap={6} mb={8}>
+                <ThemeIcon size={22} radius="md" color="violet" variant="light">
+                  <IconUpload size={12} />
+                </ThemeIcon>
+                <Text size="sm" fw={700}>Documento de evidencia</Text>
+                <Text size="xs" c="dimmed">PDF o Word</Text>
+              </Group>
+              {resp?.documento_url ? (
+                <Group gap={8}>
+                  <Button size="xs" variant="light" color="violet"
+                    leftSection={<IconExternalLink size={13} />}
+                    component="a" href={resp.documento_url} target="_blank">
+                    {resp.documento_nombre_original || resp.documento_filename || "Ver documento"}
+                  </Button>
+                  {resp?.estado_aval !== "Aprobado" && (
+                    <ActionIcon size="sm" variant="subtle" color="red"
+                      onClick={() => handleDeleteDoc(form)}>
+                      <IconTrash size={13} />
+                    </ActionIcon>
+                  )}
+                </Group>
+              ) : (
+                <FileButton
+                  onChange={file => handleUploadDoc(form, file)}
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                >
+                  {props => (
+                    <Button size="xs" variant="light" color="violet"
+                      leftSection={<IconUpload size={13} />}
+                      loading={uploadingDoc[form._id]}
+                      disabled={resp?.estado_aval === "Aprobado"}
+                      {...props}>
+                      Subir documento
+                    </Button>
+                  )}
+                </FileButton>
+              )}
+            </Paper>
 
             {!enviado && (
               <Group justify="flex-end" mt="lg" gap={8}>

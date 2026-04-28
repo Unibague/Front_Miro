@@ -197,9 +197,9 @@ export default function DashboardPage() {
 
                   {/* Contadores estructura */}
                   <SimpleGrid cols={4} spacing="xl" style={{ flex: 1 }}>
-                    <EstructuraCol label="Macros"      total={resumen.estructura.macroproyectos} icon={<IconChartDonut3 size={16} />} />
+                    <EstructuraCol label="Macroproyectos"      total={resumen.estructura.macroproyectos} icon={<IconChartDonut3 size={16} />} />
                     <EstructuraCol label="Proyectos"   total={resumen.estructura.proyectos}      icon={<IconListCheck size={16} />} />
-                    <EstructuraCol label="Acciones"    total={resumen.estructura.acciones}       icon={<IconBulb size={16} />} />
+                    <EstructuraCol label="Acciones Estratégicas"    total={resumen.estructura.acciones}       icon={<IconBulb size={16} />} />
                     <EstructuraCol label="Indicadores" total={resumen.estructura.indicadores}    icon={<IconTarget size={16} />} />
                   </SimpleGrid>
 

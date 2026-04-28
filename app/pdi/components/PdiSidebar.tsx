@@ -57,7 +57,7 @@ export default function PdiSidebar() {
       <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>FORMULARIOS</Text>
 
       <NavLink
-        label="Formularios PDI"
+        label="Avances y evidencias"
         leftSection={<IconForms size={16} />}
         active={pathname.startsWith("/pdi/formularios")}
         color="teal"

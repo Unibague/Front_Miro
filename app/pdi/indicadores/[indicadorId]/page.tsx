@@ -936,7 +936,33 @@ function LiderRevisionPanelV2({
                     </Group>
                   </Group>
 
-               
+                  <Paper withBorder radius="md" p="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                    <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                      <div>
+                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencia adjunta</Text>
+                        <Text size="sm" fw={600} mt={3}>
+                          {r.documento_nombre_original || r.documento_filename || "Sin evidencia adjunta"}
+                        </Text>
+                        <Text size="xs" c="dimmed" mt={2}>Archivo Word o PDF enviado por el responsable</Text>
+                      </div>
+                      {r.documento_url ? (
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="violet"
+                          component="a"
+                          href={r.documento_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          leftSection={<IconFileTypePdf size={13} />}
+                        >
+                          Abrir evidencia
+                        </Button>
+                      ) : (
+                        <Badge color="gray" variant="light">Sin archivo</Badge>
+                      )}
+                    </Group>
+                  </Paper>
                 </Paper>
               </div>
 
