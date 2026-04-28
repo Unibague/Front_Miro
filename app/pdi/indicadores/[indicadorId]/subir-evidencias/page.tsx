@@ -434,6 +434,7 @@ export default function SubirEvidenciasPage() {
   const hayPeriodosEditables = indicador.periodos.some((p: Periodo) =>
     esPeriodoEditable(p.periodo, cortesVigentes)
   );
+  
   const puedeEnviarTodo =
     hayPeriodosEditables &&
     periodosEditablesSinAvance.length === 0 &&
