@@ -139,7 +139,7 @@ export default function PdiGraficas() {
 
   const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : 0;
 
-  // Solo recalculamos el avance del macro como promedio simple de los proyectos almacenados en BD
+  // Solo recalculamos el avance del macro como promedio simple de los proyectos almacenadosDB
   // (los avances de proyectos y acciones ya son correctos según el backend)
   const macroConAvance = useMemo(
     () => macros.find((m) => m._id === selectedMacro) ?? null,

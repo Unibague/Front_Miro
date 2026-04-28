@@ -37,13 +37,18 @@ const SUBTIPOS_RC = [
     titulo: "Reforma curricular",
     desc: "Tiene resolución y fecha de vencimiento, pero el resto de fechas quedan en blanco y son editables.",
   },
+  {
+    key: "Registro calificado de oficio",
+    titulo: "Registro calificado de oficio",
+    desc: "Resolución otorgada de oficio (sin trámite completo). Carga la resolución y datos al cierre, o abre este proceso si no se registró al cerrar la AV.",
+  },
 ];
 
 const SUBTIPOS_AV = [
   {
-    key: "Primera vez",
-    titulo: "Primera vez",
-    desc: "Primera acreditación. Sin resolución ni fecha de vencimiento — todas las fechas en blanco y editables.",
+    key: "Nuevo",
+    titulo: "Nuevo",
+    desc: "Primera acreditación (mismo criterio que «Nuevo» en RC). Sin resolución ni fecha de vencimiento — fechas en blanco y editables.",
   },
   {
     key: "Renovación",
@@ -75,7 +80,7 @@ export type AgregarProcesoPrefill = {
   soloTipo?: boolean;
   /** Solo registrar el programa en el sistema (sin proceso RC/AV). */
   soloCrearPrograma?: boolean;
-  /** Elegir RC (subtipo Nuevo) o AV (Primera vez) sobre un programa que aún no tenga ese proceso activo. */
+  /** Elegir RC o AV (subtipo Nuevo) sobre un programa que aún no tenga ese proceso activo. */
   modoProcesoPrimeraVezTipo?: boolean;
   /**
    * Datos de resolución congelados en la alerta (proceso que cerró).
@@ -110,7 +115,7 @@ export default function AgregarProcesoModal({
 
   /* ── Navegación de pasos ── */
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  /** Sub-pasos del flujo «primer proceso RC o AV» (alertas): 1 = elegir tipo, 2 = elegir programa */
+  /** Sub-pasos del flujo «nuevo proceso RC o AV» (alertas): 1 = elegir tipo, 2 = elegir programa */
   const [pvStep, setPvStep] = useState<1 | 2>(1);
   const [tipo, setTipo] = useState<"RC" | "AV" | null>(null);
   const [subtipo, setSubtipo] = useState<string | null>(null);
@@ -298,8 +303,8 @@ export default function AgregarProcesoModal({
 
     const inlineCrearPrograma =
       !esPrimeraVezElegirTipoFlujo &&
-      ((subtipo === "Nuevo" && tipo === "RC") ||
-        (subtipo === "Primera vez" && tipo === "AV"));
+      subtipo === "Nuevo" &&
+      (tipo === "RC" || tipo === "AV");
 
     if (inlineCrearPrograma) {
       if (!nombre.trim()) { setError("El nombre del programa es obligatorio."); return; }
@@ -410,7 +415,7 @@ export default function AgregarProcesoModal({
   });
 
   const listaSubtiposRC = excluirSubtipoNuevo ? SUBTIPOS_RC.filter((s) => s.key !== "Nuevo") : SUBTIPOS_RC;
-  const listaSubtiposAV = excluirSubtipoNuevo ? SUBTIPOS_AV.filter((s) => s.key !== "Primera vez") : SUBTIPOS_AV;
+  const listaSubtiposAV = excluirSubtipoNuevo ? SUBTIPOS_AV.filter((s) => s.key !== "Nuevo") : SUBTIPOS_AV;
 
   const programaSel = programaId ? programas.find(p => p._id === programaId) : null;
   const programaBloqueadoPorPrefill = !!(
@@ -423,13 +428,13 @@ export default function AgregarProcesoModal({
     : undefined;
 
   const mostrarFormularioProgramaNuevo =
-    subtipo === "Nuevo" ||
-    (subtipo === "Primera vez" && tipo === "AV" && !esPrimeraVezElegirTipoFlujo);
+    subtipo === "Nuevo" &&
+    (tipo === "RC" || (tipo === "AV" && !esPrimeraVezElegirTipoFlujo));
 
   const tituloModal = esSoloCrearPrograma
     ? "Crear programa"
     : esPrimeraVezElegirTipoFlujo
-      ? "Primer proceso RC o AV"
+      ? "Nuevo proceso RC o AV"
       : "Agregar proceso";
 
   const programasListaPrimeraVez =
@@ -460,7 +465,7 @@ export default function AgregarProcesoModal({
         {esSoloCrearPrograma ? (
           <>
             <Text size="sm" c="dimmed">
-              Registra los datos del programa. No se crea ningún proceso RC/AV; podrás iniciar el primero después con «Primer proceso RC o AV» o con el flujo completo de agregar proceso.
+              Registra los datos del programa. No se crea ningún proceso RC/AV; podrás iniciar el primero después con «Nuevo proceso RC o AV» o con el flujo completo de agregar proceso.
             </Text>
             <Divider label="Datos del programa" labelPosition="left" />
             <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
@@ -492,7 +497,7 @@ export default function AgregarProcesoModal({
                 value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
               <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                 value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
-              <TextInput label="Admisión estudiantes (número)" type="number" placeholder="Ej: 250"
+              <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"
                 value={numEstud} onChange={e => setNumEstud(e.currentTarget.value)} />
             </SimpleGrid>
             {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
@@ -506,7 +511,7 @@ export default function AgregarProcesoModal({
             {pvStep === 1 && (
               <>
                 <Text size="sm" c="dimmed" mb="xs">
-                  Indica si el primer proceso que vas a abrir es Registro calificado (RC, subtipo Nuevo — sin resolución) o Acreditación voluntaria (AV, Primera vez). Solo se listan programas que aún no tienen un proceso activo de ese tipo (por ejemplo, si ya hay RC Nuevo, puedes crear AV Primera vez en el mismo programa).
+                  Indica si el primer proceso es Registro calificado o Acreditación voluntaria, ambos en subtipo <strong>Nuevo</strong> (sin resolución). Solo se listan programas que aún no tienen un proceso activo de ese tipo (p. ej. con RC Nuevo puedes crear AV Nuevo en el mismo programa).
                 </Text>
                 <SimpleGrid cols={2} spacing="md">
                   {(["RC", "AV"] as const).map(t => (
@@ -518,13 +523,13 @@ export default function AgregarProcesoModal({
                       style={{ cursor: "pointer", borderColor: tipo === t ? "#228be6" : undefined, borderWidth: 2, textAlign: "center" }}
                       onClick={() => {
                         setTipo(t);
-                        setSubtipo(t === "RC" ? "Nuevo" : "Primera vez");
+                        setSubtipo("Nuevo");
                         setProgramaId(null);
                         setPvStep(2);
                       }}
                     >
                       <Badge color={t === "RC" ? "blue" : "violet"} size="xl" variant="light" mb="sm">{t}</Badge>
-                      <Text fw={700} size="sm">{t === "RC" ? "Registro calificado — Nuevo" : "Acreditación voluntaria — Primera vez"}</Text>
+                      <Text fw={700} size="sm">{t === "RC" ? "Registro calificado — Nuevo" : "Acreditación voluntaria — Nuevo"}</Text>
                       <Text size="xs" c="dimmed" mt={4}>
                         {t === "RC" ? "Sin resolución; fechas en blanco." : "Sin resolución; fechas en blanco."}
                       </Text>
@@ -606,7 +611,7 @@ export default function AgregarProcesoModal({
                 <Badge color={t === "RC" ? "blue" : "violet"} size="xl" variant="light" mb="sm">{t}</Badge>
                 <Text fw={700} size="sm">{t === "RC" ? "Registro Calificado" : "Acreditación Voluntaria"}</Text>
                 <Text size="xs" c="dimmed" mt={4}>
-                  {t === "RC" ? "5 subtipos disponibles" : "3 subtipos disponibles"}
+                  {t === "RC" ? "6 subtipos disponibles" : "3 subtipos disponibles"}
                 </Text>
               </Paper>
             ))}
@@ -654,7 +659,7 @@ export default function AgregarProcesoModal({
         {step === 3 && subtipo && (
           <>
             <Stack gap="md">
-            {/* RC Nuevo o AV Primera vez (flujo normal): crear programa y proceso */}
+            {/* RC Nuevo o AV Nuevo (flujo normal): crear programa y proceso */}
             {mostrarFormularioProgramaNuevo && (
               <>
                 <Divider label="Datos del programa" labelPosition="left" />
@@ -687,13 +692,13 @@ export default function AgregarProcesoModal({
                     value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
                   <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                     value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
-                  <TextInput label="Admisión estudiantes (número)" type="number" placeholder="Ej: 250"
+                  <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"
                     value={numEstud} onChange={e => setNumEstud(e.currentTarget.value)} />
                 </SimpleGrid>
                 <Text size="xs" c="dimmed" mt={-4}>
-                  {subtipo === "Nuevo"
-                    ? "Se creará el programa y el proceso RC sin resolución ni fechas. Podrás editar las fechas después."
-                    : "Se creará el programa y el proceso AV «Primera vez» sin resolución. Todas las fechas quedan en blanco y son editables."}
+                  {tipo === "RC"
+                    ? "Se creará el programa y el proceso RC (Nuevo) sin resolución ni fechas. Podrás editar las fechas después."
+                    : "Se creará el programa y el proceso AV (Nuevo) sin resolución. Todas las fechas quedan en blanco y son editables."}
                 </Text>
               </>
             )}
@@ -800,9 +805,9 @@ export default function AgregarProcesoModal({
               </>
             )}
 
-            {(subtipo === "Primera vez" && mostrarFormularioProgramaNuevo) && (
+            {(subtipo === "Nuevo" && tipo === "AV" && mostrarFormularioProgramaNuevo) && (
               <Text size="xs" c="dimmed" mt={4}>
-                AV Primera vez: sin resolución ni fecha de vencimiento. Todas las fechas quedan en blanco y son editables manualmente.
+                AV Nuevo: sin resolución ni fecha de vencimiento. Todas las fechas quedan en blanco y son editables manualmente.
               </Text>
             )}
 

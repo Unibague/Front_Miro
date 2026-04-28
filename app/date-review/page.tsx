@@ -7,7 +7,7 @@ import {
   ActionIcon, Tooltip,
 } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import {
   IconChartBar,
@@ -18,6 +18,7 @@ import {
   IconPlus,
   IconList,
   IconArchive,
+  IconMessageCircle,
 } from "@tabler/icons-react";
 
 import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcessReminderRecord, ProcesoRow, BarRow, PQR } from "./types";
@@ -36,9 +37,9 @@ import BarTable from "./components/BarTable";
 import ProcesoTable from "./components/ProcesoTable";
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
 import AgregarProcesoModal, { type AgregarProcesoPrefill } from "./components/AgregarProcesoModal";
-import AgregarPQRModal from "./components/AgregarPQRModal";
-import PQRListModal from "./components/PQRListModal";
-import PQRHistorialModal from "./components/PQRHistorialModal";
+import PQRAgregarForm from "./components/PQRAgregarForm";
+import PQRActivosView from "./components/PQRActivosView";
+import PQRHistorialView from "./components/PQRHistorialView";
 
 /* ── Helper: renderiza la fecha subida de un doc ── */
 const fmtFecha = (iso?: string | null) =>
@@ -198,9 +199,13 @@ function primeraActividadEnFase(fase: Phase | undefined): string | null {
   return fase.actividades[fase.actividades.length - 1]?.nombre ?? null;
 }
 
+type DateReviewModulo = "procesos" | "comunicaciones";
+type PqrSeccion = "agregar" | "activos" | "historial";
+
 const DateReviewPage = () => {
   const { userRole } = useRole();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [facultad, setFacultad]             = useState<string>("Todos");
   const [programa, setPrograma]             = useState<string>("Todos");
@@ -257,11 +262,9 @@ const DateReviewPage = () => {
   /* ── Ventanas de gestión ── */
   const [agregarProcesoPrefill, setAgregarProcesoPrefill] = useState<AgregarProcesoPrefill | null>(null);
 
-  /* ── PQR ── */
+  const [dateReviewModulo, setDateReviewModulo] = useState<DateReviewModulo>("procesos");
+  const [pqrSeccion, setPqrSeccion]         = useState<PqrSeccion>("activos");
   const [pqrs, setPqrs]                     = useState<PQR[]>([]);
-  const [agregarPQROpen, setAgregarPQROpen] = useState(false);
-  const [listaPQROpen, setListaPQROpen]     = useState(false);
-  const [historialPQROpen, setHistorialPQROpen] = useState(false);
 
   const loadingFilters = loadingFacultades || loadingProgramas || loadingProcesos;
 
@@ -276,7 +279,7 @@ const DateReviewPage = () => {
 
   const handlePQRCreado = (pqr: PQR) => {
     setPqrs(prev => [pqr, ...prev]);
-    setListaPQROpen(true);
+    setPqrSeccion("activos");
   };
 
   const handlePQRActualizado = (updated: PQR) =>
@@ -289,12 +292,19 @@ const DateReviewPage = () => {
     } catch (e) { console.error(e); }
   };
 
-  const handlePQREliminar = async (id: string) => {
-    try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/pqr/${id}`);
-      setPqrs(prev => prev.filter(p => p._id !== id));
-    } catch (e) { console.error(e); }
+  const irADateReviewModulo = (m: DateReviewModulo) => {
+    setDateReviewModulo(m);
+    if (m === "comunicaciones") {
+      router.replace("/date-review?modulo=comunicaciones", { scroll: false });
+    } else {
+      router.replace("/date-review", { scroll: false });
+    }
   };
+
+  useEffect(() => {
+    if (!searchParams) return;
+    setDateReviewModulo(searchParams.get("modulo") === "comunicaciones" ? "comunicaciones" : "procesos");
+  }, [searchParams]);
 
   /* ── Carga inicial de datos ── */
   useEffect(() => {
@@ -339,9 +349,8 @@ const DateReviewPage = () => {
       setSubtipoFiltro("Todos");
       setAgregarProcesoOpen(false);
       setHistorialDetalle(null);
-      setListaPQROpen(false);
-      setAgregarPQROpen(false);
-      setHistorialPQROpen(false);
+      setDateReviewModulo("procesos");
+      setPqrSeccion("activos");
     };
     window.addEventListener("date-review-reset", onReset);
     return () => window.removeEventListener("date-review-reset", onReset);
@@ -367,6 +376,7 @@ const DateReviewPage = () => {
     setTipoProceso("Todos");
     setSubtipoFiltro("Todos");
     setActiveSection("main");
+    setDateReviewModulo("procesos");
     window.history.replaceState({}, "", window.location.pathname);
   }, [loadingFilters, programas, facultades, router]);
 
@@ -627,11 +637,32 @@ const DateReviewPage = () => {
         return true;
       })
       .sort((a, b) => {
+        const faseA = Number(a.proc.fase_actual) || 0;
+        const faseB = Number(b.proc.fase_actual) || 0;
+        const enProcesoA = faseA > 0;
+        const enProcesoB = faseB > 0;
+        if (enProcesoA !== enProcesoB) return enProcesoA ? -1 : 1;
+        const tInicio = (p: { fecha_inicio: string | null }) => {
+          const s = p.fecha_inicio;
+          if (!s) return 0;
+          const x = new Date(s.includes("T") ? s : `${s}T12:00:00`).getTime();
+          return Number.isNaN(x) ? 0 : x;
+        };
+        if (enProcesoA) {
+          const di = tInicio(b.proc) - tInicio(a.proc);
+          if (di !== 0) return di;
+        } else {
+          const ai = tInicio(a.proc);
+          const bi = tInicio(b.proc);
+          if (ai !== bi) {
+            if (ai === 0) return 1;
+            if (bi === 0) return -1;
+            return ai - bi;
+          }
+        }
         const n = a.prog.nombre.localeCompare(b.prog.nombre, "es");
         if (n !== 0) return n;
-        const ta = a.proc.tipo_proceso === "RC" ? 0 : 1;
-        const tb = b.proc.tipo_proceso === "RC" ? 0 : 1;
-        return ta - tb;
+        return a.proc.tipo_proceso === "RC" ? -1 : 1;
       });
   }, [procesos, programas, remFacultad, remPrograma, remNivel, remTipoProceso, remSubtipo, facultades]);
 
@@ -642,6 +673,37 @@ const DateReviewPage = () => {
       return !procesos.some((p) => p.program_code === r.program_code && p.tipo_proceso === r.tipo_proceso);
     });
   }, [remindersFiltradosTipo, procesos, remSubtipo]);
+
+  /** Alertas de cierre: más recientes primero (última creada/modificada). */
+  const remindersOrdenados = useMemo(
+    () =>
+      [...remindersSinActivoMismoTipo].sort((a, b) => {
+        const ta = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const tb = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return tb - ta;
+      }),
+    [remindersSinActivoMismoTipo],
+  );
+
+  const pqrsOrdenados = useMemo(
+    () =>
+      [...pqrs].sort((a, b) => {
+        const ta = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const tb = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return tb - ta;
+      }),
+    [pqrs],
+  );
+
+  const historialProcesosOrdenado = useMemo(
+    () =>
+      [...historialRecords].sort((a, b) => {
+        const ta = new Date(a.cerrado_en || 0).getTime();
+        const tb = new Date(b.cerrado_en || 0).getTime();
+        return tb - ta;
+      }),
+    [historialRecords],
+  );
 
   const procesoRows: ProcesoRow[] = useMemo(() => {
     return programasFiltradosCompleto.map((p) => {
@@ -724,6 +786,8 @@ const DateReviewPage = () => {
   const irAGestionarProcesoDesdeModal = (args: { nombrePrograma: string; tipo: "RC" | "AV" }) => {
     setAgregarProcesoOpen(false);
     setAgregarProcesoPrefill(null);
+    setDateReviewModulo("procesos");
+    router.replace("/date-review", { scroll: false });
     setActiveSection("main");
     const progObj = programas.find((p) => p.nombre === args.nombrePrograma);
     const facObj = progObj ? facultades.find((f) => f.dep_code === progObj.dep_code_facultad) : null;
@@ -782,18 +846,22 @@ const DateReviewPage = () => {
     label: { whiteSpace: "normal" as const, textAlign: "center" as const, fontWeight: 600 },
   });
 
-  const pqrBtnStyles = {
+  const pqrNavBtnStyles = (esActivo: boolean) => ({
     root: {
       minHeight: 48,
       paddingBlock: 10,
       fontWeight: 600,
       fontSize: 12,
       justifyContent: "center" as const,
-      border: "1px solid var(--mantine-color-teal-2)",
+      border: esActivo
+        ? "1px solid var(--mantine-color-teal-5)"
+        : "1px solid var(--mantine-color-teal-2)",
+      backgroundColor: esActivo ? "var(--mantine-color-teal-light)" : "var(--mantine-color-body)",
+      color: esActivo ? "var(--mantine-color-teal-8)" : undefined,
       "&:hover": { backgroundColor: "var(--mantine-color-teal-light)" },
     },
     label: { whiteSpace: "normal" as const, textAlign: "center" as const },
-  };
+  });
 
   /** Altura útil del header (`.inner` del Navbar); el sidebar empieza debajo para que el borde vertical no quede “cortado” por el navbar. */
   const sidebarTopPx = 56;
@@ -832,60 +900,103 @@ const DateReviewPage = () => {
           <Stack gap={8} style={{ flex: 1, minHeight: 0, overflow: "auto" }} align="stretch">
             {!sidebarCollapsed ? (
               <>
-                <Stack gap={12} pt={8} mt={2}>
-                  <Text size="xs" fw={700} c="blue" tt="uppercase" ta="center" style={{ letterSpacing: 0.6 }}>
-                    Procesos
-                  </Text>
-                  <Stack gap={12}>
+                {dateReviewModulo === "procesos" && (
+                  <Stack gap={12} pt={8} mt={2}>
+                    <Text size="xs" fw={700} c="blue" tt="uppercase" ta="center" style={{ letterSpacing: 0.4 }}>
+                      Procesos de calidad MEN
+                    </Text>
+                    <Stack gap={12}>
+                      <Button
+                        variant="default"
+                        size="md"
+                        fullWidth
+                        onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                        styles={navBtnStyles(activeSection === "main")}
+                      >
+                        Tablero de<br />seguimiento
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="md"
+                        fullWidth
+                        onClick={() => setActiveSection("alertas")}
+                        styles={navBtnStyles(activeSection === "alertas")}
+                      >
+                        Alerta<br />procesos
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="md"
+                        fullWidth
+                        onClick={() => setActiveSection("historial")}
+                        styles={navBtnStyles(activeSection === "historial")}
+                      >
+                        Historial<br />procesos
+                      </Button>
+                    </Stack>
                     <Button
-                      variant="default"
-                      size="md"
+                      variant="subtle"
+                      color="teal"
+                      size="xs"
                       fullWidth
-                      onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
-                      styles={navBtnStyles(activeSection === "main")}
+                      mt={4}
+                      onClick={() => { irADateReviewModulo("comunicaciones"); setPqrSeccion("activos"); }}
                     >
-                      Estadísticas<br />y tablero
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="md"
-                      fullWidth
-                      onClick={() => setActiveSection("alertas")}
-                      styles={navBtnStyles(activeSection === "alertas")}
-                    >
-                      Alerta<br />procesos
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="md"
-                      fullWidth
-                      onClick={() => setActiveSection("historial")}
-                      styles={navBtnStyles(activeSection === "historial")}
-                    >
-                      Historial<br />procesos
+                      Comunicaciones MEN
                     </Button>
                   </Stack>
-                </Stack>
+                )}
 
-                <Stack gap={8} pb={8} mt={4}>
-                  <Text size="xs" fw={700} c="teal" tt="uppercase" ta="center" style={{ letterSpacing: 0.6 }}>
-                    PQR
-                  </Text>
-                  <Button variant="default" color="teal" fullWidth onClick={() => setAgregarPQROpen(true)} styles={pqrBtnStyles}>
-                    + Agregar PQR
-                  </Button>
-                  <Button variant="default" color="teal" fullWidth onClick={() => setListaPQROpen(true)} styles={pqrBtnStyles}>
-                    PQRs activos
-                    {pqrs.filter((p) => !p.cerrado).length > 0 && (
-                      <Badge size="xs" color="teal" variant="filled" ml={6}>
-                        {pqrs.filter((p) => !p.cerrado).length}
-                      </Badge>
-                    )}
-                  </Button>
-                  <Button variant="default" color="teal" fullWidth onClick={() => setHistorialPQROpen(true)} styles={pqrBtnStyles}>
-                    Historial PQR
-                  </Button>
-                </Stack>
+                {dateReviewModulo === "comunicaciones" && (
+                  <Stack gap={10} pt={8} mt={2} pb={8}>
+                    <Text size="xs" fw={700} c="teal" tt="uppercase" ta="center" style={{ letterSpacing: 0.6 }}>
+                      Comunicaciones MEN
+                    </Text>
+                    <Button
+                      variant="default"
+                      color="teal"
+                      fullWidth
+                      onClick={() => setPqrSeccion("agregar")}
+                      styles={pqrNavBtnStyles(pqrSeccion === "agregar")}
+                    >
+                      + Agregar PQR
+                    </Button>
+                    <Button
+                      variant="default"
+                      color="teal"
+                      fullWidth
+                      onClick={() => setPqrSeccion("activos")}
+                      styles={pqrNavBtnStyles(pqrSeccion === "activos")}
+                    >
+                      PQRs activos
+                      {pqrs.filter((p) => !p.cerrado).length > 0 && (
+                        <Badge size="xs" color="teal" variant="filled" ml={6}>
+                          {pqrs.filter((p) => !p.cerrado).length}
+                        </Badge>
+                      )}
+                    </Button>
+                    <Button
+                      variant="default"
+                      color="teal"
+                      fullWidth
+                      onClick={() => setPqrSeccion("historial")}
+                      styles={pqrNavBtnStyles(pqrSeccion === "historial")}
+                    >
+                      Historial PQR
+                    </Button>
+                    <Button
+                      variant="subtle"
+                      color="blue"
+                      size="xs"
+                      fullWidth
+                      mt={6}
+                      onClick={() => irADateReviewModulo("procesos")}
+                      styles={{ label: { whiteSpace: "normal", lineHeight: 1.3, textAlign: "center" } }}
+                    >
+                      Gestión de procesos MEN
+                    </Button>
+                  </Stack>
+                )}
               </>
             ) : (
               <Box
@@ -900,55 +1011,89 @@ const DateReviewPage = () => {
                   gap: 20,
                 }}
               >
-                <Stack gap={14} align="center">
-                  <Tooltip label="Estadísticas y tablero" position="right" withArrow>
-                    <ActionIcon
-                      size="xl"
-                      variant={activeSection === "main" ? "filled" : "default"}
-                      color="blue"
-                      onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
-                    >
-                      <IconChartBar size={20} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Alertas de procesos" position="right" withArrow>
-                    <ActionIcon
-                      size="xl"
-                      variant={activeSection === "alertas" ? "filled" : "default"}
-                      color="blue"
-                      onClick={() => setActiveSection("alertas")}
-                    >
-                      <IconBellRinging size={20} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Historial de procesos" position="right" withArrow>
-                    <ActionIcon
-                      size="xl"
-                      variant={activeSection === "historial" ? "filled" : "default"}
-                      color="blue"
-                      onClick={() => setActiveSection("historial")}
-                    >
-                      <IconHistory size={20} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                </Stack>
-                <Stack gap={14} align="center">
-                  <Tooltip label="Agregar PQR" position="right" withArrow>
-                    <ActionIcon size="lg" variant="default" color="teal" onClick={() => setAgregarPQROpen(true)}>
-                      <IconPlus size={18} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="PQRs activos" position="right" withArrow>
-                    <ActionIcon size="lg" variant="default" color="teal" onClick={() => setListaPQROpen(true)}>
-                      <IconList size={18} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Historial PQR" position="right" withArrow>
-                    <ActionIcon size="lg" variant="default" color="teal" onClick={() => setHistorialPQROpen(true)}>
-                      <IconArchive size={18} stroke={1.5} />
-                    </ActionIcon>
-                  </Tooltip>
-                </Stack>
+                {dateReviewModulo === "procesos" && (
+                  <Stack gap={14} align="center">
+                    <Tooltip label="Tablero de seguimiento" position="right" withArrow>
+                      <ActionIcon
+                        size="xl"
+                        variant={activeSection === "main" ? "filled" : "default"}
+                        color="blue"
+                        onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                      >
+                        <IconChartBar size={20} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Alertas de procesos" position="right" withArrow>
+                      <ActionIcon
+                        size="xl"
+                        variant={activeSection === "alertas" ? "filled" : "default"}
+                        color="blue"
+                        onClick={() => setActiveSection("alertas")}
+                      >
+                        <IconBellRinging size={20} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Historial de procesos" position="right" withArrow>
+                      <ActionIcon
+                        size="xl"
+                        variant={activeSection === "historial" ? "filled" : "default"}
+                        color="blue"
+                        onClick={() => setActiveSection("historial")}
+                      >
+                        <IconHistory size={20} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Comunicaciones MEN (PQR)" position="right" withArrow>
+                      <ActionIcon
+                        size="lg"
+                        variant="default"
+                        color="teal"
+                        onClick={() => { irADateReviewModulo("comunicaciones"); setPqrSeccion("activos"); }}
+                      >
+                        <IconMessageCircle size={18} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Stack>
+                )}
+                {dateReviewModulo === "comunicaciones" && (
+                  <Stack gap={14} align="center">
+                    <Tooltip label="Agregar PQR" position="right" withArrow>
+                      <ActionIcon
+                        size="lg"
+                        variant={pqrSeccion === "agregar" ? "filled" : "default"}
+                        color="teal"
+                        onClick={() => setPqrSeccion("agregar")}
+                      >
+                        <IconPlus size={18} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="PQRs activos" position="right" withArrow>
+                      <ActionIcon
+                        size="lg"
+                        variant={pqrSeccion === "activos" ? "filled" : "default"}
+                        color="teal"
+                        onClick={() => setPqrSeccion("activos")}
+                      >
+                        <IconList size={18} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Historial PQR" position="right" withArrow>
+                      <ActionIcon
+                        size="lg"
+                        variant={pqrSeccion === "historial" ? "filled" : "default"}
+                        color="teal"
+                        onClick={() => setPqrSeccion("historial")}
+                      >
+                        <IconArchive size={18} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Volver a gestión de procesos" position="right" withArrow>
+                      <ActionIcon size="lg" variant="default" color="blue" onClick={() => irADateReviewModulo("procesos")}>
+                        <IconChartBar size={18} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Stack>
+                )}
               </Box>
             )}
           </Stack>
@@ -1016,43 +1161,37 @@ const DateReviewPage = () => {
         prefillDesdeRecordatorio={agregarProcesoPrefill}
       />
 
-      {/* ── Modales PQR ── */}
-      <AgregarPQRModal
-        opened={agregarPQROpen}
-        onClose={() => setAgregarPQROpen(false)}
-        programas={programas}
-        onCreado={handlePQRCreado}
-      />
-      <PQRListModal
-        opened={listaPQROpen}
-        onClose={() => setListaPQROpen(false)}
-        pqrs={pqrs}
-        programas={programas}
-        onUpdate={handlePQRActualizado}
-        onCerrar={handlePQRCerrado}
-      />
-      <PQRHistorialModal
-        opened={historialPQROpen}
-        onClose={() => setHistorialPQROpen(false)}
-        pqrs={pqrs}
-        programas={programas}
-      />
-
       {/* ── CONTENIDO PRINCIPAL ── */}
       <div style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, padding: "20px", paddingTop: "28px", minHeight: "calc(100vh - 194px)" }}>
         {userRole === "Administrador" && (
           <>
-            {activeSection === "main" && !loadingFilters && programa !== "Todos" && (
-              <Paper withBorder radius="md" p="sm" mb="md" style={{ backgroundColor: "#f8fafc" }}>
-                <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                  <Text size="sm" fw={600}>{programa}</Text>
-                  <Button variant="subtle" size="sm" onClick={() => { setPrograma("Todos"); setNivelAcademico("Todos"); }}>
-                    ← Ver tablero con filtros
-                  </Button>
-                </Group>
-              </Paper>
+            {dateReviewModulo === "comunicaciones" && (
+              <Stack gap="md">
+                <Box>
+                  <Title order={3}>Comunicaciones MEN</Title>
+                  <Text size="sm" c="dimmed" mt={4}>Gestión de PQR ante el MEN</Text>
+                </Box>
+                <Paper withBorder radius="md" p="md" style={{ overflow: "auto" }}>
+                  {pqrSeccion === "agregar" && (
+                    <PQRAgregarForm programas={programas} onCreado={handlePQRCreado} showHeader />
+                  )}
+                  {pqrSeccion === "activos" && (
+                    <PQRActivosView
+                      pqrs={pqrsOrdenados}
+                      programas={programas}
+                      onUpdate={handlePQRActualizado}
+                      onCerrar={(id) => { void handlePQRCerrado(id); }}
+                    />
+                  )}
+                  {pqrSeccion === "historial" && (
+                    <PQRHistorialView pqrs={pqrsOrdenados} programas={programas} />
+                  )}
+                </Paper>
+              </Stack>
             )}
 
+            {dateReviewModulo === "procesos" && (
+            <>
             {activeSection === "main" && !loadingFilters && programa === "Todos" && (
               <Paper withBorder radius="md" p="sm" mb="md">
                 <Flex gap={8} align="flex-end" wrap="wrap" w="100%" style={{ minWidth: 0 }}>
@@ -1121,10 +1260,32 @@ const DateReviewPage = () => {
               if (loadingFases) return <Loader size="sm" mx="auto" display="block" my="lg" />;
               return (
                 <>
-                  <Group justify="center" gap="xs" mb="md">
-                    <Title order={4} ta="center">{progObj.nombre}</Title>
-                    {progObj.codigo_snies && <Text size="sm" c="dimmed" fw={500}>SNIES: {progObj.codigo_snies}</Text>}
-                  </Group>
+                  <Box mb="lg">
+                    <Tooltip label="Volver a alertas" withArrow>
+                      <ActionIcon
+                        variant="default"
+                        size="sm"
+                        onClick={() => { setActiveSection("alertas"); }}
+                        aria-label="Volver a alertas"
+                      >
+                        <IconChevronLeft size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Group justify="space-between" align="flex-start" wrap="wrap" gap="md" mt="xs">
+                      <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
+                        <Group gap="sm" align="center" wrap="wrap">
+                          <Title order={2} style={{ margin: 0, lineHeight: 1.25 }}>{progObj.nombre}</Title>
+                          <Badge size="lg" color={progObj.estado === "Activo" ? "teal" : "gray"} variant="filled">
+                            {progObj.estado === "Activo" ? "ACTIVO" : "INACTIVO"}
+                          </Badge>
+                        </Group>
+                        {progObj.codigo_snies ? (
+                          <Text size="sm" c="dimmed" fw={500}>SNIES: {progObj.codigo_snies}</Text>
+                        ) : null}
+                      </Stack>
+                    </Group>
+                    <Divider my="md" />
+                  </Box>
                   {(["RC", "AV"] as const)
                     .filter(t => tipoProceso === "Todos"
                       || (tipoProceso === "Registro calificado"     && t === "RC")
@@ -1216,12 +1377,12 @@ const DateReviewPage = () => {
                         setAgregarProcesoOpen(true);
                       }}
                     >
-                      Primer proceso RC o AV
+                      Nuevo proceso RC o AV
                     </Button>
                   </Group>
                 </Group>
                 <Text size="sm" c="dimmed">
-                  Arriba: procesos RC y AV activos. Debajo: alertas tras cierre cuando aún no hay un proceso activo del mismo tipo. «Crear programa» solo registra el programa (sin proceso). «Primer proceso RC o AV» abre un asistente para elegir RC (Nuevo) o AV (Primera vez) sobre un programa que aún no tenga ese proceso activo (p. ej. con RC Nuevo puedes crear AV). «Crear proceso» en cada fila de alerta enlaza el programa y el tipo ya definidos.
+                  Arriba: procesos RC y AV activos. Debajo: alertas tras cierre cuando aún no hay un proceso activo del mismo tipo. «Crear programa» solo registra el programa (sin proceso). «Nuevo proceso RC o AV» abre un asistente para elegir RC o AV, ambos en subtipo Nuevo, sobre un programa que aún no tenga ese proceso activo (p. ej. con RC Nuevo puedes crear AV Nuevo). «Crear proceso» en cada fila de alerta enlaza el programa y el tipo ya definidos.
                 </Text>
                 {!loadingFilters ? (
                   <Paper withBorder radius="md" p="sm">
@@ -1304,7 +1465,7 @@ const DateReviewPage = () => {
                             </tr>
                           );
                         })}
-                        {remindersSinActivoMismoTipo.map((r) => {
+                        {remindersOrdenados.map((r) => {
                           const prog = programas.find((p) => p.dep_code_programa === r.program_code);
                           const esAlertaApi = r.__origen === "ALERTA";
                           return (
@@ -1359,7 +1520,7 @@ const DateReviewPage = () => {
                             </tr>
                           );
                         })}
-                        {filasProcesosActivosRcAv.length === 0 && remindersSinActivoMismoTipo.length === 0 && (
+                        {filasProcesosActivosRcAv.length === 0 && remindersOrdenados.length === 0 && (
                           <tr>
                             <td colSpan={12} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
                               No hay filas con estos filtros. Los procesos RC/AV activos aparecen arriba; las alertas por cierre, debajo, cuando aún no hay un proceso activo de ese tipo.
@@ -1400,13 +1561,13 @@ const DateReviewPage = () => {
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ borderBottom: "2px solid #dee2e6" }}>
-                          {["Programa", "Proceso", "Resolución", "Vigencia", "Vencimiento", "Fase al cierre", "Cerrado", ""].map((h) => (
+                          {["Programa", "Proceso", "Solicitud", "Resolución", "Vigencia", "Vencimiento", "Fase al cierre", "Cerrado", ""].map((h) => (
                             <th key={h} style={{ padding: "6px 8px", textAlign: h === "" ? "center" : "left", fontSize: 12, fontWeight: 700 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {historialRecords
+                        {historialProcesosOrdenado
                           .filter((r) => !historialFiltroFacultad || r.dep_code_facultad === historialFiltroFacultad)
                           .filter((r) => !historialFiltroPrograma || r.nombre_programa === historialFiltroPrograma)
                           .map((r) => (
@@ -1416,6 +1577,11 @@ const DateReviewPage = () => {
                                 <Badge size="xs" color={r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : "green"} variant="light">
                                   {r.tipo_proceso}
                                 </Badge>
+                              </td>
+                              <td style={{ padding: "6px 8px", fontSize: 12, textAlign: "center" }}>
+                                {(r.estado_solicitud ?? "APROBADO") === "NEGADO"
+                                  ? <Badge size="xs" color="red" variant="light">Negado</Badge>
+                                  : <Badge size="xs" color="teal" variant="light">Aprobado</Badge>}
                               </td>
                               <td style={{ padding: "6px 8px", fontSize: 12, textAlign: "center" }}>{r.codigo_resolucion ?? "—"}</td>
                               <td style={{ padding: "6px 8px", fontSize: 12, textAlign: "center" }}>
@@ -1431,12 +1597,12 @@ const DateReviewPage = () => {
                               </td>
                             </tr>
                           ))}
-                        {historialRecords.filter((r) =>
+                        {historialProcesosOrdenado.filter((r) =>
                           (!historialFiltroFacultad || r.dep_code_facultad === historialFiltroFacultad) &&
                           (!historialFiltroPrograma || r.nombre_programa === historialFiltroPrograma)
                         ).length === 0 && (
                           <tr>
-                            <td colSpan={8} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
+                            <td colSpan={9} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
                               No hay registros en el historial
                             </td>
                           </tr>
@@ -1447,6 +1613,9 @@ const DateReviewPage = () => {
                 )}
               </>
             )}
+            </>
+            )}
+
           </>
         )}
 
@@ -1477,6 +1646,11 @@ const DateReviewPage = () => {
                   {historialDetalle.tipo_proceso === "RC" ? "Condición" : "Factor"} {historialDetalle.condicion}
                 </Badge>
               )}
+              {(historialDetalle.estado_solicitud ?? "APROBADO") === "NEGADO" ? (
+                <Badge color="red" variant="light" size="sm">Solicitud negada</Badge>
+              ) : (
+                <Badge color="teal" variant="light" size="sm">Solicitud aprobada</Badge>
+              )}
             </Group>
 
             <Divider label="Resolución" labelPosition="left" />
@@ -1492,6 +1666,31 @@ const DateReviewPage = () => {
                 </Paper>
               ))}
             </SimpleGrid>
+
+            {historialDetalle.rc_oficio && (
+              <>
+                <Divider label="Resolución — registro calificado de oficio" labelPosition="left" />
+                <SimpleGrid cols={3} spacing="sm">
+                  {[
+                    { label: "Código (RC oficio)", value: historialDetalle.rc_oficio.codigo_resolucion },
+                    { label: "Fecha (RC oficio)",  value: historialDetalle.rc_oficio.fecha_resolucion ? formatFechaDDMMYY(historialDetalle.rc_oficio.fecha_resolucion) : null },
+                    { label: "Duración",          value: historialDetalle.rc_oficio.duracion_resolucion != null ? `${historialDetalle.rc_oficio.duracion_resolucion} años` : null },
+                  ].map(({ label, value }) => (
+                    <Paper key={label} withBorder radius="sm" p="sm">
+                      <Text size="xs" c="dimmed" mb={2}>{label}</Text>
+                      <Text size="sm" fw={600}>{value ?? "—"}</Text>
+                    </Paper>
+                  ))}
+                </SimpleGrid>
+                {historialDetalle.rc_oficio.documentos?.length > 0 && (
+                  <Stack gap={4} mt="xs">
+                    {historialDetalle.rc_oficio.documentos.map((d, i) => (
+                      <Anchor key={i} href={d.view_link} target="_blank" size="sm" fw={500}>📄 {d.name}</Anchor>
+                    ))}
+                  </Stack>
+                )}
+              </>
+            )}
 
             <Divider label="Fechas del proceso" labelPosition="left" />
             <SimpleGrid cols={3} spacing="sm">
