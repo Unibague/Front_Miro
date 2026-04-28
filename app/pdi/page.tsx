@@ -532,9 +532,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Critico";
   const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
   const estructuraResumen = [
-    { label: "Macros", value: macros.length, color: "violet" },
+    { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
-    { label: "Acciones", value: totalAcciones, color: "orange" },
+    { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
   return (
@@ -607,7 +607,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               </Group>
               <Text size="xs" c="dimmed">Estado del portafolio</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
-              <Text size="xs" c="dimmed" mt={6}>Macros en cumplimiento adecuado</Text>
+              <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">
@@ -638,7 +638,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macros al 50% o mas</Text>
+              <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
               <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} macroproyectos</Text>
             </Paper>
@@ -650,7 +650,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macro con mayor avance</Text>
+              <Text size="xs" c="dimmed">Macroproyectos con mayor avance</Text>
               <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
                 {macroLider?.codigo ?? "Sin datos"}
               </Text>

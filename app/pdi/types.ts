@@ -18,6 +18,8 @@ export interface Macroproyecto {
   peso: number;
   avance: number;
   semaforo: Semaforo;
+  presupuesto: number;
+  presupuesto_ejecutado: number;
 }
 
 export type EstadoAval = "Pendiente" | "Aprobado" | "Rechazado";
@@ -43,6 +45,11 @@ export interface RespuestaFormulario {
   fecha_envio: string | null;
   word_filename: string;
   word_url: string;
+  word_nombre_original: string;
+  documento_filename: string;
+  documento_url: string;
+  documento_nombre_original: string;
+  documento_mimetype: string;
   estado_aval: EstadoAval | null;
   lider_email_aval: string;
   aval_por: string;

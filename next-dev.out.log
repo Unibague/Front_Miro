@@ -1,0 +1,10 @@
+
+> front@1.0.5 dev
+> next dev --port 3001
+
+  ▲ Next.js 14.2.23
+  - Local:        http://localhost:3001
+  - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 3.2s

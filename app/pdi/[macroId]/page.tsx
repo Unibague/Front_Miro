@@ -916,6 +916,8 @@ export default function MacroproyectoDetallePage() {
     ? macro.avance
     : 0;
   const semaforoMacro = macro?.semaforo ?? getSemaforoByAvance(avanceMacro);
+  const presupuestoMacro = Number(macro?.presupuesto) || 0;
+  const presupuestoEjecutadoMacro = Number(macro?.presupuesto_ejecutado) || 0;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -953,6 +955,14 @@ export default function MacroproyectoDetallePage() {
                     <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
                     {macro.lider && (
                       <Text size="sm" c="dimmed">Líder: <b>{macro.lider}</b></Text>
+                    )}
+                    {presupuestoMacro > 0 && (
+                      <Text size="sm" c="dimmed">
+                        Presupuesto: <b>{formatCOP(presupuestoMacro)}</b>
+                        {presupuestoEjecutadoMacro > 0 && (
+                          <> · Ejecutado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
+                        )}
+                      </Text>
                     )}
                     <Group gap={8}>
                       <Text size="sm" c="dimmed">Avance global</Text>

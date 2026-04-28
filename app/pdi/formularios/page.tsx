@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   ActionIcon,
   Badge,
@@ -13,9 +13,7 @@ import {
   Loader,
   Modal,
   Paper,
-  Select,
   Stack,
-  Switch,
   Text,
   TextInput,
   Textarea,
@@ -27,8 +25,6 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconEdit,
-  IconFileText,
-  IconFileTypePdf,
   IconForms,
   IconPlus,
   IconTrash,
@@ -43,7 +39,7 @@ import PdiSidebar from "../components/PdiSidebar";
 interface Campo {
   _id?: string;
   etiqueta: string;
-  tipo: "texto_largo" | "archivo_pdf";
+  tipo: "texto_largo";
   requerido: boolean;
   descripcion: string;
   orden: number;
@@ -60,16 +56,6 @@ interface Formulario {
   creado_por: string;
   createdAt: string;
 }
-
-const TIPO_LABEL: Record<Campo["tipo"], string> = {
-  texto_largo: "Texto largo",
-  archivo_pdf: "Archivo PDF",
-};
-
-const TIPO_ICON: Record<Campo["tipo"], ReactNode> = {
-  texto_largo: <IconFileText size={14} />,
-  archivo_pdf: <IconFileTypePdf size={14} />,
-};
 
 function FormularioModal({
   opened,
@@ -105,13 +91,7 @@ function FormularioModal({
   const addCampo = () =>
     setCampos((prev) => [
       ...prev,
-      {
-        etiqueta: "",
-        tipo: "texto_largo",
-        requerido: false,
-        descripcion: "",
-        orden: prev.length,
-      },
+      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length },
     ]);
 
   const removeCampo = (idx: number) =>
@@ -134,26 +114,18 @@ function FormularioModal({
         activo: true,
         alcance: "general",
         indicador_id: null,
-        campos: campos.map((campo, index) => ({ ...campo, orden: index })),
+        campos: campos.map((campo, index) => ({ ...campo, tipo: "texto_largo", orden: index })),
       };
 
       const res = selected
         ? await axios.put(PDI_ROUTES.formulario(selected._id), payload)
         : await axios.post(PDI_ROUTES.formularios(), payload);
 
-      showNotification({
-        title: selected ? "Actualizado" : "Creado",
-        message: "Formulario guardado",
-        color: "teal",
-      });
+      showNotification({ title: selected ? "Actualizado" : "Creado", message: "Formulario guardado", color: "teal" });
       onSaved(res.data);
       onClose();
     } catch (e: any) {
-      showNotification({
-        title: "Error",
-        message: e.response?.data?.error ?? "Error al guardar",
-        color: "red",
-      });
+      showNotification({ title: "Error", message: e.response?.data?.error ?? "Error al guardar", color: "red" });
     } finally {
       setLoading(false);
     }
@@ -182,7 +154,6 @@ function FormularioModal({
           rows={2}
         />
 
-
         <Divider label="Campos del formulario" labelPosition="left" />
 
         {campos.length === 0 && (
@@ -194,50 +165,25 @@ function FormularioModal({
         {campos.map((campo, idx) => (
           <Paper key={idx} withBorder radius="md" p="sm">
             <Group justify="space-between" mb={8}>
-              <Group gap={6}>
-                <ThemeIcon size={22} radius="xl" color="teal" variant="light">
-                  {TIPO_ICON[campo.tipo]}
-                </ThemeIcon>
-                <Text size="xs" fw={700} c="dimmed">
-                  Campo {idx + 1}
-                </Text>
-              </Group>
+              <Text size="xs" fw={700} c="dimmed">Campo {idx + 1}</Text>
               <ActionIcon size="sm" variant="subtle" color="red" onClick={() => removeCampo(idx)}>
                 <IconTrash size={13} />
               </ActionIcon>
             </Group>
-
             <Stack gap={6}>
               <TextInput
                 size="xs"
-                label="Etiqueta"
+                label="Nombre del campo"
                 placeholder="Ej: Resultados alcanzados"
                 value={campo.etiqueta}
                 onChange={(e) => updateCampo(idx, "etiqueta", e.currentTarget.value)}
               />
-              <Select
-                size="xs"
-                label="Tipo"
-                data={[
-                  { value: "texto_largo", label: "Texto largo" },
-                  { value: "archivo_pdf", label: "Archivo PDF" },
-                ]}
-                value={campo.tipo}
-                onChange={(value) => updateCampo(idx, "tipo", (value as Campo["tipo"]) ?? "texto_largo")}
-              />
               <TextInput
                 size="xs"
-                label="Descripcion o ayuda"
-                placeholder="Instruccion para el responsable"
+                label="Descripción o ayuda"
+                placeholder="Instrucción para el responsable"
                 value={campo.descripcion}
                 onChange={(e) => updateCampo(idx, "descripcion", e.currentTarget.value)}
-              />
-              <Switch
-                size="xs"
-                label="Campo requerido"
-                checked={campo.requerido}
-                onChange={(e) => updateCampo(idx, "requerido", e.currentTarget.checked)}
-                color="teal"
               />
             </Stack>
           </Paper>
@@ -248,12 +194,8 @@ function FormularioModal({
         </Button>
 
         <Group justify="flex-end" mt="sm">
-          <Button variant="default" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button loading={loading} onClick={handleSave} color="teal">
-            Guardar
-          </Button>
+          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button loading={loading} onClick={handleSave} color="teal">Guardar</Button>
         </Group>
       </Stack>
     </Modal>
@@ -270,18 +212,9 @@ function FormularioCard({
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const asociado = form.indicador_id
-    ? `Indicador: ${form.indicador_id.codigo} - ${form.indicador_id.nombre}`
-    : "General para todos los indicadores";
 
   return (
-    <Paper
-      withBorder
-      radius="lg"
-      p="lg"
-      shadow="xs"
-      style={{ borderLeft: "4px solid #0d9488" }}
-    >
+    <Paper withBorder radius="lg" p="lg" shadow="xs" style={{ borderLeft: "4px solid #0d9488" }}>
       <Group justify="space-between" align="flex-start">
         <Group gap={10}>
           <ThemeIcon size={36} radius="xl" color="teal" variant="light">
@@ -289,35 +222,22 @@ function FormularioCard({
           </ThemeIcon>
           <div>
             <Group gap={8} mb={2}>
-              <Text fw={700} size="sm">
-                {form.nombre}
-              </Text>
-              <Badge size="xs" color="blue" variant="light">
-                General
-              </Badge>
+              <Text fw={700} size="sm">{form.nombre}</Text>
+              <Badge size="xs" color="blue" variant="light">General</Badge>
               <Badge size="xs" color="violet" variant="outline">
                 {form.campos.length} campo{form.campos.length !== 1 ? "s" : ""}
               </Badge>
             </Group>
-            <Text size="xs" c="dimmed" lineClamp={1}>
-              {asociado}
-            </Text>
             {form.descripcion && (
-              <Text size="xs" c="dimmed" mt={2} lineClamp={1}>
-                {form.descripcion}
-              </Text>
+              <Text size="xs" c="dimmed" mt={2} lineClamp={1}>{form.descripcion}</Text>
             )}
           </div>
         </Group>
 
         <Group gap={6}>
-          <ActionIcon variant="subtle" color="blue" onClick={onEdit}>
-            <IconEdit size={15} />
-          </ActionIcon>
-          <ActionIcon variant="subtle" color="red" onClick={onDelete}>
-            <IconTrash size={15} />
-          </ActionIcon>
-          <ActionIcon variant="subtle" color="teal" onClick={() => setOpen((value) => !value)}>
+          <ActionIcon variant="subtle" color="blue" onClick={onEdit}><IconEdit size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="red" onClick={onDelete}><IconTrash size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="teal" onClick={() => setOpen((v) => !v)}>
             {open ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
           </ActionIcon>
         </Group>
@@ -325,42 +245,15 @@ function FormularioCard({
 
       <Collapse in={open}>
         <Divider my="sm" />
-        <Text size="xs" fw={600} c="dimmed" mb={6}>
-          Campos del formulario
-        </Text>
+        <Text size="xs" fw={600} c="dimmed" mb={6}>Campos del formulario</Text>
         <Stack gap={4}>
           {form.campos.length === 0 ? (
-            <Text size="xs" c="dimmed">
-              Sin campos configurados
-            </Text>
+            <Text size="xs" c="dimmed">Sin campos configurados</Text>
           ) : (
             form.campos.map((campo, idx) => (
               <Paper key={idx} withBorder radius="sm" p="xs">
-                <Group gap={8}>
-                  <ThemeIcon size={20} radius="xl" color="teal" variant="light">
-                    {TIPO_ICON[campo.tipo]}
-                  </ThemeIcon>
-                  <div style={{ flex: 1 }}>
-                    <Group gap={6}>
-                      <Text size="xs" fw={600}>
-                        {campo.etiqueta}
-                      </Text>
-                      <Badge size="xs" variant="outline" color="teal">
-                        {TIPO_LABEL[campo.tipo]}
-                      </Badge>
-                      {campo.requerido && (
-                        <Badge size="xs" color="red" variant="light">
-                          Requerido
-                        </Badge>
-                      )}
-                    </Group>
-                    {campo.descripcion && (
-                      <Text size="xs" c="dimmed">
-                        {campo.descripcion}
-                      </Text>
-                    )}
-                  </div>
-                </Group>
+                <Text size="xs" fw={600}>{campo.etiqueta}</Text>
+                {campo.descripcion && <Text size="xs" c="dimmed">{campo.descripcion}</Text>}
               </Paper>
             ))
           )}
@@ -388,17 +281,13 @@ export default function FormulariosPage() {
   const handleDelete = (id: string) => {
     modals.openConfirmModal({
       title: "Eliminar formulario",
-      children: (
-        <Text size="sm">
-          Se eliminaran tambien todas las respuestas y archivos asociados.
-        </Text>
-      ),
+      children: <Text size="sm">Se eliminaran tambien todas las respuestas y archivos asociados.</Text>,
       labels: { confirm: "Eliminar", cancel: "Cancelar" },
       confirmProps: { color: "red" },
       onConfirm: async () => {
         try {
           await axios.delete(PDI_ROUTES.formulario(id));
-          setFormularios((prev) => prev.filter((formulario) => formulario._id !== id));
+          setFormularios((prev) => prev.filter((f) => f._id !== id));
           showNotification({ title: "Eliminado", message: "Formulario eliminado", color: "teal" });
         } catch {
           showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
@@ -422,20 +311,12 @@ export default function FormulariosPage() {
               </ThemeIcon>
               <div>
                 <Title order={3}>Formulario PDI</Title>
-                <Text size="xs" c="dimmed">
-                  Crea un formulario general para todos los indicadores
-                </Text>
+                <Text size="xs" c="dimmed">Crea un formulario general para todos los indicadores</Text>
               </div>
             </Group>
             {formularios.length === 0 && (
-              <Button
-                leftSection={<IconPlus size={15} />}
-                color="teal"
-                onClick={() => {
-                  setSelected(null);
-                  setModal(true);
-                }}
-              >
+              <Button leftSection={<IconPlus size={15} />} color="teal"
+                onClick={() => { setSelected(null); setModal(true); }}>
                 Nuevo formulario
               </Button>
             )}
@@ -444,9 +325,7 @@ export default function FormulariosPage() {
           <Divider mb="lg" />
 
           {loading ? (
-            <Center py="xl">
-              <Loader color="teal" />
-            </Center>
+            <Center py="xl"><Loader color="teal" /></Center>
           ) : formularios.length === 0 ? (
             <Center py="xl">
               <Stack align="center" gap="xs">
@@ -457,15 +336,8 @@ export default function FormulariosPage() {
                 <Text size="sm" c="dimmed">
                   Crea el formulario general para que los responsables lo diligencien en sus indicadores
                 </Text>
-                <Button
-                  leftSection={<IconPlus size={14} />}
-                  color="teal"
-                  mt="sm"
-                  onClick={() => {
-                    setSelected(null);
-                    setModal(true);
-                  }}
-                >
+                <Button leftSection={<IconPlus size={14} />} color="teal" mt="sm"
+                  onClick={() => { setSelected(null); setModal(true); }}>
                   Nuevo formulario
                 </Button>
               </Stack>
@@ -476,10 +348,7 @@ export default function FormulariosPage() {
                 <FormularioCard
                   key={formulario._id}
                   form={formulario}
-                  onEdit={() => {
-                    setSelected(formulario);
-                    setModal(true);
-                  }}
+                  onEdit={() => { setSelected(formulario); setModal(true); }}
                   onDelete={() => handleDelete(formulario._id)}
                 />
               ))}
@@ -494,7 +363,7 @@ export default function FormulariosPage() {
         selected={selected}
         onSaved={(doc) => {
           setFormularios((prev) =>
-            selected ? prev.map((item) => (item._id === doc._id ? doc : item)) : [doc, ...prev],
+            selected ? prev.map((item) => (item._id === doc._id ? doc : item)) : [doc, ...prev]
           );
         }}
       />
