@@ -77,7 +77,8 @@ jobs:
         cd ~/MIRO_TEST/Front_Miro_Test
         sed -i "s/ = /=/g" .env 2>/dev/null || true
         node -e "var fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json'));if(!p.version||!/^[0-9]/.test(p.version)){p.version='1.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('version corregida');}else{console.log('version ok:',p.version);}" 2>/dev/null || true
-        npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
+        rm -f package-lock.json
+        npm install --legacy-peer-deps
         echo "=== 3. Build ==="
         npm run build
         echo "=== 4. Reload PM2 ==="
