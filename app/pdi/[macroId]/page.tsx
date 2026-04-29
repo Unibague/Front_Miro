@@ -560,6 +560,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const [acciones, setAcciones] = useState<Accion[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [open, setOpen] = useState(false);
   const [accionModal, setAccionModal] = useState(false);
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
 
@@ -590,6 +591,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
 
   useEffect(() => {
     if (loaded) return;
+    if (!open) return;
     setLoading(true);
     axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } })
       .then(async (res) => {
@@ -599,7 +601,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
       })
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
-  }, [loaded, proyecto._id]);
+  }, [loaded, open, proyecto._id]);
 
   const refrescarProyecto = async () => {
     try {
@@ -670,8 +672,20 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
 
   return (
     <Paper withBorder radius="xl" p="xl" shadow="sm" mb="lg">
-      <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
-        <Group gap={14} align="flex-start">
+      {/* Header del proyecto */}
+      <Group
+        justify="space-between"
+        align="flex-start"
+        mb={open ? "lg" : 0}
+        wrap="wrap"
+      >
+        {/* Parte izquierda - clickeable para colapsar */}
+        <Group
+          gap={14}
+          align="flex-start"
+          style={{ cursor: "pointer", flex: 1 }}
+          onClick={() => setOpen(v => !v)}
+        >
           <ThemeIcon size={46} radius="xl" color="blue" variant="light">
             <IconTrendingUp size={22} />
           </ThemeIcon>
@@ -723,64 +737,71 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
             <ActionIcon size="lg" variant="subtle" color="blue" onClick={() => onEdit(proyecto)}><IconEdit size={18} /></ActionIcon>
             <ActionIcon size="lg" variant="subtle" color="red" onClick={() => onDelete(proyecto._id)}><IconTrash size={18} /></ActionIcon>
           </>}
+          <ActionIcon variant="subtle" color="blue" onClick={() => setOpen(v => !v)}>
+            <IconChevronRight size={18} style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .2s" }} />
+          </ActionIcon>
         </Group>
       </Group>
 
-      <Group justify="space-between" align="center" mb="md">
-        <div>
-          <Text fw={700}>Acciones estratégicas</Text>
-        </div>
-        {acciones.length > 0 && (
-          <Badge variant="outline" color="orange" radius="xl">
-            {acciones.length} acción{acciones.length !== 1 ? "es" : ""}
-          </Badge>
-        )}
-      </Group>
-
-      {loading ? (
-        <Center py="lg"><Loader size="sm" /></Center>
-      ) : acciones.length === 0 ? (
-        <Paper
-          withBorder
-          radius="lg"
-          p="xl"
-          style={{ borderStyle: "dashed", background: "var(--mantine-color-default-hover)" }}
-        >
-          <Stack align="center" gap={6}>
-            <ThemeIcon size={44} radius="xl" color="orange" variant="light">
-              <IconBulb size={20} />
-            </ThemeIcon>
-            <Text fw={600}>Este proyecto aún no tiene acciones</Text>
-            <Text size="sm" c="dimmed" ta="center">
-              Crea la primera acción estratégica para organizar responsables, seguimiento e indicadores.
-            </Text>
-            {admin && (
-              <Button
-                size="sm"
-                color="orange"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => { setSelectedAccion(null); setAccionModal(true); }}
-              >
-                Crear primera acción
-              </Button>
+      {open && (
+        <>
+          <Group justify="space-between" align="center" mb="md">
+            <div>
+              <Text fw={700}>Acciones estratégicas</Text>
+            </div>
+            {acciones.length > 0 && (
+              <Badge variant="outline" color="orange" radius="xl">
+                {acciones.length} acción{acciones.length !== 1 ? "es" : ""}
+              </Badge>
             )}
-          </Stack>
-        </Paper>
-      ) : (
-        <Stack gap="md">
-          {acciones.map((accion) => (
-            <AccionCard
-              key={accion._id}
-              accion={accion}
-              admin={admin}
-              aniosPdi={aniosPdi}
-              onEdit={(item) => { setSelectedAccion(item); setAccionModal(true); }}
-              onDelete={handleDeleteAccion}
-              onAvanceUpdate={refrescarProyecto}
-              onComputedProgress={handleComputedAccionProgress}
-            />
-          ))}
-        </Stack>
+          </Group>
+
+          {loading ? (
+            <Center py="lg"><Loader size="sm" /></Center>
+          ) : acciones.length === 0 ? (
+            <Paper
+              withBorder
+              radius="lg"
+              p="xl"
+              style={{ borderStyle: "dashed", background: "var(--mantine-color-default-hover)" }}
+            >
+              <Stack align="center" gap={6}>
+                <ThemeIcon size={44} radius="xl" color="orange" variant="light">
+                  <IconBulb size={20} />
+                </ThemeIcon>
+                <Text fw={600}>Este proyecto aún no tiene acciones</Text>
+                <Text size="sm" c="dimmed" ta="center">
+                  Crea la primera acción estratégica para organizar responsables, seguimiento e indicadores.
+                </Text>
+                {admin && (
+                  <Button
+                    size="sm"
+                    color="orange"
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => { setSelectedAccion(null); setAccionModal(true); }}
+                  >
+                    Crear primera acción
+                  </Button>
+                )}
+              </Stack>
+            </Paper>
+          ) : (
+            <Stack gap="md">
+              {acciones.map((accion) => (
+                <AccionCard
+                  key={accion._id}
+                  accion={accion}
+                  admin={admin}
+                  aniosPdi={aniosPdi}
+                  onEdit={(item) => { setSelectedAccion(item); setAccionModal(true); }}
+                  onDelete={handleDeleteAccion}
+                  onAvanceUpdate={refrescarProyecto}
+                  onComputedProgress={handleComputedAccionProgress}
+                />
+              ))}
+            </Stack>
+          )}
+        </>
       )}
 
       <AccionModal

@@ -499,38 +499,6 @@ export default function PdiGraficas() {
             </ChartCard>
           </SimpleGrid>
 
-          {topInds.length > 0 && (
-            <ChartCard title="Top Indicadores por Avance" subtitle="Los indicadores con mayor avance">
-              <ResponsiveContainer width="100%" height={Math.max(200, topInds.length * 32)}>
-                <BarChart data={topInds} layout="vertical" margin={{ top: 4, right: 16, left: 10, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={55} />
-                  <Tooltip formatter={(v) => `${v}%`} />
-                  <Bar dataKey="Avance" radius={[0, 4, 4, 0]}>
-                    {topInds.map((e, i) => <Cell key={i} fill={SEMAFORO_COLOR[e.semaforo] ?? "#7950f2"} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          )}
-
-          {barrasAcciones.length > 0 && (
-            <ChartCard title="Avance vs Peso - Acciones Estrategicas" subtitle="Comparacion entre peso asignado y avance real">
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={barrasAcciones} margin={{ top: 4, right: 8, left: -10, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip formatter={(v) => `${v}%`} labelFormatter={(l, p) => p[0]?.payload?.fullName ?? l} />
-                  <Legend />
-                  <Bar dataKey="Avance" fill="#fd7e14" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Peso" fill="#dee2e6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          )}
-
           {indsMacro.length > 0 && (
             <ChartCard title="Meta vs Avance por Periodo - Indicador" subtitle="Selecciona un indicador para ver su evolucion por corte">
               <Select
@@ -553,12 +521,92 @@ export default function PdiGraficas() {
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip content={<PeriodoTooltip />} />
                       <Legend />
-                      <Bar dataKey="Meta" fill="#dee2e6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Avance" fill="#7950f2" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Meta" stackId="a" fill="#dee2e6" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Avance" stackId="a" fill="#7950f2" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </Box>
               )}
+            </ChartCard>
+          )}
+
+          {indsMacro.length > 0 && (
+            <ChartCard title="Avance por Indicador" subtitle="Cada indicador muestra su porcentaje de avance">
+              <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="md">
+                {indsMacro.map((ind, i) => {
+                  const color = SEMAFORO_COLOR[ind.semaforo] ?? COLORS[i % COLORS.length];
+                  return (
+                    <Paper key={ind._id} withBorder radius="md" p="md">
+                      <Group justify="space-between" align="flex-start" wrap="nowrap" mb="xs">
+                        <Box style={{ flex: 1 }}>
+                          <Text fw={700} size="sm" lineClamp={1}>{ind.codigo}</Text>
+                          <Text size="xs" c="dimmed" lineClamp={3}>{ind.nombre}</Text>
+                        </Box>
+                        <Badge color={ind.semaforo === "verde" ? "green" : ind.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
+                          {ind.avance}%
+                        </Badge>
+                      </Group>
+                      <Box h={170}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadialBarChart
+                            data={[{ name: "Avance", value: ind.avance, fill: color }]}
+                            innerRadius="68%"
+                            outerRadius="100%"
+                            startAngle={90}
+                            endAngle={-270}
+                            barSize={16}
+                          >
+                            <RadialBar background dataKey="value" cornerRadius={10} />
+                            <text x="50%" y="44%" textAnchor="middle" dominantBaseline="middle" fontSize={30} fontWeight={800} fill={color}>
+                              {ind.avance}%
+                            </text>
+                            <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" fontSize={11} fill="#6b7280">
+                              Avance
+                            </text>
+                          </RadialBarChart>
+                        </ResponsiveContainer>
+                      </Box>
+                      <Group justify="space-between" mt="xs">
+                        <Text size="xs" c="dimmed">Peso</Text>
+                        <Text size="xs" fw={700}>{ind.peso}%</Text>
+                      </Group>
+                      {ind.responsable && (
+                        <Text size="xs" c="dimmed" mt={2} lineClamp={1}>Resp: {ind.responsable}</Text>
+                      )}
+                    </Paper>
+                  );
+                })}
+              </SimpleGrid>
+            </ChartCard>
+          )}
+
+          {barrasAcciones.length > 0 && (
+            <ChartCard title="Avance - Acciones Estrategicas" subtitle="Avance real de cada accion">
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={barrasAcciones} margin={{ top: 4, right: 8, left: -10, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                  <Tooltip formatter={(v) => `${v}%`} labelFormatter={(l, p) => p[0]?.payload?.fullName ?? l} />
+                  <Bar dataKey="Avance" fill="#fd7e14" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+
+          {topInds.length > 0 && (
+            <ChartCard title="Top Indicadores por Avance" subtitle="Los indicadores con mayor avance">
+              <ResponsiveContainer width="100%" height={Math.max(200, topInds.length * 32)}>
+                <BarChart data={topInds} layout="vertical" margin={{ top: 4, right: 16, left: 10, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={55} />
+                  <Tooltip formatter={(v) => `${v}%`} />
+                  <Bar dataKey="Avance" radius={[0, 4, 4, 0]}>
+                    {topInds.map((e, i) => <Cell key={i} fill={SEMAFORO_COLOR[e.semaforo] ?? "#7950f2"} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </ChartCard>
           )}
         </>

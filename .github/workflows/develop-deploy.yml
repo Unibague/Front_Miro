@@ -20,29 +20,34 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '22.14.0'
+        node-version: '20.14.0'
 
-    - name: Install OpenConnect and sshpass
-      run: sudo apt-get install -y openconnect sshpass
+    - name: Install OpenConnect
+      run: sudo apt-get install -y openconnect
+
+    - name: Install sshpass
+      run: sudo apt-get install -y sshpass
 
     - name: Connect to VPN
       run: |
         echo "${{ secrets.VPN_PASSWORD }}" | sudo openconnect \
           --protocol=gp \
-          --user="${{ secrets.VPN_USER }}" \
+          --user=${{ secrets.VPN_USER }} \
           --passwd-on-stdin \
           --servercert pin-sha256:+4XOhCB4GmaXr8/TMWL09EayWRbrz3X8WWAWgu79f9U= \
-          "${{ secrets.VPN_HOST }}" -b
+          ${{ secrets.VPN_HOST }} -b
 
-    - name: Wait for VPN tunnel
+    - name: Verify VPN connection
+      run: ip a
+
+    - name: List network routes
+      run: ip route
+
+    - name: Test internal connectivity with SSH
       run: |
-        for i in $(seq 1 15); do
-          ip a | grep -E "tun|gpd|pan|ppp" && echo "VPN interface found" && break
-          echo "  attempt $i/15..."
-          sleep 3
-        done
+        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
 
-    - name: Test SSH connectivity
+    - name: Update repository on remote server
       run: |
         for i in 1 2 3; do
           sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh \
