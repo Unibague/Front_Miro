@@ -20,77 +20,97 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20.14.0'
+        node-version: '22.14.0'
 
-    - name: Install OpenConnect
-      run: sudo apt-get install -y openconnect
-
-    - name: Install sshpass
-      run: sudo apt-get install -y sshpass
+    - name: Install OpenConnect and sshpass
+      run: sudo apt-get install -y openconnect sshpass
 
     - name: Connect to VPN
       run: |
         echo "${{ secrets.VPN_PASSWORD }}" | sudo openconnect \
           --protocol=gp \
-          --user=${{ secrets.VPN_USER }} \
+          --user="${{ secrets.VPN_USER }}" \
           --passwd-on-stdin \
           --servercert pin-sha256:+4XOhCB4GmaXr8/TMWL09EayWRbrz3X8WWAWgu79f9U= \
-          ${{ secrets.VPN_HOST }} -b
+          "${{ secrets.VPN_HOST }}" -b
 
-    - name: Verify VPN connection
-      run: ip a
-
-    - name: List network routes
-      run: ip route
-
-    - name: Test internal connectivity with SSH
+    - name: Wait for VPN tunnel
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} 'echo "SSH connection successful"'
+        for i in $(seq 1 15); do
+          ip a | grep -E "tun|gpd|pan|ppp" && echo "VPN interface found" && break
+          echo "  attempt $i/15..."
+          sleep 3
+        done
 
-    - name: Update repository on remote server
+    - name: Test SSH connectivity
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          set -e;
-          echo "Checking PM2 processes...";
-          pm2 list | grep Front_Dev && pm2 stop Front_Dev || true;
-          pm2 list | grep Front_Dev && pm2 delete Front_Dev || true;
-          cd ~/MIRO_TEST;
-          echo "Backing up .env...";
-          [ -f Front_Miro_Test/.env ] && cp Front_Miro_Test/.env /tmp/front_dev.env && echo "Backup OK" || echo "No .env to backup";
-          echo "Removing old directory...";
-          rm -rf Front_Miro_Test;
-          echo "Cloning repository...";
-          git clone --branch develop https://x-access-token:${{ secrets.GIT_TOKEN }}@github.com/Unibague/Front_Miro.git Front_Miro_Test;
-          echo "Verifying clone...";
-          ls Front_Miro_Test/package.json;
-          echo "Restoring .env...";
-          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env Front_Miro_Test/.env && echo "Env restored" || echo "No .env backup found";
-          echo "Repository ready"'
+        for i in 1 2 3; do
+          sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=20 \
+            -o ServerAliveCountMax=30 \
+            ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} \
+            'echo "SSH OK"' && break
+          echo "  SSH attempt $i failed, retrying..."
+          sleep 5
+        done
 
-    - name: Fix environment and build
+    - name: Create deploy script
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          set -e;
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          echo "=== FIXING ENV FILE FORMAT ===";
-          sed -i "s/ = /=/g" .env;
-          echo "=== FIXED ENV FILE ===";
-          cat .env | grep -E "(API|NODE_TLS)";
-          echo "=== TESTING VARIABLE LOADING ===";
-          export $(cat .env | grep -v "^#" | xargs);
-          echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL";
-          rm -f package-lock.json;
-          npm install --legacy-peer-deps;
-          echo "=== BUILD OUTPUT ===";
-          npm run build'
+        cat > /tmp/deploy_front.sh << 'SCRIPT'
+        #!/bin/bash
+        set -e
+        echo "=== 1. Actualizar codigo ==="
+        cd ~/MIRO_TEST
+        if [ ! -d "Front_Miro_Test/.git" ]; then
+          git clone --depth=1 --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test
+        else
+          cd Front_Miro_Test
+          [ -f .env ] && cp .env /tmp/front_dev.env
+          git fetch --depth=1 origin develop
+          git reset --hard origin/develop
+          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env .env
+          cd ..
+        fi
+        echo "=== 2. Instalar dependencias ==="
+        cd ~/MIRO_TEST/Front_Miro_Test
+        sed -i "s/ = /=/g" .env 2>/dev/null || true
+        npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
+        echo "=== 3. Build ==="
+        npm run build
+        echo "=== 4. Reload PM2 ==="
+        if pm2 list | grep -q "Front_Dev"; then
+          pm2 reload Front_Dev --update-env || pm2 restart Front_Dev
+        else
+          PORT=3001 pm2 start npm --name "Front_Dev" -- start
+        fi
+        pm2 save
+        echo "=== Deploy completo ==="
+        SCRIPT
+        chmod +x /tmp/deploy_front.sh
 
-    - name: Start PM2 process
+    - name: Copy and run deploy script
+      env:
+        SSH_PASS: ${{ secrets.INTERNAL_SSH_PASSWORD }}
+        SSH_USER: ${{ secrets.INTERNAL_USER }}
+        SSH_HOST: ${{ secrets.INTERNAL_RESOURCE_IP }}
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
-          cd ~/MIRO_TEST/Front_Miro_Test;
-          PORT=3001 pm2 start npm --name "Front_Dev" -- start;
-          pm2 save;
-          echo "Front_Dev started successfully on port 3001"'
+        sshpass -p "$SSH_PASS" scp \
+          -o StrictHostKeyChecking=no \
+          /tmp/deploy_front.sh "$SSH_USER@$SSH_HOST:/tmp/deploy_front.sh"
+        sshpass -p "$SSH_PASS" ssh \
+          -o StrictHostKeyChecking=no \
+          -o ConnectTimeout=20 \
+          -o ServerAliveInterval=20 \
+          -o ServerAliveCountMax=60 \
+          "$SSH_USER@$SSH_HOST" "bash /tmp/deploy_front.sh"
 
-    - name: Post Checkout repository
+    - name: Run Semantic Release
+      working-directory: ./
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npx semantic-release
+
+    - name: Post deploy
       run: echo "Development deployment complete"
