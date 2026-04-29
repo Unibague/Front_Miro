@@ -60,7 +60,6 @@ jobs:
       run: |
         cat > /tmp/deploy_front.sh << 'SCRIPT'
         #!/bin/bash
-        set -e
         echo "=== 1. Actualizar codigo ==="
         cd ~/MIRO_TEST
         if [ ! -d "Front_Miro_Test/.git" ]; then
@@ -74,17 +73,20 @@ jobs:
           cd ..
         fi
         echo "=== 2. Instalar dependencias ==="
-        cd ~/MIRO_TEST/Front_Miro_Test
+        cd ~/MIRO_TEST/Front_Miro_Test || exit 1
         sed -i "s/ = /=/g" .env 2>/dev/null || true
         node -e "var fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json'));if(!p.version||!/^[0-9]/.test(p.version)){p.version='1.0.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2));console.log('version corregida');}else{console.log('version ok:',p.version);}" 2>/dev/null || true
         rm -f package-lock.json
-        npm install --legacy-peer-deps
+        npm install --legacy-peer-deps || exit 1
         echo "=== 3. Build ==="
-        npm run build
+        npm run build || exit 1
         echo "=== 4. Reload PM2 ==="
-        if pm2 list | grep -q "Front_Dev"; then
+        pm2 describe Front_Dev > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          echo "Front_Dev existe, haciendo reload..."
           pm2 reload Front_Dev --update-env
         else
+          echo "Front_Dev no existe, iniciando..."
           cd ~/MIRO_TEST/Front_Miro_Test
           PORT=3001 pm2 start npm --name "Front_Dev" -- start
         fi
