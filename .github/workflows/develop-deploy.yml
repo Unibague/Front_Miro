@@ -57,27 +57,29 @@ jobs:
         done
 
     - name: Deploy zero-downtime
+      env:
+        SSH_PASS: ${{ secrets.INTERNAL_SSH_PASSWORD }}
+        SSH_USER: ${{ secrets.INTERNAL_USER }}
+        SSH_HOST: ${{ secrets.INTERNAL_RESOURCE_IP }}
       run: |
-        sshpass -p "${{ secrets.INTERNAL_SSH_PASSWORD }}" ssh \
+        sshpass -p "$SSH_PASS" ssh \
           -o StrictHostKeyChecking=no \
           -o ConnectTimeout=20 \
           -o ServerAliveInterval=20 \
           -o ServerAliveCountMax=60 \
-          ${{ secrets.INTERNAL_USER }}@${{ secrets.INTERNAL_RESOURCE_IP }} '
+          "$SSH_USER@$SSH_HOST" << 'ENDSSH'
             set -e
 
-            echo "=== 1. Actualizar código ==="
+            echo "=== 1. Actualizar codigo ==="
             cd ~/MIRO_TEST
             if [ ! -d "Front_Miro_Test/.git" ]; then
               echo "Clonando repositorio por primera vez..."
               git clone --depth=1 --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test
             else
               cd Front_Miro_Test
-              # Backup del .env antes del reset
               [ -f .env ] && cp .env /tmp/front_dev.env
               git fetch --depth=1 origin develop
               git reset --hard origin/develop
-              # Restaurar .env
               [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env .env
               cd ..
             fi
@@ -85,15 +87,12 @@ jobs:
             echo "=== 2. Instalar dependencias ==="
             cd ~/MIRO_TEST/Front_Miro_Test
             sed -i "s/ = /=/g" .env 2>/dev/null || true
-            # Corregir version invalida en package.json
-            sed -i 's/"version": *""/"version": "1.0.0"/g' package.json || true
-            sed -i 's/"version": *"[^0-9][^"]*"/"version": "1.0.0"/g' package.json || true
             npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
 
-            echo "=== 3. Build (servidor sigue corriendo) ==="
+            echo "=== 3. Build ==="
             npm run build
 
-            echo "=== 4. Reload PM2 sin downtime ==="
+            echo "=== 4. Reload PM2 ==="
             if pm2 list | grep -q "Front_Dev"; then
               pm2 reload Front_Dev --update-env || pm2 restart Front_Dev
             else
@@ -102,7 +101,7 @@ jobs:
             pm2 save
 
             echo "=== Deploy completo ==="
-          '
+ENDSSH
 
     - name: Run Semantic Release
       working-directory: ./
