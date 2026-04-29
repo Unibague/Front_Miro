@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack,
-  Textarea, Select, MultiSelect, Tabs, ActionIcon, Paper, NumberInput,
+  Textarea, Select, MultiSelect, Tabs, ActionIcon, Paper,
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import axios from "axios";
 import "dayjs/locale/es";
-import type { Indicador, Periodo } from "../types";
+import type { Indicador } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 
@@ -115,7 +115,54 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setPeriodos(cortesData.map((c) => ({ periodo: c.nombre, meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null })));
   }, [cortesData, opened, periodos.length, selected]);
 
-  const addPeriodo = () => setPeriodos((p) => [...p, { periodo: "", meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null }]);
+  const periodoSelectNames = useMemo(
+    () => (cortesSegimiento.length > 0 ? cortesSegimiento : cortes),
+    [cortes, cortesSegimiento]
+  );
+
+  const periodoSelectOptions = useMemo(() => {
+    return periodoSelectNames.map((nombre) => ({
+      value: nombre,
+      label: nombre,
+    }));
+  }, [periodoSelectNames]);
+
+  useEffect(() => {
+    if (!opened || selected || periodoSelectNames.length === 0) return;
+
+    setPeriodos((prev) => {
+      const anteriores = new Map(prev.map((item) => [item.periodo, item]));
+      return periodoSelectNames.map((periodo) =>
+        anteriores.get(periodo) ?? { periodo, meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null }
+      );
+    });
+  }, [opened, periodoSelectNames, selected]);
+
+  const getPeriodoOptions = (idx: number) => {
+    const usados = new Set(
+      periodos
+        .filter((_, i) => i !== idx)
+        .map((item) => item.periodo)
+        .filter(Boolean)
+    );
+    const current = periodos[idx]?.periodo;
+    const options = periodoSelectOptions.filter((option) => option.value === current || !usados.has(option.value));
+
+    if (current && !options.some((option) => option.value === current)) {
+      options.push({ value: current, label: current });
+    }
+
+    return options;
+  };
+
+  const getNextPeriodo = (items: PeriodoForm[]) => {
+    const usados = new Set(items.map((item) => item.periodo).filter(Boolean));
+    return periodoSelectOptions.find((option) => !usados.has(option.value))?.value ?? "";
+  };
+
+  const canAddPeriodo = periodoSelectOptions.some((option) => !periodos.some((p) => p.periodo === option.value));
+
+  const addPeriodo = () => setPeriodos((p) => [...p, { periodo: getNextPeriodo(p), meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null }]);
   const updatePeriodoDate = (idx: number, field: "fechaInicio" | "fechaFin", value: Date | null) =>
     setPeriodos((p) => p.map((item, i) => i === idx ? { ...item, [field]: value } : item));
   const removePeriodo = (idx: number) => setPeriodos((p) => p.filter((_, i) => i !== idx));
@@ -136,10 +183,23 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       return;
     }
 
+    const nombresPeriodos = periodos.map((p) => p.periodo.trim()).filter(Boolean);
+    const periodosDuplicados = nombresPeriodos.filter((periodo, idx) => nombresPeriodos.indexOf(periodo) !== idx);
+
+    if (nombresPeriodos.length !== periodos.length) {
+      showNotification({ title: "Error", message: "Selecciona un corte para cada meta de periodo", color: "red" });
+      return;
+    }
+
+    if (periodosDuplicados.length > 0) {
+      showNotification({ title: "Error", message: "No repitas cortes en las metas de periodo", color: "red" });
+      return;
+    }
+
     setLoading(true);
     try {
       const periodosPayload = periodos.map((p) => ({
-        periodo: p.periodo,
+        periodo: p.periodo.trim(),
         meta: p.meta !== "" ? (toNum(p.meta) !== null ? toNum(p.meta) : p.meta) : null,
         avance: p.avanceInicial ?? 0,
         fecha_inicio: p.fechaInicio ? p.fechaInicio.toISOString() : null,
@@ -267,12 +327,16 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
             {periodos.map((p, idx) => (
               <Paper key={idx} withBorder radius="md" p="sm">
                 <Group align="end" wrap="nowrap">
-                  <TextInput
+                  <Select
                     label="Periodo"
-                    placeholder="Ej: 2026-1"
-                    value={p.periodo}
-                    onChange={(e) => updatePeriodo(idx, "periodo", e.currentTarget.value)}
+                    placeholder={periodoSelectOptions.length ? "Selecciona un corte" : "Sin cortes activos"}
+                    data={getPeriodoOptions(idx)}
+                    value={p.periodo || null}
+                    onChange={(value) => updatePeriodo(idx, "periodo", value ?? "")}
                     style={{ flex: 1 }}
+                    searchable
+                    clearable
+                    nothingFoundMessage="Sin cortes disponibles"
                   />
                   <TextInput
                     label="Meta"
@@ -287,7 +351,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
                 </Group>
               </Paper>
             ))}
-            <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addPeriodo}>
+            <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addPeriodo} disabled={!canAddPeriodo}>
               Agregar periodo
             </Button>
           </Stack>
