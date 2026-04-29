@@ -85,6 +85,18 @@ jobs:
             echo "=== 2. Instalar dependencias ==="
             cd ~/MIRO_TEST/Front_Miro_Test
             sed -i "s/ = /=/g" .env 2>/dev/null || true
+            # Asegurar que package.json tenga version válida antes de npm install
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+              if (!pkg.version || !/^\\d+\\.\\d+\\.\\d+/.test(pkg.version)) {
+                pkg.version = '1.0.0';
+                fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+                console.log('package.json version corregida a 1.0.0');
+              } else {
+                console.log('package.json version OK:', pkg.version);
+              }
+            "
             npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
 
             echo "=== 3. Build (servidor sigue corriendo) ==="
