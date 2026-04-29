@@ -83,8 +83,9 @@ jobs:
         npm run build
         echo "=== 4. Reload PM2 ==="
         if pm2 list | grep -q "Front_Dev"; then
-          pm2 reload Front_Dev --update-env || pm2 restart Front_Dev
+          pm2 reload Front_Dev --update-env
         else
+          cd ~/MIRO_TEST/Front_Miro_Test
           PORT=3001 pm2 start npm --name "Front_Dev" -- start
         fi
         pm2 save
