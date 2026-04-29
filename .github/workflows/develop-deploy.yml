@@ -62,46 +62,44 @@ jobs:
         SSH_USER: ${{ secrets.INTERNAL_USER }}
         SSH_HOST: ${{ secrets.INTERNAL_RESOURCE_IP }}
       run: |
+        cat > /tmp/deploy.sh << 'EOF'
+        set -e
+        echo "=== 1. Actualizar codigo ==="
+        cd ~/MIRO_TEST
+        if [ ! -d "Front_Miro_Test/.git" ]; then
+          git clone --depth=1 --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test
+        else
+          cd Front_Miro_Test
+          [ -f .env ] && cp .env /tmp/front_dev.env
+          git fetch --depth=1 origin develop
+          git reset --hard origin/develop
+          [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env .env
+          cd ..
+        fi
+        echo "=== 2. Instalar dependencias ==="
+        cd ~/MIRO_TEST/Front_Miro_Test
+        sed -i "s/ = /=/g" .env 2>/dev/null || true
+        npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
+        echo "=== 3. Build ==="
+        npm run build
+        echo "=== 4. Reload PM2 ==="
+        if pm2 list | grep -q "Front_Dev"; then
+          pm2 reload Front_Dev --update-env || pm2 restart Front_Dev
+        else
+          PORT=3001 pm2 start npm --name "Front_Dev" -- start
+        fi
+        pm2 save
+        echo "=== Deploy completo ==="
+EOF
+        sshpass -p "$SSH_PASS" scp \
+          -o StrictHostKeyChecking=no \
+          /tmp/deploy.sh "$SSH_USER@$SSH_HOST:/tmp/deploy_front.sh"
         sshpass -p "$SSH_PASS" ssh \
           -o StrictHostKeyChecking=no \
           -o ConnectTimeout=20 \
           -o ServerAliveInterval=20 \
           -o ServerAliveCountMax=60 \
-          "$SSH_USER@$SSH_HOST" << 'ENDSSH'
-            set -e
-
-            echo "=== 1. Actualizar codigo ==="
-            cd ~/MIRO_TEST
-            if [ ! -d "Front_Miro_Test/.git" ]; then
-              echo "Clonando repositorio por primera vez..."
-              git clone --depth=1 --branch develop https://github.com/BrayanD117/Front_Miro.git Front_Miro_Test
-            else
-              cd Front_Miro_Test
-              [ -f .env ] && cp .env /tmp/front_dev.env
-              git fetch --depth=1 origin develop
-              git reset --hard origin/develop
-              [ -f /tmp/front_dev.env ] && cp /tmp/front_dev.env .env
-              cd ..
-            fi
-
-            echo "=== 2. Instalar dependencias ==="
-            cd ~/MIRO_TEST/Front_Miro_Test
-            sed -i "s/ = /=/g" .env 2>/dev/null || true
-            npm install --prefer-offline 2>/dev/null || npm install --legacy-peer-deps
-
-            echo "=== 3. Build ==="
-            npm run build
-
-            echo "=== 4. Reload PM2 ==="
-            if pm2 list | grep -q "Front_Dev"; then
-              pm2 reload Front_Dev --update-env || pm2 restart Front_Dev
-            else
-              PORT=3001 pm2 start npm --name "Front_Dev" -- start
-            fi
-            pm2 save
-
-            echo "=== Deploy completo ==="
-ENDSSH
+          "$SSH_USER@$SSH_HOST" "bash /tmp/deploy_front.sh"
 
     - name: Run Semantic Release
       working-directory: ./
