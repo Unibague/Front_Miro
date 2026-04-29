@@ -54,8 +54,15 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         const sorted = [...res.data].sort((a: any, b: any) =>
           a.nombre.localeCompare(b.nombre, undefined, { numeric: true, sensitivity: "base" })
         );
-        setCortesData(sorted.map((c: any) => ({ nombre: c.nombre, descripcion: c.descripcion ?? "" })));
-        setCortes(sorted.map((c: any) => c.nombre));
+        // Deduplicar por nombre para evitar opciones duplicadas en Mantine
+        const vistos = new Set<string>();
+        const unicos = sorted.filter((c: any) => {
+          if (vistos.has(c.nombre)) return false;
+          vistos.add(c.nombre);
+          return true;
+        });
+        setCortesData(unicos.map((c: any) => ({ nombre: c.nombre, descripcion: c.descripcion ?? "" })));
+        setCortes(unicos.map((c: any) => c.nombre));
       })
       .catch(() => {});
   }, []);
@@ -116,7 +123,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setPeriodos((p) => p.map((item, i) => i === idx ? { ...item, [field]: value } : item));
 
   const toNum = (val: string) => {
-    const normalizado = val.replace(",", ".");
+    const normalizado = val
+      .replace(/%/g, "")
+      .replace(/\s+/g, "")
+      .replace(",", ".");
     return isNaN(Number(normalizado)) ? null : Number(normalizado);
   };
 

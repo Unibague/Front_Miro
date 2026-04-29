@@ -119,8 +119,6 @@ export default function ProyectoModal({
         macroproyecto_id: macroId,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin: fechaFin ? fechaFin.toISOString() : null,
-        presupuesto: selected?.presupuesto ?? 0,
-        presupuesto_ejecutado: selected?.presupuesto_ejecutado ?? 0,
       };
 
       const res = selected

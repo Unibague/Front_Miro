@@ -60,6 +60,11 @@ interface RespuestaFormulario {
   fecha_envio?: string | null;
   word_filename?: string;
   word_url?: string;
+  word_nombre_original?: string;
+  documento_nombre_original?: string;
+  documento_filename?: string;
+  documento_url?: string;
+  documento_mimetype?: string;
   estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
   lider_email_aval?: string;
   aval_por?: string;
@@ -123,6 +128,7 @@ export default function SubirEvidenciasPage() {
   const [textos, setTextos] = useState<Record<string, string>>({});
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
 
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -144,6 +150,7 @@ export default function SubirEvidenciasPage() {
       const resp = respuestas[f._id];
       return resp?.estado === "Enviado" && resp?.estado_aval === "Aprobado";
     });
+  const autoAprobadoUsuario = esLiderDelIndicador || esLiderDesdeListado;
 
   // ── Carga indicador ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -194,6 +201,26 @@ export default function SubirEvidenciasPage() {
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
+  const formTieneDocumento = (formId: string) => Boolean(respuestas[formId]?.documento_url);
+  const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
+    const esObligatorio = campo.requerido !== false;
+    if (!esObligatorio) return true;
+
+    if (campo.tipo === "texto_largo") {
+      return Boolean(getTexto(formId, campo._id).trim());
+    }
+
+    return Boolean(getRespuestaCampo(formId, campo._id)?.url);
+  };
+  const periodosEditablesSinAvance = (indicador?.periodos ?? []).filter((p: Periodo) => {
+    if (!esPeriodoEditable(p.periodo, cortesVigentes)) return false;
+    return parseAvance(avancesStr[p.periodo] ?? "") == null;
+  });
+  const formulariosIncompletos = formularios.filter((form) =>
+    form.campos.some((campo) => !campoEstaCompleto(form._id, campo))
+  );
+  const formulariosSinDocumento = formularios.filter((form) => !formTieneDocumento(form._id));
+
   const recargarRespuestas = async (formsOverride?: FormularioPDI[]) => {
     const formsToLoad = formsOverride ?? formularios;
     if (!indicadorId || !email || !corteActivo || formsToLoad.length === 0) return;
@@ -222,8 +249,11 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Guardar avances ───────────────────────────────────────────────────────
-  const guardarAvances = async () => {
+  const guardarAvances = async (modo: "guardar" | "enviar" = "guardar") => {
     if (!indicador) return;
+    const autoAprobado = esLiderDelIndicador || esLiderDesdeListado;
+    const estadoEnviado = autoAprobado ? "Aprobado" : "Enviado";
+    const fechaEnvio = new Date().toISOString();
     const periodosPayload = (indicador.periodos ?? []).map((p: Periodo) => {
       const val = parseAvance(avancesStr[p.periodo] ?? "");
       return {
@@ -233,9 +263,9 @@ export default function SubirEvidenciasPage() {
         resultados_alcanzados: p.resultados_alcanzados ?? "",
         logros: p.logros ?? "", alertas: p.alertas ?? "",
         justificacion_retrasos: p.justificacion_retrasos ?? "",
-        estado_reporte: p.estado_reporte ?? "Borrador",
-        fecha_envio: p.fecha_envio ?? null,
-        reportado_por: p.reportado_por ?? "",
+        estado_reporte: modo === "enviar" ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
+        fecha_envio: modo === "enviar" ? fechaEnvio : (p.fecha_envio ?? null),
+        reportado_por: modo === "enviar" ? email : (p.reportado_por ?? ""),
       };
     });
     const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
@@ -335,12 +365,87 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
+  const handleUploadDocumento = async (form: FormularioPDI, file: File | null) => {
+    if (!file) return;
+    let respActual = respuestas[form._id];
+    if (!respActual) {
+      try {
+        const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
+          respondido_por: email,
+          corte: corteActivo,
+          indicador_id: indicadorId,
+          respuestas: form.campos.map(c => ({
+            campo_id: c._id,
+            etiqueta: c.etiqueta,
+            tipo: c.tipo,
+            valor_texto: "",
+            nombre_original: "",
+            filename: "",
+            url: "",
+          })),
+          estado: "Borrador",
+        });
+        respActual = res.data;
+        setRespuestas(prev => ({ ...prev, [form._id]: res.data }));
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo preparar la respuesta", color: "red" });
+        return;
+      }
+    }
+
+    setUploadingDocumento(prev => ({ ...prev, [form._id]: true }));
+    try {
+      const fd = new FormData();
+      fd.append("archivo", file);
+      const res = await axios.post(
+        PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      setRespuestas(prev => {
+        const actual = prev[form._id] ?? respActual;
+        if (!actual) return prev;
+        return { ...prev, [form._id]: { ...actual, ...res.data } };
+      });
+      showNotification({ title: "Subido", message: "Evidencia adjuntada correctamente", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "Solo se permiten archivos Word o PDF", color: "red" });
+    } finally {
+      setUploadingDocumento(prev => ({ ...prev, [form._id]: false }));
+    }
+  };
+
+  const handleDeleteDocumento = async (form: FormularioPDI) => {
+    const resp = respuestas[form._id];
+    if (!resp) return;
+    try {
+      await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id));
+      setRespuestas(prev => {
+        const actual = prev[form._id];
+        if (!actual) return prev;
+        return {
+          ...prev,
+          [form._id]: {
+            ...actual,
+            documento_filename: "",
+            documento_url: "",
+            documento_nombre_original: "",
+            documento_mimetype: "",
+          },
+        };
+      });
+      showNotification({ title: "Eliminado", message: "Evidencia eliminada", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo eliminar la evidencia", color: "red" });
+    }
+  };
+
   const handleGuardarBorrador = async () => {
     setSavingDraft(true);
     try {
       await guardarAvances();
       await Promise.all(formularios.map(f => guardarFormulario(f, false)));
-      showNotification({ title: "Borrador guardado", message: "Puedes continuar más tarde", color: "teal" });
+      showNotification({ title: "Guardado", message: "Puedes continuar más tarde", color: "teal" });
     } catch {
       showNotification({ title: "Error", message: "No se pudo guardar", color: "red" });
     } finally {
@@ -350,14 +455,37 @@ export default function SubirEvidenciasPage() {
 
   // ── Acción: guardar avances + enviar formulario ───────────────────────────
   const handleEnviarTodo = async () => {
+    if (!puedeEnviarTodo) {
+      const errores: string[] = [];
+      if (!hayPeriodosEditables) errores.push("No hay un periodo de corte editable para reportar.");
+      if (periodosEditablesSinAvance.length > 0) {
+        errores.push(`Debes registrar el avance del periodo ${periodosEditablesSinAvance.map((p) => p.periodo).join(", ")}.`);
+      }
+      if (formulariosIncompletos.length > 0) {
+        errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
+      }
+      if (formulariosSinDocumento.length > 0) {
+        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form) => `"${form.nombre}"`).join(", ")}.`);
+      }
+      showNotification({
+        title: "Falta información obligatoria",
+        message: errores.join(" "),
+        color: "red",
+      });
+      return;
+    }
+
     setSending(true);
     try {
-      await guardarAvances();
+      const autoAprobado = esLiderDelIndicador || esLiderDesdeListado;
+      await guardarAvances("enviar");
       await Promise.all(formularios.map(f => guardarFormulario(f, true)));
       await recargarRespuestas();
       showNotification({
-        title: "Enviado",
-        message: "Avances y formulario enviados correctamente. El reporte quedó en revisión del líder.",
+        title: autoAprobado ? "Aprobado" : "Enviado",
+        message: autoAprobado
+          ? "Avances y formulario aprobados automáticamente porque eres el líder responsable del indicador."
+          : "Avances y formulario enviados correctamente. El reporte quedó en revisión del líder.",
         color: "teal",
       });
     } catch {
@@ -392,6 +520,12 @@ export default function SubirEvidenciasPage() {
   const hayPeriodosEditables = indicador.periodos.some((p: Periodo) =>
     esPeriodoEditable(p.periodo, cortesVigentes)
   );
+  
+  const puedeEnviarTodo =
+    hayPeriodosEditables &&
+    periodosEditablesSinAvance.length === 0 &&
+    formulariosIncompletos.length === 0 &&
+    formulariosSinDocumento.length === 0;
   const bloqueado = todosEnviados && !tieneFormulariosRechazados;
 
   return (
@@ -462,8 +596,8 @@ export default function SubirEvidenciasPage() {
                   <Text fw={700} c={tieneFormulariosRechazados ? "red" : "teal"}>
                     {tieneFormulariosRechazados
                       ? "Reporte rechazado. Revisa las observaciones del líder, ajusta el formulario y vuelve a enviarlo."
-                      : todosLosEnviadosAprobados
-                        ? "Reporte aprobado."
+                      : (todosLosEnviadosAprobados || (autoAprobadoUsuario && todosEnviados))
+                        ? "Reporte enviado y aprobado."
                         : "Reporte enviado. El líder del macroproyecto revisará y avalará tu evidencia."}
                   </Text>
                 </Group>
@@ -486,6 +620,31 @@ export default function SubirEvidenciasPage() {
                     const porcentaje = metaNumerica && metaNumerica > 0 && avanceNumerico != null
                       ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
                       : null;
+                    const estadoPeriodo = p.estado_reporte ?? null;
+                    const periodoAutoAprobado =
+                      autoAprobadoUsuario &&
+                      !tieneFormulariosRechazados &&
+                      (estadoPeriodo === "Aprobado" || estadoPeriodo === "Enviado" || (bloqueado && avanceNumerico != null));
+                    const badgeColor =
+                      periodoAutoAprobado
+                        ? "teal"
+                        : estadoPeriodo === "Rechazado"
+                          ? "red"
+                          : estadoPeriodo === "Enviado"
+                            ? "yellow"
+                            : editable
+                              ? "violet"
+                              : "gray";
+                    const badgeLabel =
+                      periodoAutoAprobado
+                        ? "Aprobado"
+                        : estadoPeriodo === "Rechazado"
+                          ? "Rechazado"
+                          : estadoPeriodo === "Enviado"
+                            ? "En revisión"
+                            : editable
+                              ? "Abierto"
+                              : "Cerrado";
                     return (
                       <Paper key={p.periodo} withBorder radius="xl" p="md" style={{
                         borderLeft: `4px solid ${editable ? "#7c3aed" : "#cbd5e1"}`,
@@ -495,8 +654,8 @@ export default function SubirEvidenciasPage() {
                           <div>
                             <Group gap={8}>
                               <Text size="lg" fw={800}>{p.periodo}</Text>
-                              <Badge size="sm" radius="xl" color={editable ? "violet" : "gray"} variant="light">
-                                {bloqueado ? "Bloqueado" : editable ? "Abierto" : "Cerrado"}
+                              <Badge size="sm" radius="xl" color={badgeColor} variant="light">
+                                {badgeLabel}
                               </Badge>
                             </Group>
                             <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
@@ -566,7 +725,11 @@ export default function SubirEvidenciasPage() {
                   {formularios.map(form => {
                     const resp = respuestas[form._id];
                     const enviado = resp?.estado === "Enviado";
-                    const estadoAval = resp?.estado_aval ?? (enviado ? "Pendiente" : null);
+                    const autoAprobadoFormulario =
+                      autoAprobadoUsuario &&
+                      resp?.estado === "Enviado" &&
+                      resp?.estado_aval !== "Rechazado";
+                    const estadoAval = resp?.estado_aval ?? (autoAprobadoFormulario ? "Aprobado" : enviado ? "Pendiente" : null);
                     const fechaAval = formatFechaCorta(resp?.aval_fecha);
                     const fechaEnvio = formatFechaCorta(resp?.fecha_envio);
                     const avalLabel =
@@ -578,7 +741,8 @@ export default function SubirEvidenciasPage() {
                             ? "En revisión"
                             : null;
                     return (
-                      <Paper key={form._id} withBorder radius="xl" p="lg"
+                      <Stack key={form._id} gap="sm">
+                        <Paper withBorder radius="xl" p="lg"
                         style={{
                           borderLeft: `4px solid ${
                             estadoAval === "Rechazado"
@@ -593,8 +757,8 @@ export default function SubirEvidenciasPage() {
                         <Group justify="space-between" mb="md">
                           <Text fw={700} size="md">{form.nombre}</Text>
                           <Group gap={8}>
-                            <Badge color={enviado ? "teal" : resp ? "yellow" : "gray"} variant="light">
-                              {enviado ? "Enviado" : resp ? "Borrador" : "Sin responder"}
+                            <Badge color={autoAprobadoFormulario ? "teal" : enviado ? "teal" : resp ? "yellow" : "gray"} variant="light">
+                              {autoAprobadoFormulario ? "Aprobado" : enviado ? "Enviado" : resp ? "Guardado" : "Sin responder"}
                             </Badge>
                             {avalLabel && (
                               <Badge
@@ -668,6 +832,20 @@ export default function SubirEvidenciasPage() {
                                   Descargar Word aprobado
                                 </Button>
                               )}
+                              {estadoAval === "Aprobado" && resp.documento_url && (
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="violet"
+                                  component="a"
+                                  href={resp.documento_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ alignSelf: "flex-start" }}
+                                >
+                                  Ver evidencia aprobada
+                                </Button>
+                              )}
                             </Stack>
                           </Paper>
                         )}
@@ -731,6 +909,87 @@ export default function SubirEvidenciasPage() {
                           })}
                         </Stack>
                       </Paper>
+
+                      <div>
+                        <Group gap={8} mb="md">
+                          <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+                            <IconUpload size={16} />
+                          </ThemeIcon>
+                          <div>
+                            <Title order={5}>Evidencias</Title>
+                            <Text size="xs" c="dimmed">Archivo Word o PDF para revisión</Text>
+                          </div>
+                        </Group>
+                        <Paper
+                          withBorder
+                          radius="xl"
+                          p="lg"
+                          style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}
+                        >
+                          <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
+                            <div>
+                              <Group gap={6} mb={4}>
+                                <ThemeIcon size={24} radius="xl" color="violet" variant="light">
+                                  <IconUpload size={13} />
+                                </ThemeIcon>
+                                <Text size="sm" fw={700}>Archivo de evidencias</Text>
+                                <Badge size="xs" color="red" variant="dot">Requerido</Badge>
+                              </Group>
+                              <Text size="xs" c="dimmed">
+                                Adjunta un archivo PDF o Word para que el lider lo revise con el formulario.
+                              </Text>
+                            </div>
+
+                            {resp?.documento_url ? (
+                              <Group gap={8}>
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="violet"
+                                  component="a"
+                                  href={resp.documento_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  leftSection={<IconExternalLink size={13} />}
+                                >
+                                  {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
+                                </Button>
+                                {!bloqueado && (
+                                  <ActionIcon
+                                    size="sm"
+                                    variant="subtle"
+                                    color="red"
+                                    onClick={() => handleDeleteDocumento(form)}
+                                  >
+                                    <IconTrash size={13} />
+                                  </ActionIcon>
+                                )}
+                              </Group>
+                            ) : !bloqueado ? (
+                              <FileButton
+                                onChange={file => handleUploadDocumento(form, file)}
+                                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                              >
+                                {props => (
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="violet"
+                                    loading={uploadingDocumento[form._id]}
+                                    leftSection={<IconUpload size={13} />}
+                                    {...props}
+                                  >
+                                    Subir Word/PDF
+                                  </Button>
+                                )}
+                              </FileButton>
+                            ) : (
+                              <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
+                            )}
+                          </Group>
+                        </Paper>
+                      </div>
+                    </Stack>
                     );
                   })}
                 </Stack>
@@ -744,13 +1003,26 @@ export default function SubirEvidenciasPage() {
                 <Text size="sm" c="dimmed" mb="md" ta="center">
                   {tieneFormulariosRechazados
                     ? "Tu envío fue rechazado. Corrige la información, actualiza los avances y vuelve a enviarlo para una nueva revisión."
-                    : "Guarda un borrador para continuar después, o envía el reporte cuando todo esté listo."}
+                    : "Guarda los cambios para continuar después, o envía el reporte cuando todo esté listo."}
                   <b>
                     {tieneFormulariosRechazados
                       ? " Cuando vuelvas a enviarlo, el líder del macroproyecto recibirá nuevamente tu reporte."
                       : " Una vez enviado, el líder del macroproyecto recibirá tu reporte para revisión."}
                   </b>
                 </Text>
+                {!puedeEnviarTodo && (
+                  <Paper
+                    withBorder
+                    radius="md"
+                    p="sm"
+                    mb="md"
+                    style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
+                  >
+                    <Text size="sm" c="red" fw={600}>
+                      Debes diligenciar el avance del corte activo, completar los campos obligatorios y adjuntar la evidencia Word o PDF antes de enviar.
+                    </Text>
+                  </Paper>
+                )}
                 <Group justify="center" gap="md">
                   <Button
                     variant="default"
@@ -759,14 +1031,14 @@ export default function SubirEvidenciasPage() {
                     disabled={sending || !hayPeriodosEditables}
                     onClick={handleGuardarBorrador}
                   >
-                    Guardar borrador
+                    Guardar
                   </Button>
                   <Button
                     color="violet"
                     radius="xl"
                     size="md"
                     loading={sending}
-                    disabled={savingDraft || !hayPeriodosEditables}
+                    disabled={savingDraft || !puedeEnviarTodo}
                     leftSection={<IconCheck size={16} />}
                     onClick={handleEnviarTodo}
                   >

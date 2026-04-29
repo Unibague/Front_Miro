@@ -45,27 +45,23 @@ function getSemaforoByAvance(avance: number) {
   return "rojo";
 }
 
+function normalizePeso(peso: number) {
+  const value = Number(peso) || 0;
+  return value <= 1 ? value * 100 : value;
+}
+
 function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  const totalPeso = items.reduce((acc, item) => acc + (Number(item.peso) || 0), 0);
-  if (totalPeso <= 0) return 0;
   return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * (Number(item.peso) || 0), 0) / 100
+    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
   );
 }
 
 function getIndicadorAvanceMostrado(ind: Indicador) {
-  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
-  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
-
-  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
-  }
-
   return ind.avance_total_real ?? ind.avance;
 }
 
 function getIndicadorAvancePonderado(ind: Indicador) {
-  return Math.min(Math.max(getIndicadorAvanceMostrado(ind), 0), 100);
+  return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
@@ -536,9 +532,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Critico";
   const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
   const estructuraResumen = [
-    { label: "Macros", value: macros.length, color: "violet" },
+    { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
-    { label: "Acciones", value: totalAcciones, color: "orange" },
+    { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
   return (
@@ -611,7 +607,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               </Group>
               <Text size="xs" c="dimmed">Estado del portafolio</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
-              <Text size="xs" c="dimmed" mt={6}>Macros en cumplimiento adecuado</Text>
+              <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">
@@ -642,7 +638,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macros al 50% o mas</Text>
+              <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
               <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} macroproyectos</Text>
             </Paper>
@@ -654,7 +650,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macro con mayor avance</Text>
+              <Text size="xs" c="dimmed">Macroproyectos con mayor avance</Text>
               <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
                 {macroLider?.codigo ?? "Sin datos"}
               </Text>
@@ -784,55 +780,19 @@ export default function PdiPage() {
       const accionesData: Accion[] = accionesRes.data;
       const indicadoresData: Indicador[] = indicadoresRes.data;
 
-      const accionesComputadas = accionesData.map((accion) => {
-        const indicadoresAccion = indicadoresData.filter((indicador) => indicador.accion_id?._id === accion._id);
-        const avance = indicadoresAccion.length
-          ? getWeightedProgress(indicadoresAccion, (indicador) => getIndicadorAvancePonderado(indicador))
-          : Number(accion.avance) || 0;
-        return {
-          ...accion,
-          avance,
-          semaforo: getSemaforoByAvance(avance) as any,
-        };
-      });
-
-      const proyectosComputados = proyectosData.map((proyecto) => {
-        const accionesProyecto = accionesComputadas.filter((accion) => accion.proyecto_id?._id === proyecto._id);
-        const avance = accionesProyecto.length
-          ? getWeightedProgress(accionesProyecto, (accion) => Number(accion.avance) || 0)
-          : Number(proyecto.avance) || 0;
-        return {
-          ...proyecto,
-          avance,
-          semaforo: getSemaforoByAvance(avance) as any,
-        };
-      });
-
-      const macrosComputados = macrosData.map((macro) => {
-        const proyectosMacro = proyectosComputados.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
-        const avance = proyectosMacro.length
-          ? getWeightedProgress(proyectosMacro, (proyecto) => Number(proyecto.avance) || 0)
-          : Number(macro.avance) || 0;
-        return {
-          ...macro,
-          avance,
-          semaforo: getSemaforoByAvance(avance) as any,
-        };
-      });
-
-      const proyectosMap = macrosComputados.reduce<Record<string, Proyecto[]>>((acc, macro) => {
-        acc[macro._id] = proyectosComputados.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
+      const proyectosMap = macrosData.reduce<Record<string, Proyecto[]>>((acc, macro) => {
+        acc[macro._id] = proyectosData.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
         return acc;
       }, {});
 
-      const proyectoToMacroMap = proyectosComputados.reduce<Record<string, string>>((acc, proyecto) => {
+      const proyectoToMacroMap = proyectosData.reduce<Record<string, string>>((acc, proyecto) => {
         if (proyecto.macroproyecto_id?._id) {
           acc[proyecto._id] = proyecto.macroproyecto_id._id;
         }
         return acc;
       }, {});
 
-      const accionToMacroMap = accionesComputadas.reduce<Record<string, string>>((acc, accion) => {
+      const accionToMacroMap = accionesData.reduce<Record<string, string>>((acc, accion) => {
         const proyectoId = accion.proyecto_id?._id;
         const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
         if (macroId) {
@@ -841,7 +801,7 @@ export default function PdiPage() {
         return acc;
       }, {});
 
-      const accionesCountMap = accionesComputadas.reduce<Record<string, number>>((acc, accion) => {
+      const accionesCountMap = accionesData.reduce<Record<string, number>>((acc, accion) => {
         const proyectoId = accion.proyecto_id?._id;
         const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
         if (macroId) {
@@ -859,7 +819,7 @@ export default function PdiPage() {
         return acc;
       }, {});
 
-      setMacros(macrosComputados);
+      setMacros(macrosData);
       setProyectosPorMacro(proyectosMap);
       setAccionesPorMacro(accionesCountMap);
       setIndicadoresPorMacro(indicadoresCountMap);

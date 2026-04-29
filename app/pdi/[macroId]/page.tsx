@@ -16,7 +16,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter, useParams } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador, ImportBudgetResponse, ImportExecutedResponse } from "../types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, ImportExecutedResponse } from "../types";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import MacroproyectoModal from "../components/MacroproyectoModal";
@@ -42,38 +42,27 @@ function getSemaforoByAvance(avance: number) {
   return "rojo";
 }
 
+function normalizePeso(peso: number) {
+  const value = Number(peso) || 0;
+  return value <= 1 ? value * 100 : value;
+}
+
 function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  const totalPeso = items.reduce((acc, item) => acc + (Number(item.peso) || 0), 0);
-  if (totalPeso <= 0) return 0;
   return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * (Number(item.peso) || 0), 0) / 100
+    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
   );
 }
 
 function getIndicadorAvanceMostrado(ind: Indicador) {
-  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
-  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
-
-  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return Math.round((avanceActual / metaFinal) * 100 * 100) / 100;
-  }
-
   return ind.avance_total_real ?? ind.avance;
 }
 
 function getIndicadorAvanceTotalReal(ind: Indicador) {
-  const metaFinal = ind.meta_final_2029 != null ? Number(ind.meta_final_2029) : null;
-  const avanceActual = ind.avance != null ? Number(ind.avance) : null;
-
-  if (ind.tipo_calculo === "ultimo_valor" && metaFinal && avanceActual != null) {
-    return (avanceActual / metaFinal) * 100;
-  }
-
-  return ind.avance_total_real != null ? Number(ind.avance_total_real) : getIndicadorAvanceMostrado(ind);
+  return ind.avance_total_real != null ? Number(ind.avance_total_real) : (Number(ind.avance) || 0);
 }
 
 function getIndicadorAvancePonderado(ind: Indicador) {
-  return Math.min(Math.max(getIndicadorAvanceMostrado(ind), 0), 100);
+  return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
 
 function clampProgress(avance: number) {
@@ -102,122 +91,6 @@ function MetaBadge({ label, color = "gray" }: { label: string; color?: string })
     <Badge variant="light" color={color} radius="sm">
       {label}
     </Badge>
-  );
-}
-
-function BudgetImportPanel({
-  macro,
-  selectedFile,
-  uploading,
-  importResult,
-  onPickFile,
-  onImport,
-}: {
-  macro: Macroproyecto;
-  selectedFile: File | null;
-  uploading: boolean;
-  importResult: ImportBudgetResponse | null;
-  onPickFile: (file: File | null) => void;
-  onImport: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  return (
-    <Paper
-      withBorder
-      radius="xl"
-      p="lg"
-      shadow="xs"
-      style={{
-        background: "linear-gradient(135deg, rgba(34,197,94,0.06), rgba(255,255,255,0.98) 58%)",
-      }}
-    >
-      <Group justify="space-between" align="flex-start" wrap="wrap" mb="md">
-        <Group gap={12} align="flex-start">
-          
-          <div>
-            <Text fw={700}>Importar presupuesto desde Excel</Text>
-            <Text size="sm" c="dimmed" mt={4}>
-              Carga la hoja de presupuesto del macroproyecto <b>{macro.codigo}</b>. El sistema consolidara
-              presupuesto asignado.
-            </Text>
-          </div>
-        </Group>
-
-        <Group gap={8}>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,.xlsm"
-            style={{ display: "none" }}
-            onChange={(event) => onPickFile(event.currentTarget.files?.[0] ?? null)}
-          />
-          <Button
-            variant="default"
-            leftSection={<IconFolderOpen size={14} />}
-            onClick={() => inputRef.current?.click()}
-          >
-            {selectedFile ? "Cambiar archivo" : "Seleccionar Excel"}
-          </Button>
-          <Button
-            color="green"
-            leftSection={<IconUpload size={14} />}
-            loading={uploading}
-            disabled={!selectedFile}
-            onClick={onImport}
-          >
-            Importar presupuesto
-          </Button>
-        </Group>
-      </Group>
-
-      {selectedFile && (
-        <Paper withBorder radius="lg" p="sm" mb="md" style={{ background: "var(--mantine-color-body)" }}>
-          <Group justify="space-between" align="center" wrap="wrap">
-            <div>
-              <Text size="xs" c="dimmed">Archivo seleccionado</Text>
-              <Text fw={700}>{selectedFile.name}</Text>
-            </div>
-            <Badge variant="light" color="green" radius="xl">
-              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-            </Badge>
-          </Group>
-        </Paper>
-      )}
-
-      {importResult && (
-        <Stack gap="md">
-          {importResult.actualizados.length > 0 && (
-            <Paper withBorder radius="lg" p="md">
-              <Text fw={700} mb="sm">Resultado</Text>
-              <Stack gap={8}>
-                {importResult.actualizados.map((item) => (
-                  <Group key={item.codigo} justify="space-between" wrap="wrap">
-                    <Text size="sm" fw={700}>{item.codigo}{item.nombre ? ` - ${item.nombre}` : ""}</Text>
-                    <Badge color="green" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
-                  </Group>
-                ))}
-              </Stack>
-            </Paper>
-          )}
-
-          {importResult.no_encontrados.length > 0 && (
-            <Paper withBorder radius="lg" p="md" style={{ borderColor: "var(--mantine-color-orange-4)" }}>
-              <Text fw={700} mb="sm">No encontrado</Text>
-              <Stack gap={8}>
-                {importResult.no_encontrados.map((item) => (
-                  <Group key={item.codigo} justify="space-between" wrap="wrap">
-                    <Text size="sm" fw={700}>{item.codigo}</Text>
-                    <Badge color="gray" variant="light" radius="xl">{formatCOP(item.presupuesto)}</Badge>
-                  </Group>
-                ))}
-              </Stack>
-            </Paper>
-          )}
-        </Stack>
-      )}
-
-    </Paper>
   );
 }
 
@@ -571,6 +444,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
               <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
                <SemaforoBadge semaforo={semaforoAccion} />
               <MetaBadge label={`Peso ${accion.peso}%`} />
+              {accion.presupuesto > 0 && (
+                <Badge variant="light" color="green" radius="sm" size="sm">
+                  {formatCOP(accion.presupuesto)}
+                </Badge>
+              )}
             </Group>
             <Text fw={700} size="md" lh={1.35}>{accion.nombre}</Text>
            
@@ -937,9 +815,6 @@ export default function MacroproyectoDetallePage() {
   const [macroModal, setMacroModal] = useState(false);
   const [proyectoModal, setProyectoModal] = useState(false);
   const [selectedProyecto, setSelectedProyecto] = useState<Proyecto | null>(null);
-  const [budgetFile, setBudgetFile] = useState<File | null>(null);
-  const [uploadingBudget, setUploadingBudget] = useState(false);
-  const [budgetImportResult, setBudgetImportResult] = useState<ImportBudgetResponse | null>(null);
   const [executedFile, setExecutedFile] = useState<File | null>(null);
   const [uploadingExecuted, setUploadingExecuted] = useState(false);
   const [executedImportResult, setExecutedImportResult] = useState<ImportExecutedResponse | null>(null);
@@ -970,48 +845,6 @@ export default function MacroproyectoDetallePage() {
       setProyectos(resProyectos.data);
     } catch (e) {
       console.error(e);
-    }
-  };
-
-  const handleImportBudget = async () => {
-    if (!budgetFile) {
-      showNotification({ title: "Archivo requerido", message: "Selecciona un Excel antes de importar", color: "orange" });
-      return;
-    }
-
-    const fileName = budgetFile.name.toLowerCase();
-    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
-      showNotification({ title: "Formato invalido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", budgetFile);
-    formData.append("macroproyecto_id", macroId);
-
-    setUploadingBudget(true);
-    try {
-      const res = await axios.post<ImportBudgetResponse>(
-        PDI_ROUTES.importarPresupuestoProyecto(),
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-
-      setBudgetImportResult(res.data);
-      await refrescarMacro();
-      showNotification({
-        title: "Importacion completada",
-        message: `${res.data.proyectos_actualizados} proyecto(s) actualizados desde ${budgetFile.name}`,
-        color: "teal",
-      });
-    } catch (e: any) {
-      showNotification({
-        title: "Error al importar",
-        message: e.response?.data?.error ?? "No se pudo procesar el archivo de presupuesto",
-        color: "red",
-      });
-    } finally {
-      setUploadingBudget(false);
     }
   };
 
@@ -1076,26 +909,15 @@ export default function MacroproyectoDetallePage() {
     });
   };
 
-  const handleComputedProyectoProgress = useCallback((proyectoId: string, avance: number, semaforo: string) => {
-    setProyectos((prev) => {
-      let changed = false;
-      const next = prev.map((item) => {
-        if (item._id !== proyectoId) return item;
-        if (Number(item.avance) === avance && item.semaforo === semaforo) return item;
-        changed = true;
-        return { ...item, avance, semaforo: semaforo as any };
-      });
-      return changed ? next : prev;
-    });
-  }, []);
-
   const barColor = macro
     ? macro.avance >= 50 ? "#22c55e" : macro.avance >= 25 ? "#f59e0b" : "#ef4444"
     : "#7c3aed";
   const avanceMacro = macro
-    ? (proyectos.length ? getWeightedProgress(proyectos, (proyecto) => Number(proyecto.avance) || 0) : macro.avance)
+    ? macro.avance
     : 0;
-  const semaforoMacro = getSemaforoByAvance(avanceMacro);
+  const semaforoMacro = macro?.semaforo ?? getSemaforoByAvance(avanceMacro);
+  const presupuestoMacro = Number(macro?.presupuesto) || 0;
+  const presupuestoEjecutadoMacro = Number(macro?.presupuesto_ejecutado) || 0;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -1133,6 +955,14 @@ export default function MacroproyectoDetallePage() {
                     <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
                     {macro.lider && (
                       <Text size="sm" c="dimmed">Líder: <b>{macro.lider}</b></Text>
+                    )}
+                    {presupuestoMacro > 0 && (
+                      <Text size="sm" c="dimmed">
+                        Presupuesto: <b>{formatCOP(presupuestoMacro)}</b>
+                        {presupuestoEjecutadoMacro > 0 && (
+                          <> · Ejecutado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
+                        )}
+                      </Text>
                     )}
                     <Group gap={8}>
                       <Text size="sm" c="dimmed">Avance global</Text>
@@ -1204,16 +1034,6 @@ export default function MacroproyectoDetallePage() {
           ) : (
             <Stack gap="xl">
               {admin && macro && (
-                <BudgetImportPanel
-                  macro={macro}
-                  selectedFile={budgetFile}
-                  uploading={uploadingBudget}
-                  importResult={budgetImportResult}
-                  onPickFile={setBudgetFile}
-                  onImport={handleImportBudget}
-                />
-              )}
-              {admin && macro && (
                 <ExecutedImportPanel
                   macro={macro}
                   selectedFile={executedFile}
@@ -1232,7 +1052,7 @@ export default function MacroproyectoDetallePage() {
                   onEdit={(item) => { setSelectedProyecto(item); setProyectoModal(true); }}
                   onDelete={handleDeleteProyecto}
                   onAvanceUpdate={refrescarMacro}
-                  onComputedProgress={handleComputedProyectoProgress}
+                  onComputedProgress={() => {}}
                 />
               ))}
             </Stack>
