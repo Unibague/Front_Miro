@@ -75,7 +75,7 @@ interface AccessProfile {
   updatedAt?: string | null;
 }
 
-const DEFAULT_PROFILES = ["Ver", "Administrar", "Gestionar"];
+const DEFAULT_PROFILES = ["Ver", "Gestionar"];
 
 const countPermissionChecks = (permissions: Record<string, string[]>) =>
   Object.values(permissions || {}).reduce((total, profiles) => total + profiles.length, 0);
@@ -216,7 +216,7 @@ export default function PositionViewsPage() {
               },
             ];
 
-      setPermissionLevels(response.data?.levels || DEFAULT_PROFILES);
+      setPermissionLevels(DEFAULT_PROFILES);
       setViews(response.data?.views || []);
       setSelectedProfile(response.data?.profile || null);
       setSelectedPositions(fallbackPositions);
@@ -443,28 +443,19 @@ export default function PositionViewsPage() {
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
-        <Group justify="space-between" align="flex-start">
-          <div>
+        <div>
+          <Group gap={6} align="center">
+            <ActionIcon variant="subtle" color="blue" size="md" onClick={() => router.push("/configuracion/perfiles")}>
+              <IconArrowLeft size={18} />
+            </ActionIcon>
             <Title order={2}>Gestionar vistas</Title>
+          </Group>
             <Text c="dimmed" size="sm">
               {isProfileMode
                 ? `Permisos y personas activas del perfil ${managementTitle}.`
                 : `Permisos y personas activas del cargo ${managementTitle}.`}
             </Text>
-            {isProfileMode && managedPositionNames.length > 0 && (
-              <Group gap={4} mt={6}>
-                {managedPositionNames.map((positionName) => (
-                  <Badge key={positionName} variant="light" color="gray">
-                    {positionName}
-                  </Badge>
-                ))}
-              </Group>
-            )}
-          </div>
-          <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => router.push("/configuracion/perfiles")}>
-            Volver
-          </Button>
-        </Group>
+        </div>
 
         {!isAdmin && (
           <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
@@ -511,6 +502,38 @@ export default function PositionViewsPage() {
                 </Group>
               </Card>
             </SimpleGrid>
+
+            {isProfileMode && (
+              <Card withBorder radius="md" p="md">
+                <Stack gap="sm">
+                  <Group justify="space-between" align="flex-start">
+                    <div>
+                      <Title order={4}>Cargos asociados</Title>
+                      <Text size="sm" c="dimmed">
+                        Cargos que hacen parte de este perfil.
+                      </Text>
+                    </div>
+                    <Badge variant="light" color="blue">{managedPositionNames.length}</Badge>
+                  </Group>
+
+                  {managedPositionNames.length > 0 ? (
+                    <ScrollArea.Autosize mah={150} type="auto" offsetScrollbars>
+                      <Group gap={6}>
+                        {managedPositionNames.map((positionName) => (
+                          <Badge key={positionName} variant="light" color="gray">
+                            {positionName}
+                          </Badge>
+                        ))}
+                      </Group>
+                    </ScrollArea.Autosize>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No hay cargos asociados a este perfil.
+                    </Text>
+                  )}
+                </Stack>
+              </Card>
+            )}
 
             <Card withBorder radius="md" p="md">
               <Stack gap="md">
@@ -626,7 +649,7 @@ export default function PositionViewsPage() {
                   <div>
                     <Title order={4}>Permisos de vistas</Title>
                     <Text size="sm" c="dimmed">
-                      Ver permite consultar, Gestionar permite operar procesos y Administrar permite configurar.
+                      Ver permite consultar sin modificar nada. Gestionar permite crear, modificar y operar según el rol interno (Administrador, Productor, Responsable).
                     </Text>
                   </div>
                   <Badge variant="light" color="blue">

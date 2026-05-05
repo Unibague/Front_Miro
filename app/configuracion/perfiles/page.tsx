@@ -274,16 +274,16 @@ export default function ProfilesManagementPage() {
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
-        <Group justify="space-between" align="flex-start">
+        <Group align="flex-start" gap="sm">
+          <ActionIcon variant="subtle" color="blue" size="lg" mt={4} onClick={() => router.push("/configuracion")}>
+            <IconArrowLeft size={18} />
+          </ActionIcon>
           <div>
             <Title order={2}>Gestionar perfiles</Title>
             <Text c="dimmed" size="sm">
               Asigna por cargo que vistas puede ver, gestionar o administrar cada grupo de usuarios.
             </Text>
           </div>
-          <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => router.push("/configuracion")}>
-            Volver
-          </Button>
         </Group>
 
         {!isAdmin && (
@@ -360,11 +360,10 @@ export default function ProfilesManagementPage() {
             </Group>
 
             <ScrollArea>
-              <Table striped withTableBorder verticalSpacing="sm" style={{ minWidth: 760 }}>
+              <Table striped withTableBorder verticalSpacing="sm" style={{ minWidth: 620 }}>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Perfil</Table.Th>
-                    <Table.Th>Cargos</Table.Th>
                     <Table.Th>Última actualización</Table.Th>
                     <Table.Th>
                       <Center>Acciones</Center>
@@ -374,7 +373,7 @@ export default function ProfilesManagementPage() {
                 <Table.Tbody>
                   {profilesLoading ? (
                     <Table.Tr>
-                      <Table.Td colSpan={4}>
+                      <Table.Td colSpan={3}>
                         <Center py="md">
                           <Loader size="sm" />
                         </Center>
@@ -382,7 +381,7 @@ export default function ProfilesManagementPage() {
                     </Table.Tr>
                   ) : accessProfiles.length === 0 ? (
                     <Table.Tr>
-                      <Table.Td colSpan={4}>
+                      <Table.Td colSpan={3}>
                         <Center py="md">
                           <Text c="dimmed">Aún no hay perfiles creados.</Text>
                         </Center>
@@ -393,20 +392,8 @@ export default function ProfilesManagementPage() {
                       <Table.Tr key={profile._id}>
                         <Table.Td>
                           <Text fw={700}>{profile.name}</Text>
+                          <Text size="xs" c="dimmed">{(profile.positions || []).length} cargos vinculados</Text>
                           {profile.createdBy && <Text size="xs" c="dimmed">Creado por {profile.createdBy}</Text>}
-                        </Table.Td>
-                        <Table.Td>
-                          <Group gap={4}>
-                            {(profile.positions || []).map((position) => (
-                              <Badge
-                                key={`${profile._id}-${position}`}
-                                variant="light"
-                                color="gray"
-                              >
-                                {position}
-                              </Badge>
-                            ))}
-                          </Group>
                         </Table.Td>
                         <Table.Td>
                           <Text size="sm">{formatUpdatedAt(profile.updatedAt)}</Text>

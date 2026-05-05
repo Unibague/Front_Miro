@@ -1084,23 +1084,6 @@ const DashboardPage = () => {
     return (
       <>
         <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconShield size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta="center" w={500}>Gestionar perfiles</Text>
-            </Group>
-            <Text ta="center" size="sm" color="dimmed">
-              Define qué vistas puede consultar o administrar cada perfil del sistema.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/configuracion/perfiles")}>
-              Ir a Gestion de Perfiles
-            </Button>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/users")} style={{ cursor: "pointer" }}>
             <Center>
               <IconUserHexagon size={80} />
@@ -1113,6 +1096,23 @@ const DashboardPage = () => {
             </Text>
             <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/admin/users")}>
               Ir a Gestión de Usuarios
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconShield size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta="center" w={500}>Gestionar perfiles</Text>
+            </Group>
+            <Text ta="center" size="sm" color="dimmed">
+              Define qué vistas puede consultar o administrar cada perfil del sistema.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/configuracion/perfiles")}>
+              Ir a Gestion de Perfiles
             </Button>
           </Card>
         </Grid.Col>

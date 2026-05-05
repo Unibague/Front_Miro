@@ -1,2 +1,13 @@
-(node:40692) Warning: Setting the NODE_TLS_REJECT_UNAUTHORIZED environment variable to '0' makes TLS connections and HTTPS requests insecure by disabling certificate verification.
-(Use `node --trace-warnings ...` to show where the warning was created)
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:420:11)
+    at spawn (node:child_process:753:9)
+    at fork (node:child_process:171:10)
+    at C:\Users\UNIBAGUE\Documents\Miro\Front_Miro\node_modules\next\dist\cli\next-dev.js:213:45
+    at new Promise (<anonymous>)
+    at startServer (C:\Users\UNIBAGUE\Documents\Miro\Front_Miro\node_modules\next\dist\cli\next-dev.js:199:16)
+    at runDevServer (C:\Users\UNIBAGUE\Documents\Miro\Front_Miro\node_modules\next\dist\cli\next-dev.js:280:23)
+    at Module.nextDev (C:\Users\UNIBAGUE\Documents\Miro\Front_Miro\node_modules\next\dist\cli\next-dev.js:288:11) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}
