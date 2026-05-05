@@ -223,8 +223,9 @@ export default function DashboardPage() {
                 />
                 <StatCard
                   icon={<IconAlertTriangle size={18} />}
-                  title="Indicadores con alertas"
+                  title="Reportes pendientes"
                   value={resumen.alertas.indicadores_con_alertas}
+                  sub="Sin reporte enviado"
                   color="orange"
                   badge={resumen.alertas.indicadores_con_alertas > 0 ? "Revisar" : undefined}
                 />

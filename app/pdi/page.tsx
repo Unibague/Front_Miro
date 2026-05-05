@@ -17,7 +17,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador } from "./types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen } from "./types";
 import { PDI_ROUTES } from "./api";
 import MacroproyectoModal from "./components/MacroproyectoModal";
 import ProyectoModal from "./components/ProyectoModal";
@@ -510,11 +510,12 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 }
 
 // ── Stats cards ───────────────────────────────────────────────────────────
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
+  alertasActivas: number;
 }) {
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
@@ -527,7 +528,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
   const verdes = macros.filter((m) => m.semaforo === "verde").length;
   const sinAvance = macros.filter((m) => m.avance === 0).length;
-  const alertas = criticos + amarillos;
+  const alertas = alertasActivas;
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Critico";
   const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
@@ -619,10 +620,10 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   {alertas > 0 ? "Revisar" : "Controlado"}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Alertas activas</Text>
+              <Text size="xs" c="dimmed">Reportes pendientes</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{alertas}</Text>
               <Text size="xs" c="dimmed" mt={6}>
-                {alertas === 0 ? "Sin macros en riesgo" : `${criticos} critico${criticos !== 1 ? "s" : ""} y ${amarillos} en riesgo`}
+                {alertas === 0 ? "Todos los indicadores han reportado" : "Sin reporte enviado"}
               </Text>
               {sinAvance > 0 && (
                 <Text size="xs" c="red" mt={6} fw={600}>
@@ -758,6 +759,7 @@ export default function PdiPage() {
   const { config, refresh: refreshConfig } = usePdiConfig();
 
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
+  const [resumen, setResumen] = useState<DashboardResumen | null>(null);
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
@@ -768,12 +770,14 @@ export default function PdiPage() {
 
   const cargarPortfolio = async () => {
     try {
-      const [macrosRes, proyectosRes, accionesRes, indicadoresRes] = await Promise.all([
+      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes] = await Promise.all([
         axios.get(PDI_ROUTES.macroproyectos()),
         axios.get(PDI_ROUTES.proyectos()),
         axios.get(PDI_ROUTES.acciones()),
         axios.get(PDI_ROUTES.indicadores()),
+        axios.get(PDI_ROUTES.dashboardResumen()),
       ]);
+      setResumen(resumenRes.data);
 
       const macrosData: Macroproyecto[] = macrosRes.data;
       const proyectosData: Proyecto[] = proyectosRes.data;
@@ -906,7 +910,7 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
-      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} />
+      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} />
 
       <Group justify="space-between" align="center" mb="md">
         <div>

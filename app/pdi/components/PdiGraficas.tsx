@@ -2,93 +2,119 @@
 
 import { useEffect, useState, useMemo } from "react";
 import {
-  Stack, Text, Paper, Select, Group, Loader, Center, SimpleGrid,
-  Badge, Box, ThemeIcon, Progress,
+  Stack, Text, Paper, Select, Group, Loader, Center, Box, Grid, Badge, ThemeIcon,
+  ActionIcon, Divider,
 } from "@mantine/core";
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  RadialBarChart, RadialBar,
-  LineChart, Line,
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LabelList, Cell,
+  LineChart, Line, CartesianGrid, Legend,
 } from "recharts";
+import {
+  IconTarget, IconChartBar, IconUsers, IconAlertCircle, IconBell,
+  IconFile, IconX, IconInfoCircle, IconBuilding, IconBriefcase, IconListCheck,
+} from "@tabler/icons-react";
 import axios from "axios";
 import { PDI_ROUTES } from "../api";
-import { IconChartBarPopular, IconTrendingUp, IconBulb, IconTarget } from "@tabler/icons-react";
-import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen, DashboardMacroproyecto } from "../types";
+import type {
+  Macroproyecto, Proyecto, Accion, Indicador,
+  DashboardResumen, DashboardMacroproyecto,
+} from "../types";
 
-const COLORS = ["#7950f2", "#228be6", "#40c057", "#fab005", "#fa5252", "#fd7e14", "#15aabf", "#e64980", "#845ef7", "#339af0"];
-const SEMAFORO_COLOR: Record<string, string> = { verde: "#40c057", amarillo: "#fab005", rojo: "#fa5252" };
-const SEMAFORO_LABEL: Record<string, string> = { verde: "Cumplimiento adecuado", amarillo: "Requiere atencion", rojo: "Critico" };
+// ── Color palette (MIRO blue / PDI) ───────────────────────────────────────
+const BLUE   = "#228be6";
+const GREEN  = "#40c057";
+const YELLOW = "#fab005";
+const RED    = "#fa5252";
+const ORANGE = "#fd7e14";
 
-function PeriodoTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  const avance = payload.find((p: any) => p.dataKey === "Avance")?.value ?? null;
-  const meta   = payload.find((p: any) => p.dataKey === "Meta")?.value ?? null;
-  const cumplimiento = avance != null && meta != null && Number(meta) > 0
-    ? Math.min(100, Math.round((Number(avance) / Number(meta)) * 100))
-    : null;
+const SEMAFORO_COLOR: Record<string, string> = { verde: GREEN, amarillo: YELLOW, rojo: RED };
+const SEMAFORO_LABEL: Record<string, string> = { verde: "En cumplimiento", amarillo: "En riesgo", rojo: "Crítico" };
+const SEMAFORO_BADGE: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
+
+const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+
+// ── Donut gauge (full-circle SVG) ─────────────────────────────────────────
+function DonutGauge({ value, size = 160, color = BLUE }: { value: number; size?: number; color?: string }) {
+  const r    = size * 0.37;
+  const cx   = size / 2;
+  const cy   = size / 2;
+  const circ = 2 * Math.PI * r;
+  const pct  = Math.min(100, Math.max(0, value));
   return (
-    <Paper p="sm" withBorder shadow="sm" radius="md">
-      <Text fw={700} size="xs" mb={4}>{label}</Text>
-      {avance != null && <Text size="xs">Avance: {avance}</Text>}
-      {meta    != null && <Text size="xs">Meta: {meta}</Text>}
-      {cumplimiento != null && (
-        <Text size="xs" fw={700} c="violet" mt={4}>Cumplimiento: {cumplimiento}%</Text>
-      )}
-    </Paper>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block", margin: "0 auto" }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e9ecef" strokeWidth={size * 0.115} />
+      <circle
+        cx={cx} cy={cy} r={r}
+        fill="none" stroke={color}
+        strokeWidth={size * 0.115}
+        strokeDasharray={circ}
+        strokeDashoffset={circ - (pct / 100) * circ}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+        style={{ transition: "stroke-dashoffset 0.7s ease" }}
+      />
+      <text x={cx} y={cy - 5} textAnchor="middle" fontSize={size * 0.18} fontWeight="bold" fill="#222">
+        {value.toFixed(0)}%
+      </text>
+      <text x={cx} y={cy + size * 0.1} textAnchor="middle" fontSize={size * 0.07} fill="#888">
+        Cumplimiento
+      </text>
+    </svg>
   );
 }
 
-function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+// ── Blue KPI card (top row) ────────────────────────────────────────────────
+function KpiCard({
+  icon, value, label, sub, color = "blue",
+}: { icon: React.ReactNode; value: string | number; label: string; sub?: string; color?: string }) {
   return (
-    <Paper withBorder radius="lg" p="lg" shadow="xs">
-      <Text fw={700} size="sm" mb={subtitle ? 2 : "md"}>{title}</Text>
-      {subtitle && <Text size="xs" c="dimmed" mb="md">{subtitle}</Text>}
-      {children}
-    </Paper>
-  );
-}
-
-function StatCard({ icon, label, value, color, sub }: { icon: React.ReactNode; label: string; value: string | number; color: string; sub?: string }) {
-  return (
-    <Paper withBorder radius="lg" p="md" shadow="xs">
-      <Group justify="space-between" mb={8}>
-        <ThemeIcon size={36} radius="xl" color={color} variant="light">{icon}</ThemeIcon>
-        <Badge color={color} variant="light" size="xs">PDI</Badge>
+    <Paper withBorder radius="xl" p="md" style={{ flex: 1, minWidth: 130 }}>
+      <Group gap="sm" align="flex-start" wrap="nowrap">
+        <ThemeIcon size={44} radius="md" color={color} variant="light">{icon}</ThemeIcon>
+        <Box>
+          <Text fw={900} size="xl" lh={1.1}>{value}</Text>
+          <Text size="xs" fw={600} mt={2}>{label}</Text>
+          {sub && <Text size="xs" c="dimmed">{sub}</Text>}
+        </Box>
       </Group>
-      <Text size="xs" c="dimmed">{label}</Text>
-      <Text size="1.6rem" fw={800} lh={1} mt={2}>{value}</Text>
-      {sub && <Text size="xs" c="dimmed" mt={4}>{sub}</Text>}
     </Paper>
   );
 }
 
-function StatusTagList({ items, emptyLabel }: { items: Array<{ id: string; codigo: string; nombre: string; semaforo: string }>; emptyLabel: string }) {
-  if (items.length === 0) {
-    return <Text size="xs" c="dimmed">{emptyLabel}</Text>;
-  }
-
+// ── Alert card (second row) ────────────────────────────────────────────────
+function AlertCard({
+  icon, value, label, sub, borderColor,
+}: { icon: React.ReactNode; value: number; label: string; sub: string; borderColor: string }) {
   return (
-    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xs" mt="sm">
-      {items.map((item) => (
-        <Group key={item.id} gap={8} wrap="nowrap" align="flex-start">
-          <Box
-            w={10}
-            h={10}
-            mt={4}
-            style={{ borderRadius: 999, flexShrink: 0, backgroundColor: SEMAFORO_COLOR[item.semaforo] ?? "#adb5bd" }}
-          />
-          <Text size="xs" c="dimmed" lineClamp={2}>
-            <Text span fw={700} c="dark">{item.codigo}</Text>
-            {" - "}
-            {item.nombre}
-          </Text>
-        </Group>
-      ))}
-    </SimpleGrid>
+    <Paper withBorder radius="xl" p="md" style={{ flex: 1, minWidth: 130, borderLeft: `4px solid ${borderColor}` }}>
+      <Group gap="sm" align="flex-start" wrap="nowrap">
+        <ThemeIcon size={38} radius="md" style={{ background: `${borderColor}22`, color: borderColor }} variant="transparent">
+          {icon}
+        </ThemeIcon>
+        <Box>
+          <Text fw={900} size="xl" lh={1.1} c={borderColor}>{value}</Text>
+          <Text size="xs" fw={700} mt={2}>{label}</Text>
+          <Text size="xs" c="dimmed">{sub}</Text>
+        </Box>
+      </Group>
+    </Paper>
   );
 }
 
+// ── Progress bar for the table ─────────────────────────────────────────────
+function PctBar({ pct, semaforo }: { pct: number; semaforo: string }) {
+  const color = SEMAFORO_COLOR[semaforo] ?? BLUE;
+  return (
+    <Group gap={8} wrap="nowrap" align="center">
+      <Box style={{ flex: 1, height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
+        <Box style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: color, borderRadius: 4, transition: "width 0.5s" }} />
+      </Box>
+      <Text size="xs" fw={700} style={{ minWidth: 42, textAlign: "right" }}>{pct.toFixed(0)}%</Text>
+    </Group>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
 export default function PdiGraficas() {
   const [pdiData, setPdiData] = useState<{
     macros: Macroproyecto[];
@@ -96,10 +122,14 @@ export default function PdiGraficas() {
     acciones: Accion[];
     indicadores: Indicador[];
   } | null>(null);
-  const [resumen, setResumen] = useState<DashboardResumen | null>(null);
+  const [resumen, setResumen]               = useState<DashboardResumen | null>(null);
   const [dashboardMacro, setDashboardMacro] = useState<DashboardMacroproyecto | null>(null);
-  const [selectedMacro, setSelectedMacro] = useState<string | null>("todos");
-  const [selectedInd, setSelectedInd] = useState<string | null>(null);
+
+  const [selectedMacro,    setSelectedMacro]    = useState<string | null>("todos");
+  const [selectedProyecto, setSelectedProyecto] = useState<string | null>("todos");
+  const [selectedAccion,   setSelectedAccion]   = useState<string | null>("todos");
+  const [selectedCorte,    setSelectedCorte]    = useState<string | null>("todos");
+  const [selectedEstado,   setSelectedEstado]   = useState<string | null>("todos");
 
   useEffect(() => {
     Promise.all([
@@ -108,50 +138,32 @@ export default function PdiGraficas() {
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.indicadores()),
-    ]).then(([rResumen, rM, rP, rA, rI]) => {
-      setResumen(rResumen.data);
-      setPdiData({
-        macros: rM.data,
-        proyectos: rP.data,
-        acciones: rA.data,
-        indicadores: rI.data,
-      });
-    }).catch((e) => console.error(e));
+    ]).then(([rR, rM, rP, rA, rI]) => {
+      setResumen(rR.data);
+      setPdiData({ macros: rM.data, proyectos: rP.data, acciones: rA.data, indicadores: rI.data });
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
-    if (!selectedMacro || selectedMacro === "todos") {
-      setDashboardMacro(null);
-      return;
-    }
-
-    axios.get(PDI_ROUTES.dashboardMacroproyecto(selectedMacro))
-      .then((res) => setDashboardMacro(res.data))
-      .catch((e) => console.error(e));
+    if (!selectedMacro || selectedMacro === "todos") { setDashboardMacro(null); return; }
+    axios.get(PDI_ROUTES.dashboardMacroproyecto(selectedMacro)).then((r) => setDashboardMacro(r.data)).catch(console.error);
   }, [selectedMacro]);
 
-  const macros = pdiData?.macros ?? [];
-  const proyectos = pdiData?.proyectos ?? [];
-  const acciones = pdiData?.acciones ?? [];
+  useEffect(() => { setSelectedProyecto("todos"); setSelectedAccion("todos"); }, [selectedMacro]);
+  useEffect(() => { setSelectedAccion("todos"); }, [selectedProyecto]);
+
+  const macros      = pdiData?.macros      ?? [];
+  const proyectos   = pdiData?.proyectos   ?? [];
+  const acciones    = pdiData?.acciones    ?? [];
   const indicadores = pdiData?.indicadores ?? [];
+  const verTodos    = selectedMacro === "todos";
 
-  const verTodos = selectedMacro === "todos";
-
-  const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : 0;
-
-  // Solo recalculamos el avance del macro como promedio simple de los proyecto almacenadosDB
-  // (los avances de proyectos y acciones ya son correctos según el backend)
-  const macroConAvance = useMemo(
-    () => macros.find((m) => m._id === selectedMacro) ?? null,
-    [macros, selectedMacro]
-  );
-
-  const macroIds = useMemo(() => new Set(macros.map((m) => m._id)), [macros]);
-
+  // ── Collections filtered by macro ─────────────────────────────────────
   const proysMacro = useMemo(() => proyectos.filter((p) => {
+    if (verTodos) return true;
     const mid = typeof p.macroproyecto_id === "object" ? p.macroproyecto_id._id : p.macroproyecto_id;
-    return verTodos ? macroIds.has(mid) : mid === selectedMacro;
-  }), [proyectos, macroIds, selectedMacro, verTodos]);
+    return mid === selectedMacro;
+  }), [proyectos, selectedMacro, verTodos]);
 
   const proyIds = useMemo(() => new Set(proysMacro.map((p) => p._id)), [proysMacro]);
 
@@ -162,446 +174,454 @@ export default function PdiGraficas() {
 
   const accionIds = useMemo(() => new Set(accionesMacro.map((a) => a._id)), [accionesMacro]);
 
-  const indsMacro = useMemo(() => indicadores.filter((i) => {
-    const aid = i.accion_id && typeof i.accion_id === "object" ? i.accion_id._id : i.accion_id;
-    return aid != null && accionIds.has(String(aid));
+  const indsMacroAll = useMemo(() => indicadores.filter((i) => {
+    const aid = i.accion_id && typeof i.accion_id === "object" ? i.accion_id._id : String(i.accion_id ?? "");
+    return accionIds.has(aid);
   }), [indicadores, accionIds]);
 
-  useEffect(() => {
-    setSelectedInd(indsMacro.length > 0 ? indsMacro[0]._id : null);
-  }, [indsMacro]);
+  // ── Additional filters ─────────────────────────────────────────────────
+  const accionesFiltradas = useMemo(() => accionesMacro.filter((a) => {
+    if (selectedProyecto && selectedProyecto !== "todos") {
+      const pid = typeof a.proyecto_id === "object" ? a.proyecto_id._id : a.proyecto_id;
+      return pid === selectedProyecto;
+    }
+    return true;
+  }), [accionesMacro, selectedProyecto]);
+
+  const accionesFiltIds = useMemo(() => new Set(accionesFiltradas.map((a) => a._id)), [accionesFiltradas]);
+
+  const indsFiltradas = useMemo(() => indsMacroAll.filter((i) => {
+    const aid = i.accion_id && typeof i.accion_id === "object" ? i.accion_id._id : String(i.accion_id ?? "");
+    if (!accionesFiltIds.has(aid)) return false;
+    if (selectedAccion && selectedAccion !== "todos" && aid !== selectedAccion) return false;
+    if (selectedEstado && selectedEstado !== "todos" && i.semaforo !== selectedEstado) return false;
+    return true;
+  }), [indsMacroAll, accionesFiltIds, selectedAccion, selectedEstado]);
+
+  // ── Derived values ─────────────────────────────────────────────────────
+  const macroActual = verTodos ? null : macros.find((m) => m._id === selectedMacro) ?? null;
 
   const avanceGlobal = verTodos
     ? (resumen?.avance_global ?? 0)
-    : (dashboardMacro?.macroproyecto.avance ?? macroConAvance?.avance ?? 0);
+    : (dashboardMacro?.macroproyecto.avance ?? macroActual?.avance ?? 0);
 
-  const barrasMacros = macros.map((m, i) => ({
-    name: m.codigo,
-    fullName: m.nombre,
-    Avance: m.avance,
-    semaforo: m.semaforo,
-    color: COLORS[i % COLORS.length],
-  }));
+  const gaugeColor = avanceGlobal >= 90 ? GREEN : avanceGlobal >= 70 ? YELLOW : RED;
 
-  const tortaSemaforoMacros = Object.entries(
-    macros.reduce((acc, m) => {
-      acc[m.semaforo] = (acc[m.semaforo] ?? 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([k, v]) => ({ name: SEMAFORO_LABEL[k] ?? k, value: v, color: SEMAFORO_COLOR[k] }));
+  const indicadoresCriticos  = indsMacroAll.filter((i) => i.semaforo === "rojo").length;
+  const indicadoresConAlerta = resumen?.alertas?.indicadores_con_alertas ?? 0;
+  const enSeguimiento = indsMacroAll.filter((i) => i.semaforo === "amarillo").length;
+  const conRetrasos   = resumen?.retrasos?.indicadores_con_retrasos ?? 0;
 
-  const etiquetasMacros = macros.map((m) => ({
-    id: m._id,
-    codigo: m.codigo,
-    nombre: m.nombre,
-    semaforo: m.semaforo,
-  }));
+  // ── Cortes/periods ─────────────────────────────────────────────────────
+  const allCortes = useMemo(() => {
+    const set = new Set<string>();
+    for (const ind of indsMacroAll) for (const p of ind.periodos ?? []) if (p.periodo) set.add(p.periodo);
+    return Array.from(set).sort();
+  }, [indsMacroAll]);
 
-  const barrasProyectos = proysMacro.map((p, i) => ({
-    name: p.codigo,
-    fullName: p.nombre,
-    Avance: p.avance,
-    Peso: p.peso,
-    semaforo: p.semaforo,
-    color: COLORS[i % COLORS.length],
-  }));
+  // ── Cumplimiento por corte (line chart) ───────────────────────────────
+  const cumplimientoPorCorte = useMemo(() => allCortes.map((corte) => {
+    const values: number[] = [];
+    for (const ind of indsMacroAll) {
+      const p = ind.periodos.find((pp) => pp.periodo === corte);
+      if (p && p.meta && Number(p.meta) > 0 && p.avance !== null && p.avance !== "")
+        values.push(Math.min((Number(p.avance) / Number(p.meta)) * 100, 200));
+    }
+    return { corte: corte.slice(0, 14), avance: values.length ? Math.round(avg(values) * 100) / 100 : 0 };
+  }), [allCortes, indsMacroAll]);
 
-  const tortaSemaforoProyectos = Object.entries(
-    proysMacro.reduce((acc, p) => {
-      acc[p.semaforo] = (acc[p.semaforo] ?? 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([k, v]) => ({ name: SEMAFORO_LABEL[k] ?? k, value: v, color: SEMAFORO_COLOR[k] }));
+  // ── Estado por corte (stacked bar) ───────────────────────────────────
+  const estadoPorCorte = useMemo(() => allCortes.map((corte) => {
+    let verde = 0, amarillo = 0, rojo = 0;
+    for (const ind of indsMacroAll) {
+      if (ind.periodos.some((p) => p.periodo === corte)) {
+        if (ind.semaforo === "verde") verde++;
+        else if (ind.semaforo === "amarillo") amarillo++;
+        else if (ind.semaforo === "rojo") rojo++;
+      }
+    }
+    return { corte: corte.slice(0, 14), verde, amarillo, rojo };
+  }), [allCortes, indsMacroAll]);
 
-  const etiquetasProyectos = proysMacro.map((p) => ({
-    id: p._id,
-    codigo: p.codigo,
-    nombre: p.nombre,
-    semaforo: p.semaforo,
-  }));
-
-  const tarjetasAcciones = accionesMacro.map((a, i) => ({
-    id: a._id,
-    codigo: a.codigo,
-    nombre: a.nombre,
-    avance: a.avance,
-    peso: a.peso,
-    semaforo: a.semaforo,
-    color: SEMAFORO_COLOR[a.semaforo] ?? COLORS[i % COLORS.length],
-  }));
-
-  const tortaSemaforoAcciones = Object.entries(
-    accionesMacro.reduce((acc, a) => {
-      acc[a.semaforo] = (acc[a.semaforo] ?? 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([k, v]) => ({ name: SEMAFORO_LABEL[k] ?? k, value: v, color: SEMAFORO_COLOR[k] }));
-
-  const etiquetasAcciones = accionesMacro.map((a) => ({
-    id: a._id,
-    codigo: a.codigo,
-    nombre: a.nombre,
-    semaforo: a.semaforo,
-  }));
-
-  const tortaSemaforoInds = Object.entries(
-    indsMacro.reduce((acc, i) => {
-      acc[i.semaforo] = (acc[i.semaforo] ?? 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([k, v]) => ({ name: SEMAFORO_LABEL[k] ?? k, value: v, color: SEMAFORO_COLOR[k] }));
-
-  const etiquetasIndicadores = indsMacro.map((i) => ({
-    id: i._id,
-    codigo: i.codigo,
-    nombre: i.nombre,
-    semaforo: i.semaforo,
-  }));
-
-  const indActual = indsMacro.find((i) => i._id === selectedInd);
-  const periodosData = useMemo(() => {
-    if (!indActual) return [];
-    return indActual.periodos
-      .map((p) => ({
-        periodo: p.periodo,
-        Meta: p.meta != null && p.meta !== '' ? Number(p.meta) : null,
-        Avance: p.avance != null && p.avance !== '' ? Number(p.avance) : null,
+  // ── Cumplimiento por proyecto (horizontal bar) ────────────────────────
+  const cumplimientoPorProyecto = verTodos
+    ? macros.map((m) => ({
+        id: m._id,
+        name: m.codigo,
+        fullName: m.nombre,
+        avance: m.avance,
+        fill: SEMAFORO_COLOR[m.semaforo] ?? BLUE,
       }))
-      .filter((p) => p.Meta !== null || p.Avance !== null);
-  }, [indActual]);
+    : (dashboardMacro?.proyectos ?? proysMacro).map((p) => ({
+        id: p._id,
+        name: p.codigo,
+        fullName: p.nombre,
+        avance: p.avance,
+        fill: SEMAFORO_COLOR[p.semaforo] ?? BLUE,
+      }));
 
-  const macrosNivel = verTodos ? macros : macros.filter((m) => m._id === selectedMacro);
+  // ── Priority indicators (sorted by criticality) ───────────────────────
+  const indicadoresPrioritarios = useMemo(() => {
+    const order: Record<string, number> = { rojo: 0, amarillo: 1, verde: 2 };
+    return [...indsFiltradas]
+      .sort((a, b) => (order[a.semaforo] ?? 3) - (order[b.semaforo] ?? 3) || a.avance - b.avance)
+      .slice(0, 6)
+      .map((ind) => {
+        const lastP   = [...ind.periodos].reverse().find((p) => p.meta !== null && p.meta !== "" && p.avance !== null && p.avance !== "");
+        const metaVal = lastP ? Number(lastP.meta)   : null;
+        const datoVal = lastP ? Number(lastP.avance) : null;
+        const pct     = metaVal && metaVal > 0 && datoVal !== null
+          ? Math.round((datoVal / metaVal) * 100)
+          : ind.avance;
+        return { id: ind._id, codigo: ind.codigo, nombre: ind.nombre, meta: metaVal, dato: datoVal, pct, semaforo: ind.semaforo };
+      });
+  }, [indsFiltradas]);
 
-  const lineaJerarquia = [
-    { nivel: "Macroproyecto", Avance: avg(macrosNivel.map((m) => m.avance)) },
-    { nivel: "Proyectos",     Avance: avg(proysMacro.map((p) => p.avance)) },
-    { nivel: "Acciones",      Avance: avg(accionesMacro.map((a) => a.avance)) },
-    { nivel: "Indicadores",   Avance: avg(indsMacro.map((i) => i.avance)) },
-  ];
+  const anyFilter = selectedProyecto !== "todos" || selectedAccion !== "todos" || selectedCorte !== "todos" || selectedEstado !== "todos";
 
-  if (!pdiData) return <Center py="xl"><Loader /></Center>;
+  const limpiarFiltros = () => {
+    setSelectedProyecto("todos");
+    setSelectedAccion("todos");
+    setSelectedCorte("todos");
+    setSelectedEstado("todos");
+  };
+
+  if (!pdiData) return <Center py="xl"><Loader color="blue" /></Center>;
 
   return (
-    <Stack gap="lg">
-      <Paper withBorder radius="lg" p="lg" shadow="xs">
-        <Group justify="space-between" align="center">
-          <Group gap={10}>
-            <ThemeIcon size={40} radius="xl" color="violet" variant="light">
-              <IconChartBarPopular size={20} />
-            </ThemeIcon>
-            <div>
-              <Text fw={700} size="md">Selecciona un Macroproyecto</Text>
-              <Text size="xs" c="dimmed">Todas las graficas se actualizan segun tu seleccion</Text>
-            </div>
-          </Group>
+    <Stack gap="md">
+
+      {/* ── Filter bar ──────────────────────────────────────────────────── */}
+      <Paper withBorder radius="lg" shadow="xs" px="md" py="sm">
+        <Group gap="sm" align="flex-end" wrap="nowrap">
           <Select
-            placeholder="Selecciona un macroproyecto"
-            data={[
-              { value: "todos", label: "Todos los macroproyectos" },
-              ...macros.map((m) => ({ value: m._id, label: `${m.codigo} - ${m.nombre}` })),
-            ]}
+            label="Macroproyecto"
+            size="xs"
+            style={{ flex: 2 }}
+            data={[{ value: "todos", label: "Todos" }, ...macros.map((m) => ({ value: m._id, label: m.codigo || m.nombre }))]            }
             value={selectedMacro}
             onChange={setSelectedMacro}
-            style={{ minWidth: 320 }}
-            searchable
           />
+          <Select
+            label="Proyecto"
+            size="xs"
+            style={{ flex: 2 }}
+            disabled={verTodos}
+            data={[{ value: "todos", label: "Todos" }, ...proysMacro.map((p) => ({ value: p._id, label: `${p.codigo} ${p.nombre}`.slice(0, 50) }))]}
+            value={selectedProyecto}
+            onChange={setSelectedProyecto}
+          />
+          <Select
+            label="Acción estratégica"
+            size="xs"
+            style={{ flex: 2 }}
+            disabled={verTodos || selectedProyecto === "todos"}
+            data={[{ value: "todos", label: "Todas" }, ...accionesFiltradas.map((a) => ({ value: a._id, label: `${a.codigo} ${a.nombre}`.slice(0, 50) }))]}
+            value={selectedAccion}
+            onChange={setSelectedAccion}
+          />
+          <Select
+            label="Periodo"
+            size="xs"
+            style={{ flex: 1.5 }}
+            data={[{ value: "todos", label: "Todos" }, ...allCortes.map((c) => ({ value: c, label: c }))]}
+            value={selectedCorte}
+            onChange={setSelectedCorte}
+          />
+          <Select
+            label="Estado"
+            size="xs"
+            style={{ flex: 1.5 }}
+            data={[
+              { value: "todos", label: "Todos" },
+              { value: "verde", label: "En cumplimiento" },
+              { value: "amarillo", label: "En riesgo" },
+              { value: "rojo", label: "Crítico" },
+            ]}
+            value={selectedEstado}
+            onChange={setSelectedEstado}
+          />
+          {anyFilter && (
+            <ActionIcon
+              variant="light"
+              color="gray"
+              size="lg"
+              mb={1}
+              onClick={limpiarFiltros}
+              title="Limpiar filtros"
+            >
+              <IconX size={13} />
+            </ActionIcon>
+          )}
         </Group>
-
-        {verTodos ? (
-          <Box mt="md">
-            <Group justify="space-between" mb={8}>
-              <Text size="sm" fw={700}>Resumen global del PDI</Text>
-              <Text size="sm" fw={800}>{avanceGlobal}% avance promedio</Text>
-            </Group>
-            <SimpleGrid cols={macros.length} spacing={6}>
-              {macros.map((m) => (
-                <Box key={m._id}>
-                  <Text size="xs" c="dimmed" mb={4} lineClamp={1}>{m.codigo}</Text>
-                  <Progress value={m.avance} color={m.semaforo === "verde" ? "green" : m.semaforo === "amarillo" ? "yellow" : "red"} size="md" radius="xl" />
-                  <Text size="xs" fw={700} ta="right" mt={2}>{m.avance}%</Text>
-                </Box>
-              ))}
-            </SimpleGrid>
-          </Box>
-        ) : macroConAvance ? (
-          <Box mt="md">
-            <Group justify="space-between" mb={6}>
-              <Text size="sm" fw={700}>{macroConAvance.nombre}</Text>
-              <Group gap={8}>
-                <Badge color={macroConAvance.semaforo === "verde" ? "green" : macroConAvance.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
-                  {SEMAFORO_LABEL[macroConAvance.semaforo]}
-                </Badge>
-                <Text size="sm" fw={800}>{macroConAvance.avance}%</Text>
-              </Group>
-            </Group>
-            <Progress value={macroConAvance.avance} color={macroConAvance.semaforo === "verde" ? "green" : macroConAvance.semaforo === "amarillo" ? "yellow" : "red"} size="lg" radius="xl" />
-          </Box>
-        ) : null}
+        {macroActual && (
+          <Group gap={6} mt="xs">
+            <Box w={6} h={6} style={{ borderRadius: "50%", background: BLUE, flexShrink: 0 }} />
+            <Text size="xs" c="dimmed">
+              Macroproyecto activo:{" "}
+              <Text span fw={700} c="blue">{macroActual.nombre}</Text>
+            </Text>
+          </Group>
+        )}
       </Paper>
 
-      <SimpleGrid cols={{ base: 2, sm: 4 }}>
-        <StatCard icon={<IconChartBarPopular size={18} />} label="Proyectos" value={proysMacro.length} color="blue"
-          sub={`${proysMacro.filter((p) => p.semaforo === "verde").length} en cumplimiento`} />
-        <StatCard icon={<IconTrendingUp size={18} />} label="Acciones estrategicas" value={accionesMacro.length} color="orange"
-          sub={`${accionesMacro.filter((a) => a.semaforo === "rojo").length} criticas`} />
-        <StatCard icon={<IconTarget size={18} />} label="Indicadores" value={indsMacro.length} color="violet"
-          sub={`${indsMacro.filter((i) => i.semaforo === "verde").length} en cumplimiento`} />
-        <StatCard icon={<IconBulb size={18} />} label="Avance promedio" value={`${verTodos ? lineaJerarquia[0].Avance : avanceGlobal}%`} color="teal"
-          sub={verTodos ? "Promedio de macroproyectos" : "Avance consolidado del macroproyecto"} />
-      </SimpleGrid>
+      {/* ── KPI Cards — row 1 ───────────────────────────────────────────── */}
+      <Group gap="sm" grow>
+        <KpiCard icon={<IconBuilding size={20} />}
+          value={macroActual?.codigo ?? macros.length}
+          label={macroActual ? macroActual.nombre.slice(0, 28) : "Macroproyectos"}
+          color="blue" />
+        <KpiCard icon={<IconBriefcase size={20} />}
+          value={proysMacro.length}
+          label="Proyectos"
+          sub={`${proysMacro.filter((p) => p.semaforo === "verde").length} en cumplimiento`}
+          color="blue" />
+        <KpiCard icon={<IconListCheck size={20} />}
+          value={accionesMacro.length}
+          label="Acciones estratégicas"
+          sub={`${accionesMacro.filter((a) => a.semaforo === "verde").length} al día`}
+          color="blue" />
+        <KpiCard icon={<IconTarget size={20} />}
+          value={indsMacroAll.length}
+          label="Indicadores"
+          sub={`${indsMacroAll.filter((i) => i.semaforo === "verde").length} al día`}
+          color="blue" />
+      </Group>
 
-      {verTodos ? (
-        <>
-          <ChartCard title="Avance por Macroproyecto" subtitle="Avance consolidado de cada macroproyecto">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={barrasMacros} margin={{ top: 4, right: 8, left: -10, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(v) => `${v}%`} labelFormatter={(l, p) => p[0]?.payload?.fullName ?? l} />
-                <Bar dataKey="Avance" radius={[4, 4, 0, 0]}>
-                  {barrasMacros.map((e, i) => <Cell key={i} fill={SEMAFORO_COLOR[e.semaforo] ?? COLORS[i % COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
+      {/* ── Alert Cards — row 2 ─────────────────────────────────────────── */}
+      <Group gap="sm" grow>
+        <AlertCard icon={<IconAlertCircle size={20} />}
+          value={indicadoresCriticos}
+          label="Indicadores críticos"
+          sub="Requieren atención inmediata"
+          borderColor={RED} />
+        <AlertCard icon={<IconBell size={20} />}
+          value={indicadoresConAlerta}
+          label="Reportes pendientes"
+          sub="Sin reporte enviado"
+          borderColor={ORANGE} />
+        <AlertCard icon={<IconFile size={20} />}
+          value={enSeguimiento}
+          label="En seguimiento"
+          sub="Indicadores en riesgo (amarillo)"
+          borderColor={YELLOW} />
+        <AlertCard icon={<IconUsers size={20} />}
+          value={conRetrasos}
+          label="Con retrasos"
+          sub="Sin avance en el corte actual"
+          borderColor="#adb5bd" />
+      </Group>
 
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <ChartCard title="Estado de Macroproyectos" subtitle="Distribucion por semaforo">
-              {tortaSemaforoMacros.length === 0 ? <Text size="xs" c="dimmed">Sin datos</Text> : (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={tortaSemaforoMacros} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} label={({ value }) => value}>
-                        {tortaSemaforoMacros.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <StatusTagList items={etiquetasMacros} emptyLabel="Sin macroproyectos" />
-                </>
-              )}
-            </ChartCard>
+      {/* ── Main chart area (3 columns) ──────────────────────────────────── */}
+      <Grid gutter="sm">
 
-            <ChartCard title="Avance por Nivel Jerarquico" subtitle="Promedio de avance en cada nivel: Macroproyecto -> Proyectos -> Acciones -> Indicadores">
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={lineaJerarquia} margin={{ top: 4, right: 16, left: -10, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="nivel" tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip formatter={(v) => `${v}%`} />
-                  <Bar dataKey="Avance" radius={[6, 6, 0, 0]}>
-                    {lineaJerarquia.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
+        {/* Large donut gauge */}
+        <Grid.Col span={{ base: 12, sm: 4, md: 3 }}>
+          <Paper withBorder radius="xl" p="lg" h="100%"
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <Text size="sm" fw={700} mb="sm" ta="center">Porcentaje de cumplimiento</Text>
+            <DonutGauge value={avanceGlobal} size={170} color={gaugeColor} />
+            <Text size="xs" c="dimmed" ta="center" mt="sm">
+              Avance promedio {macroActual ? "del macroproyecto" : "global"}
+            </Text>
+          </Paper>
+        </Grid.Col>
+
+        {/* Cumplimiento por proyecto — horizontal bars */}
+        <Grid.Col span={{ base: 12, sm: 8, md: 4 }}>
+          <Paper withBorder radius="xl" p="md" h="100%">
+            <Text size="sm" fw={700} mb="sm">{verTodos ? "Cumplimiento por macroproyecto" : "Cumplimiento por proyecto"}</Text>
+            {cumplimientoPorProyecto.length === 0 ? (
+              <Center h={200}><Text size="xs" c="dimmed">{verTodos ? "Sin macroproyectos" : "Sin proyectos"}</Text></Center>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(cumplimientoPorProyecto.length * 44 + 20, 180)}>
+                <BarChart
+                  data={cumplimientoPorProyecto}
+                  layout="vertical"
+                  margin={{ top: 0, right: 58, left: 4, bottom: 0 }}
+                >
+                  <XAxis type="number" domain={[0, 110]} hide />
+                  <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11, fill: "#444" }} />
+                  <Tooltip formatter={(v) => [`${v} %`, "Avance"]} labelFormatter={(l, p) => p[0]?.payload?.fullName ?? l} contentStyle={{ fontSize: 12 }} />
+                  <Bar
+                    dataKey="avance"
+                    radius={[0, 4, 4, 0]}
+                    barSize={22}
+                    background={verTodos
+                      ? (props: any) => (
+                          <rect
+                            x={props.x} y={props.y}
+                            width={props.width} height={props.height}
+                            fill="transparent"
+                            style={{ cursor: "pointer" }}
+                            onClick={() => props.id && setSelectedMacro(props.id)}
+                          />
+                        )
+                      : undefined}
+                  >
+                    {cumplimientoPorProyecto.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                    <LabelList dataKey="avance" position="right" style={{ fontSize: 11, fontWeight: 700, fill: "#333" }} formatter={(v: any) => `${v}%`} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </ChartCard>
-          </SimpleGrid>
-        </>
-      ) : (
-        <>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            <ChartCard title="Avance por Proyecto" subtitle="Avance consolidado de cada proyecto">
-              {barrasProyectos.length === 0 ? <Text size="xs" c="dimmed">Sin proyectos</Text> : (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={barrasProyectos} margin={{ top: 4, right: 8, left: -10, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                    <Tooltip formatter={(v) => `${v}%`} labelFormatter={(l, p) => p[0]?.payload?.fullName ?? l} />
-                    <Bar dataKey="Avance" radius={[4, 4, 0, 0]}>
-                      {barrasProyectos.map((e, i) => <Cell key={i} fill={SEMAFORO_COLOR[e.semaforo] ?? COLORS[i % COLORS.length]} />)}
-                    </Bar>
+            )}
+          </Paper>
+        </Grid.Col>
+
+        {/* Line chart (cortes) + Stacked bar (estado) */}
+        <Grid.Col span={{ base: 12, md: 5 }}>
+          <Stack gap="sm" h="100%">
+
+            <Paper withBorder radius="xl" p="md" style={{ flex: 1 }}>
+              <Text size="sm" fw={700} mb="xs">Cumplimiento por periodo</Text>
+              {cumplimientoPorCorte.length === 0 ? (
+                <Center h={110}><Text size="xs" c="dimmed">Sin datos de cortes</Text></Center>
+              ) : (
+                <ResponsiveContainer width="100%" height={130}>
+                  <LineChart data={cumplimientoPorCorte} margin={{ top: 14, right: 18, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                    <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
+                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 9 }} tickFormatter={(v) => `${v}%`} />
+                    <Tooltip formatter={(v) => [`${v} %`, "Avance prom."]} />
+                    <Line type="monotone" dataKey="avance" stroke={BLUE} strokeWidth={2.5}
+                      dot={{ r: 4, fill: BLUE, strokeWidth: 0 }}
+                      activeDot={{ r: 6 }}
+                      label={{ position: "top", fontSize: 9, fill: "#444", formatter: (v: any) => `${v}%` }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </Paper>
+
+            <Paper withBorder radius="xl" p="md" style={{ flex: 1 }}>
+              <Text size="sm" fw={700} mb="xs">Estado de indicadores</Text>
+              {estadoPorCorte.length === 0 ? (
+                <Center h={110}><Text size="xs" c="dimmed">Sin datos</Text></Center>
+              ) : (
+                <ResponsiveContainer width="100%" height={120}>
+                  <BarChart data={estadoPorCorte} margin={{ top: 0, right: 8, left: -12, bottom: 0 }}>
+                    <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
+                    <YAxis tick={{ fontSize: 9 }} />
+                    <Tooltip />
+                    <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                    <Bar dataKey="verde"    name="En cumplimiento" stackId="a" fill={GREEN}  barSize={22} />
+                    <Bar dataKey="amarillo" name="En riesgo"       stackId="a" fill={YELLOW} barSize={22} />
+                    <Bar dataKey="rojo"     name="Crítico"         stackId="a" fill={RED}    barSize={22} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
-            </ChartCard>
+            </Paper>
 
-            <ChartCard title="Estado de Proyectos" subtitle="Distribucion por semaforo">
-              {tortaSemaforoProyectos.length === 0 ? <Text size="xs" c="dimmed">Sin datos</Text> : (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={tortaSemaforoProyectos} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} label={({ value }) => value}>
-                        {tortaSemaforoProyectos.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <StatusTagList items={etiquetasProyectos} emptyLabel="Sin proyectos para etiquetar" />
-                </>
-              )}
-            </ChartCard>
-          </SimpleGrid>
+          </Stack>
+        </Grid.Col>
+      </Grid>
 
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-             <ChartCard title="Avance por Accion Estrategica" subtitle="Cada accion muestra su porcentaje de avance">
-              {tarjetasAcciones.length === 0 ? <Text size="xs" c="dimmed">Sin acciones</Text> : (
-                <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="md">
-                  {tarjetasAcciones.map((accion) => (
-                    <Paper key={accion.id} withBorder radius="md" p="md">
-                      <Group justify="space-between" align="flex-start" wrap="nowrap" mb="xs">
-                        <Box style={{ flex: 1 }}>
-                          <Text fw={700} size="sm" lineClamp={1}>{accion.codigo}</Text>
-                          <Text size="xs" c="dimmed" lineClamp={3}>{accion.nombre}</Text>
-                        </Box>
-                        <Badge color={accion.semaforo === "verde" ? "green" : accion.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
-                          {accion.avance}%
-                        </Badge>
-                      </Group>
+      {/* ── Priority indicators table + Semaforización legend ────────────── */}
+      <Grid gutter="sm">
 
-                      <Box h={170}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadialBarChart
-                            data={[{ name: "Avance", value: accion.avance, fill: accion.color }]}
-                            innerRadius="68%"
-                            outerRadius="100%"
-                            startAngle={90}
-                            endAngle={-270}
-                            barSize={16}
-                          >
-                            <RadialBar background dataKey="value" cornerRadius={10} />
-                            <text x="50%" y="44%" textAnchor="middle" dominantBaseline="middle" fontSize={30} fontWeight={800} fill={accion.color}>
-                              {accion.avance}%
-                            </text>
-                            <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" fontSize={11} fill="#6b7280">
-                              Avance
-                            </text>
-                          </RadialBarChart>
-                        </ResponsiveContainer>
-                      </Box>
-
-                      <Group justify="space-between" mt="xs">
-                        <Text size="xs" c="dimmed">Peso</Text>
-                        <Text size="xs" fw={700}>{accion.peso}%</Text>
-                      </Group>
-                    </Paper>
-                  ))}
-                </SimpleGrid>
-              )}
-            </ChartCard>
-            <ChartCard title="Estado de Acciones" subtitle="Distribucion por semaforo">
-              {tortaSemaforoAcciones.length === 0 ? <Text size="xs" c="dimmed">Sin acciones</Text> : (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={tortaSemaforoAcciones} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} label={({ value }) => value}>
-                        {tortaSemaforoAcciones.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <StatusTagList items={etiquetasAcciones} emptyLabel="Sin acciones para etiquetar" />
-                </>
-              )}
-            </ChartCard>
-          </SimpleGrid>
-
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            {indsMacro.length > 0 && (
-              <ChartCard title="Meta vs Avance por Periodo - Indicador" subtitle="Selecciona un indicador para ver su evolucion por corte">
-                <Select
-                  size="xs"
-                  mb="md"
-                  placeholder="Selecciona un indicador"
-                  value={selectedInd}
-                  onChange={setSelectedInd}
-                  data={indsMacro.map((i) => ({ value: i._id, label: `${i.codigo} - ${i.nombre}`.slice(0, 70) }))}
-                  searchable
-                />
-                {periodosData.length === 0 ? (
-                  <Text size="xs" c="dimmed">Este indicador no tiene periodos registrados</Text>
+        <Grid.Col span={{ base: 12, md: 9 }}>
+          <Paper withBorder radius="xl" p="md">
+            <Group justify="space-between" mb="sm">
+              <Text size="sm" fw={700}>Indicadores prioritarios del macroproyecto</Text>
+              <Text size="xs" c="dimmed">{indsFiltradas.length} indicadores totales</Text>
+            </Group>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Indicador</th>
+                  <th style={{ ...thStyle, textAlign: "right", width: 72 }}>Meta 2029</th>
+                  <th style={{ ...thStyle, textAlign: "right", width: 80 }}>Avance</th>
+                  <th style={{ ...thStyle, width: 150 }}>% cumplimiento</th>
+                  <th style={{ ...thStyle, textAlign: "center", width: 90 }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {indicadoresPrioritarios.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#aaa", fontSize: 12 }}>
+                      Sin indicadores para mostrar
+                    </td>
+                  </tr>
                 ) : (
-                  <Box maw={600} mx="auto">
-                    <ResponsiveContainer width="100%" height={240}>
-                      <BarChart data={periodosData} margin={{ top: 4, right: 16, left: -10, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip content={<PeriodoTooltip />} />
-                        <Legend />
-                        <Bar dataKey="Meta" stackId="a" fill="#dee2e6" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="Avance" stackId="a" fill="#7950f2" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
-                )}
-              </ChartCard>
-            )}
-
-            <ChartCard title="Estado de Indicadores" subtitle="Distribucion por semaforo">
-              {tortaSemaforoInds.length === 0 ? <Text size="xs" c="dimmed">Sin indicadores</Text> : (
-                <>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie data={tortaSemaforoInds} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} label={({ value }) => value}>
-                        {tortaSemaforoInds.map((e, i) => <Cell key={i} fill={e.color} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <StatusTagList items={etiquetasIndicadores} emptyLabel="Sin indicadores para etiquetar" />
-                </>
-              )}
-            </ChartCard>
-          </SimpleGrid>
-
-          {indsMacro.length > 0 && (
-            <ChartCard title="Avance por Indicador" subtitle="Cada indicador muestra su porcentaje de avance">
-              <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="md">
-                {indsMacro.map((ind, i) => {
-                  const color = SEMAFORO_COLOR[ind.semaforo] ?? COLORS[i % COLORS.length];
-                  return (
-                    <Paper key={ind._id} withBorder radius="md" p="md">
-                      <Group justify="space-between" align="flex-start" wrap="nowrap" mb="xs">
-                        <Box style={{ flex: 1 }}>
-                          <Text fw={700} size="sm" lineClamp={1}>{ind.codigo}</Text>
-                          <Text size="xs" c="dimmed" lineClamp={3}>{ind.nombre}</Text>
-                        </Box>
-                        <Badge color={ind.semaforo === "verde" ? "green" : ind.semaforo === "amarillo" ? "yellow" : "red"} variant="light">
-                          {ind.avance}%
+                  indicadoresPrioritarios.map((row, i) => (
+                    <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
+                      <td style={{ ...tdStyle, maxWidth: 270 }}>
+                        <Text size="xs" fw={700} c="blue">{row.codigo}</Text>
+                        <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                        <Text size="xs" fw={600}>{row.meta !== null ? Number(row.meta).toLocaleString("es-CO") : "—"}</Text>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                        <Text size="xs">{row.dato !== null ? Number(row.dato).toLocaleString("es-CO") : "—"}</Text>
+                      </td>
+                      <td style={{ ...tdStyle, minWidth: 140 }}>
+                        <PctBar pct={row.pct} semaforo={row.semaforo} />
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                        <Badge color={SEMAFORO_BADGE[row.semaforo]} variant="filled" size="sm" style={{ fontSize: 9 }}>
+                          {SEMAFORO_LABEL[row.semaforo]}
                         </Badge>
-                      </Group>
-                      <Box h={170}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RadialBarChart
-                            data={[{ name: "Avance", value: ind.avance, fill: color }]}
-                            innerRadius="68%"
-                            outerRadius="100%"
-                            startAngle={90}
-                            endAngle={-270}
-                            barSize={16}
-                          >
-                            <RadialBar background dataKey="value" cornerRadius={10} />
-                            <text x="50%" y="44%" textAnchor="middle" dominantBaseline="middle" fontSize={30} fontWeight={800} fill={color}>
-                              {ind.avance}%
-                            </text>
-                            <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" fontSize={11} fill="#6b7280">
-                              Avance
-                            </text>
-                          </RadialBarChart>
-                        </ResponsiveContainer>
-                      </Box>
-                      <Group justify="space-between" mt="xs">
-                        <Text size="xs" c="dimmed">Peso</Text>
-                        <Text size="xs" fw={700}>{ind.peso}%</Text>
-                      </Group>
-                      {ind.responsable && (
-                        <Text size="xs" c="dimmed" mt={2} lineClamp={1}>Resp: {ind.responsable}</Text>
-                      )}
-                    </Paper>
-                  );
-                })}
-              </SimpleGrid>
-            </ChartCard>
-          )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            {indsFiltradas.length > 6 && (
+              <Group justify="center" mt="sm">
+                <Text size="xs" c="blue" fw={600} style={{ cursor: "pointer" }}>
+                  Ver todos los indicadores →
+                </Text>
+              </Group>
+            )}
+          </Paper>
+        </Grid.Col>
 
-        </>
-      )}
+        {/* Semaforización legend */}
+        <Grid.Col span={{ base: 12, md: 3 }}>
+          <Paper withBorder radius="xl" p="md" h="100%">
+            <Group gap={6} mb="sm">
+              <IconInfoCircle size={15} color="#aaa" />
+              <Text size="xs" fw={700} c="dimmed">Semaforización</Text>
+            </Group>
+            <Text size="xs" fw={700} c="dimmed" mb="sm">(estado de indicador)</Text>
+            <Divider mb="sm" />
+            {[
+              { color: GREEN,  badge: "Verde — En cumplimiento", label: "Avance al día o evidencia cargada sin riesgo" },
+              { color: YELLOW, badge: "Amarillo — En riesgo",   label: "Avance parcial o con riesgo (reporte pendiente o en revisión)" },
+              { color: RED,    badge: "Rojo — Crítico",         label: "Retraso en el avance o evidencia pendiente o riesgo crítico" },
+            ].map(({ color, badge, label }) => (
+              <Group key={badge} gap={10} mb="md" align="flex-start" wrap="nowrap">
+                <Box w={10} h={10} mt={3} style={{ borderRadius: "50%", background: color, flexShrink: 0 }} />
+                <Box>
+                  <Text size="xs" fw={700} c={color}>{badge}</Text>
+                  <Text size="xs" c="dimmed" lh={1.4}>{label}</Text>
+                </Box>
+              </Group>
+            ))}
+          </Paper>
+        </Grid.Col>
+
+      </Grid>
     </Stack>
   );
 }
+
+// ── Shared table styles ────────────────────────────────────────────────────
+const thStyle: React.CSSProperties = {
+  padding: "7px 10px",
+  textAlign: "left",
+  borderBottom: "2px solid #e9ecef",
+  fontWeight: 700,
+  fontSize: 11,
+  color: "#555",
+  background: "#f8f9fa",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "7px 10px",
+  borderBottom: "1px solid #f0f0f0",
+  verticalAlign: "middle",
+  fontSize: 11,
+};
