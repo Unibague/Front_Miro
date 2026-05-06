@@ -7,7 +7,7 @@ import {
 } from "@mantine/core";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, LabelList, Cell,
-  LineChart, Line, CartesianGrid, Legend,
+  LineChart, Line, CartesianGrid,
 } from "recharts";
 import {
   IconTarget, IconChartBar, IconUsers, IconAlertCircle, IconBell,
@@ -115,6 +115,36 @@ function PctBar({ pct, semaforo }: { pct: number; semaforo: string }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
+function EstadoIndicadoresTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <Paper withBorder shadow="sm" radius="sm" px={8} py={6} style={{ minWidth: 130 }}>
+      <Text size="xs" fw={700} mb={4}>{label}</Text>
+      <Stack gap={2}>
+        {payload.map((item: any) => (
+          <Group key={item.dataKey} gap={6} justify="space-between" wrap="nowrap">
+            <Group gap={5} wrap="nowrap">
+              <Box w={7} h={7} style={{ borderRadius: 2, background: item.color, flexShrink: 0 }} />
+              <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{item.name}</Text>
+            </Group>
+            <Text size="xs" fw={700}>{item.value}</Text>
+          </Group>
+        ))}
+      </Stack>
+    </Paper>
+  );
+}
+
+function EstadoLegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <Group gap={5} wrap="nowrap">
+      <Box w={8} h={8} style={{ borderRadius: 2, background: color, flexShrink: 0 }} />
+      <Text size="xs" c="dimmed" lh={1}>{label}</Text>
+    </Group>
+  );
+}
+
 export default function PdiGraficas() {
   const [pdiData, setPdiData] = useState<{
     macros: Macroproyecto[];
@@ -265,7 +295,6 @@ export default function PdiGraficas() {
     const order: Record<string, number> = { rojo: 0, amarillo: 1, verde: 2 };
     return [...indsFiltradas]
       .sort((a, b) => (order[a.semaforo] ?? 3) - (order[b.semaforo] ?? 3) || a.avance - b.avance)
-      .slice(0, 6)
       .map((ind) => {
         const lastP   = [...ind.periodos].reverse().find((p) => p.meta !== null && p.meta !== "" && p.avance !== null && p.avance !== "");
         const metaVal = lastP ? Number(lastP.meta)   : null;
@@ -498,17 +527,23 @@ export default function PdiGraficas() {
               {estadoPorCorte.length === 0 ? (
                 <Center h={110}><Text size="xs" c="dimmed">Sin datos</Text></Center>
               ) : (
-                <ResponsiveContainer width="100%" height={120}>
-                  <BarChart data={estadoPorCorte} margin={{ top: 0, right: 8, left: -12, bottom: 0 }}>
+                <>
+                <ResponsiveContainer width="100%" height={112}>
+                  <BarChart data={estadoPorCorte} margin={{ top: 2, right: 8, left: -12, bottom: 4 }}>
                     <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
                     <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip />
-                    <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-                    <Bar dataKey="verde"    name="En cumplimiento" stackId="a" fill={GREEN}  barSize={22} />
-                    <Bar dataKey="amarillo" name="En riesgo"       stackId="a" fill={YELLOW} barSize={22} />
-                    <Bar dataKey="rojo"     name="Crítico"         stackId="a" fill={RED}    barSize={22} radius={[3, 3, 0, 0]} />
+                    <Tooltip content={<EstadoIndicadoresTooltip />} cursor={{ fill: "rgba(34, 139, 230, 0.06)" }} />
+                    <Bar dataKey="verde"    name={SEMAFORO_LABEL.verde}    stackId="a" fill={GREEN}  barSize={22} />
+                    <Bar dataKey="amarillo" name={SEMAFORO_LABEL.amarillo} stackId="a" fill={YELLOW} barSize={22} />
+                    <Bar dataKey="rojo"     name={SEMAFORO_LABEL.rojo}     stackId="a" fill={RED}    barSize={22} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+                <Group justify="center" gap="sm" mt={2} wrap="wrap">
+                  <EstadoLegendItem color={RED} label={SEMAFORO_LABEL.rojo} />
+                  <EstadoLegendItem color={GREEN} label={SEMAFORO_LABEL.verde} />
+                  <EstadoLegendItem color={YELLOW} label={SEMAFORO_LABEL.amarillo} />
+                </Group>
+                </>
               )}
             </Paper>
 
@@ -525,8 +560,9 @@ export default function PdiGraficas() {
               <Text size="sm" fw={700}>Indicadores prioritarios del macroproyecto</Text>
               <Text size="xs" c="dimmed">{indsFiltradas.length} indicadores totales</Text>
             </Group>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
+            <Box style={tableScrollStyle}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
                 <tr>
                   <th style={thStyle}>Indicador</th>
                   <th style={{ ...thStyle, textAlign: "right", width: 72 }}>Meta 2029</th>
@@ -534,8 +570,8 @@ export default function PdiGraficas() {
                   <th style={{ ...thStyle, width: 150 }}>% cumplimiento</th>
                   <th style={{ ...thStyle, textAlign: "center", width: 90 }}>Estado</th>
                 </tr>
-              </thead>
-              <tbody>
+                </thead>
+                <tbody>
                 {indicadoresPrioritarios.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#aaa", fontSize: 12 }}>
@@ -566,15 +602,9 @@ export default function PdiGraficas() {
                     </tr>
                   ))
                 )}
-              </tbody>
-            </table>
-            {indsFiltradas.length > 6 && (
-              <Group justify="center" mt="sm">
-                <Text size="xs" c="blue" fw={600} style={{ cursor: "pointer" }}>
-                  Ver todos los indicadores →
-                </Text>
-              </Group>
-            )}
+                </tbody>
+              </table>
+            </Box>
           </Paper>
         </Grid.Col>
 
@@ -617,6 +647,9 @@ const thStyle: React.CSSProperties = {
   fontSize: 11,
   color: "#555",
   background: "#f8f9fa",
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
 };
 
 const tdStyle: React.CSSProperties = {
@@ -624,4 +657,12 @@ const tdStyle: React.CSSProperties = {
   borderBottom: "1px solid #f0f0f0",
   verticalAlign: "middle",
   fontSize: 11,
+};
+
+const tableScrollStyle: React.CSSProperties = {
+  maxHeight: 260,
+  overflowY: "auto",
+  overflowX: "auto",
+  border: "1px solid #f1f3f5",
+  borderRadius: 8,
 };
