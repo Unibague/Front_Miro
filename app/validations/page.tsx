@@ -21,6 +21,7 @@ import {
 import axios from 'axios';
 import { IconBulb, IconClipboardCheck, IconCopy } from '@tabler/icons-react';
 import { showNotification } from '@mantine/notifications';
+import { usePeriod } from '@/app/context/PeriodContext';
 
 interface Validator {
   _id: string;
@@ -40,17 +41,25 @@ const ValidationsPage = () => {
   const [validators, setValidators] = useState<Validator[]>([]);
   const [selectedValidator, setSelectedValidator] = useState<Validator | null>(null);
   const [loading, setLoading] = useState(false);
+  const { selectedPeriodId } = usePeriod();
 
   const [columnsInfo, setColumnsInfo] = useState<{ name: string; isValidator: boolean }[]>([]);
   const [tableRows, setTableRows] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchValidators = async () => {
+      if (!selectedPeriodId) return;
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
+          params: { periodId: selectedPeriodId },
+        });
         setValidators(response.data.validators);
         if (response.data.validators.length > 0) {
           handleSelectValidator(response.data.validators[0]._id);
+        } else {
+          setSelectedValidator(null);
+          setColumnsInfo([]);
+          setTableRows([]);
         }
       } catch (error) {
         console.error("Error al obtener las validaciones:", error);
@@ -58,13 +67,13 @@ const ValidationsPage = () => {
     };
 
     fetchValidators();
-  }, []);
+  }, [selectedPeriodId]);
 
   const handleSelectValidator = async (id: string) => {
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-        params: { id },
+        params: { id, periodId: selectedPeriodId },
       });
       const validator = response.data.validator;
 

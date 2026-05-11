@@ -19,6 +19,7 @@ import {
   useMantineColorScheme,
   ActionIcon,
   Tooltip,
+  Select,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
@@ -26,10 +27,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
+import { usePeriod } from "@/app/context/PeriodContext";
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 import classes from "./Navbar.module.css";
-import { IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconCalendarStats, IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -51,6 +53,12 @@ type ImpersonatedUser = {
   originalUserEmail?: string;
   originalUserName?: string;
   originalUserImage?: string | null;
+};
+
+const normalizeAvatarSrc = (value?: string | null) => {
+  const normalized = value?.trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") return undefined;
+  return normalized;
 };
 
 const linksByRole: Record<Roles, LinkItem[]> = {
@@ -93,9 +101,22 @@ export default function Navbar() {
   const [modalOpened, setModalOpened] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const { userRole, setUserRole } = useRole();
+  const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
   const { colorScheme } = useMantineColorScheme();
+
+  const PERIOD_SELECTOR_PATHS = [
+    "/snies", "/cna", "/reports", "/admin/templates", "/admin/reports",
+    "/templates", "/producer", "/responsible", "/templates-with-filters",
+    "/dependency", "/traceability", "/reportproducers",
+    "/admin/templates-management", "/admin/logs", "/admin/audit",
+    "/admin/validations", "/validations",
+  ];
+  const showPeriodSelector =
+    !!pathname &&
+    PERIOD_SELECTOR_PATHS.some((p) => pathname.startsWith(p));
+  const avatarSrc = normalizeAvatarSrc(user?.image);
 
   const titles = session
     ? [{ link: "/dashboard", label: "MIRÓ" }]
@@ -167,11 +188,11 @@ export default function Navbar() {
       id: user.originalUserId,
       userEmail: user.originalUserEmail,
       userName: user.originalUserName,
-      userImage: user.originalUserImage || "",
       isImpersonating: false,
       redirect: true,
       callbackUrl:
         process.env.APP_ENV === "development" ? "/dev/admin/users" : "/admin/users",
+      userImage: normalizeAvatarSrc(user.originalUserImage) || "",
     });
   };
 
@@ -322,13 +343,40 @@ export default function Navbar() {
 
                 <ThemeChanger />
 
+                {showPeriodSelector && availablePeriods.length > 0 && (
+                  <Select
+                    size="sm"
+                    data={availablePeriods.map((p) => ({ value: p._id, label: p.name }))}
+                    value={selectedPeriodId}
+                    onChange={(val) => val && setSelectedPeriodId(val)}
+                    visibleFrom="sm"
+                    allowDeselect={false}
+                    leftSection={<IconCalendarStats size={14} />}
+                    style={{ width: 130 }}
+                    styles={{
+                      input: {
+                        backgroundColor: "var(--mantine-color-blue-light)",
+                        border: "1px solid transparent",
+                        color: "var(--mantine-color-blue-filled)",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      },
+                      section: {
+                        color: "var(--mantine-color-blue-filled)",
+                      },
+                    }}
+                  />
+                )}
+
                 <Menu shadow="md" width={200}>
                   <Menu.Target>
                     <Avatar
                       component="a"
-                      src={session?.user?.image || undefined}
+                      src={avatarSrc}
+                      alt={user?.name || "Usuario"}
                       color="blue"
                       radius="xl"
+                      imageProps={{ referrerPolicy: "no-referrer" }}
                       className={classes.avatarClickable}
                     />
                   </Menu.Target>

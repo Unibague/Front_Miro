@@ -42,7 +42,14 @@ import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  extractWorkbookCommentsFromBase64,
+  loadWorkbookFromBase64,
+  sanitizeSheetName,
+} from "@/app/utils/templateUtils";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
@@ -66,6 +73,9 @@ interface Field {
   validate_with?: string;
   comment?: string;
   multiple:boolean;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
 }
 
 interface Dimension {
@@ -86,8 +96,19 @@ interface Template {
   dimensions: [Dimension];
   file_description: string;
   fields: Field[];
+  workbook_sheets?: TemplateWorksheet[];
+  original_workbook_base64?: string;
   active: boolean;
   category: Category
+}
+
+interface TemplateWorksheet {
+  name: string;
+  fields: Field[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  cellNotes?: { row: number; col: number; note: string }[];
+  columnWidths?: number[];
 }
 
 interface FilledFieldData {
@@ -301,12 +322,124 @@ const ProducerTemplatesPage = () => {
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     const { template, validators } = publishedTemplate;
+    const workbookSheets = (template.workbook_sheets || []).filter(
+      (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
+    );
+
+    if (template.original_workbook_base64) {
+      const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
+      const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
+
+      // Re-apply all notes extracted via JSZip (ExcelJS may not load note text from xlsx correctly)
+      for (const [sheetName, sheetComments] of originalCommentsBySheet.entries()) {
+        const ws = workbook.getWorksheet(sheetName);
+        if (!ws) continue;
+        for (const [cellRef, noteText] of sheetComments.entries()) {
+          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText);
+        }
+      }
+
+      // Also apply cellNotes stored in the template snapshot (fallback for older imports)
+      (template.workbook_sheets || []).forEach((sheet) => {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !sheet.cellNotes?.length) return;
+        sheet.cellNotes.forEach((note) => {
+          if (note?.row && note?.col && note?.note) {
+            applyFieldCommentNote(ws.getCell(note.row, note.col), note.note);
+          }
+        });
+      });
+
+      applyWorkbookSheetDropdowns({
+        workbook,
+        workbookSheets,
+        validators,
+        originalCommentsBySheet,
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/octet-stream" });
+      saveAs(blob, `${template.file_name}.xlsx`);
+      return;
+    }
+
     const workbook = new ExcelJS.Workbook();
+
+    if (workbookSheets.length > 0) {
+      workbookSheets.forEach((sheet, sheetIndex) => {
+        const baseName = sanitizeSheetName(sheet.name || `Hoja_${sheetIndex + 1}`) || `Hoja_${sheetIndex + 1}`;
+        let worksheetName = baseName;
+        let counter = 1;
+        while (workbook.getWorksheet(worksheetName)) {
+          const suffix = `_${counter}`;
+          worksheetName = `${baseName.slice(0, 31 - suffix.length)}${suffix}`;
+          counter += 1;
+        }
+
+        if (sheet.preserveOriginalContent) {
+          const worksheet = workbook.addWorksheet(worksheetName);
+          (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+          (sheet.columnWidths || []).forEach((width, index) => {
+            worksheet.getColumn(index + 1).width = width || 20;
+          });
+          (sheet.cellNotes || []).forEach((note) => {
+            if (!note?.row || !note?.col || !note?.note) return;
+            worksheet.getCell(note.row, note.col).note = note.note;
+          });
+          applyValidatorDropdowns({
+            workbook,
+            worksheet,
+            fields: sheet.fields,
+            validators,
+            startRow: 2,
+            endRow: 1000,
+          });
+          return;
+        }
+
+        const worksheet = workbook.addWorksheet(worksheetName);
+        const headerRow = worksheet.addRow(sheet.fields.map((field) => field.name));
+        headerRow.eachCell((cell, colNumber) => {
+          cell.font = { bold: true, color: { argb: "FFFFFF" } };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "0f1f39" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+
+          const field = sheet.fields[colNumber - 1];
+          applyFieldCommentNote(cell, field.comment);
+        });
+
+        worksheet.columns.forEach((column) => {
+          column.width = 20;
+        });
+
+        applyValidatorDropdowns({
+          workbook,
+          worksheet,
+          fields: sheet.fields,
+          validators,
+          startRow: 2,
+          endRow: 1000,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/octet-stream" });
+      saveAs(blob, `${template.file_name}.xlsx`);
+      return;
+    }
 
     // Crear la hoja principal basada en el template
     const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
     const headerRow = worksheet.addRow(
       template.fields.map((field) => field.name)
     );
@@ -437,7 +570,7 @@ if (field.multiple) {
           const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
           const promptBase = normalizedComment.slice(0, 220);
           const promptText = normalizedComment.length > 220
-            ? `${promptBase}... (ver hoja Guía)`
+            ? `${promptBase}...`
             : promptBase;
           cell.dataValidation = {
             ...cell.dataValidation,

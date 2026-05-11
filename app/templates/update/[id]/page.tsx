@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Stack } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
@@ -12,8 +12,16 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  extractWorkbookCommentsFromBase64,
+  loadWorkbookFromBase64,
+  sanitizeSheetName,
+} from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Field {
   name: string;
@@ -22,6 +30,10 @@ interface Field {
   multiple: boolean;
   validate_with?: string;
   comment?: string;
+  locked?: boolean;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
 }
 
 type FieldKey = "name" | "datatype" | "required" | "validate_with" | "multiple" | "comment";
@@ -60,6 +72,15 @@ interface Validator {
   values: any[];
 }
 
+interface TemplateWorksheet {
+  name: string;
+  fields: Field[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  cellNotes?: { row: number; col: number; note: string }[];
+  columnWidths?: number[];
+}
+
 const UpdateTemplatePage = () => {
   const [name, setName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -73,6 +94,10 @@ const UpdateTemplatePage = () => {
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
+  const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
+  const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
+  const [activeSheet, setActiveSheet] = useState<string | null>(null);
+  const [newField, setNewField] = useState<Field>({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
   const [loading, setLoading] = useState(true);
   const [originalTemplate, setOriginalTemplate] = useState<any>(null);
   const router = useRouter();
@@ -80,6 +105,100 @@ const UpdateTemplatePage = () => {
   const id = paramId(params);
   const { data: session } = useSession();
   const { userRole } = useRole();
+  const { selectedPeriodId } = usePeriod();
+
+  const createEmptyField = (): Field => ({
+    name: "",
+    datatype: "",
+    required: true,
+    validate_with: "",
+    comment: "",
+    multiple: false,
+    locked: false,
+  });
+
+  const normalizeField = (field: Partial<Field>, defaultLocked: boolean): Field => ({
+    name: field.name || "",
+    datatype: field.datatype || "",
+    required: field.required ?? true,
+    validate_with: field.validate_with || "",
+    comment: field.comment || "",
+    multiple: field.multiple ?? false,
+    locked: field.locked ?? defaultLocked,
+    dropdown_options: Array.isArray(field.dropdown_options) ? field.dropdown_options : [],
+    header_row: field.header_row,
+    column: field.column,
+  });
+
+  const normalizeWorkbookSheets = (template: any): TemplateWorksheet[] => {
+    const sheets = Array.isArray(template?.workbook_sheets)
+      ? template.workbook_sheets
+      : [];
+
+    return sheets
+      .map((sheet: any, index: number) => ({
+        name: sheet?.name || `Hoja_${index + 1}`,
+        fields: Array.isArray(sheet?.fields)
+          ? sheet.fields.map((field: Field) => normalizeField(field, true))
+          : [],
+        preserveOriginalContent: sheet?.preserveOriginalContent || false,
+        rawRows: Array.isArray(sheet?.rawRows) ? sheet.rawRows : undefined,
+        cellNotes: Array.isArray(sheet?.cellNotes) ? sheet.cellNotes : undefined,
+        columnWidths: Array.isArray(sheet?.columnWidths) ? sheet.columnWidths : undefined,
+      }))
+      .filter((sheet: TemplateWorksheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields.length > 0);
+  };
+
+  const makeUniqueFieldName = (value: string, usedValues: Map<string, number>) => {
+    const base = value.trim() || "Campo";
+    const normalized = base.toLowerCase();
+    const count = usedValues.get(normalized) || 0;
+    usedValues.set(normalized, count + 1);
+    return count === 0 ? base : `${base} (${count + 1})`;
+  };
+
+  const flattenWorkbookSheets = (sheets: TemplateWorksheet[]) => {
+    const usedFieldNames = new Map<string, number>();
+    return sheets.flatMap((sheet) =>
+      sheet.fields.map((field) => ({
+        ...field,
+        name: makeUniqueFieldName(field.name, usedFieldNames),
+      }))
+    );
+  };
+
+  const hasWorkbookSheets = workbookSheets.length > 0;
+  const activeSheetData = workbookSheets.find((sheet) => sheet.name === activeSheet) || workbookSheets[0];
+  const displayedFields = hasWorkbookSheets ? activeSheetData?.fields || [] : fields;
+
+  const isBaseField = (field: Field) => hasWorkbookSheets && field.locked !== false;
+  const baseFields = displayedFields.filter(isBaseField);
+  const editableFields = displayedFields.filter((f) => !isBaseField(f));
+
+  const setFieldsForActiveSheet = (updater: (currentFields: Field[]) => Field[]) => {
+    if (!activeSheetData) return;
+    setWorkbookSheets((currentSheets) =>
+      currentSheets.map((sheet) =>
+        sheet.name === activeSheetData.name
+          ? { ...sheet, fields: updater(sheet.fields) }
+          : sheet
+      )
+    );
+  };
+
+  const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string) => {
+    const base = sanitizeSheetName(rawName || fallback) || fallback;
+    let candidate = base;
+    let counter = 1;
+
+    while (workbook.getWorksheet(candidate)) {
+      const suffix = `_${counter}`;
+      candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+      counter += 1;
+    }
+
+    return candidate;
+  };
 
   useEffect(() => {
     const fetchTemplate = async () => {
@@ -91,7 +210,18 @@ const UpdateTemplatePage = () => {
             setName(response.data.name);
             setFileName(response.data.file_name);
             setFileDescription(response.data.file_description);
-            setFields(response.data.fields);
+            const normalizedSheets = normalizeWorkbookSheets(response.data);
+            const nextFields = normalizedSheets.length > 0
+              ? flattenWorkbookSheets(normalizedSheets)
+              : (response.data.fields || []).map((field: Field) => normalizeField(field, false));
+            const firstEditableSheet = normalizedSheets.find(
+              (sheet) => !sheet.preserveOriginalContent && sheet.fields.length > 0
+            ) || normalizedSheets[0];
+
+            setWorkbookSheets(normalizedSheets);
+            setOriginalWorkbookBase64(response.data.original_workbook_base64 || "");
+            setActiveSheet(firstEditableSheet?.name || null);
+            setFields(nextFields);
             setActive(response.data.active);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
@@ -100,7 +230,8 @@ const UpdateTemplatePage = () => {
             setOriginalTemplate({
               name: response.data.name,
               file_description: response.data.file_description,
-              fields: response.data.fields,
+              fields: nextFields,
+              workbook_sheets: normalizedSheets,
               dimensions: response.data.dimensions,
               producers: response.data.producers
             });
@@ -150,7 +281,9 @@ const UpdateTemplatePage = () => {
 
     const fetchValidatorOptions = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`, {
+          params: { periodId: selectedPeriodId },
+        });
         setValidatorOptions(response.data.options);
       } catch (error) {
         console.error("Error fetching validator options:", error);
@@ -178,7 +311,7 @@ const UpdateTemplatePage = () => {
     fetchTemplate();
     fetchValidatorOptions();
     fetchValidators();
-  }, [id, session, userRole]);
+  }, [id, session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
     const updatedFields = [...fields];
@@ -210,12 +343,104 @@ const UpdateTemplatePage = () => {
     setFields(updatedFields);
   };
 
+  const handleDisplayedFieldChange = (index: number, field: FieldKey, value: any) => {
+    const applyFieldChange = (currentFields: Field[]) => {
+      const updatedFields = [...currentFields];
+      const currentField = updatedFields[index];
+
+      if (!currentField || isBaseField(currentField)) {
+        return currentFields;
+      }
+
+      updatedFields[index] = { ...currentField, [field]: value };
+
+      if (field === 'validate_with') {
+        const selectedOption = validatorOptions.find(option => option.name === value);
+
+        if (selectedOption) {
+          if (selectedOption.type === 'NÃºmero') {
+            updatedFields[index].datatype = 'Entero';
+          } else if (selectedOption.type === 'Texto') {
+            updatedFields[index].datatype = 'Texto Largo';
+          }
+        } else {
+          updatedFields[index].datatype = "";
+        }
+      }
+
+      return updatedFields;
+    };
+
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(applyFieldChange);
+    } else {
+      setFields(applyFieldChange);
+    }
+  };
+
+  const addDisplayedField = () => {
+    if (!newField.name.trim()) {
+      showNotification({ title: "Error", message: "El nombre del campo es requerido", color: "red" });
+      return;
+    }
+
+    const fieldToAdd: Field = { ...newField, locked: false };
+
+    if (hasWorkbookSheets) {
+      const targetSheet = activeSheetData?.name;
+      if (!targetSheet) {
+        showNotification({ title: "Error", message: "No hay hoja activa seleccionada.", color: "red" });
+        return;
+      }
+      setWorkbookSheets((currentSheets) =>
+        currentSheets.map((sheet) =>
+          sheet.name === targetSheet
+            ? { ...sheet, fields: [...sheet.fields, fieldToAdd] }
+            : sheet
+        )
+      );
+      setActiveSheet(targetSheet);
+    } else {
+      setFields([...fields, fieldToAdd]);
+    }
+
+    setNewField({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
+  };
+
+  const removeDisplayedField = (index: number) => {
+    const removeEditableField = (currentFields: Field[]) => {
+      const currentField = currentFields[index];
+      if (!currentField || isBaseField(currentField)) {
+        return currentFields;
+      }
+      return currentFields.filter((_, i) => i !== index);
+    };
+
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(removeEditableField);
+    } else {
+      setFields(removeEditableField);
+    }
+  };
+
   const handleSave = async () => {
-    if (!name || !fileName || !fileDescription || fields.length === 0 || selectedDimensions.length === 0 || selectedDependencies.length === 0) {
+    const fieldsToSave = hasWorkbookSheets ? flattenWorkbookSheets(workbookSheets) : fields;
+
+    const missing: string[] = [];
+    if (!name) missing.push("Nombre de la plantilla");
+    if (!fileName) missing.push("Nombre del archivo");
+    if (!fileDescription) missing.push("Descripción del archivo");
+    if (fieldsToSave.length === 0) missing.push("Al menos un campo");
+    if (selectedDimensions.length === 0) missing.push("Ámbito");
+    if (selectedDependencies.length === 0) missing.push("Productores");
+
+    if (missing.length > 0) {
       showNotification({
-        title: "Error",
-        message: "Todos los campos son requeridos",
+        id: "save-validation-error",
+        title: "Faltan campos requeridos",
+        message: missing.join(", "),
         color: "red",
+        autoClose: 6000,
       });
       return;
     }
@@ -224,7 +449,9 @@ const UpdateTemplatePage = () => {
       name,
       file_name: fileName,
       file_description: fileDescription,
-      fields,
+      fields: fieldsToSave,
+      workbook_sheets: hasWorkbookSheets ? workbookSheets : [],
+      original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
       dimensions: selectedDimensions,
       producers: selectedDependencies,
@@ -446,173 +673,145 @@ router.back();
       return;
     }
 
-    const newFields = Array.from(fields);
-    const [removed] = newFields.splice(source.index, 1);
-    newFields.splice(destination.index, 0, removed);
-
-    setFields(newFields);
-  };
-
-  const handleDownloadTemplate = async () => {
-    const templateData = {
-      name,
-      file_name: fileName,
-      fields,
-      validators
+    const reorderFields = (currentFields: Field[]) => {
+      const bases = currentFields.filter((f) => isBaseField(f));
+      const editables = currentFields.filter((f) => !isBaseField(f));
+      const reordered = Array.from(editables);
+      const [removed] = reordered.splice(source.index, 1);
+      reordered.splice(destination.index, 0, removed);
+      return [...bases, ...reordered];
     };
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(templateData.name);
-    buildStyledHelpWorksheet(workbook, templateData.fields);
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(reorderFields);
+    } else {
+      setFields(reorderFields);
+    }
+  };
 
-    // Crear encabezados principales
-    const headerRow = worksheet.addRow(templateData.fields.map(field => field.name));
+  const applySheetHeaders = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const headerRow = worksheet.addRow(sheetFields.map((f) => f.name));
     headerRow.eachCell((cell, colNumber) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '0f1f39' },
-      };
+      cell.font = { bold: true, color: { argb: "FFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
       cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' },
+        top: { style: "thin" }, left: { style: "thin" },
+        bottom: { style: "thin" }, right: { style: "thin" },
       };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-      const field = templateData.fields[colNumber - 1];
-      applyFieldCommentNote(cell, field.comment);
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      applyFieldCommentNote(cell, sheetFields[colNumber - 1].comment);
     });
+    worksheet.columns.forEach((col) => { col.width = 20; });
+  };
 
-    worksheet.columns.forEach(column => {
-      column.width = 20;
-    });
-
-    // Agregar validaciones de datos
-    templateData.fields.forEach((field, index) => {
+  const applySheetDataValidations = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const maxRows = 1000;
+    sheetFields.forEach((field, index) => {
       const colNumber = index + 1;
-      const maxRows = 1000;
       for (let i = 2; i <= maxRows; i++) {
-        const row = worksheet.getRow(i);
-        const cell = row.getCell(colNumber);
-    
+        const cell = worksheet.getRow(i).getCell(colNumber);
         switch (field.datatype) {
-          case 'Entero':
-            cell.dataValidation = {
-              type: 'whole',
-              operator: 'between',
-              formulae: [1, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número entero.'
-            };
+          case "Entero":
+            cell.dataValidation = { type: "whole", operator: "between", formulae: [1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
             break;
-          case 'Decimal':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal.'
-            };
+          case "Decimal":
+            cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal." };
             break;
-          case 'Porcentaje':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 100.0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal entre 0.0 y 100.0.'
-            };
+          case "Porcentaje":
+            cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, 100.0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal entre 0.0 y 100.0." };
             break;
-          case 'Texto Corto':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [60],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 60 caracteres.'
-            };
+          case "Texto Corto":
+            cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [60], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 60 caracteres." };
             break;
-          case 'Texto Largo':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [500],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 500 caracteres.'
-            };
+          case "Texto Largo":
+            cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [500], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 500 caracteres." };
             break;
-          case 'True/False':
-            cell.dataValidation = {
-              type: 'list',
-              allowBlank: true,
-              formulae: ['"Si,No"'],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, selecciona Si o No.'
-            };
+          case "True/False":
+            cell.dataValidation = { type: "list", allowBlank: true, formulae: ['"Si,No"'], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, selecciona Si o No." };
             break;
-          case 'Fecha':
-          case 'Fecha Inicial / Fecha Final':
-            cell.dataValidation = {
-              type: 'date',
-              operator: 'between',
-              formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce una fecha válida en el formato DD/MM/AAAA.'
-            };
-            cell.numFmt = 'DD/MM/YYYY';
+          case "Fecha":
+          case "Fecha Inicial / Fecha Final":
+            cell.dataValidation = { type: "date", operator: "between", formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce una fecha válida en el formato DD/MM/AAAA." };
+            cell.numFmt = "DD/MM/YYYY";
             break;
-          case 'Link':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'greaterThan',
-              formulae: [0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un enlace válido.'
-            };
+          case "Link":
+            cell.dataValidation = { type: "textLength", operator: "greaterThan", formulae: [0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un enlace válido." };
             break;
         }
-
         if (field.comment && cell.dataValidation) {
-          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+          const normalizedComment = field.comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
           const promptBase = normalizedComment.slice(0, 220);
-          const promptText = normalizedComment.length > 220
-            ? `${promptBase}... (ver hoja Guia)`
-            : promptBase;
           cell.dataValidation = {
             ...cell.dataValidation,
             showInputMessage: true,
             promptTitle: field.name.slice(0, 32),
-            prompt: promptText,
+            prompt: normalizedComment.length > 220 ? `${promptBase}...` : promptBase,
           };
         }
-
       }
     });
+  };
 
-    applyValidatorDropdowns({
-      workbook,
-      worksheet,
-      fields,
-      validators,
-      startRow: 2,
-      endRow: 1000,
-    });
-  
+  const handleDownloadTemplate = async () => {
+    if (originalWorkbookBase64) {
+      const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
+      const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
+      applyWorkbookSheetDropdowns({
+        workbook,
+        workbookSheets,
+        validators,
+        originalCommentsBySheet,
+      });
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
+
+      showNotification({
+        title: "Ã‰xito",
+        message: "Plantilla descargada exitosamente con las validaciones actualizadas",
+        color: "green",
+      });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+
+    if (hasWorkbookSheets) {
+      for (const sheet of workbookSheets) {
+        const sheetName = resolveUniqueSheetName(workbook, sheet.name, `Hoja_${workbookSheets.indexOf(sheet) + 1}`);
+        if (sheet.preserveOriginalContent) {
+          const worksheet = workbook.addWorksheet(sheetName);
+          (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+          (sheet.columnWidths || []).forEach((width, index) => {
+            worksheet.getColumn(index + 1).width = width || 20;
+          });
+          (sheet.cellNotes || []).forEach((note) => {
+            if (!note?.row || !note?.col || !note?.note) return;
+            worksheet.getCell(note.row, note.col).note = note.note;
+          });
+          applyValidatorDropdowns({ workbook, worksheet, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+          continue;
+        }
+        const worksheet = workbook.addWorksheet(sheetName);
+        applySheetHeaders(worksheet, sheet.fields);
+        applySheetDataValidations(worksheet, sheet.fields);
+        applyValidatorDropdowns({ workbook, worksheet, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+      }
+    } else {
+      const worksheet = workbook.addWorksheet(name);
+      applySheetHeaders(worksheet, fields);
+      applySheetDataValidations(worksheet, fields);
+      applyValidatorDropdowns({ workbook, worksheet, fields, validators, startRow: 2, endRow: 1000 });
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${templateData.file_name}.xlsx`);
-    
+    saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
+
     showNotification({
       title: "Éxito",
       message: "Plantilla descargada exitosamente con las validaciones actualizadas",
@@ -688,6 +887,54 @@ router.back();
                 </Button>
               </Group>
 
+      {hasWorkbookSheets && (
+        <>
+          <Text size="sm" c="dimmed" mt="md">
+            Hojas de la plantilla:
+          </Text>
+          <Tabs
+            value={activeSheet}
+            onChange={(value) => {
+              setActiveSheet(value);
+            }}
+            mt="xs"
+            mb="sm"
+          >
+            <Tabs.List>
+              {workbookSheets.map((sheet) => (
+                <Tabs.Tab key={sheet.name} value={sheet.name}>
+                  {sheet.name}
+                </Tabs.Tab>
+              ))}
+            </Tabs.List>
+          </Tabs>
+        </>
+      )}
+
+      {baseFields.length > 0 && (
+        <Box
+          mt="sm"
+          mb="sm"
+          p="sm"
+          style={{
+            background: "var(--mantine-color-gray-0)",
+            borderRadius: "var(--mantine-radius-sm)",
+            border: "1px solid var(--mantine-color-gray-3)",
+          }}
+        >
+          <Text size="xs" fw={600} c="dimmed" mb={8}>
+            Campos base (solo lectura)
+          </Text>
+          <Stack gap={4}>
+            {baseFields.map((field, i) => (
+              <Text key={i} size="sm">
+                {i + 1}. {field.name}
+              </Text>
+            ))}
+          </Stack>
+        </Box>
+      )}
+
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="fields">
           {(provided) => (
@@ -705,8 +952,14 @@ router.back();
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {fields.map((field, index) => (
-                  <Draggable key={index} draggableId={`field-${index}`} index={index}>
+                {editableFields.map((field, editableIndex) => {
+                  const actualIndex = displayedFields.indexOf(field);
+                  return (
+                  <Draggable
+                    key={`${activeSheetData?.name || "default"}-${actualIndex}`}
+                    draggableId={`field-${activeSheetData?.name || "default"}-${actualIndex}`}
+                    index={editableIndex}
+                  >
                     {(provided) => (
                       <Table.Tr
                         ref={provided.innerRef}
@@ -721,7 +974,7 @@ router.back();
                           <TextInput
                             placeholder="Nombre del campo"
                             value={field.name}
-                            onChange={(event) => handleFieldChange(index, "name", event.currentTarget.value)}
+                            onChange={(event) => handleDisplayedFieldChange(actualIndex, "name", event.currentTarget.value)}
                           />
                         </Table.Td>
                         <Table.Td w={rem(160)}>
@@ -729,7 +982,7 @@ router.back();
                             placeholder="Seleccionar"
                             data={allowedDataTypes}
                             value={field.datatype}
-                            onChange={(value) => handleFieldChange(index, "datatype", value || "")}
+                            onChange={(value) => handleDisplayedFieldChange(actualIndex, "datatype", value || "")}
                             readOnly={!!field.validate_with}
                           />
                         </Table.Td>
@@ -738,7 +991,7 @@ router.back();
                             <Checkbox
                               label=""
                               checked={field.required}
-                              onChange={(event) => handleFieldChange(index, "required", event.currentTarget.checked)}
+                              onChange={(event) => handleDisplayedFieldChange(actualIndex, "required", event.currentTarget.checked)}
                             />
                           </Center>
                         </Table.Td>
@@ -747,7 +1000,7 @@ router.back();
                             placeholder="Validar con"
                             data={validatorOptions.map(option => ({ value: option.name, label: option.name }))}
                             value={field.validate_with}
-                            onChange={(value) => handleFieldChange(index, "validate_with", value || "")}
+                            onChange={(value) => handleDisplayedFieldChange(actualIndex, "validate_with", value || "")}
                             maxDropdownHeight={200}
                             searchable
                             clearable
@@ -755,54 +1008,128 @@ router.back();
                           />
                         </Table.Td>
                         <Table.Td>
-                            <Center>
-                              <Tooltip
-                                label="Esta opción solo se puede activar si se selecciona una validación"
-                                position="top"
-                                withArrow
-                                transitionProps={{ transition: "slide-up", duration: 300 }}
-                                disabled={field.validate_with !== ""}
-                              >
-                                <Checkbox
-                                  label=""
-                                  checked={field.multiple}
-                                  onChange={(event) => handleFieldChange(index, "multiple", event.currentTarget.checked)}
-                                  disabled={!field.validate_with}
-                                />
-                              </Tooltip>
-                            </Center>
+                          <Center>
+                            <Tooltip
+                              label="Esta opción solo se puede activar si se selecciona una validación"
+                              position="top"
+                              withArrow
+                              transitionProps={{ transition: "slide-up", duration: 300 }}
+                              disabled={field.validate_with !== ""}
+                            >
+                              <Checkbox
+                                label=""
+                                checked={field.multiple}
+                                onChange={(event) => handleDisplayedFieldChange(actualIndex, "multiple", event.currentTarget.checked)}
+                                disabled={!field.validate_with}
+                              />
+                            </Tooltip>
+                          </Center>
                         </Table.Td>
                         <Table.Td>
                           <Textarea
                             placeholder="Comentario del Campo / Pista"
                             value={field.comment}
                             onChange={(event) =>
-                              handleFieldChange(index, "comment", event.currentTarget.value)
+                              handleDisplayedFieldChange(actualIndex, "comment", event.currentTarget.value)
                             }
                             autosize
                             minRows={1}
                           />
                         </Table.Td>
                         <Table.Td>
-                          <Button color="red" onClick={() => removeField(index)}>
+                          <Button color="red" onClick={() => removeDisplayedField(actualIndex)}>
                             Eliminar
                           </Button>
                         </Table.Td>
                       </Table.Tr>
                     )}
                   </Draggable>
-                ))}
+                  );
+                })}
                 {provided.placeholder}
               </Table.Tbody>
+              <Table.Tfoot>
+                <Table.Tr style={{ background: "var(--mantine-color-blue-light)", borderTop: "2px dashed var(--mantine-color-blue-3)" }}>
+                  <Table.Td>
+                    <Center>
+                      <IconCirclePlus size={18} color="var(--mantine-color-blue-filled)" />
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <TextInput
+                      placeholder="Nombre del campo"
+                      value={newField.name}
+                      onChange={(e) => setNewField({ ...newField, name: e.currentTarget.value })}
+                    />
+                  </Table.Td>
+                  <Table.Td w={rem(160)}>
+                    <Select
+                      placeholder="Tipo"
+                      data={allowedDataTypes}
+                      value={newField.datatype || null}
+                      onChange={(v) => setNewField({ ...newField, datatype: v || "" })}
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Center>
+                      <Checkbox
+                        checked={newField.required}
+                        onChange={(e) => setNewField({ ...newField, required: e.currentTarget.checked })}
+                      />
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <Select
+                      placeholder="Validar con"
+                      data={validatorOptions.map((o) => ({ value: o.name, label: o.name }))}
+                      value={newField.validate_with || null}
+                      onChange={(v) => setNewField({ ...newField, validate_with: v || "" })}
+                      searchable
+                      clearable
+                      maxDropdownHeight={200}
+                      nothingFoundMessage="No existe"
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Center>
+                      <Tooltip
+                        label="Solo disponible si seleccionas una validación"
+                        disabled={!!newField.validate_with}
+                        withArrow
+                      >
+                        <Checkbox
+                          checked={newField.multiple}
+                          onChange={(e) => setNewField({ ...newField, multiple: e.currentTarget.checked })}
+                          disabled={!newField.validate_with}
+                        />
+                      </Tooltip>
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <Textarea
+                      placeholder="Comentario / Pista"
+                      value={newField.comment}
+                      onChange={(e) => setNewField({ ...newField, comment: e.currentTarget.value })}
+                      autosize
+                      minRows={1}
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      color="blue"
+                      size="xs"
+                      onClick={addDisplayedField}
+                      leftSection={<IconCirclePlus size={14} />}
+                    >
+                      Añadir
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tfoot>
             </Table>
           )}
         </Droppable>
       </DragDropContext>
-      <Group mt="md">
-        <Button onClick={addField} leftSection={<IconCirclePlus />}>
-          Añadir Campo
-        </Button>
-      </Group>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
         <Button variant="outline" onClick={() => router.back()}>

@@ -10,6 +10,7 @@ import { useSort } from "../../hooks/useSort";
 import DateConfig, { dateToGMT, dateNow } from "@/app/components/DateConfig";
 import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Period {
   _id: string;
@@ -27,6 +28,7 @@ interface Period {
 
 const AdminPeriodsPage = () => {
   const router = useRouter();
+  const { refreshPeriods } = usePeriod();
   const [periods, setPeriods] = useState<Period[]>([]);
   const [opened, setOpened] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
@@ -128,6 +130,7 @@ const AdminPeriodsPage = () => {
       }
 
       handleModalClose();
+      await refreshPeriods();
       fetchPeriods(page, search);
     } catch (error) {
       console.error("Error guardando periodo:", error);
@@ -147,6 +150,7 @@ const AdminPeriodsPage = () => {
         message: "Periodo eliminado exitosamente",
         color: "teal",
       });
+      await refreshPeriods();
       fetchPeriods(page, search);
     } catch (error) {
       console.error("Error eliminando periodo:", error);
@@ -168,6 +172,7 @@ const AdminPeriodsPage = () => {
         message: `Periodo ${!currentStatus ? 'activado' : 'desactivado'} exitosamente`,
         color: "teal",
       });
+      await refreshPeriods();
       fetchPeriods(page, search);
     } catch (error) {
       console.error("Error cambiando estado del periodo:", error);

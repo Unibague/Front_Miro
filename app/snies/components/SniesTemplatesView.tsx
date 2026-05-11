@@ -20,6 +20,7 @@ import {
   Select,
   Stack,
   Table,
+  Tabs,
   Text,
   TextInput,
   Tooltip,
@@ -51,7 +52,9 @@ type FieldEquivalenceMap = Record<
     miro_fields: Array<{
       template_id: string;
       template_name: string;
+      worksheet_name?: string;
       field_name: string;
+      value_mappings?: Record<string, string>;
     }>;
   }
 >;
@@ -86,6 +89,8 @@ interface CnaFieldOption {
 interface MiroFieldOption {
   value: string;
   fieldName: string;
+  sourceFieldName: string;
+  worksheetName: string;
   templateId: string;
   templateName: string;
   validateWith?: string;
@@ -122,8 +127,23 @@ const PAGE_SIZE = 8;
 const encodeEquivalenceKey = (worksheetName: string, fieldName: string) =>
   JSON.stringify([worksheetName, fieldName]);
 
-const encodeMiroFieldValue = (templateId: string, fieldName: string) =>
+const encodeMiroFieldValue = (templateId: string, worksheetName: string, fieldName: string) =>
+  JSON.stringify([templateId, worksheetName, fieldName]);
+
+const encodeLegacyMiroFieldValue = (templateId: string, fieldName: string) =>
   JSON.stringify([templateId, fieldName]);
+
+const stripGeneratedDuplicateSuffix = (value: string) =>
+  value.replace(/\s+\(\d+\)$/g, "").trim();
+
+const getMiroFieldBaseName = (value: unknown) =>
+  stripGeneratedDuplicateSuffix(getDisplayText(value));
+
+const getMiroFieldBaseKey = (templateId: string, fieldName: unknown) =>
+  `${templateId}::${normalizeToken(getMiroFieldBaseName(fieldName))}`;
+
+const getMiroFieldScopedKey = (templateId: string, worksheetName: unknown, fieldName: unknown) =>
+  `${templateId}::${normalizeToken(worksheetName)}::${normalizeToken(getMiroFieldBaseName(fieldName))}`;
 
 const isFieldEquivalenceMap = (value: unknown): value is FieldEquivalenceMap =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -259,11 +279,175 @@ const getValidatorOptionsFromCache = (cache: Map<string, ValidatorOption[]>, val
   return cache.get(text) || cache.get(getNormalizedValidateWithKey(text));
 };
 
+const buildOptionsFromRawValues = (values: unknown): ValidatorOption[] | undefined => {
+  if (!Array.isArray(values) || values.length === 0) return undefined;
+
+  const seen = new Set<string>();
+  const options = values
+    .map((value) => {
+      const text = getDisplayText(value);
+      if (!text || seen.has(text)) return null;
+      seen.add(text);
+      return { value: text, label: text };
+    })
+    .filter((option): option is ValidatorOption => Boolean(option));
+
+  return options.length ? options : undefined;
+};
+
+const getFieldInlineValidatorOptions = (field: any): ValidatorOption[] | undefined => {
+  const directOptions =
+    field?.validator_options ||
+    field?.validatorOptions ||
+    field?.dropdown_options ||
+    field?.excel_validation_options ||
+    field?.validator_values;
+
+  if (!Array.isArray(directOptions) || directOptions.length === 0) return undefined;
+
+  const firstOption = directOptions[0];
+  if (firstOption && typeof firstOption === "object" && "value" in firstOption && "label" in firstOption) {
+    return directOptions as ValidatorOption[];
+  }
+
+  return buildOptionsFromRawValues(directOptions);
+};
+
+const addValidatorToCache = (cache: Map<string, ValidatorOption[]>, validator: any) => {
+  const validatorName = getDisplayText(validator?.name);
+  if (!validatorName) return;
+
+  if (Array.isArray(validator?.columns) && validator.columns.length > 0) {
+    const rows = buildValidatorRowsFromColumns(validator.columns);
+    validator.columns.forEach((col: any) => {
+      if (!col?.name) return;
+      addValidatorOptionsToCache(
+        cache,
+        `${validatorName} - ${col.name}`,
+        buildValidatorOptionsFromRows(rows, col.name)
+      );
+    });
+    return;
+  }
+
+  const rows = Array.isArray(validator?.values) ? validator.values : [];
+  const firstRow = rows.find((row: any) => row && typeof row === "object" && !Array.isArray(row)) || {};
+  Object.keys(firstRow).forEach((colName) => {
+    addValidatorOptionsToCache(
+      cache,
+      `${validatorName} - ${colName}`,
+      buildValidatorOptionsFromRows(rows, colName)
+    );
+  });
+};
+
+const isRecord = (value: unknown): value is Record<string, any> =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+const getTemplateDataFromResponse = (data: any) => {
+  const candidates = [
+    data?.publishedTemplate?.template,
+    data?.template?.template,
+    data?.template,
+    data,
+  ];
+
+  return candidates.find(isRecord) || null;
+};
+
+const getTemplateBaseIdFromResponse = (data: any, templateData: any) => {
+  const candidates = [
+    data?.template?.template,
+    data?.template,
+    data?.publishedTemplate?.template,
+    templateData,
+    data,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") return candidate;
+    if (!isRecord(candidate)) continue;
+
+    const nestedTemplate = candidate.template;
+    if (typeof nestedTemplate === "string") return nestedTemplate;
+    if (isRecord(nestedTemplate) && nestedTemplate._id) return getDisplayText(nestedTemplate._id);
+
+    const id = getDisplayText(candidate._id || candidate.template_id || candidate.templateId);
+    if (id) return id;
+  }
+
+  return "";
+};
+
+const mergeTemplateValidators = (templateData: any, fallbackData: any) => {
+  if (!templateData) return fallbackData;
+
+  const validators = [
+    ...(Array.isArray(fallbackData?.validators) ? fallbackData.validators : []),
+    ...(Array.isArray(templateData?.validators) ? templateData.validators : []),
+  ];
+
+  if (validators.length === 0) return templateData;
+  return { ...templateData, validators };
+};
+
+const getTemplateDataWithResponseValidators = (data: any) => {
+  const templateData = getTemplateDataFromResponse(data);
+  const responseValidators = data?.template?.validators || data?.validators;
+
+  if (!templateData || !Array.isArray(responseValidators) || responseValidators.length === 0) {
+    return templateData;
+  }
+
+  return mergeTemplateValidators(templateData, { validators: responseValidators });
+};
+
+const buildMiroTemplateFieldRows = (templateData: any) => {
+  const workbookSheets = Array.isArray(templateData?.workbook_sheets)
+    ? templateData.workbook_sheets
+    : [];
+
+  const sheetRows = workbookSheets.flatMap((sheet: any, index: number) => {
+    const worksheetName =
+      getDisplayText(sheet?.name) ||
+      getDisplayText(sheet?.worksheetName) ||
+      `Hoja_${index + 1}`;
+
+    const sheetFields =
+      Array.isArray(sheet?.fields) && sheet.fields.length > 0
+        ? sheet.fields
+        : Array.isArray(sheet?.headers)
+          ? sheet.headers.map((name: unknown) => ({ name }))
+          : [];
+
+    return sheetFields.map((field: any) => ({
+      field,
+      worksheetName,
+      sourceFieldName: getDisplayText(field?.name),
+    }));
+  });
+
+  if (sheetRows.length > 0) return sheetRows;
+
+  const flatFields = Array.isArray(templateData?.fields) ? templateData.fields : [];
+  return flatFields.map((field: any) => ({
+    field,
+    worksheetName:
+      getDisplayText(field?.worksheet_name) ||
+      getDisplayText(field?.worksheetName) ||
+      getDisplayText(field?.sheet_name) ||
+      getDisplayText(field?.sheetName) ||
+      "Campos Miro",
+    sourceFieldName: getDisplayText(field?.name),
+  }));
+};
+
 export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemplatesViewProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
   const [opened, { open, close }] = useDisclosure(false);
+  const [deleteModalOpened, { open: openDeleteModal, close: closeDeleteModal }] = useDisclosure(false);
   const [templates, setTemplates] = useState<SniesTemplate[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -271,6 +455,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<SniesTemplate | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<SniesTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [pTemplateOptions, setPTemplateOptions] = useState<{ value: string; label: string }[]>([]);
@@ -285,8 +471,10 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [loadingEquivalences, setLoadingEquivalences] = useState(false);
   const [savingEquivalences, setSavingEquivalences] = useState(false);
   const [cnaFieldSearch, setCnaFieldSearch] = useState("");
+  const [selectedCnaWorksheetName, setSelectedCnaWorksheetName] = useState("");
   const [miroFieldSearch, setMiroFieldSearch] = useState("");
   const [miroTemplateFilter, setMiroTemplateFilter] = useState<string | null>(null);
+  const [selectedMiroWorksheetName, setSelectedMiroWorksheetName] = useState("");
   const [valueMappings, setValueMappings] = useState<Record<string, Record<string, Record<string, string>>>>({});
   const [expandedCnaFields, setExpandedCnaFields] = useState<Set<string>>(new Set());
   const [expandedMiroFields, setExpandedMiroFields] = useState<Set<string>>(new Set());
@@ -295,6 +483,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const moduleUpper = module.toUpperCase();
   const moduleBasePath = `/${module}/templates`;
   const apiBasePath = `${process.env.NEXT_PUBLIC_API_URL}/${module}/templates`;
+
+  
 
   const fetchTemplates = async () => {
     if (!session?.user?.email) return;
@@ -374,6 +564,17 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     open();
   };
 
+  const openDeleteConfirmation = (template: SniesTemplate) => {
+    setTemplateToDelete(template);
+    openDeleteModal();
+  };
+
+  const closeDeleteConfirmation = () => {
+    if (deleting) return;
+    setTemplateToDelete(null);
+    closeDeleteModal();
+  };
+
   const handleSave = async () => {
     if (!templateName.trim()) {
       showNotification({
@@ -448,7 +649,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         );
         showNotification({
           title: "Plantilla creada",
-          message: `La plantilla ${moduleUpper} se guard?ó en la base de datos.`,
+          message: `La plantilla ${moduleUpper} se guardó en la base de datos.`,
           color: "teal",
         });
       }
@@ -468,9 +669,11 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     }
   };
 
-  const handleDelete = async (template: SniesTemplate) => {
-    if (!session?.user?.email) return;
+  const handleDelete = async () => {
+    if (!session?.user?.email || !templateToDelete) return;
 
+    const template = templateToDelete;
+    setDeleting(true);
     try {
       await axios.delete(`${apiBasePath}/${template._id}`, {
         params: { email: session.user.email },
@@ -482,6 +685,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         color: "red",
       });
 
+      closeDeleteModal();
+      setTemplateToDelete(null);
       fetchTemplates();
     } catch (error) {
       console.error(`Error deleting ${moduleUpper} template:`, error);
@@ -490,6 +695,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         message: `No fue posible eliminar la plantilla ${moduleUpper}.`,
         color: "red",
       });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -554,11 +761,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
             worksheetName: sheet.worksheetName,
             fieldOrigin: field.field_origin,
             validateWith: getValidateWithText(cnaField.validate_with),
-            validatorOptions: cnaField.validator_options?.length
-              ? cnaField.validator_options
-              : cnaField.validatorOptions?.length
-                ? cnaField.validatorOptions
-                : undefined,
+            validatorOptions: getFieldInlineValidatorOptions(cnaField),
           });
         }
       });
@@ -576,11 +779,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
           worksheetName,
           fieldOrigin: field.field_origin,
           validateWith: getValidateWithText(field.validate_with),
-          validatorOptions: field.validator_options?.length
-            ? field.validator_options
-            : field.validatorOptions?.length
-              ? field.validatorOptions
-              : undefined,
+          validatorOptions: getFieldInlineValidatorOptions(field),
         });
       });
     }
@@ -588,60 +787,106 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     return Array.from(options.values());
   };
 
-  const buildMiroFieldOptions = async (sourceTemplates: ReturnType<typeof getSourceTemplates>) => {
-    const responses = await Promise.allSettled(
-      sourceTemplates.map((sourceTemplate) =>
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${sourceTemplate.template_id}`)
-      )
-    );
+const buildMiroFieldOptions = async (
+  sourceTemplates: ReturnType<typeof getSourceTemplates>,
+  globalValidatorOptionsCache: Map<string, ValidatorOption[]>
+) => {
+  const options = new Map<string, MiroFieldOption>();
 
-    const options = new Map<string, MiroFieldOption>();
+  await Promise.all(
+    sourceTemplates.map(async (sourceTemplate) => {
+      try {
+        let templateData: any = null;
 
-    responses.forEach((response, index) => {
-      if (response.status !== "fulfilled") return;
+        try {
+          const publishedResponse = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${sourceTemplate.template_id}`
+          );
 
-      const sourceTemplate = sourceTemplates[index];
-      const templateData = response.value.data?.template;
-      const fields = templateData?.fields || [];
-      const validators: any[] = templateData?.validators || [];
+          const publishedTemplateData = getTemplateDataWithResponseValidators(publishedResponse.data);
+          templateData = publishedTemplateData;
 
-      const validatorOptionsCache = new Map<string, ValidatorOption[]>();
-      validators.forEach((v: any) => {
-        const rows: any[] = v.values || [];
-        const firstRow = rows[0] || {};
-        Object.keys(firstRow).forEach((colName) => {
-          const key = `${v.name} - ${colName}`;
-          addValidatorOptionsToCache(validatorOptionsCache, key, buildValidatorOptionsFromRows(rows, colName));
-        });
-      });
+          const baseTemplateId = getTemplateBaseIdFromResponse(
+            publishedResponse.data,
+            publishedTemplateData
+          );
 
-      fields.forEach((field: any) => {
-        const fieldName = getDisplayText(field?.name);
-        if (!fieldName) return;
-        const value = encodeMiroFieldValue(sourceTemplate.template_id, fieldName);
-        if (!options.has(value)) {
-          let validateWith: string | undefined;
-          let validatorOptions: ValidatorOption[] | undefined;
-          if (field?.validate_with) {
-            validateWith = getValidateWithText(field.validate_with);
-            if (validateWith) validatorOptions = getValidatorOptionsFromCache(validatorOptionsCache, validateWith);
+          if (baseTemplateId) {
+            try {
+              const baseResponse = await axios.get(
+                `${process.env.NEXT_PUBLIC_API_URL}/templates/${baseTemplateId}`
+              );
+              const baseTemplateData = getTemplateDataWithResponseValidators(baseResponse.data);
+              if (baseTemplateData) {
+                templateData = mergeTemplateValidators(baseTemplateData, publishedTemplateData);
+              }
+            } catch (error) {
+              console.error("Error loading base Miro template:", error);
+            }
           }
-          options.set(value, {
-            value,
-            fieldName,
-            templateId: sourceTemplate.template_id,
-            templateName: sourceTemplate.template_name,
-            validateWith,
-            validatorOptions: validatorOptions?.length ? validatorOptions : undefined,
-          });
-        }
-      });
-    });
+        } catch (error) {
+          const baseResponse = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/templates/${sourceTemplate.template_id}`
+          );
 
-    return Array.from(options.values()).sort((a, b) =>
-      `${a.templateName} ${a.fieldName}`.localeCompare(`${b.templateName} ${b.fieldName}`)
-    );
-  };
+          templateData = getTemplateDataWithResponseValidators(baseResponse.data);
+        }
+
+        const fields = buildMiroTemplateFieldRows(templateData);
+
+        const validatorOptionsCache = new Map<string, ValidatorOption[]>();
+        globalValidatorOptionsCache.forEach((opts, key) =>
+          validatorOptionsCache.set(key, opts)
+        );
+
+        (templateData?.validators || []).forEach((v: any) =>
+          addValidatorToCache(validatorOptionsCache, v)
+        );
+
+        fields.forEach(({ field, worksheetName, sourceFieldName }: any) => {
+          const fieldName = getMiroFieldBaseName(sourceFieldName);
+          if (!sourceFieldName || !fieldName || !worksheetName) return;
+          const validateWith = getValidateWithText(field?.validate_with) || undefined;
+          const inlineValidatorOptions = getFieldInlineValidatorOptions(field);
+          const cachedValidatorOptions = validateWith
+            ? getValidatorOptionsFromCache(validatorOptionsCache, validateWith)
+            : undefined;
+
+          const optionKey = getMiroFieldScopedKey(
+            sourceTemplate.template_id,
+            worksheetName,
+            sourceFieldName
+          );
+
+          if (!options.has(optionKey)) {
+            options.set(optionKey, {
+              value: encodeMiroFieldValue(sourceTemplate.template_id, worksheetName, sourceFieldName),
+              fieldName,
+              sourceFieldName,
+              worksheetName,
+              templateId: sourceTemplate.template_id,
+              templateName: sourceTemplate.template_name,
+              validateWith,
+              validatorOptions: inlineValidatorOptions?.length
+                ? inlineValidatorOptions
+                : cachedValidatorOptions?.length
+                  ? cachedValidatorOptions
+                  : undefined,
+            });
+          }
+        });
+      } catch (error) {
+        console.error("Error loading Miro template:", error);
+      }
+    })
+  );
+
+  return Array.from(options.values()).sort((a, b) =>
+    `${a.templateName} ${a.worksheetName} ${a.fieldName}`.localeCompare(
+      `${b.templateName} ${b.worksheetName} ${b.fieldName}`
+    )
+  );
+};
 
   const normalizeEquivalenceSelections = (
     savedEquivalences: unknown,
@@ -652,14 +897,36 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
 
     const validCnaKeys = new Set(cnaFields.map((field) => field.key));
     const validMiroValues = new Set(miroFields.map((field) => field.value));
+    const miroValueByScopedKey = new Map(
+      miroFields.map((field) => [
+        getMiroFieldScopedKey(field.templateId, field.worksheetName, field.sourceFieldName || field.fieldName),
+        field.value,
+      ])
+    );
+    const miroValueByBaseKey = new Map(
+      miroFields.map((field) => [
+        getMiroFieldBaseKey(field.templateId, field.sourceFieldName || field.fieldName),
+        field.value,
+      ])
+    );
 
     return Object.values(savedEquivalences).reduce<Record<string, string[]>>((acc, equivalence) => {
       const cnaKey = encodeEquivalenceKey(equivalence.worksheet_name || "", equivalence.field_name || "");
       if (!validCnaKeys.has(cnaKey)) return acc;
 
       const selectedValues = (equivalence.miro_fields || [])
-        .map((field) => encodeMiroFieldValue(field.template_id, field.field_name))
-        .filter((value) => validMiroValues.has(value));
+        .map((field) => {
+          const worksheetName = field.worksheet_name || "";
+          const exactValue = encodeMiroFieldValue(field.template_id, worksheetName, field.field_name);
+          const legacyValue = encodeLegacyMiroFieldValue(field.template_id, field.field_name);
+          if (validMiroValues.has(exactValue)) return exactValue;
+          if (validMiroValues.has(legacyValue)) return legacyValue;
+          return (
+            miroValueByScopedKey.get(getMiroFieldScopedKey(field.template_id, worksheetName, field.field_name)) ||
+            miroValueByBaseKey.get(getMiroFieldBaseKey(field.template_id, field.field_name))
+          );
+        })
+        .filter((value): value is string => Boolean(value && validMiroValues.has(value)));
 
       if (selectedValues.length > 0) {
         acc[cnaKey] = selectedValues;
@@ -676,8 +943,10 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     setMiroFieldOptions([]);
     setEquivalenceSelections({});
     setCnaFieldSearch("");
+    setSelectedCnaWorksheetName("");
     setMiroFieldSearch("");
     setMiroTemplateFilter(null);
+    setSelectedMiroWorksheetName("");
     setValueMappings({});
     setExpandedCnaFields(new Set());
     setExpandedMiroFields(new Set());
@@ -702,29 +971,22 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
       });
 
       const cnaExtraFields: any[] = response.data.fields || [];
-      const miroFields = await buildMiroFieldOptions(sourceTemplates);
 
-      // Fetch all validators to enrich CNA extra fields
-      const needsValidators = cnaExtraFields.some((f) => f.validate_with);
+      // Fetch validators to enrich both CNA fields and source Miro fields.
       let allValidators: any[] = [];
-      if (needsValidators) {
-        try {
-          const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`);
-          allValidators = vRes.data.validators || [];
-        } catch (e) {
-          console.error("Error fetching validators for CNA fields:", e);
-        }
+      try {
+        const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
+          params: { periodId: selectedPeriodId },
+        });
+        allValidators = vRes.data.validators || [];
+      } catch (e) {
+        console.error("Error fetching validators for CNA equivalences:", e);
       }
 
       const validatorOptionsCache = new Map<string, ValidatorOption[]>();
-      allValidators.forEach((v: any) => {
-        const cols: any[] = v.columns || [];
-        const rows = buildValidatorRowsFromColumns(cols);
-        cols.forEach((col: any) => {
-          const key = `${v.name} - ${col.name}`;
-          addValidatorOptionsToCache(validatorOptionsCache, key, buildValidatorOptionsFromRows(rows, col.name));
-        });
-      });
+      allValidators.forEach((v: any) => addValidatorToCache(validatorOptionsCache, v));
+
+      const miroFields = await buildMiroFieldOptions(sourceTemplates, validatorOptionsCache);
 
       const cnaFieldValidateLookup = new Map<string, string>();
       const cnaFieldValidateNameLookup = new Map<string, string>();
@@ -749,7 +1011,10 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
 
       setCnaFieldOptions(cnaFields);
       setMiroFieldOptions(miroFields);
+      setSelectedCnaWorksheetName(cnaFields[0]?.worksheetName || "");
       setSelectedCnaFieldKey(cnaFields[0]?.key || "");
+      setMiroTemplateFilter(miroFields[0]?.templateId || null);
+      setSelectedMiroWorksheetName(miroFields[0]?.worksheetName || "");
       setEquivalenceSelections(
         normalizeEquivalenceSelections(response.data.field_equivalences, cnaFields, miroFields)
       );
@@ -757,12 +1022,34 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
       // Load existing value mappings
       const savedEq = response.data.field_equivalences;
       const initialValueMappings: Record<string, Record<string, Record<string, string>>> = {};
+      const validMiroValues = new Set(miroFields.map((field) => field.value));
+      const miroValueByScopedKey = new Map(
+        miroFields.map((field) => [
+          getMiroFieldScopedKey(field.templateId, field.worksheetName, field.sourceFieldName || field.fieldName),
+          field.value,
+        ])
+      );
+      const miroValueByBaseKey = new Map(
+        miroFields.map((field) => [
+          getMiroFieldBaseKey(field.templateId, field.sourceFieldName || field.fieldName),
+          field.value,
+        ])
+      );
       if (isFieldEquivalenceMap(savedEq)) {
         Object.values(savedEq).forEach((equivalence: any) => {
           const cnaKey = encodeEquivalenceKey(equivalence.worksheet_name || "", equivalence.field_name || "");
           (equivalence.miro_fields || []).forEach((mf: any) => {
             if (mf.value_mappings && typeof mf.value_mappings === "object" && Object.keys(mf.value_mappings).length > 0) {
-              const miroVal = encodeMiroFieldValue(mf.template_id, mf.field_name);
+              const worksheetName = mf.worksheet_name || mf.worksheetName || "";
+              const exactMiroVal = encodeMiroFieldValue(mf.template_id, worksheetName, mf.field_name);
+              const legacyMiroVal = encodeLegacyMiroFieldValue(mf.template_id, mf.field_name);
+              const miroVal = validMiroValues.has(exactMiroVal)
+                ? exactMiroVal
+                : validMiroValues.has(legacyMiroVal)
+                  ? legacyMiroVal
+                  : miroValueByScopedKey.get(getMiroFieldScopedKey(mf.template_id, worksheetName, mf.field_name)) ||
+                    miroValueByBaseKey.get(getMiroFieldBaseKey(mf.template_id, mf.field_name));
+              if (!miroVal) return;
               if (!initialValueMappings[cnaKey]) initialValueMappings[cnaKey] = {};
               initialValueMappings[cnaKey][miroVal] = mf.value_mappings;
             }
@@ -801,6 +1088,40 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
       cnaMap[miroFieldValue] = miroMap;
       return { ...current, [cnaFieldKey]: cnaMap };
     });
+  };
+
+  const handleSelectCnaWorksheet = (worksheetName: string | null) => {
+    const nextWorksheetName = worksheetName || "";
+    const worksheetFields = cnaFieldOptions.filter(
+      (field) => field.worksheetName === nextWorksheetName
+    );
+
+    setSelectedCnaWorksheetName(nextWorksheetName);
+    setSelectedCnaFieldKey((currentKey) =>
+      worksheetFields.some((field) => field.key === currentKey)
+        ? currentKey
+        : worksheetFields[0]?.key || ""
+    );
+  };
+
+const handleSelectMiroTemplate = (templateId: string | null) => {
+  setMiroTemplateFilter(templateId);
+
+  if (!templateId) {
+    setSelectedMiroWorksheetName("");
+    return;
+  }
+
+  const templateFields = miroFieldOptions.filter(
+    (field) => field.templateId === templateId
+  );
+
+  const firstWorksheet = templateFields[0]?.worksheetName || "";
+  setSelectedMiroWorksheetName(firstWorksheet);
+};
+
+  const handleSelectMiroWorksheet = (worksheetName: string | null) => {
+    setSelectedMiroWorksheetName(worksheetName || "");
   };
 
   const handleToggleMiroField = (value: string, checked: boolean) => {
@@ -886,7 +1207,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
             return {
               template_id: field.templateId,
               template_name: field.templateName,
-              field_name: field.fieldName,
+              worksheet_name: field.worksheetName,
+              field_name: field.sourceFieldName || field.fieldName,
               ...(vm && Object.keys(vm).length > 0 ? { value_mappings: vm } : {}),
             };
           });
@@ -946,18 +1268,55 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const uniqueMiroTemplates = Array.from(
     new Map(miroFieldOptions.map((f) => [f.templateId, { value: f.templateId, label: f.templateName }])).values()
   );
+const activeMiroTemplateId =
+  miroTemplateFilter ||
+  uniqueMiroTemplates[0]?.value ||
+  "";
+  const miroFieldsForActiveTemplate = activeMiroTemplateId
+  ? miroFieldOptions.filter(
+      (field) => field.templateId === activeMiroTemplateId
+    )
+  : [];
+  const miroWorksheetTabs = activeMiroTemplateId
+    ? Array.from(
+        miroFieldsForActiveTemplate.reduce((sheetMap, field) => {
+          const current = sheetMap.get(field.worksheetName) || { value: field.worksheetName, count: 0 };
+          sheetMap.set(field.worksheetName, { ...current, count: current.count + 1 });
+          return sheetMap;
+        }, new Map<string, { value: string; count: number }>())
+      ).map(([, sheet]) => sheet)
+    : [];
+
+   
+  const selectedMiroWorksheetStillExists = miroWorksheetTabs.some(
+    (sheet) => sheet.value === selectedMiroWorksheetName
+  );
+  const activeMiroWorksheetName = selectedMiroWorksheetStillExists
+    ? selectedMiroWorksheetName
+    : miroWorksheetTabs[0]?.value || "";
+  const cnaWorksheetTabs = Array.from(
+    cnaFieldOptions.reduce((sheetMap, field) => {
+      const current = sheetMap.get(field.worksheetName) || { value: field.worksheetName, count: 0 };
+      sheetMap.set(field.worksheetName, { ...current, count: current.count + 1 });
+      return sheetMap;
+    }, new Map<string, { value: string; count: number }>())
+  ).map(([, sheet]) => sheet);
+  const activeCnaWorksheetName = selectedCnaWorksheetName || cnaWorksheetTabs[0]?.value || "";
   const normalizedCnaSearch = cnaFieldSearch.trim().toLowerCase();
-  const filteredCnaFieldOptions = cnaFieldOptions.filter((field) => {
+  const cnaFieldsForActiveWorksheet = activeCnaWorksheetName
+    ? cnaFieldOptions.filter((field) => field.worksheetName === activeCnaWorksheetName)
+    : cnaFieldOptions;
+  const filteredCnaFieldOptions = cnaFieldsForActiveWorksheet.filter((field) => {
     if (!normalizedCnaSearch) return true;
     return `${field.name} ${field.worksheetName} ${(field.validatorOptions || []).map((opt) => opt.label).join(" ")}`
       .toLowerCase()
       .includes(normalizedCnaSearch);
   });
   const normalizedMiroSearch = miroFieldSearch.trim().toLowerCase();
-  const filteredMiroFieldOptions = miroFieldOptions.filter((field) => {
-    if (miroTemplateFilter && field.templateId !== miroTemplateFilter) return false;
+  const filteredMiroFieldOptions = miroFieldsForActiveTemplate.filter((field) => {
+    if (activeMiroWorksheetName && field.worksheetName !== activeMiroWorksheetName) return false;
     if (!normalizedMiroSearch) return true;
-    return `${field.templateName} ${field.fieldName}`.toLowerCase().includes(normalizedMiroSearch);
+    return `${field.templateName} ${field.worksheetName} ${field.fieldName}`.toLowerCase().includes(normalizedMiroSearch);
   });
   const totalEquivalenceCount = Object.values(equivalenceSelections).reduce(
     (total, values) => total + values.length,
@@ -1008,7 +1367,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                     </Button>
                   </Tooltip>
                   <Tooltip label="Borrar plantilla">
-                    <Button color="red" variant="outline" onClick={() => handleDelete(template)}>
+                    <Button color="red" variant="outline" onClick={() => openDeleteConfirmation(template)}>
                       <IconTrash size={16} />
                     </Button>
                   </Tooltip>
@@ -1120,9 +1479,36 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                   <Text fw={700}>Campos CNA</Text>
                   <Badge variant="light">{cnaFieldOptions.length}</Badge>
                 </Group>
+                {cnaWorksheetTabs.length > 0 && (
+                  <Box px="sm" pt="xs" style={{ borderBottom: "1px solid #f1f3f5" }}>
+                    <Tabs
+                      value={activeCnaWorksheetName}
+                      onChange={handleSelectCnaWorksheet}
+                      variant="pills"
+                      radius="sm"
+                    >
+                      <ScrollArea type="auto" offsetScrollbars scrollbarSize={6}>
+                        <Tabs.List style={{ flexWrap: "nowrap", paddingBottom: 6 }}>
+                          {cnaWorksheetTabs.map((sheet) => (
+                            <Tabs.Tab key={sheet.value} value={sheet.value}>
+                              <Group gap={6} wrap="nowrap">
+                                <Text size="xs" style={{ maxWidth: 170 }} truncate>
+                                  {sheet.value}
+                                </Text>
+                                <Badge size="xs" variant="light">
+                                  {sheet.count}
+                                </Badge>
+                              </Group>
+                            </Tabs.Tab>
+                          ))}
+                        </Tabs.List>
+                      </ScrollArea>
+                    </Tabs>
+                  </Box>
+                )}
                 <Box p="sm" style={{ borderBottom: "1px solid #f1f3f5" }}>
                   <TextInput
-                    placeholder="Buscar campos CNA"
+                    placeholder="Buscar campos CNA en esta hoja"
                     value={cnaFieldSearch}
                     onChange={(event) => setCnaFieldSearch(event.currentTarget.value)}
                     size="xs"
@@ -1131,7 +1517,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                 <ScrollArea h="calc(100vh - 330px)">
                   {filteredCnaFieldOptions.length === 0 ? (
                     <Center h={220}>
-                      <Text c="dimmed">No hay campos CNA con ese filtro.</Text>
+                      <Text c="dimmed">No hay campos CNA en esta hoja con ese filtro.</Text>
                     </Center>
                   ) : (
                   <Stack gap={0}>
@@ -1139,9 +1525,9 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                       const active = selectedCnaFieldKey === field.key;
                       const selectedCount = equivalenceSelections[field.key]?.length || 0;
                       const isExpanded = expandedCnaFields.has(field.key);
-                      const miroFieldsWithValidation = (equivalenceSelections[field.key] || [])
+                      const selectedMappedMiroFields = (equivalenceSelections[field.key] || [])
                         .map((v) => miroFieldByValue.get(v))
-                        .filter((f): f is MiroFieldOption => Boolean(f?.validatorOptions?.length));
+                        .filter((f): f is MiroFieldOption => Boolean(f));
 
                       return (
                         <Box key={field.key}>
@@ -1169,6 +1555,11 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                                 <Text size="xs" c="dimmed" lineClamp={1}>
                                   {field.worksheetName}
                                 </Text>
+                                {field.validateWith && (
+                                  <Text size="xs" c="blue" lineClamp={1}>
+                                    {field.validateWith}
+                                  </Text>
+                                )}
                               </Box>
                               <Group gap={4} wrap="nowrap">
                                 <Badge color={selectedCount > 0 ? "teal" : "gray"} variant="light">
@@ -1200,7 +1591,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
 
                           {isExpanded && field.validatorOptions && (
                             <Box style={{ backgroundColor: "#f8f9fa", borderBottom: "1px solid #dee2e6" }} p="sm">
-                              <Stack gap={4} mb={miroFieldsWithValidation.length > 0 ? "sm" : 0}>
+                              <Stack gap={4} mb={selectedMappedMiroFields.length > 0 ? "sm" : 0}>
                                 {field.validatorOptions.map((cnaOpt) => (
                                   <Box key={cnaOpt.value}>
                                     <Text size="xs" fw={600} lineClamp={1}>
@@ -1209,37 +1600,54 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                                   </Box>
                                 ))}
                               </Stack>
-                              {miroFieldsWithValidation.length === 0 ? (
+                              {selectedMappedMiroFields.length === 0 ? (
                                 <Text size="xs" c="dimmed">
-                                  Selecciona un campo Miro (derecha) con lista de validacion para mapear valores.
+                                  Selecciona un campo Miro (derecha) para mapear valores de esta lista.
                                 </Text>
                               ) : (
-                                miroFieldsWithValidation.map((miroField) => (
+                                selectedMappedMiroFields.map((miroField) => (
                                   <Box key={miroField.value} mb="xs">
                                     <Text size="xs" c="dimmed" mb={4}>
-                                      {miroField.fieldName} ({miroField.templateName})
+                                      {miroField.fieldName} ({miroField.templateName} - {miroField.worksheetName})
                                     </Text>
                                     {field.validatorOptions!.map((cnaOpt) => (
                                       <Group key={cnaOpt.value} mb={4} wrap="nowrap" gap="xs">
                                         <Text size="xs" style={{ flex: "0 0 40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                           {cnaOpt.label}
                                         </Text>
-                                        <Select
-                                          data={miroField.validatorOptions!}
-                                          value={valueMappings[field.key]?.[miroField.value]?.[cnaOpt.value] || null}
-                                          onChange={(v) => handleSetValueMapping(field.key, miroField.value, cnaOpt.value, v)}
-                                          clearable
-                                          placeholder="Sin equiv."
-                                          size="xs"
-                                          style={{ flex: 1 }}
-                                          renderOption={({ option }) => {
-                                            return (
-                                              <Stack gap={0}>
-                                                <Text size="xs">{option.label}</Text>
-                                              </Stack>
-                                            );
-                                          }}
-                                        />
+                                        {miroField.validatorOptions?.length ? (
+                                          <Select
+                                            data={miroField.validatorOptions}
+                                            value={valueMappings[field.key]?.[miroField.value]?.[cnaOpt.value] || null}
+                                            onChange={(v) => handleSetValueMapping(field.key, miroField.value, cnaOpt.value, v)}
+                                            clearable
+                                            placeholder="Sin equiv."
+                                            size="xs"
+                                            style={{ flex: 1 }}
+                                            renderOption={({ option }) => {
+                                              return (
+                                                <Stack gap={0}>
+                                                  <Text size="xs">{option.label}</Text>
+                                                </Stack>
+                                              );
+                                            }}
+                                          />
+                                        ) : (
+                                          <Checkbox
+                                            size="xs"
+                                            checked={Boolean(valueMappings[field.key]?.[miroField.value]?.[cnaOpt.value])}
+                                            onChange={(event) =>
+                                              handleSetValueMapping(
+                                                field.key,
+                                                miroField.value,
+                                                cnaOpt.value,
+                                                event.currentTarget.checked ? cnaOpt.value : null
+                                              )
+                                            }
+                                            label="Conectar"
+                                            style={{ flex: 1 }}
+                                          />
+                                        )}
                                       </Group>
                                     ))}
                                   </Box>
@@ -1283,13 +1691,39 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                 <Box p="sm" style={{ borderBottom: "1px solid #f1f3f5" }}>
                   <Stack gap="xs">
                     <Select
-                      placeholder="Filtrar por plantilla Miro"
-                      data={uniqueMiroTemplates}
-                      value={miroTemplateFilter}
-                      onChange={setMiroTemplateFilter}
-                      clearable
-                      size="xs"
-                    />
+  label="Plantilla Miro"
+  placeholder="Selecciona una plantilla"
+  data={uniqueMiroTemplates}
+  value={activeMiroTemplateId || null}
+  onChange={handleSelectMiroTemplate}
+  clearable={false}
+  size="xs"
+/>
+                    {miroWorksheetTabs.length > 0 && (
+                      <Tabs
+                        value={activeMiroWorksheetName}
+                        onChange={handleSelectMiroWorksheet}
+                        variant="pills"
+                        radius="sm"
+                      >
+                        <ScrollArea type="auto" offsetScrollbars scrollbarSize={6}>
+                          <Tabs.List style={{ flexWrap: "nowrap", paddingBottom: 4 }}>
+                            {miroWorksheetTabs.map((sheet) => (
+                              <Tabs.Tab key={sheet.value} value={sheet.value}>
+                                <Group gap={6} wrap="nowrap">
+                                  <Text size="xs" style={{ maxWidth: 170 }} truncate>
+                                    {sheet.value}
+                                  </Text>
+                                  <Badge size="xs" variant="light">
+                                    {sheet.count}
+                                  </Badge>
+                                </Group>
+                              </Tabs.Tab>
+                            ))}
+                          </Tabs.List>
+                        </ScrollArea>
+                      </Tabs>
+                    )}
                     <TextInput
                       placeholder="Buscar campos Miro"
                       value={miroFieldSearch}
@@ -1299,7 +1733,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                   </Stack>
                 </Box>
 
-                <ScrollArea h="calc(100vh - 340px)">
+                <ScrollArea h="calc(100vh - 390px)">
                   {miroFieldOptions.length === 0 ? (
                     <Center h={220}>
                       <Text c="dimmed">No hay campos Miro conectados a esta plantilla CNA.</Text>
@@ -1322,11 +1756,16 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
                                   <Box>
                                     <Text size="sm">{field.fieldName}</Text>
                                     <Text size="xs" c="dimmed">
-                                      {field.templateName}
+                                      {field.templateName} - {field.worksheetName}
                                     </Text>
+                                    {field.validateWith && (
+                                      <Text size="xs" c="blue" lineClamp={1}>
+                                        {field.validateWith}
+                                      </Text>
+                                    )}
                                   </Box>
-                                }
-                              />
+                                  }
+                                />
                               {field.validatorOptions && (
                                 <Tooltip label={miroExpanded ? "Ocultar valores" : "Ver valores del validador"}>
                                   <ActionIcon
@@ -1399,6 +1838,26 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
             </Group>
           </>
         )}
+      </Modal>
+
+      <Modal
+        opened={deleteModalOpened}
+        onClose={closeDeleteConfirmation}
+        title={`Eliminar plantilla ${moduleUpper}`}
+        overlayProps={{ backgroundOpacity: 0.55, blur: 3 }}
+      >
+        <Text>
+          {/* eslint-disable-next-line react/no-unescaped-entities */}
+          ¿Estás seguro de que deseas eliminar la plantilla "{templateToDelete?.name}"?
+        </Text>
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={closeDeleteConfirmation} disabled={deleting}>
+            Cancelar
+          </Button>
+          <Button color="red" onClick={handleDelete} loading={deleting}>
+            Eliminar
+          </Button>
+        </Group>
       </Modal>
 
       <Modal

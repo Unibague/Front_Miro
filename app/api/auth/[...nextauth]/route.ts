@@ -30,6 +30,15 @@ type ExtendedSessionUser = {
   originalUserImage?: string | null;
 };
 
+const normalizeImageUrl = (value: unknown) => {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") return null;
+
+  return normalized;
+};
+
 const options: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -68,12 +77,12 @@ const options: NextAuthOptions = {
           id: credentials.id,
           name: credentials.userName,
           email: credentials.userEmail,
-          image: credentials.userImage || null,
+          image: normalizeImageUrl(credentials.userImage),
           isImpersonating: credentials.isImpersonating === "true",
           originalUserId: credentials.originalUserId,
           originalUserEmail: credentials.originalUserEmail,
           originalUserName: credentials.originalUserName,
-          originalUserImage: credentials.originalUserImage || null,
+          originalUserImage: normalizeImageUrl(credentials.originalUserImage),
         };
       },
     }),
@@ -115,18 +124,22 @@ const options: NextAuthOptions = {
         : "/dashboard";
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, profile }) {
       if (user) {
         const u = user as ExtendedUser;
+        const existingPicture = normalizeImageUrl(token.picture);
+        const previousOriginalImage = normalizeImageUrl(token.originalUserImage);
+        const profilePicture = normalizeImageUrl((profile as { picture?: unknown } | undefined)?.picture);
+        const userImage = normalizeImageUrl(u.image) || profilePicture;
+        const incomingOriginalImage = normalizeImageUrl(u.originalUserImage);
+        const isImpersonating = u.isImpersonating === true;
+
         token.isImpersonating = u.isImpersonating === true;
         token.originalUserId = u.originalUserId ?? null;
         token.originalUserEmail = u.originalUserEmail ?? null;
         token.originalUserName = u.originalUserName ?? null;
-        token.originalUserImage = u.originalUserImage ?? null;
-
-        if (u.image !== undefined) {
-          token.picture = u.image;
-        }
+        token.originalUserImage = incomingOriginalImage || (isImpersonating ? existingPicture : previousOriginalImage);
+        token.picture = userImage || (!isImpersonating ? previousOriginalImage || existingPicture : null);
       }
       return token;
     },
@@ -138,10 +151,11 @@ const options: NextAuthOptions = {
         u.originalUserId = typeof token.originalUserId === "string" ? token.originalUserId : undefined;
         u.originalUserEmail = typeof token.originalUserEmail === "string" ? token.originalUserEmail : undefined;
         u.originalUserName = typeof token.originalUserName === "string" ? token.originalUserName : undefined;
-        u.originalUserImage = typeof token.originalUserImage === "string" ? token.originalUserImage : null;
+        u.originalUserImage = normalizeImageUrl(token.originalUserImage);
 
-        if (token.picture) {
-          u.image = String(token.picture);
+        const sessionImage = normalizeImageUrl(token.picture) || (!u.isImpersonating ? u.originalUserImage : null);
+        if (sessionImage) {
+          u.image = sessionImage;
         }
 
         try {

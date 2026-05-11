@@ -26,6 +26,7 @@ import { useSession } from "next-auth/react";
 import { IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Field {
   name: string;
@@ -105,6 +106,7 @@ export default function UpdateSniesTemplatePage() {
   const params = useParams();
   const id = paramId(params);
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
 
   const [name, setName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -229,7 +231,9 @@ export default function UpdateSniesTemplatePage() {
 
     const fetchValidatorOptions = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`, {
+          params: { periodId: selectedPeriodId },
+        });
         setValidatorOptions(response.data.options || []);
       } catch (error) {
         console.error("Error fetching validator options:", error);
@@ -242,7 +246,7 @@ export default function UpdateSniesTemplatePage() {
       fetchDependencies();
       fetchValidatorOptions();
     }
-  }, [id, session?.user?.email]);
+  }, [id, session?.user?.email, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: string | boolean) => {
     const updatedFields = [...fields];

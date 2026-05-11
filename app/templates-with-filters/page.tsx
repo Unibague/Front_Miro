@@ -35,7 +35,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
 
 interface Field {
@@ -391,8 +391,6 @@ const TemplatesWithFiltersPage = () => {
       console.log("Template: ", template);
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
       const headerRow = worksheet.addRow(Object.keys(data[0]));
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };

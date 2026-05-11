@@ -255,7 +255,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         console.log(`VALIDATOR DEBUG - Fetching validators for field: ${fieldName}`);
         // Obtener todos los validadores disponibles
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination?page=1&limit=200`
+          `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination`,
+          { params: { page: 1, limit: 200, periodId: selectedPeriodId } }
         );
         
         if (response.data && response.data.validators) {

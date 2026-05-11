@@ -10,6 +10,7 @@ import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Field {
   name: string;
@@ -69,6 +70,7 @@ const UpdateTemplatePage = () => {
   const id = paramId(params);
   const { data: session } = useSession();
   const { userRole } = useRole();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
     const fetchTemplate = async () => {
@@ -128,7 +130,9 @@ const UpdateTemplatePage = () => {
 
     const fetchValidatorOptions = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`, {
+          params: { periodId: selectedPeriodId },
+        });
         setValidatorOptions(response.data.options);
       } catch (error) {
         console.error("Error fetching validator options:", error);
@@ -144,7 +148,7 @@ const UpdateTemplatePage = () => {
     fetchDimensions();
     fetchTemplate();
     fetchValidatorOptions();
-  }, [id, session, userRole]);
+  }, [id, session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
     const updatedFields = [...fields];

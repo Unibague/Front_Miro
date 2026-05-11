@@ -477,6 +477,7 @@ const ProducerReportPage = () => {
         entityType="producer-report"
         entityId={selectedReportForAudit?._id || ''}
         entityName={selectedReportForAudit?.name || ''}
+        email={session?.user?.email ?? ''}
       />
     </Container>
     );

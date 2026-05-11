@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 export const sanitizeSheetName = (name: string): string => {
   return name.replace(/[/\\?*[\]]/g, '').substring(0, 31);
@@ -13,6 +14,9 @@ interface FieldWithValidator {
   validate_with?: string;
   multiple?: boolean;
   comment?: string;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
 }
 
 interface ValidatorOptionSource {
@@ -20,10 +24,86 @@ interface ValidatorOptionSource {
   values: Record<string, unknown>[];
 }
 
-interface FieldWithComment {
+interface WorkbookSheetWithFields {
   name: string;
-  comment?: string;
+  fields?: FieldWithValidator[];
 }
+
+const getConfiguredFieldPosition = (field: FieldWithValidator, fieldIndex: number) => {
+  const configuredColumn = Number(field.column);
+  const configuredHeaderRow = Number(field.header_row);
+
+  return {
+    col: Number.isFinite(configuredColumn) && configuredColumn > 0
+      ? configuredColumn
+      : fieldIndex + 1,
+    headerRow: Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0
+      ? configuredHeaderRow
+      : 1,
+  };
+};
+
+const getFieldCommentForNote = (field: FieldWithValidator): string => {
+  const comment = field.comment
+    ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+    : "";
+  if (comment) return comment;
+
+  const dropdownOptions = Array.isArray(field.dropdown_options)
+    ? field.dropdown_options.map((option) => String(option || "").trim()).filter(Boolean)
+    : [];
+
+  return dropdownOptions.length > 0
+    ? `Opciones:\n${dropdownOptions.join("\n")}`
+    : "";
+};
+
+const applyHeaderCommentNote = (
+  worksheet: ExcelJS.Worksheet,
+  field: FieldWithValidator,
+  fieldIndex: number,
+  fallbackOptions: string[] = []
+) => {
+  const comment = getFieldCommentForNote(field) || (
+    fallbackOptions.length > 0
+      ? `Opciones:\n${fallbackOptions.join("\n")}`
+      : ""
+  );
+  if (!comment) return;
+
+  const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+  applyFieldCommentNote(worksheet.getCell(headerRow, col), comment);
+};
+
+export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...Array.from(chunk));
+  }
+
+  return btoa(binary);
+};
+
+export const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes.buffer;
+};
+
+export const loadWorkbookFromBase64 = async (base64: string): Promise<ExcelJS.Workbook> => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(base64ToArrayBuffer(base64));
+  return workbook;
+};
 
 const toColumnLetter = (index: number): string => {
   let n = index;
@@ -34,6 +114,118 @@ const toColumnLetter = (index: number): string => {
     n = Math.floor((n - 1) / 26);
   }
   return letters;
+};
+
+export const getExcelCellAddress = (row: number, col: number): string =>
+  `${toColumnLetter(col)}${row}`;
+
+const resolveZipPath = (fromPath: string, target: string): string => {
+  const normalizedTarget = target.replace(/\\/g, "/");
+  if (normalizedTarget.startsWith("/")) return normalizedTarget.replace(/^\/+/, "");
+
+  const parts = fromPath.split("/").slice(0, -1);
+  normalizedTarget.split("/").forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") {
+      parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+
+  return parts.join("/");
+};
+
+const parseXml = (xml: string): Document =>
+  new DOMParser().parseFromString(xml, "application/xml");
+
+const getRelTargets = (relsXml: string): Map<string, { target: string; type: string }> => {
+  const rels = new Map<string, { target: string; type: string }>();
+  const doc = parseXml(relsXml);
+  Array.from(doc.getElementsByTagName("Relationship")).forEach((node) => {
+    const id = node.getAttribute("Id") || "";
+    const target = node.getAttribute("Target") || "";
+    const type = node.getAttribute("Type") || "";
+    if (id && target) rels.set(id, { target, type });
+  });
+  return rels;
+};
+
+const getCommentNodeText = (node: Element): string => {
+  const textNodes = Array.from(node.getElementsByTagName("t"));
+  if (textNodes.length > 0) {
+    return textNodes.map((item) => item.textContent || "").join("").trim();
+  }
+  return (node.textContent || "").trim();
+};
+
+export const extractWorkbookCommentsFromBase64 = async (
+  base64: string
+): Promise<Map<string, Map<string, string>>> => {
+  const commentsBySheet = new Map<string, Map<string, string>>();
+  if (!base64) return commentsBySheet;
+
+  const zip = await JSZip.loadAsync(base64ToArrayBuffer(base64));
+  const workbookPath = "xl/workbook.xml";
+  const workbookXml = await zip.file(workbookPath)?.async("text");
+  const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (!workbookXml || !workbookRelsXml) return commentsBySheet;
+
+  const workbookRels = getRelTargets(workbookRelsXml);
+  const workbookDoc = parseXml(workbookXml);
+  const sheets = Array.from(workbookDoc.getElementsByTagName("sheet"));
+
+  for (const sheetNode of sheets) {
+    const sheetName = sheetNode.getAttribute("name") || "";
+    const relId =
+      sheetNode.getAttribute("r:id") ||
+      sheetNode.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "id"
+      ) ||
+      sheetNode.getAttribute("id") ||
+      "";
+    const sheetRel = workbookRels.get(relId);
+    if (!sheetName || !sheetRel?.target) continue;
+
+    const sheetPath = resolveZipPath(workbookPath, sheetRel.target);
+    const sheetParts = sheetPath.split("/");
+    const sheetFileName = sheetParts.pop();
+    if (!sheetFileName) continue;
+
+    const sheetRelsPath = `${sheetParts.join("/")}/_rels/${sheetFileName}.rels`;
+    const sheetRelsXml = await zip.file(sheetRelsPath)?.async("text");
+    if (!sheetRelsXml) continue;
+
+    const sheetRels = getRelTargets(sheetRelsXml);
+    const comments = new Map<string, string>();
+
+    for (const rel of sheetRels.values()) {
+      const normalizedType = rel.type.toLowerCase();
+      if (!normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) {
+        continue;
+      }
+
+      // Targets in .rels files are relative to the parent document (sheetPath), not the .rels file itself
+      const commentsPath = resolveZipPath(sheetPath, rel.target);
+      const commentsXml = await zip.file(commentsPath)?.async("text");
+      if (!commentsXml) continue;
+
+      const commentsDoc = parseXml(commentsXml);
+      const legacyComments = Array.from(commentsDoc.getElementsByTagName("comment"));
+      const threadedComments = Array.from(commentsDoc.getElementsByTagName("threadedComment"));
+
+      [...legacyComments, ...threadedComments].forEach((commentNode) => {
+        const ref = commentNode.getAttribute("ref") || "";
+        const text = getCommentNodeText(commentNode);
+        if (ref && text) comments.set(ref.replace(/\$/g, ""), text);
+      });
+    }
+
+    if (comments.size > 0) commentsBySheet.set(sheetName, comments);
+  }
+
+  return commentsBySheet;
 };
 
 const normalizeToken = (value: string): string =>
@@ -105,6 +297,44 @@ const getValidatorOptions = (
   return options;
 };
 
+const extractOptionsFromCommentValidators = (comment: string): string[] => {
+  if (!comment) return [];
+  const lines = comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+  const options: string[] = [];
+  let inValidSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      inValidSection = false;
+      continue;
+    }
+
+    const normalized = trimmed
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toUpperCase();
+
+    // Detect "Los valores válidos/posibles/permitidos son:" marker (MUST end with ":")
+    if (
+      normalized.endsWith(":") &&
+      normalized.includes("VALORES") &&
+      (normalized.includes("VALIDOS") || normalized.includes("POSIBLES") || normalized.includes("PERMITIDOS"))
+    ) {
+      inValidSection = true;
+      continue;
+    }
+
+    if (inValidSection) {
+      options.push(trimmed.replace(/\s+/g, " "));
+    }
+  }
+
+  return [...new Set(options)].filter(Boolean);
+};
+
 export const applyValidatorDropdowns = ({
   workbook,
   worksheet,
@@ -128,17 +358,55 @@ export const applyValidatorDropdowns = ({
   let sourceCol = Math.max(1, sourcesSheet.columnCount + 1);
 
   fields.forEach((field, fieldIndex) => {
-    if (!field.validate_with) return;
+    let options: { value: string; displayLabel: string }[] = [];
 
-    const validateWithParts = field.validate_with.split(" - ");
-    const validatorName = validateWithParts[0]?.trim();
-    const validatorColumnName = validateWithParts.slice(1).join(" - ").trim();
-    if (!validatorName) return;
+    if (field.validate_with) {
+      const validateWithParts = field.validate_with.split(" - ");
+      const validatorName = validateWithParts[0]?.trim();
+      const validatorColumnName = validateWithParts.slice(1).join(" - ").trim();
+      if (!validatorName) {
+        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+        return;
+      }
 
-    const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
-    if (!validator) return;
+      const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
+      if (!validator) {
+        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+        return;
+      }
 
-    const options = getValidatorOptions(validator, validatorColumnName);
+      options = getValidatorOptions(validator, validatorColumnName);
+    } else if (field.comment) {
+      // Comment present: only create dropdown if comment has numeric-prefixed lines
+      const commentOptions = extractOptionsFromCommentValidators(field.comment);
+      if (commentOptions.length === 0) {
+        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+        return;
+      }
+      options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
+    } else if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+      // No comment — use stored options (manually created templates only)
+      const seenStaticOptions = new Set<string>();
+      options = field.dropdown_options
+        .map((option) => String(option || "").trim())
+        .filter((option) => {
+          if (!option || seenStaticOptions.has(option)) return false;
+          seenStaticOptions.add(option);
+          return true;
+        })
+        .map((option) => ({ value: option, displayLabel: option }));
+    } else {
+      applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+      return;
+    }
+
+    applyHeaderCommentNote(
+      worksheet,
+      field,
+      fieldIndex,
+      options.map((option) => option.displayLabel)
+    );
+
     if (options.length === 0) return;
 
     // Store the full display label ("CC - Cédula de ciudadanía") in the dropdown list
@@ -148,7 +416,8 @@ export const applyValidatorDropdowns = ({
 
     const colLetter = toColumnLetter(sourceCol);
     const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
-    const templateCol = fieldIndex + 1;
+    const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+    const firstDataRow = Math.max(startRow, headerRow + 1);
     const normalizedComment = field.comment
       ? String(field.comment)
           .replace(/\r\n/g, "\n")
@@ -158,10 +427,10 @@ export const applyValidatorDropdowns = ({
 
     const promptText =
       normalizedComment.length > 220
-        ? `${normalizedComment.slice(0, 217)}... (ver hoja Guia)`
+        ? `${normalizedComment.slice(0, 217)}...`
         : normalizedComment;
 
-    for (let row = startRow; row <= endRow; row++) {
+    for (let row = firstDataRow; row <= endRow; row++) {
       const cell = worksheet.getCell(row, templateCol);
       const validation: ExcelJS.DataValidation = {
         type: "list",
@@ -181,6 +450,47 @@ export const applyValidatorDropdowns = ({
     }
 
     sourceCol += 1;
+  });
+};
+
+export const applyWorkbookSheetDropdowns = ({
+  workbook,
+  workbookSheets,
+  validators,
+  originalCommentsBySheet,
+  endRow = 1000,
+}: {
+  workbook: ExcelJS.Workbook;
+  workbookSheets: WorkbookSheetWithFields[];
+  validators: ValidatorOptionSource[];
+  originalCommentsBySheet?: Map<string, Map<string, string>>;
+  endRow?: number;
+}): void => {
+  workbookSheets.forEach((sheet) => {
+    if (!Array.isArray(sheet.fields) || sheet.fields.length === 0) return;
+
+    const worksheet = workbook.getWorksheet(sheet.name);
+    if (!worksheet) return;
+
+    const originalComments = originalCommentsBySheet?.get(sheet.name);
+    const fields = originalComments
+      ? sheet.fields.map((field, fieldIndex) => {
+          const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+          const originalComment = originalComments.get(getExcelCellAddress(headerRow, col));
+          // Always prefer the fresh JSZip-extracted comment; fall back to stored comment
+          const resolvedComment = originalComment ?? field.comment;
+          return resolvedComment !== field.comment ? { ...field, comment: resolvedComment } : field;
+        })
+      : sheet.fields;
+
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields,
+      validators,
+      startRow: 2,
+      endRow: Math.max(endRow, worksheet.rowCount + 500),
+    });
   });
 };
 
@@ -217,11 +527,6 @@ const wrapTextByLength = (text: string, maxLen = 52): string => {
   return wrappedLines.join("\n");
 };
 
-const estimateRowHeight = (text: string, min = 22): number => {
-  const lineCount = Math.max(1, normalizeMultilineText(text).split("\n").length);
-  return Math.max(min, lineCount * 16);
-};
-
 export const applyFieldCommentNote = (
   cell: ExcelJS.Cell,
   rawComment?: string
@@ -229,66 +534,5 @@ export const applyFieldCommentNote = (
   if (!rawComment) return;
   const cleanComment = normalizeMultilineText(rawComment).replace(/^"+|"+$/g, "");
   if (!cleanComment) return;
-  // Excel note popups are visually constrained by the app, so keep note short.
-  // Full instruction is delivered through data-validation input message + "Guía" sheet.
-  if (cleanComment.length <= 120) {
-    cell.note = wrapTextByLength(cleanComment, 44);
-  } else {
-    cell.note = "Instruccion: selecciona una celda de esta columna para ver el detalle completo.";
-  }
-};
-
-export const buildStyledHelpWorksheet = (
-  workbook: ExcelJS.Workbook,
-  fields: FieldWithComment[]
-): ExcelJS.Worksheet => {
-  const helpWorksheet = workbook.addWorksheet("Guía");
-  helpWorksheet.columns = [{ width: 38 }, { width: 120 }];
-  helpWorksheet.views = [{ state: "frozen", ySplit: 1 }];
-
-  const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-  helpHeaderRow.height = 24;
-  helpHeaderRow.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF0F1F39" },
-    };
-    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    cell.border = {
-      top: { style: "thin", color: { argb: "FFCBD5E1" } },
-      left: { style: "thin", color: { argb: "FFCBD5E1" } },
-      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-      right: { style: "thin", color: { argb: "FFCBD5E1" } },
-    };
-  });
-
-  fields.forEach((field, index) => {
-    const wrappedComment = field.comment ? wrapTextByLength(field.comment, 90) : "";
-    const helpRow = helpWorksheet.addRow([field.name, wrappedComment]);
-    helpRow.height = estimateRowHeight(wrappedComment, 22);
-
-    helpRow.getCell(1).alignment = { vertical: "top", horizontal: "left", wrapText: true };
-    helpRow.getCell(2).alignment = { vertical: "top", horizontal: "left", wrapText: true };
-    helpRow.getCell(1).font = { bold: true, color: { argb: "FF0F1F39" } };
-    helpRow.getCell(2).font = { color: { argb: "FF111827" } };
-
-    const rowFill = index % 2 === 0 ? "FFF8FAFC" : "FFFFFFFF";
-    helpRow.eachCell((cell) => {
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: rowFill },
-      };
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFE2E8F0" } },
-        left: { style: "thin", color: { argb: "FFE2E8F0" } },
-        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
-        right: { style: "thin", color: { argb: "FFE2E8F0" } },
-      };
-    });
-  });
-
-  return helpWorksheet;
+  cell.note = wrapTextByLength(cleanComment, 52);
 };
