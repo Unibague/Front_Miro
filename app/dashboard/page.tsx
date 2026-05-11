@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield, IconUsersGroup } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -807,6 +807,20 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-historico-docentes">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
+              <Center><IconUsersGroup size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Histórico Docentes (SNIES)</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta el histórico de información de docentes.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
+                Ir a Histórico Docentes
+              </Button>
+            </Card>
+          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -892,6 +906,20 @@ const DashboardPage = () => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
                 Ir a Mis Proyectos PDI
+              </Button>
+            </Card>
+          </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-historico-docentes">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
+              <Center><IconUsersGroup size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Histórico Docentes (SNIES)</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta el histórico de información de docentes.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
+                Ir a Histórico Docentes
               </Button>
             </Card>
           </Grid.Col>,
@@ -1411,6 +1439,39 @@ const DashboardPage = () => {
                 </Card>
               </Grid.Col>
             )}
+
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+              <Card
+                radius="xl"
+                p="xl"
+                onClick={() => router.push("/historico-docentes")}
+                style={{
+                  cursor: "pointer",
+                  minHeight: 260,
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
+                  boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
+                }}
+              >
+                <Stack justify="space-between" h="100%" align="center">
+                  <Stack align="center" gap="md">
+                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                      <IconUsersGroup size={28} />
+                    </ThemeIcon>
+                    <Title order={2} c="white" ta="center">
+                      Histórico Docentes (SNIES)
+                    </Title>
+                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                      Consulta el histórico de información de docentes.
+                    </Text>
+                  </Stack>
+                  <Button variant="white" color="violet" radius="xl">
+                    Abrir módulo
+                  </Button>
+                </Stack>
+              </Card>
+            </Grid.Col>
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">

@@ -13,6 +13,8 @@ const GoBackButton = () => {
   if (pathname === "/" || pathname === "/dashboard") return null;
   /* En date-review el botón vive en el Navbar */
   if (pathname?.startsWith("/date-review")) return null;
+  /* En historico-docentes el botón vive en el encabezado de la página */
+  if (pathname?.startsWith("/historico-docentes")) return null;
 
   const handleVolver = () => {
     router.back();
