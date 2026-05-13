@@ -64,6 +64,12 @@ interface WorkbookSheet {
   headers?: string[];
   visual_fields?: Array<{
     name: string;
+    base_name?: string;
+    source_name?: string;
+    group_path?: string[];
+    cell_ref?: string;
+    row_number?: number;
+    column_number?: number;
     field_origin?: string;
     validate_with?: string;
     validator_options?: ValidatorOption[];
@@ -80,6 +86,9 @@ interface ValidatorOption {
 interface CnaFieldOption {
   key: string;
   name: string;
+  displayName: string;
+  contextPath: string[];
+  cellRef?: string;
   worksheetName: string;
   fieldOrigin?: string;
   validateWith?: string;
@@ -194,6 +203,69 @@ const splitValidateWith = (value: unknown) => {
     text,
     validatorName: parts[0]?.trim() || "",
     columnName: parts.slice(1).join(" - ").trim(),
+  };
+};
+
+const splitCnaContextPath = (fieldName: string) =>
+  fieldName
+    .split(" > ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+const getCnaFieldPresentation = (field: { name?: unknown; base_name?: unknown; source_name?: unknown; group_path?: unknown }) => {
+  const fullName = getDisplayText(field?.name);
+  const explicitGroupPath = Array.isArray(field?.group_path)
+    ? field.group_path.map((part) => getDisplayText(part)).filter(Boolean)
+    : [];
+  const splitPath = splitCnaContextPath(fullName);
+  const fallbackDisplayName = splitPath.length > 1 ? splitPath[splitPath.length - 1] : fullName;
+  const displayName = getDisplayText(field?.base_name) || getDisplayText(field?.source_name) || fallbackDisplayName;
+  const contextPath = explicitGroupPath.length
+    ? explicitGroupPath
+    : splitPath.length > 1
+      ? splitPath.slice(0, -1)
+      : [];
+
+  return {
+    displayName: displayName || fullName,
+    contextPath,
+  };
+};
+
+const getCnaEducationLevel = (contextPath: string[]) => {
+  const levelSource = contextPath.find((item) => {
+    const normalized = normalizeToken(item);
+    return normalized.includes("PREGRADO") || normalized.includes("POSGRADO");
+  });
+
+  if (!levelSource) return "";
+  const normalized = normalizeToken(levelSource);
+  if (normalized.includes("POSGRADO")) return "Posgrado";
+  if (normalized.includes("PREGRADO")) return "Pregrado";
+  return "";
+};
+
+const getCnaFieldHierarchy = (field: CnaFieldOption) => {
+  const level = getCnaEducationLevel(field.contextPath);
+  const contextWithoutLevel = field.contextPath.filter((item) => {
+    const normalized = normalizeToken(item);
+    if (level === "Posgrado") return !normalized.includes("POSGRADO");
+    if (level === "Pregrado") return !normalized.includes("PREGRADO");
+    return true;
+  });
+  const group = contextWithoutLevel[0] || "";
+  const subgroups = contextWithoutLevel.slice(1);
+  const closestParent = subgroups[subgroups.length - 1] || group;
+  const title =
+    closestParent && normalizeToken(closestParent) !== normalizeToken(field.displayName)
+      ? `${closestParent} / ${field.displayName}`
+      : field.displayName;
+
+  return {
+    level,
+    group,
+    subgroups,
+    title,
   };
 };
 
@@ -753,11 +825,15 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         const cnaField = field as NonNullable<WorkbookSheet["visual_fields"]>[number];
         const fieldName = getDisplayText(field?.name);
         if (!fieldName) return;
+        const { displayName, contextPath } = getCnaFieldPresentation(cnaField);
         const key = encodeEquivalenceKey(sheet.worksheetName, fieldName);
         if (!options.has(key)) {
           options.set(key, {
             key,
             name: fieldName,
+            displayName,
+            contextPath,
+            cellRef: getDisplayText(cnaField.cell_ref),
             worksheetName: sheet.worksheetName,
             fieldOrigin: field.field_origin,
             validateWith: getValidateWithText(cnaField.validate_with),
@@ -772,10 +848,14 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         const fieldName = getDisplayText(field?.name);
         if (!fieldName) return;
         const worksheetName = field.worksheet_name || "CNA";
+        const { displayName, contextPath } = getCnaFieldPresentation(field);
         const key = encodeEquivalenceKey(worksheetName, fieldName);
         options.set(key, {
           key,
           name: fieldName,
+          displayName,
+          contextPath,
+          cellRef: getDisplayText(field.cell_ref),
           worksheetName,
           fieldOrigin: field.field_origin,
           validateWith: getValidateWithText(field.validate_with),
@@ -1263,6 +1343,7 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
   };
 
   const selectedCnaField = cnaFieldOptions.find((field) => field.key === selectedCnaFieldKey);
+  const selectedCnaHierarchy = selectedCnaField ? getCnaFieldHierarchy(selectedCnaField) : null;
   const selectedMiroValues = new Set(equivalenceSelections[selectedCnaFieldKey] || []);
   const miroFieldByValue = new Map(miroFieldOptions.map((f) => [f.value, f]));
   const uniqueMiroTemplates = Array.from(
@@ -1308,7 +1389,8 @@ const activeMiroTemplateId =
     : cnaFieldOptions;
   const filteredCnaFieldOptions = cnaFieldsForActiveWorksheet.filter((field) => {
     if (!normalizedCnaSearch) return true;
-    return `${field.name} ${field.worksheetName} ${(field.validatorOptions || []).map((opt) => opt.label).join(" ")}`
+    const hierarchy = getCnaFieldHierarchy(field);
+    return `${hierarchy.title} ${hierarchy.level} ${hierarchy.group} ${hierarchy.subgroups.join(" ")} ${field.displayName} ${field.name} ${field.contextPath.join(" ")} ${field.worksheetName} ${(field.validatorOptions || []).map((opt) => opt.label).join(" ")}`
       .toLowerCase()
       .includes(normalizedCnaSearch);
   });
@@ -1525,6 +1607,7 @@ const activeMiroTemplateId =
                       const active = selectedCnaFieldKey === field.key;
                       const selectedCount = equivalenceSelections[field.key]?.length || 0;
                       const isExpanded = expandedCnaFields.has(field.key);
+                      const hierarchy = getCnaFieldHierarchy(field);
                       const selectedMappedMiroFields = (equivalenceSelections[field.key] || [])
                         .map((v) => miroFieldByValue.get(v))
                         .filter((f): f is MiroFieldOption => Boolean(f));
@@ -1548,12 +1631,29 @@ const activeMiroTemplateId =
                             }}
                           >
                             <Group justify="space-between" align="flex-start" wrap="nowrap">
-                              <Box style={{ minWidth: 0 }}>
-                                <Text size="sm" fw={600} lineClamp={2}>
-                                  {field.name}
+                              <Box style={{ minWidth: 0, flex: 1 }}>
+                                <Group gap={4} wrap="wrap" mb={4}>
+                                  {hierarchy.level && (
+                                    <Badge size="xs" variant="light" color="indigo">
+                                      Nivel: {hierarchy.level}
+                                    </Badge>
+                                  )}
+                                </Group>
+                                {hierarchy.group && (
+                                  <Text size="xs" c="blue" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                    Grupo: {hierarchy.group}
+                                  </Text>
+                                )}
+                                {hierarchy.subgroups.length > 0 && (
+                                  <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                    Subgrupo: {hierarchy.subgroups.join(" > ")}
+                                  </Text>
+                                )}
+                                <Text size="sm" fw={700} style={{ overflowWrap: "anywhere" }}>
+                                  Campo: {hierarchy.title}
                                 </Text>
-                                <Text size="xs" c="dimmed" lineClamp={1}>
-                                  {field.worksheetName}
+                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                  Hoja: {field.worksheetName}
                                 </Text>
                                 {field.validateWith && (
                                   <Text size="xs" c="blue" lineClamp={1}>
@@ -1673,13 +1773,30 @@ const activeMiroTemplateId =
                 }}
               >
                 <Group justify="space-between" p="sm" style={{ borderBottom: "1px solid #dee2e6" }}>
-                  <Box style={{ minWidth: 0 }}>
-                    <Text fw={700} lineClamp={1}>
-                      {selectedCnaField?.name || "Selecciona un campo CNA"}
+                  <Box style={{ minWidth: 0, flex: 1 }}>
+                    <Group gap={4} wrap="wrap" mb={4}>
+                      {selectedCnaHierarchy?.level && (
+                        <Badge size="xs" variant="light" color="indigo">
+                          Nivel: {selectedCnaHierarchy.level}
+                        </Badge>
+                      )}
+                    </Group>
+                    {selectedCnaHierarchy?.group && (
+                      <Text size="xs" c="blue" fw={600} style={{ overflowWrap: "anywhere" }}>
+                        Grupo: {selectedCnaHierarchy.group}
+                      </Text>
+                    )}
+                    <Text fw={700} style={{ overflowWrap: "anywhere" }}>
+                      {selectedCnaHierarchy ? `Campo: ${selectedCnaHierarchy.title}` : "Selecciona un campo CNA"}
                     </Text>
+                    {selectedCnaHierarchy?.subgroups.length ? (
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Subgrupo: {selectedCnaHierarchy.subgroups.join(" > ")}
+                      </Text>
+                    ) : null}
                     {selectedCnaField && (
-                      <Text size="xs" c="dimmed" lineClamp={1}>
-                        {selectedCnaField.worksheetName}
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        Hoja: {selectedCnaField.worksheetName}
                       </Text>
                     )}
                   </Box>
