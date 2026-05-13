@@ -225,7 +225,7 @@ export default function InformesPage() {
           {/* Filtro global de periodo */}
           <Paper withBorder radius="xl" p="md" mb="xl"
             style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}>
-            <Group gap={12} align="center">
+            <Group gap={12} align="center" justify="flex-end">
               <Text size="sm" fw={600} c="violet">Filtrar por periodo:</Text>
               <Select
                 size="sm"
