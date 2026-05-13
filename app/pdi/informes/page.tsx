@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Box, Button, Center, Collapse, Container,
-  Group, Loader, Paper, Progress, Stack, Text, ThemeIcon, Title,
+  Group, Loader, Paper, Progress, Select, Stack, Text, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -14,8 +14,6 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
-
-// ── Tipos locales ─────────────────────────────────────────────────────────────
 
 interface ProyectoResumen {
   _id: string;
@@ -34,8 +32,6 @@ interface MacroResumen {
   proyectos: ProyectoResumen[];
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function semaforoColor(avance: number) {
   if (avance >= 90) return "teal";
   if (avance >= 60) return "yellow";
@@ -44,15 +40,20 @@ function semaforoColor(avance: number) {
 
 // ── Fila de proyecto ──────────────────────────────────────────────────────────
 
-function FilaProyecto({ proyecto }: { proyecto: ProyectoResumen }) {
+function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; corteGlobal: string }) {
   const [loading, setLoading] = useState(false);
 
   const descargar = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(PDI_ROUTES.informeProyecto(proyecto._id));
+      const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeProyecto(proyecto._id), params);
       window.open(data.url, "_blank");
-      showNotification({ title: "Informe generado", message: proyecto.nombre, color: "teal" });
+      showNotification({
+        title: "Informe generado",
+        message: `${proyecto.nombre}${corteGlobal ? ` — ${corteGlobal}` : " — Todos los periodos"}`,
+        color: "teal",
+      });
     } catch {
       showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
     } finally {
@@ -74,13 +75,7 @@ function FilaProyecto({ proyecto }: { proyecto: ProyectoResumen }) {
           {proyecto.responsable && (
             <Text size="xs" c="dimmed" mt={2}>Responsable: {proyecto.responsable}</Text>
           )}
-          <Progress
-            value={proyecto.avance}
-            color={semaforoColor(proyecto.avance)}
-            size="xs"
-            radius="xl"
-            mt={6}
-          />
+          <Progress value={proyecto.avance} color={semaforoColor(proyecto.avance)} size="xs" radius="xl" mt={6} />
         </Box>
         <Button
           size="xs"
@@ -100,16 +95,21 @@ function FilaProyecto({ proyecto }: { proyecto: ProyectoResumen }) {
 
 // ── Fila de macroproyecto ─────────────────────────────────────────────────────
 
-function FilaMacro({ macro }: { macro: MacroResumen }) {
+function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: string }) {
   const [abierto, setAbierto] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const descargar = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(PDI_ROUTES.informeMacro(macro._id));
+      const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeMacro(macro._id), params);
       window.open(data.url, "_blank");
-      showNotification({ title: "Informe generado", message: macro.nombre, color: "teal" });
+      showNotification({
+        title: "Informe generado",
+        message: `${macro.nombre}${corteGlobal ? ` — ${corteGlobal}` : " — Todos los periodos"}`,
+        color: "teal",
+      });
     } catch {
       showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
     } finally {
@@ -119,38 +119,24 @@ function FilaMacro({ macro }: { macro: MacroResumen }) {
 
   return (
     <Paper withBorder radius="xl" p="md" shadow="xs">
-      {/* Cabecera del macro */}
       <Group justify="space-between" wrap="nowrap" mb={abierto ? "sm" : 0}>
         <Group gap={10} style={{ flex: 1, minWidth: 0 }} wrap="nowrap">
-          <ActionIcon
-            variant="subtle"
-            size="sm"
-            onClick={() => setAbierto((v) => !v)}
-          >
+          <ActionIcon variant="subtle" size="sm" onClick={() => setAbierto((v) => !v)}>
             {abierto ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
           </ActionIcon>
           <Box style={{ flex: 1, minWidth: 0 }}>
             <Group gap={8} mb={2}>
               <Text size="xs" c="dimmed" fw={700}>{macro.codigo}</Text>
-              <Badge size="sm" color={semaforoColor(macro.avance)} variant="light">
-                {macro.avance}%
-              </Badge>
+              <Badge size="sm" color={semaforoColor(macro.avance)} variant="light">{macro.avance}%</Badge>
               <Badge size="xs" variant="dot" color="violet">
                 {macro.proyectos.length} proyecto{macro.proyectos.length !== 1 ? "s" : ""}
               </Badge>
             </Group>
             <Text fw={700} size="md" truncate="end">{macro.nombre}</Text>
             {macro.lider && <Text size="xs" c="dimmed">Líder: {macro.lider}</Text>}
-            <Progress
-              value={macro.avance}
-              color={semaforoColor(macro.avance)}
-              size="sm"
-              radius="xl"
-              mt={6}
-            />
+            <Progress value={macro.avance} color={semaforoColor(macro.avance)} size="sm" radius="xl" mt={6} />
           </Box>
         </Group>
-
         <Button
           size="sm"
           variant="filled"
@@ -164,16 +150,13 @@ function FilaMacro({ macro }: { macro: MacroResumen }) {
         </Button>
       </Group>
 
-      {/* Proyectos hijos */}
       <Collapse in={abierto}>
         {macro.proyectos.length === 0 ? (
-          <Text size="sm" c="dimmed" ta="center" py="sm">
-            Sin proyectos registrados
-          </Text>
+          <Text size="sm" c="dimmed" ta="center" py="sm">Sin proyectos registrados</Text>
         ) : (
           <Stack gap="xs" mt="xs" pl="md">
             {macro.proyectos.map((p) => (
-              <FilaProyecto key={p._id} proyecto={p} />
+              <FilaProyecto key={p._id} proyecto={p} corteGlobal={corteGlobal} />
             ))}
           </Stack>
         )}
@@ -186,14 +169,20 @@ function FilaMacro({ macro }: { macro: MacroResumen }) {
 
 export default function InformesPage() {
   const router = useRouter();
-  const [macros, setMacros] = useState<MacroResumen[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [macros, setMacros]       = useState<MacroResumen[]>([]);
+  const [cortes, setCortes]       = useState<string[]>([]);
+  const [corteGlobal, setCorteGlobal] = useState<string>("");
+  const [loading, setLoading]     = useState(true);
 
   const cargar = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(PDI_ROUTES.informesLista());
-      setMacros(data ?? []);
+      const [rLista, rCortes] = await Promise.all([
+        axios.get(PDI_ROUTES.informesLista()),
+        axios.get(PDI_ROUTES.informesCortes()),
+      ]);
+      setMacros(rLista.data ?? []);
+      setCortes(rCortes.data ?? []);
     } catch {
       showNotification({ title: "Error", message: "No se pudo cargar la lista", color: "red" });
     } finally {
@@ -202,6 +191,11 @@ export default function InformesPage() {
   };
 
   useEffect(() => { cargar(); }, []);
+
+  const opcionesCorte = [
+    { value: "", label: "Todos los periodos" },
+    ...cortes.map((c) => ({ value: c, label: c })),
+  ];
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -220,9 +214,7 @@ export default function InformesPage() {
               </ThemeIcon>
               <div>
                 <Title order={3}>Informes de avance PDI</Title>
-                <Text size="sm" c="dimmed">
-                  Genera informes Word consolidados por proyecto o macroproyecto
-                </Text>
+                <Text size="sm" c="dimmed">Genera informes Word consolidados</Text>
               </div>
             </Group>
             <ActionIcon variant="light" color="violet" size="lg" onClick={cargar} title="Actualizar">
@@ -230,34 +222,37 @@ export default function InformesPage() {
             </ActionIcon>
           </Group>
 
-          {/* Leyenda */}
-          <Paper withBorder radius="xl" p="md" mb="xl" style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}>
-            <Group gap={24} wrap="wrap">
-              <Group gap={6}>
-                <IconFileWord size={16} color="#7c3aed" />
-                <Text size="sm" c="dimmed">
-                  <b>Informe completo</b> — incluye todos los proyectos, acciones e indicadores del macroproyecto
-                </Text>
-              </Group>
-              <Group gap={6}>
-                <IconFileWord size={16} color="#7c3aed" />
-                <Text size="sm" c="dimmed">
-                  <b>Informe</b> (por proyecto) — incluye acciones e indicadores del proyecto seleccionado
-                </Text>
-              </Group>
+          {/* Filtro global de periodo */}
+          <Paper withBorder radius="xl" p="md" mb="xl"
+            style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}>
+            <Group gap={12} align="center">
+              <Text size="sm" fw={600} c="violet">Filtrar por periodo:</Text>
+              <Select
+                size="sm"
+                radius="xl"
+                placeholder="Todos los periodos"
+                data={opcionesCorte}
+                value={corteGlobal}
+                onChange={(v) => setCorteGlobal(v ?? "")}
+                style={{ width: 200 }}
+                comboboxProps={{ withinPortal: true }}
+              />
+              {corteGlobal && (
+                <Badge color="violet" variant="light" radius="xl" size="lg">
+                  Periodo seleccionado: {corteGlobal}
+                </Badge>
+              )}
             </Group>
           </Paper>
 
           {loading ? (
             <Center py="xl"><Loader /></Center>
           ) : macros.length === 0 ? (
-            <Center py="xl">
-              <Text c="dimmed">No hay macroproyectos registrados</Text>
-            </Center>
+            <Center py="xl"><Text c="dimmed">No hay macroproyectos registrados</Text></Center>
           ) : (
             <Stack gap="md">
               {macros.map((m) => (
-                <FilaMacro key={m._id} macro={m} />
+                <FilaMacro key={m._id} macro={m} corteGlobal={corteGlobal} />
               ))}
             </Stack>
           )}
