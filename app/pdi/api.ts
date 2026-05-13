@@ -52,4 +52,5 @@ export const PDI_ROUTES = {
 
   // Configuración del PDI (singleton)
   config:                          () => `${BASE()}/pdi/config`,
+  configRedistribuir:              () => `${BASE()}/pdi/config/redistribuir-pesos`,
 };
