@@ -2,8 +2,8 @@
 
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
-  IconChartBar, IconChartBarPopular, IconHistory, IconCalendarStats,
-  IconLayoutDashboard, IconGitPullRequest, IconCalendarEvent, IconForms,
+  IconChartBarPopular, IconHistory, IconCalendarStats,
+  IconLayoutDashboard, IconGitPullRequest, IconForms,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -36,15 +36,6 @@ export default function PdiSidebar() {
       <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
 
       <NavLink
-        label="Tablero de control"
-        leftSection={<IconLayoutDashboard size={16} />}
-        active={currentPath === "/pdi/dashboard"}
-        color="violet"
-        onClick={() => router.push("/pdi/dashboard")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
         label="Gestión de cambios"
         leftSection={<IconGitPullRequest size={16} />}
         active={currentPath === "/pdi/cambios"}
@@ -71,18 +62,18 @@ export default function PdiSidebar() {
       <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>VISTAS</Text>
 
       <NavLink
-        label="Gráficas PDI"
-        leftSection={<IconChartBar size={16} />}
-        active={currentPath === "/pdi/graficas"}
+        label="Tablero de control"
+        leftSection={<IconLayoutDashboard size={16} />}
+        active={currentPath === "/pdi/dashboard"}
         color="blue"
-        onClick={() => router.push("/pdi/graficas")}
+        onClick={() => router.push("/pdi/dashboard")}
         style={{ borderRadius: 8 }}
       />
 
       <NavLink
-        label="Historial de versiones"
+        label="Historial PDI"
         leftSection={<IconHistory size={16} />}
-        active={currentPath === "/pdi/historial"}
+        active={currentPath === "/pdi/historial" || currentPath === "/pdi/historial-cortes"}
         color="blue"
         onClick={() => router.push("/pdi/historial")}
         style={{ borderRadius: 8 }}
@@ -94,15 +85,6 @@ export default function PdiSidebar() {
         active={currentPath === "/pdi/cortes"}
         color="blue"
         onClick={() => router.push("/pdi/cortes")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
-        label="Historial de Cortes"
-        leftSection={<IconCalendarEvent size={16} />}
-        active={currentPath === "/pdi/historial-cortes"}
-        color="violet"
-        onClick={() => router.push("/pdi/historial-cortes")}
         style={{ borderRadius: 8 }}
       />
     </Stack>

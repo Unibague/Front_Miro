@@ -10,6 +10,7 @@ import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import axios from "axios";
 import "dayjs/locale/es";
+import { useSession } from "next-auth/react";
 import type { Indicador } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
@@ -32,9 +33,9 @@ interface PeriodoForm {
 
 export default function IndicadorModal({ opened, onClose, selected, defaultAccionId, onSaved }: Props) {
   const { config } = usePdiConfig();
+  const { data: session } = useSession();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
-  const [peso, setPeso] = useState("");
   const [entregable, setEntregable] = useState("");
   const [tipoSeguimiento, setTipoSeguimiento] = useState("");
   const [cortesSegimiento, setCortesSegimiento] = useState<string[]>([]);
@@ -73,7 +74,6 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
-      setPeso(String(selected.peso));
       setEntregable(selected.entregable ?? "");
       setTipoSeguimiento(selected.tipo_seguimiento ?? "");
       setCortesSegimiento(
@@ -98,7 +98,6 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
 
     setCodigo("");
     setNombre("");
-    setPeso("");
     setEntregable("");
     setTipoSeguimiento("");
     setCortesSegimiento([]);
@@ -169,6 +168,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const updatePeriodo = (idx: number, field: keyof PeriodoForm, value: string) =>
     setPeriodos((p) => p.map((item, i) => i === idx ? { ...item, [field]: value } : item));
 
+  const pesoAuto = selected
+    ? selected.peso
+    : (config.indicadores_por_accion > 0 ? parseFloat((100 / config.indicadores_por_accion).toFixed(6)) : 0);
+
   const toNum = (val: string) => {
     const normalizado = val
       .replace(/%/g, "")
@@ -210,7 +213,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         codigo: codigo.trim(),
         nombre: nombre.trim(),
         indicador_resultado: "",
-        peso: toNum(peso),
+        peso: pesoAuto,
         responsable: "",
         responsable_email: "",
         entregable: entregable.trim(),
@@ -227,7 +230,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       };
 
       const res = selected
-        ? await axios.put(PDI_ROUTES.indicador(selected._id), payload)
+        ? await axios.put(PDI_ROUTES.indicador(selected._id), { ...payload, modificado_por: session?.user?.email ?? "" })
         : await axios.post(PDI_ROUTES.indicadores(), payload);
 
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Indicador guardado", color: "teal" });
@@ -253,7 +256,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
           <Stack gap="sm">
             <Group grow>
               <TextInput label="Código" placeholder="Ej: 1.1.1.1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
-              <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
+              <TextInput label="Peso (%)" value={String(pesoAuto)} readOnly styles={{ input: { color: "gray" } }} />
             </Group>
             <TextInput label="Nombre" placeholder="Nombre del indicador" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
             <Textarea
