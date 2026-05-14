@@ -204,7 +204,7 @@ export default function InformesPage() {
         <Container size="lg" py="xl">
 
           {/* Header */}
-          <Group justify="space-between" mb="xl">
+          <Group justify="space-between" mb="xl" align="center">
             <Group gap={10}>
               <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
                 <IconArrowLeft size={18} />
@@ -217,15 +217,7 @@ export default function InformesPage() {
                 <Text size="sm" c="dimmed">Genera informes Word consolidados</Text>
               </div>
             </Group>
-            <ActionIcon variant="light" color="violet" size="lg" onClick={cargar} title="Actualizar">
-              <IconRefresh size={18} />
-            </ActionIcon>
-          </Group>
-
-          {/* Filtro global de periodo */}
-          <Paper withBorder radius="xl" p="md" mb="xl"
-            style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}>
-            <Group gap={12} align="center" justify="flex-end">
+            <Group gap={10} align="center">
               <Text size="sm" fw={600} c="violet">Filtrar por periodo:</Text>
               <Select
                 size="sm"
@@ -239,11 +231,11 @@ export default function InformesPage() {
               />
               {corteGlobal && (
                 <Badge color="violet" variant="light" radius="xl" size="lg">
-                  Periodo seleccionado: {corteGlobal}
+                  {corteGlobal}
                 </Badge>
               )}
             </Group>
-          </Paper>
+          </Group>
 
           {loading ? (
             <Center py="xl"><Loader /></Center>
