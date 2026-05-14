@@ -57,7 +57,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
       setPeriodoNombre(""); setAvance(""); setPresupuestoEjecutado(""); setResultados(""); setLogros(""); setAlertas("");
       setJustificacion(""); setEstadoReporte("Borrador"); setReportadoPor("");
     }
-  }, [opened, periodo, indicador]);
+  }, [opened, periodo, indicador, periodoActual]);
 
   const handleSave = async (nuevoEstado?: EstadoReporte) => {
     const periodoFinal = esNuevo ? periodoNombre.trim() : periodo;

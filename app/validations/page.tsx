@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Container,
   Grid,
@@ -46,30 +46,7 @@ const ValidationsPage = () => {
   const [columnsInfo, setColumnsInfo] = useState<{ name: string; isValidator: boolean }[]>([]);
   const [tableRows, setTableRows] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchValidators = async () => {
-      if (!selectedPeriodId) return;
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
-          params: { periodId: selectedPeriodId },
-        });
-        setValidators(response.data.validators);
-        if (response.data.validators.length > 0) {
-          handleSelectValidator(response.data.validators[0]._id);
-        } else {
-          setSelectedValidator(null);
-          setColumnsInfo([]);
-          setTableRows([]);
-        }
-      } catch (error) {
-        console.error("Error al obtener las validaciones:", error);
-      }
-    };
-
-    fetchValidators();
-  }, [selectedPeriodId]);
-
-  const handleSelectValidator = async (id: string) => {
+  const handleSelectValidator = useCallback(async (id: string) => {
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
@@ -101,7 +78,30 @@ const ValidationsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedPeriodId]);
+
+  useEffect(() => {
+    const fetchValidators = async () => {
+      if (!selectedPeriodId) return;
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
+          params: { periodId: selectedPeriodId },
+        });
+        setValidators(response.data.validators);
+        if (response.data.validators.length > 0) {
+          handleSelectValidator(response.data.validators[0]._id);
+        } else {
+          setSelectedValidator(null);
+          setColumnsInfo([]);
+          setTableRows([]);
+        }
+      } catch (error) {
+        console.error("Error al obtener las validaciones:", error);
+      }
+    };
+
+    fetchValidators();
+  }, [selectedPeriodId, handleSelectValidator]);
 
   const handleCellClick = (value: any) => {
     const valueStr = value?.toString() || '';
