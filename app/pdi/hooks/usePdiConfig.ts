@@ -10,6 +10,10 @@ const DEFAULT_CONFIG: PdiConfig = {
   anio_fin:    2029,
   lema:        "Tejiendo futuros: soñar, actuar y transformar juntos",
   anios:       [2026, 2027, 2028, 2029],
+  num_macroproyectos:     0,
+  proyectos_por_macro:    0,
+  acciones_por_proyecto:  0,
+  indicadores_por_accion: 0,
 };
 
 // Cache módulo-nivel para no repetir el fetch en cada componente

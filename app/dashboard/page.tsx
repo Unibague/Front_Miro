@@ -39,6 +39,7 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
+  const showSupportTemplatesModule = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
@@ -1236,6 +1237,41 @@ const DashboardPage = () => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            {showSupportTemplatesModule && userRole === "Administrador" && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push("/apoyos-plantillas")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #0e3a4a 0%, #168aad 100%)",
+                    boxShadow: "0 18px 45px rgba(14, 58, 74, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconClipboardData size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Cruce de apoyos
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        Plantillas con datos SIGA/Iceberg.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="cyan" radius="xl">
+                      Abrir modulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
 
             {userRole !== "Responsable" && (
               <>

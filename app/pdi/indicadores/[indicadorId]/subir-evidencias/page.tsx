@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  ActionIcon, Badge, Button, Center, Container, Divider,
-  FileButton, Group, Loader, Paper, Progress, Stack,
+  ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
+  FileButton, Group, Loader, Paper, Progress, Select, Stack,
   Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -26,9 +26,12 @@ interface CorteVigente { _id: string; nombre: string; }
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "archivo_pdf";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  max_caracteres?: number | null;
+  opciones?: string[];
+  condicional_valor?: "supero_meta" | "no_supero_meta" | null;
 }
 
 interface FormularioPDI {
@@ -126,6 +129,7 @@ export default function SubirEvidenciasPage() {
   const [formularios, setFormularios] = useState<FormularioPDI[]>([]);
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaFormulario | null>>({});
   const [textos, setTextos] = useState<Record<string, string>>({});
+  const [otrosTextos, setOtrosTextos] = useState<Record<string, string>>({});
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
@@ -136,6 +140,26 @@ export default function SubirEvidenciasPage() {
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
   const corteActivo = cortesVigentes[0]?.nombre ?? "";
+
+  // ── Superó meta del corte activo (para lógica condicional de campos) ──────
+  const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
+  const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
+  const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
+  const superoMeta = avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
+    ? avanceCorteNum >= metaCorteNum
+    : null;
+
+  const shouldShowCampo = (campo: CampoFormulario): boolean => {
+    if (!campo.condicional_valor) return true;
+    if (superoMeta === null) return true;
+    if (campo.condicional_valor === "supero_meta") return superoMeta === true;
+    if (campo.condicional_valor === "no_supero_meta") return superoMeta === false;
+    return true;
+  };
+
+  const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
+  const setOtroTexto = (formId: string, campoId: string, val: string) =>
+    setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
 
   // ── Calcular si ya está todo enviado ──────────────────────────────────────
   const todosEnviados =
@@ -203,13 +227,11 @@ export default function SubirEvidenciasPage() {
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
   const formTieneDocumento = (formId: string) => Boolean(respuestas[formId]?.documento_url);
   const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
-    const esObligatorio = campo.requerido !== false;
-    if (!esObligatorio) return true;
-
-    if (campo.tipo === "texto_largo") {
+    if (!campo.requerido) return true;
+    if (!shouldShowCampo(campo)) return true;
+    if (["texto_largo", "texto_corto", "select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
       return Boolean(getTexto(formId, campo._id).trim());
     }
-
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
   };
   const periodosEditablesSinAvance = (indicador?.periodos ?? []).filter((p: Periodo) => {
@@ -235,9 +257,20 @@ export default function SubirEvidenciasPage() {
         const resp: RespuestaFormulario | null = res.data[0] ?? null;
         respMap[f._id] = resp;
         if (resp) {
+          const otroMap: Record<string, string> = {};
           resp.respuestas.forEach((r) => {
-            if (r.tipo === "texto_largo") textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+            if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
+              textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
+            } else if (r.tipo === "select_con_otro" && r.valor_texto) {
+              if (r.valor_texto.startsWith("Otro: ")) {
+                textMap[`${f._id}-${r.campo_id}`] = "Otro";
+                otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+              } else {
+                textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+              }
+            }
           });
+          setOtrosTextos(prev => ({ ...prev, ...otroMap }));
         }
       } catch {
         respMap[f._id] = null;
@@ -256,31 +289,45 @@ export default function SubirEvidenciasPage() {
     const fechaEnvio = new Date().toISOString();
     const periodosPayload = (indicador.periodos ?? []).map((p: Periodo) => {
       const val = parseAvance(avancesStr[p.periodo] ?? "");
+      const editable = esPeriodoEditable(p.periodo, cortesVigentes);
+      const seEnvia = modo === "enviar" && editable;
       return {
         periodo: p.periodo, meta: p.meta,
         presupuesto_ejecutado: p.presupuesto_ejecutado ?? 0,
-        avance: val === 0 && !esPeriodoEditable(p.periodo, cortesVigentes) ? null : val,
+        avance: val === 0 && !editable ? null : val,
         resultados_alcanzados: p.resultados_alcanzados ?? "",
         logros: p.logros ?? "", alertas: p.alertas ?? "",
         justificacion_retrasos: p.justificacion_retrasos ?? "",
-        estado_reporte: modo === "enviar" ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
-        fecha_envio: modo === "enviar" ? fechaEnvio : (p.fecha_envio ?? null),
-        reportado_por: modo === "enviar" ? email : (p.reportado_por ?? ""),
+        estado_reporte: seEnvia ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
+        fecha_envio: seEnvia ? fechaEnvio : (p.fecha_envio ?? null),
+        reportado_por: seEnvia ? email : (p.reportado_por ?? ""),
       };
     });
     const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
       periodos: periodosPayload,
       accion_id: typeof indicador.accion_id === "string"
         ? indicador.accion_id : (indicador.accion_id as any)._id,
+      modificado_por: email,
     });
     setIndicador(res.data);
   };
 
   // ── Guardar respuesta formulario ──────────────────────────────────────────
+  const buildValorTexto = (form: FormularioPDI, c: CampoFormulario): string => {
+    if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
+    if (c.tipo === "select") return getTexto(form._id, c._id);
+    if (c.tipo === "select_con_otro") {
+      const sel = getTexto(form._id, c._id);
+      return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+    }
+    if (c.tipo === "checkbox") return getTexto(form._id, c._id) || "false";
+    return "";
+  };
+
   const guardarFormulario = async (form: FormularioPDI, enviar: boolean) => {
     const respuestasPayload = form.campos.map(c => ({
       campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
-      valor_texto: c.tipo === "texto_largo" ? getTexto(form._id, c._id) : "",
+      valor_texto: buildValorTexto(form, c),
       nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
       filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
       url: getRespuestaCampo(form._id, c._id)?.url ?? "",
@@ -569,7 +616,6 @@ export default function SubirEvidenciasPage() {
                 {[
                   { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                  { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
                   { label: "Avance actual", value: `${avanceActual}%` },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
@@ -851,28 +897,102 @@ export default function SubirEvidenciasPage() {
                         )}
                         <Stack gap="sm">
                           {form.campos.map(campo => {
+                            if (!shouldShowCampo(campo)) return null;
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
+                            const maxChars = campo.max_caracteres ?? null;
+                            const currentLen = getTexto(form._id, campo._id).length;
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
                                 style={{ background: bloqueado ? "rgba(248,250,252,0.8)" : "#fff" }}>
-                                <Group gap={6} mb={6}>
-                                  <Text size="sm" fw={700}>{campo.etiqueta}</Text>
-                                  {campo.requerido && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
-                                </Group>
-                                {campo.descripcion && (
-                                  <Text size="xs" c="dimmed" mb={8}>{campo.descripcion}</Text>
+                                {campo.tipo !== "checkbox" && (
+                                  <>
+                                    <Group gap={6} mb={6}>
+                                      <Text size="sm" fw={700}>{campo.etiqueta}</Text>
+                                      {campo.requerido && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
+                                    </Group>
+                                    {campo.descripcion && (
+                                      <Text size="xs" c="dimmed" mb={8}>{campo.descripcion}</Text>
+                                    )}
+                                  </>
                                 )}
-                                {campo.tipo === "texto_largo" ? (
-                                  <Textarea
+
+                                {campo.tipo === "texto_largo" && (
+                                  <Stack gap={4}>
+                                    <Textarea
+                                      placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                      value={getTexto(form._id, campo._id)}
+                                      onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                      rows={4} disabled={bloqueado} autosize minRows={3}
+                                      maxLength={maxChars ?? undefined}
+                                    />
+                                    {maxChars && (
+                                      <Text size="xs" ta="right"
+                                        c={currentLen >= maxChars ? "red" : currentLen > maxChars * 0.9 ? "orange" : "dimmed"}>
+                                        {currentLen} / {maxChars}
+                                      </Text>
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "texto_corto" && (
+                                  <TextInput
                                     placeholder={bloqueado ? "" : "Escribe aquí..."}
                                     value={getTexto(form._id, campo._id)}
                                     onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                    rows={4}
                                     disabled={bloqueado}
-                                    autosize
-                                    minRows={3}
+                                    maxLength={maxChars ?? undefined}
                                   />
-                                ) : (
+                                )}
+
+                                {campo.tipo === "select" && (
+                                  <Select
+                                    placeholder="Selecciona una opción..."
+                                    value={getTexto(form._id, campo._id) || null}
+                                    onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
+                                    data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                    disabled={bloqueado} clearable
+                                  />
+                                )}
+
+                                {campo.tipo === "select_con_otro" && (
+                                  <Stack gap={6}>
+                                    <Select
+                                      placeholder="Selecciona una opción..."
+                                      value={getTexto(form._id, campo._id) || null}
+                                      onChange={v => {
+                                        if (!bloqueado) {
+                                          setTexto(form._id, campo._id, v ?? "");
+                                          if (v !== "Otro") setOtroTexto(form._id, campo._id, "");
+                                        }
+                                      }}
+                                      data={[
+                                        ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                                        { value: "Otro", label: "Otro ¿Cuál?" },
+                                      ]}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {getTexto(form._id, campo._id) === "Otro" && (
+                                      <TextInput
+                                        placeholder="Especifica..."
+                                        value={getOtroTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                      />
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "checkbox" && (
+                                  <Checkbox
+                                    label={campo.etiqueta}
+                                    description={campo.descripcion}
+                                    checked={getTexto(form._id, campo._id) === "true"}
+                                    onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.checked ? "true" : "false")}
+                                    disabled={bloqueado}
+                                  />
+                                )}
+
+                                {campo.tipo === "archivo_pdf" && (
                                   <Group gap={8}>
                                     {archivoCampo?.url ? (
                                       <Group gap={6}>

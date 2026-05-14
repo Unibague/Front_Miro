@@ -1204,7 +1204,6 @@ export default function IndicadorEvidenciasPage() {
                     {[
                       { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                       { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                      { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
                       { label: "Avance actual", value: `${avanceMostrado}%` },
                     ].map((s, i, arr) => (
                       <div key={s.label} style={{
@@ -1218,22 +1217,30 @@ export default function IndicadorEvidenciasPage() {
                     ))}
                   </div>
                 ) : (
-                <Group gap={32}>
-                  <div>
-                    <Text size="xs" c="dimmed">Meta final {config.anio_fin}</Text>
-                    <Text fw={600}>{indicador.meta_final_2029 ?? "—"}</Text>
+                  <div style={{
+                    display: "flex",
+                    gap: 0,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: "1px solid #ede9fe",
+                    background: "#faf8ff",
+                  }}>
+                    {[
+                      { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
+                      { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
+                      { label: "Avance actual", value: `${avanceMostrado}%` },
+                      ...(indicador.responsable ? [{ label: "Responsable", value: indicador.responsable }] : []),
+                    ].map((s, i, arr) => (
+                      <div key={s.label} style={{
+                        flex: 1,
+                        padding: "10px 14px",
+                        borderRight: i < arr.length - 1 ? "1px solid #ede9fe" : "none",
+                      }}>
+                        <Text size="xs" fw={600} c="violet.6">{s.label}</Text>
+                        <Text size="md" fw={600} c="dimmed" mt={2} style={{ textTransform: "capitalize" }}>{s.value}</Text>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <Text size="xs" c="dimmed">Tipo de cálculo</Text>
-                    <Text fw={600}>{indicador.tipo_calculo}</Text>
-                  </div>
-                  {indicador.responsable && (
-                    <div>
-                      <Text size="xs" c="dimmed">Responsable</Text>
-                      <Text fw={600}>{indicador.responsable}</Text>
-                    </div>
-                  )}
-                </Group>
                 )}
 
                 {indicador.entregable && (

@@ -3,18 +3,18 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Box, Center, Container, Divider, Group,
-  Loader, Paper, Progress, SimpleGrid, Stack, Text,
+  Loader, Paper, SimpleGrid, Stack, Text,
   ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
 import {
-  IconArrowLeft, IconAlertTriangle, IconCurrencyDollar,
-  IconLayoutDashboard, IconRefresh, IconTarget, IconTrendingUp,
-  IconListCheck, IconBulb, IconChartDonut3, IconClockHour4,
+  IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
+  IconListCheck, IconBulb, IconChartDonut3,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import PdiGraficas from "../components/PdiGraficas";
 import type { DashboardResumen, Macroproyecto, Semaforo } from "../types";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 
@@ -30,9 +30,6 @@ const SEMAFORO_HEX: Record<Semaforo, string> = {
   verde: "#0d9488", amarillo: "#d97706", rojo: "#ef4444",
 };
 
-function fmtCOP(n: number) {
-  return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
-}
 const formatAnioRange = (a?: number, b?: number) =>
   a && b ? `${a} - ${b}` : "Sin rango definido";
 
@@ -47,44 +44,12 @@ function getSemaforoByAvance(avance: number): Semaforo {
 function EstructuraCol({ label, total, icon }: { label: string; total: number; icon: React.ReactNode }) {
   return (
     <Box style={{ textAlign: "center" }}>
-      <ThemeIcon size={32} radius="xl" color="violet" variant="light" mx="auto" mb={4}>
+      <ThemeIcon size={40} radius="xl" color="violet" variant="light" mx="auto" mb={6}>
         {icon}
       </ThemeIcon>
-      <Text fw={800} size="xl" lh={1}>{total}</Text>
-      <Text size="xs" c="dimmed" mt={2}>{label}</Text>
+      <Text fw={900} size="2rem" lh={1}>{total}</Text>
+      <Text size="sm" c="dimmed" mt={4}>{label}</Text>
     </Box>
-  );
-}
-
-function StatCard({
-  title, value, sub, color = "violet", icon, badge,
-}: {
-  title: string;
-  value: React.ReactNode;
-  sub?: string;
-  color?: string;
-  icon: React.ReactNode;
-  badge?: string;
-}) {
-  return (
-    <Paper withBorder radius="xl" p="md" style={{ position: "relative", overflow: "hidden" }}>
-      {badge && (
-        <Badge
-          size="xs"
-          color={color}
-          variant="filled"
-          style={{ position: "absolute", top: 10, right: 10 }}
-        >
-          {badge}
-        </Badge>
-      )}
-      <ThemeIcon size={36} radius="xl" color={color} variant="light" mb={8}>
-        {icon}
-      </ThemeIcon>
-      <Text size="xs" c="dimmed" fw={600} tt="uppercase" mb={2}>{title}</Text>
-      <Text fw={800} size="1.4rem" lh={1}>{value}</Text>
-      {sub && <Text size="xs" c="dimmed" mt={4}>{sub}</Text>}
-    </Paper>
   );
 }
 
@@ -113,7 +78,6 @@ export default function DashboardPage() {
 
   useEffect(() => { cargarDatos(); }, []);
 
-  // Avance ponderado calculado igual que el Panorama general
   const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
   const avancePonderado = pesosTotal > 0
     ? Math.round(macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal)
@@ -123,7 +87,7 @@ export default function DashboardPage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", height: "100vh" }}>
         <Container size="xl" py="xl">
 
           {/* Header */}
@@ -166,7 +130,6 @@ export default function DashboardPage() {
               >
                 <Group gap={32} align="center" wrap="wrap">
 
-                  {/* Anillo */}
                   <RingProgress
                     size={130}
                     thickness={13}
@@ -182,7 +145,6 @@ export default function DashboardPage() {
                     }
                   />
 
-                  {/* Texto avance */}
                   <div>
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Avance global PDI</Text>
                     <Title order={1} c={SEMAFORO_HEX[semaforo]} lh={1}>
@@ -195,64 +157,18 @@ export default function DashboardPage() {
 
                   <Divider orientation="vertical" style={{ height: 80 }} />
 
-                  {/* Contadores estructura */}
                   <SimpleGrid cols={4} spacing="xl" style={{ flex: 1 }}>
-                    <EstructuraCol label="Macroproyectos"      total={resumen.estructura.macroproyectos} icon={<IconChartDonut3 size={16} />} />
-                    <EstructuraCol label="Proyectos"   total={resumen.estructura.proyectos}      icon={<IconListCheck size={16} />} />
-                    <EstructuraCol label="Acciones Estratégicas"    total={resumen.estructura.acciones}       icon={<IconBulb size={16} />} />
-                    <EstructuraCol label="Indicadores" total={resumen.estructura.indicadores}    icon={<IconTarget size={16} />} />
+                    <EstructuraCol label="Macroproyectos"        total={resumen.estructura.macroproyectos} icon={<IconChartDonut3 size={16} />} />
+                    <EstructuraCol label="Proyectos"             total={resumen.estructura.proyectos}      icon={<IconListCheck size={16} />} />
+                    <EstructuraCol label="Acciones Estratégicas" total={resumen.estructura.acciones}       icon={<IconBulb size={16} />} />
+                    <EstructuraCol label="Indicadores"           total={resumen.estructura.indicadores}    icon={<IconTarget size={16} />} />
                   </SimpleGrid>
 
                 </Group>
               </Paper>
 
-              {/* KPI cards */}
-              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
-                <StatCard
-                  icon={<IconCurrencyDollar size={18} />}
-                  title="Presupuesto asignado"
-                  value={fmtCOP(resumen.presupuesto.total)}
-                  color="blue"
-                />
-                <StatCard
-                  icon={<IconTrendingUp size={18} />}
-                  title="Presupuesto ejecutado"
-                  value={fmtCOP(resumen.presupuesto.ejecutado)}
-                  sub={`${resumen.presupuesto.porcentaje_ejecucion}% del total`}
-                  color={resumen.presupuesto.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
-                />
-                <StatCard
-                  icon={<IconAlertTriangle size={18} />}
-                  title="Reportes pendientes"
-                  value={resumen.alertas.indicadores_con_alertas}
-                  sub="Sin reporte enviado"
-                  color="orange"
-                  badge={resumen.alertas.indicadores_con_alertas > 0 ? "Revisar" : undefined}
-                />
-                <StatCard
-                  icon={<IconClockHour4 size={18} />}
-                  title="Indicadores con retrasos"
-                  value={resumen.retrasos.indicadores_con_retrasos}
-                  color="red"
-                />
-              </SimpleGrid>
-
-              {/* Barra presupuestal */}
-              {resumen.presupuesto.total > 0 && (
-                <Paper withBorder radius="xl" p="md">
-                  <Text size="sm" fw={600} mb="sm">Ejecución presupuestal</Text>
-                  <Progress
-                    value={resumen.presupuesto.porcentaje_ejecucion}
-                    size="lg"
-                    radius="xl"
-                    color={resumen.presupuesto.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
-                  />
-                  <Group justify="space-between" mt={6}>
-                    <Text size="xs" c="dimmed">Ejecutado: <b>{fmtCOP(resumen.presupuesto.ejecutado)}</b></Text>
-                    <Text size="xs" c="dimmed">Total: <b>{fmtCOP(resumen.presupuesto.total)}</b></Text>
-                  </Group>
-                </Paper>
-              )}
+              {/* Gráficas PDI — incluye tarjetas y barra presupuestal */}
+              <PdiGraficas />
 
             </Stack>
           )}

@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton,
+  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton, Collapse,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
   IconEdit, IconChevronDown, IconChevronUp,
-  IconCheck, IconAlertTriangle, IconX,
+  IconCheck, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf, IconGitPullRequest,
   IconForms, IconUpload, IconTrash, IconExternalLink, IconShieldCheck,
 } from "@tabler/icons-react";
@@ -84,11 +84,6 @@ function esPeriodoEditable(periodo: string, cortesVigentes: CorteVigente[]): boo
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
   verde: "En cumplimiento", amarillo: "Requiere atención", rojo: "Crítico",
-};
-const SEMAFORO_ICON: Record<string, React.ReactNode> = {
-  verde: <IconCheck size={13} />,
-  amarillo: <IconAlertTriangle size={13} />,
-  rojo: <IconX size={13} />,
 };
 const TIPO_CAMBIO_LABEL: Record<"meta" | "presupuesto", string> = {
   meta: "Meta por periodo",
@@ -560,6 +555,7 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
         accion_id: typeof indicador.accion_id === "string"
           ? indicador.accion_id
           : indicador.accion_id._id,
+        modificado_por: email,
       });
       showNotification({ title: "Guardado", message: "Avance actualizado", color: "teal" });
       onSaved(res.data);
@@ -625,7 +621,6 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
             {[
               { label: `Meta ${anioMeta}`, value: String(indicador.meta_final_2029 ?? "—") },
               { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-              { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
               { label: indicador.avance_total_real != null ? "Avance total real" : "Avance actual", value: `${avanceActual}%` },
             ].map((s, i, arr) => (
               <div key={s.label} style={{
@@ -652,6 +647,11 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
                 ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
                 : null;
 
+              const corte = cortesVigentes.find(c => c.nombre === p.periodo);
+              const fmtFecha = (f: string | null) => f ? new Date(f).toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" }) : null;
+              const fechaInicio = fmtFecha(corte?.fecha_inicio ?? null);
+              const fechaFin = fmtFecha(corte?.fecha_fin ?? null);
+
               return (
                 <Paper
                   key={p.periodo}
@@ -671,6 +671,15 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
                           {editable ? "Abierto" : "Cerrado"}
                         </Badge>
                       </Group>
+                      {(fechaInicio || fechaFin) && (
+                        <Text size="xs" c="dimmed" mt={3}>
+                          {fechaInicio && fechaFin
+                            ? `${fechaInicio} — ${fechaFin}`
+                            : fechaInicio
+                            ? `Desde ${fechaInicio}`
+                            : `Hasta ${fechaFin}`}
+                        </Text>
+                      )}
                       <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
                     </div>
                     <TextInput
@@ -767,28 +776,27 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
 
   return (
     <Paper withBorder radius="xl" p="lg" shadow="xs"
-      style={{ transition: "box-shadow .2s, transform .2s" }}
+      style={{ transition: "box-shadow .2s, transform .2s", position: "relative" }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
     >
+      <Badge
+        color={SEMAFORO_COLOR[ind.semaforo]}
+        variant="light" size="sm" radius="xl"
+        style={{ position: "absolute", top: 12, right: 12 }}
+      >
+        {SEMAFORO_LABEL[ind.semaforo]}
+      </Badge>
+
       {/* Header */}
-      <Group justify="space-between" align="flex-start" mb="xs">
-        <Group gap={8}>
-          <ThemeIcon size={32} radius="xl" color="violet" variant="light">
-            <IconTarget size={17} />
-          </ThemeIcon>
-          <div>
-            <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
-            <Text fw={700} size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
-          </div>
-        </Group>
-        <Badge
-          color={SEMAFORO_COLOR[ind.semaforo]}
-          variant="light" size="sm" radius="xl"
-          leftSection={SEMAFORO_ICON[ind.semaforo]}
-        >
-          {SEMAFORO_LABEL[ind.semaforo]}
-        </Badge>
+      <Group gap={8} mb="xs">
+        <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+          <IconTarget size={17} />
+        </ThemeIcon>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: 80 }}>
+          <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
+          <Text fw={700} size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
+        </div>
       </Group>
 
       {ind.indicador_resultado && (
@@ -870,9 +878,8 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
       )}
 
       {/* Mini stats */}
-      <SimpleGrid cols={3} mb="md">
+      <SimpleGrid cols={2} mb="md">
         {[
-          { label: "Peso", value: `${ind.peso}%` },
           { label: "Seguimiento", value: ind.tipo_seguimiento || "Semestral" },
           { label: "Total actual", value: formatIndicadorTotalActual(ind) },
         ].map(s => (
@@ -1304,14 +1311,20 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   esLider?: boolean;
   esResponsable?: boolean;
 }) {
+  const [openAccion, setOpenAccion] = useState(false);
   const avanceAccion = indicadores.length
     ? getWeightedProgress(indicadores, (indicador) => getIndicadorAvancePonderado(indicador))
     : Number(accion.avance) || 0;
   const semaforoAccion = getSemaforoByAvance(avanceAccion);
   const avanceAccionBarra = Math.min(Math.max(avanceAccion, 0), 100);
   return (
-    <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(255,255,255,0.72)" }}>
-      <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
+    <Paper withBorder radius="xl" p="lg"
+      style={{ background: "rgba(255,255,255,0.72)", cursor: "pointer", transition: "box-shadow 0.2s" }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(253,126,20,0.28)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ""; }}
+      onClick={(e) => { e.stopPropagation(); setOpenAccion((o) => !o); }}
+    >
+      <Group justify="space-between" align="flex-start" mb={openAccion ? "md" : 0} wrap="nowrap">
         <Group gap="md" align="flex-start" style={{ flex: 1, minWidth: 0 }}>
           <ThemeIcon size={40} radius="xl" color="blue" variant="light">
             <IconTrendingUp size={20} />
@@ -1324,7 +1337,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
             )}
           </div>
         </Group>
-        <Group gap="sm">
+        <Group gap="sm" onClick={(e) => e.stopPropagation()}>
           <Button
             variant="light"
             color="violet"
@@ -1360,59 +1373,60 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm" mb="md">
-        {[
-          { label: "Avance", value: `${avanceAccion}%` },
-          { label: "Peso", value: `${accion.peso}%` },
-          { label: "Indicadores", value: indicadores.length },
-        ].map((item) => (
-          <Box
-            key={item.label}
-            style={{
-              textAlign: "center",
-              background: "var(--mantine-color-default-hover)",
-              borderRadius: 14,
-              padding: "10px 6px",
-            }}
-          >
-            <Text fw={800} size="lg" lh={1}>{item.value}</Text>
-            <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
-          </Box>
-        ))}
-      </SimpleGrid>
-
-      <Box mb="md">
-        <Group justify="space-between" mb={6}>
-          <Text size="xs" c="dimmed">Avance de la acción</Text>
-          <Text size="xs" fw={700}>{avanceAccion}%</Text>
-        </Group>
-        <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
-      </Box>
-
-      {indicadores.length === 0 ? (
-        <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }}>
-          <Text fw={600}>Sin indicadores visibles en esta accion</Text>
-          <Text size="sm" c="dimmed" mt={4}>
-            Tienes esta accion asociada, pero todavia no hay indicadores vinculados a tu vista.
-          </Text>
-        </Paper>
-      ) : (
-        <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
-          {indicadores.map((ind) => (
-            <MiIndicadorCard
-              key={ind._id}
-              indicador={ind}
-              cortesVigentes={cortesVigentes}
-              aniosPdi={aniosPdi}
-              anioMeta={anioMeta}
-              onUpdated={onUpdated}
-              email={email}
-              esLider={esLider}
-              esResponsable={esResponsable}
-            />
+      <Collapse in={openAccion} onClick={(e) => e.stopPropagation()}>
+        <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="sm" mb="md">
+          {[
+            { label: "Avance", value: `${avanceAccion}%` },
+            { label: "Indicadores", value: indicadores.length },
+          ].map((item) => (
+            <Box
+              key={item.label}
+              style={{
+                textAlign: "center",
+                background: "var(--mantine-color-default-hover)",
+                borderRadius: 14,
+                padding: "10px 6px",
+              }}
+            >
+              <Text fw={800} size="lg" lh={1}>{item.value}</Text>
+              <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+            </Box>
           ))}
         </SimpleGrid>
-      )}
+
+        <Box mb="md">
+          <Group justify="space-between" mb={6}>
+            <Text size="xs" c="dimmed">Avance de la acción</Text>
+            <Text size="xs" fw={700}>{avanceAccion}%</Text>
+          </Group>
+          <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
+        </Box>
+
+        {indicadores.length === 0 ? (
+          <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }} onClick={(e) => e.stopPropagation()}>
+            <Text fw={600}>Sin indicadores visibles en esta accion</Text>
+            <Text size="sm" c="dimmed" mt={4}>
+              Tienes esta accion asociada, pero todavia no hay indicadores vinculados a tu vista.
+            </Text>
+          </Paper>
+        ) : (
+          <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md" onClick={(e) => e.stopPropagation()}>
+            {indicadores.map((ind) => (
+              <MiIndicadorCard
+                key={ind._id}
+                indicador={ind}
+                cortesVigentes={cortesVigentes}
+                aniosPdi={aniosPdi}
+                anioMeta={anioMeta}
+                onUpdated={onUpdated}
+                email={email}
+                esLider={esLider}
+                esResponsable={esResponsable}
+              />
+            ))}
+          </SimpleGrid>
+        )}
+      </Collapse>
     </Paper>
   );
 }
@@ -1428,6 +1442,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   esLiderProyecto?: boolean;
   esResponsableProyecto?: boolean;
 }) {
+  const [openProyecto, setOpenProyecto] = useState(true);
   const indicadoresCount = vista.acciones.reduce((acc, item) => acc + item.indicadores.length, 0);
   const accionesConAvance = vista.acciones.map((item) => ({
     ...item.accion,
@@ -1447,16 +1462,17 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
       radius="xl"
       p="xl"
       shadow="xs"
-      style={{
-        background: "linear-gradient(180deg, rgba(124,58,237,0.04) 0%, rgba(255,255,255,0.96) 28%)",
-      }}
+      style={{ background: "linear-gradient(180deg, rgba(124,58,237,0.04) 0%, rgba(255,255,255,0.96) 28%)", cursor: "pointer", transition: "box-shadow 0.2s" }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,58,237,0.28)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ""; }}
+      onClick={() => setOpenProyecto((o) => !o)}
     >
-      <Group justify="space-between" align="flex-start" mb="lg">
-        <Group gap="md" align="flex-start">
+      <Group justify="space-between" align="flex-start" mb={openProyecto ? "lg" : 0}>
+        <Group gap="md" align="flex-start" style={{ flex: 1, minWidth: 0 }}>
           <ThemeIcon size={48} radius="xl" color="violet" variant="light">
             <IconListCheck size={24} />
           </ThemeIcon>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <Text size="xs" fw={700} c="dimmed">{vista.proyecto.codigo}</Text>
             <Title order={4} style={{ lineHeight: 1.2 }}>{vista.proyecto.nombre}</Title>
             <Group gap="md" mt={6} wrap="wrap">
@@ -1473,64 +1489,65 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="lg">
-        {[
-          { label: "Avance", value: `${avanceProyecto}%` },
-          { label: "Peso", value: `${vista.proyecto.peso}%` },
-          { label: "Acciones", value: vista.acciones.length },
-          { label: "Indicadores", value: indicadoresCount },
-          { label: "Presupuesto", value: vista.proyecto.presupuesto > 0 ? formatCOP(vista.proyecto.presupuesto) : "Pendiente" },
-        ].map((item) => (
-          <Box
-            key={item.label}
-            style={{
-              textAlign: "center",
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(124,58,237,0.08)",
-              borderRadius: 16,
-              padding: "12px 8px",
-            }}
-          >
-            <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
-            <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
-          </Box>
-        ))}
-      </SimpleGrid>
-
-      <Box mb="lg">
-        <Group justify="space-between" mb={6}>
-          <Text size="xs" c="dimmed">Avance del proyecto</Text>
-          <Text size="xs" fw={700}>{avanceProyecto}%</Text>
-        </Group>
-        <Progress value={avanceProyectoBarra} color={getProgressColor(avanceProyecto)} size="md" radius="xl" />
-      </Box>
-
-      {vista.acciones.length === 0 ? (
-        <Paper withBorder radius="lg" p="md">
-          <Text fw={600}>No hay acciones visibles en este proyecto</Text>
-          <Text size="sm" c="dimmed" mt={4}>
-            El proyecto esta asociado a tu vista, pero aun no tiene acciones o indicadores asignados para mostrar aqui.
-          </Text>
-        </Paper>
-      ) : (
-        <Stack gap="lg">
-          {vista.acciones.map((item) => (
-            <AccionResponsableCard
-              key={item.accion._id}
-              accion={item.accion}
-              indicadores={item.indicadores}
-              cortesVigentes={cortesVigentes}
-              aniosPdi={aniosPdi}
-              anioMeta={anioMeta}
-              onUpdated={onUpdated}
-              onSolicitarCambio={onSolicitarCambio}
-              email={email}
-              esLider={esLiderProyecto}
-              esResponsable={esResponsableProyecto}
-            />
+      <Collapse in={openProyecto}>
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="lg">
+          {[
+            { label: "Avance", value: `${avanceProyecto}%` },
+            { label: "Acciones", value: vista.acciones.length },
+            { label: "Indicadores", value: indicadoresCount },
+            { label: "Presupuesto", value: vista.proyecto.presupuesto > 0 ? formatCOP(vista.proyecto.presupuesto) : "Pendiente" },
+          ].map((item) => (
+            <Box
+              key={item.label}
+              style={{
+                textAlign: "center",
+                background: "rgba(255,255,255,0.82)",
+                border: "1px solid rgba(124,58,237,0.08)",
+                borderRadius: 16,
+                padding: "12px 8px",
+              }}
+            >
+              <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
+              <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+            </Box>
           ))}
-        </Stack>
-      )}
+        </SimpleGrid>
+
+        <Box mb="lg">
+          <Group justify="space-between" mb={6}>
+            <Text size="xs" c="dimmed">Avance del proyecto</Text>
+            <Text size="xs" fw={700}>{avanceProyecto}%</Text>
+          </Group>
+          <Progress value={avanceProyectoBarra} color={getProgressColor(avanceProyecto)} size="md" radius="xl" />
+        </Box>
+
+        {vista.acciones.length === 0 ? (
+          <Paper withBorder radius="lg" p="md">
+            <Text fw={600}>No hay acciones visibles en este proyecto</Text>
+            <Text size="sm" c="dimmed" mt={4}>
+              El proyecto esta asociado a tu vista, pero aun no tiene acciones o indicadores asignados para mostrar aqui.
+            </Text>
+          </Paper>
+        ) : (
+          <Stack gap="lg">
+            {vista.acciones.map((item) => (
+              <AccionResponsableCard
+                key={item.accion._id}
+                accion={item.accion}
+                indicadores={item.indicadores}
+                cortesVigentes={cortesVigentes}
+                aniosPdi={aniosPdi}
+                anioMeta={anioMeta}
+                onUpdated={onUpdated}
+                onSolicitarCambio={onSolicitarCambio}
+                email={email}
+                esLider={esLiderProyecto}
+                esResponsable={esResponsableProyecto}
+              />
+            ))}
+          </Stack>
+        )}
+      </Collapse>
     </Paper>
   );
 }
@@ -1684,6 +1701,7 @@ export default function MisIndicadoresPage() {
   const [macroIdsLiderados, setMacroIdsLiderados] = useState<Set<string>>(new Set());
   const [macroNombresLiderados, setMacroNombresLiderados] = useState<string[]>([]);
   const [userFullName, setUserFullName] = useState("");
+  const [busquedaProyecto, setBusquedaProyecto] = useState("");
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) return;
@@ -1886,7 +1904,7 @@ export default function MisIndicadoresPage() {
             </ThemeIcon>
             <div>
               <Text fw={800} c="teal.7">
-                {macroLiderLabel} · Lider del macroproyecto
+                {macroLiderLabel} · Líder del macroproyecto
               </Text>
              
             </div>
@@ -1894,12 +1912,6 @@ export default function MisIndicadoresPage() {
         </Paper>
       )}
 
-      {requesterEmail && (
-        <AvalesPendientesPanel
-          liderEmail={requesterEmail}
-          onAvalDone={() => {}}
-        />
-      )}
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
         {unifiedStatCards.map((s) => (
@@ -1915,6 +1927,29 @@ export default function MisIndicadoresPage() {
           </Paper>
         ))}
       </SimpleGrid>
+
+      {cortesVigentes.length > 0 && (
+        <Paper withBorder radius="xl" p="lg" mb="md" style={{ borderColor: "rgba(124,58,237,0.25)", background: "rgba(124,58,237,0.04)" }}>
+          <Text size="sm" fw={700} c="violet" ta="center" mb="sm">Periodos de reporte abiertos</Text>
+          <Group gap="md" justify="center" wrap="wrap">
+            {cortesVigentes.map((c) => {
+              const fmt = (f: string | null) => f ? new Date(f).toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" }) : null;
+              const fi = fmt(c.fecha_inicio);
+              const ff = fmt(c.fecha_fin);
+              return (
+                <Box key={c._id} style={{ textAlign: "center", background: "rgba(124,58,237,0.08)", borderRadius: 14, padding: "12px 24px", minWidth: 180 }}>
+                  <Text size="lg" fw={800} c="violet">{c.nombre}</Text>
+                  {(fi || ff) && (
+                    <Text size="sm" c="dimmed" mt={4}>
+                      {fi ?? ""}{fi && ff ? " — " : ""}{ff ?? ""}
+                    </Text>
+                  )}
+                </Box>
+              );
+            })}
+          </Group>
+        </Paper>
+      )}
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
@@ -1932,7 +1967,7 @@ export default function MisIndicadoresPage() {
         </Center>
       ) : (
         <>
-          <Group justify="space-between" mb="md">
+          <Group justify="space-between" mb="sm">
             <div>
               <Text fw={700} size="xl">
                 {isLider && !isDirectlyResponsable
@@ -1953,30 +1988,45 @@ export default function MisIndicadoresPage() {
               {proyectosVista.length} proyecto{proyectosVista.length === 1 ? "" : "s"}
             </Badge>
           </Group>
+          <Select
+            placeholder="Filtrar por proyecto..."
+            value={busquedaProyecto || null}
+            onChange={(v) => setBusquedaProyecto(v ?? "")}
+            data={proyectosVista.map((v) => ({ value: v.proyecto._id, label: `${v.proyecto.codigo} — ${v.proyecto.nombre}` }))}
+            clearable
+            mb="md"
+            radius="xl"
+            size="sm"
+          />
           <Stack gap="lg">
-            {proyectosVista.map((vista) => {
-              const esResponsableProyecto = matchesUserResponsable(
-                requesterEmail,
-                userFullName,
-                vista.proyecto.responsable,
-                vista.proyecto.responsable_email
-              );
-              const esLiderProyecto = macroIdsLiderados.has(vista.proyecto.macroproyecto_id?._id);
-              return (
-                <ProyectoResponsableCard
-                  key={vista.proyecto._id}
-                  vista={vista}
-                  cortesVigentes={cortesVigentes}
-                  aniosPdi={config.anios}
-                  anioMeta={config.anio_fin}
-                  onUpdated={handleIndicadorUpdated}
-                  onSolicitarCambio={handleSolicitarCambio}
-                  email={requesterEmail}
-                  esLiderProyecto={esLiderProyecto}
-                  esResponsableProyecto={esResponsableProyecto}
-                />
-              );
-            })}
+            {proyectosVista
+              .filter((vista) => {
+                if (!busquedaProyecto) return true;
+                return vista.proyecto._id === busquedaProyecto;
+              })
+              .map((vista) => {
+                const esResponsableProyecto = matchesUserResponsable(
+                  requesterEmail,
+                  userFullName,
+                  vista.proyecto.responsable,
+                  vista.proyecto.responsable_email
+                );
+                const esLiderProyecto = macroIdsLiderados.has(vista.proyecto.macroproyecto_id?._id);
+                return (
+                  <ProyectoResponsableCard
+                    key={vista.proyecto._id}
+                    vista={vista}
+                    cortesVigentes={cortesVigentes}
+                    aniosPdi={config.anios}
+                    anioMeta={config.anio_fin}
+                    onUpdated={handleIndicadorUpdated}
+                    onSolicitarCambio={handleSolicitarCambio}
+                    email={requesterEmail}
+                    esLiderProyecto={esLiderProyecto}
+                    esResponsableProyecto={esResponsableProyecto}
+                  />
+                );
+              })}
           </Stack>
         </>
       )}
