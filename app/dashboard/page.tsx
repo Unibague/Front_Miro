@@ -39,6 +39,7 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
+  const showSupportTemplatesModule = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
@@ -1237,7 +1238,7 @@ const DashboardPage = () => {
               </Card>
             </Grid.Col>
 
-            {userRole === "Administrador" && (
+            {showSupportTemplatesModule && userRole === "Administrador" && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"

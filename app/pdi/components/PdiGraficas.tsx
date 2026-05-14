@@ -98,10 +98,10 @@ function StatCard({ title, value, sub, color = "blue", icon }: {
 }) {
   return (
     <Paper withBorder radius="xl" p="md">
-      <ThemeIcon size={36} radius="xl" color={color} variant="light" mb={8}>{icon}</ThemeIcon>
-      <Text size="xs" c="dimmed" fw={600} mb={2}>{title}</Text>
-      <Text fw={800} size="1.4rem" lh={1}>{value}</Text>
-      {sub && <Text size="xs" c="dimmed" mt={4}>{sub}</Text>}
+      <ThemeIcon size={40} radius="xl" color={color} variant="light" mb={8}>{icon}</ThemeIcon>
+      <Text size="sm" c="dimmed" fw={700} mb={2}>{title}</Text>
+      <Text fw={800} size="1.6rem" lh={1}>{value}</Text>
+      {sub && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
     </Paper>
   );
 }
@@ -116,7 +116,7 @@ function PctBar({ pct, semaforo }: { pct: number; semaforo: string }) {
       <Box style={{ flex: 1, height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
         <Box style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 4 }} />
       </Box>
-      <Text size="xs" fw={700} style={{ minWidth: 42, textAlign: "right" }}>{Math.round(Number(pct) || 0)}%</Text>
+      <Text size="sm" fw={700} style={{ minWidth: 48, textAlign: "right" }}>{Math.round(Number(pct) || 0)}%</Text>
     </Group>
   );
 }
@@ -547,7 +547,9 @@ export default function PdiGraficas() {
     <Stack gap="md">
 
       {/* ── Filtros ──────────────────────────────────────────────────────── */}
-      <Paper withBorder radius="lg" shadow="xs" px="md" py="sm">
+      <Paper withBorder radius="lg" shadow="sm" px="md" py="sm"
+        style={{ position: "sticky", top: 0, zIndex: 100, background: "var(--mantine-color-body)" }}
+      >
         <Group gap="sm" align="flex-end" wrap="nowrap">
           <Select label="Macroproyecto" size="xs" style={{ flex: 2 }}
             data={[{ value: "todos", label: "Todos" }, ...macros.map((m) => ({ value: m._id, label: m.codigo || m.nombre }))]}
@@ -622,34 +624,34 @@ export default function PdiGraficas() {
       {/* ── Gráfica Gasto / Inversión por nivel ──────────────────────── */}
       {budgetExecChartData.some((d) => d.gasto > 0 || d.inversion > 0) && (
         <Paper withBorder radius="xl" p="md">
-          <Text size="sm" fw={700} mb={2}>
+          <Text size="md" fw={700} mb={2}>
             Ejecución presupuestal — Gasto vs Inversión por {
               proyectoActual ? "acción estratégica" : !verTodos ? "proyecto" : "macroproyecto"
             }
           </Text>
-          <Text size="xs" c="dimmed" mb="sm">Monto ejecutado clasificado por tipo</Text>
+          <Text size="sm" c="dimmed" mb="sm">Monto ejecutado clasificado por tipo</Text>
           <ResponsiveContainer width="100%" height={Math.max(220, budgetExecChartData.length * 38)}>
             <BarChart data={budgetExecChartData} margin={{ top: 10, right: 20, left: 10, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700 }} interval={0} />
-              <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} />
+              <XAxis dataKey="label" tick={{ fontSize: 12, fontWeight: 700 }} interval={0} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} />
               <ReTooltip
                 formatter={(v: any, name: any) => [fmtCOP(Number(v)), name === "gasto" ? "Gasto" : name === "inversion" ? "Inversión" : "Ejecutado"]}
                 labelFormatter={(label: any) => label}
               />
               <Bar dataKey="gasto" name="gasto" fill={BLUE} radius={[4, 4, 0, 0]} barSize={20}>
-                <LabelList dataKey="gasto" position="top" style={{ fontSize: 9, fill: BLUE, fontWeight: 700 }}
+                <LabelList dataKey="gasto" position="top" style={{ fontSize: 11, fill: BLUE, fontWeight: 700 }}
                   formatter={(v: any) => v > 0 ? `$${(v / 1_000_000).toFixed(0)}M` : ""} />
               </Bar>
               <Bar dataKey="inversion" name="inversion" fill={PURPLE} radius={[4, 4, 0, 0]} barSize={20}>
-                <LabelList dataKey="inversion" position="top" style={{ fontSize: 9, fill: PURPLE, fontWeight: 700 }}
+                <LabelList dataKey="inversion" position="top" style={{ fontSize: 11, fill: PURPLE, fontWeight: 700 }}
                   formatter={(v: any) => v > 0 ? `$${(v / 1_000_000).toFixed(0)}M` : ""} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
           <Group gap={16} justify="center" mt={4}>
-            <Group gap={4}><Box w={10} h={10} style={{ background: BLUE, borderRadius: 2 }} /><Text size="xs">Gasto</Text></Group>
-            <Group gap={4}><Box w={10} h={10} style={{ background: PURPLE, borderRadius: 2 }} /><Text size="xs">Inversión</Text></Group>
+            <Group gap={4}><Box w={10} h={10} style={{ background: BLUE, borderRadius: 2 }} /><Text size="sm" fw={600}>Gasto</Text></Group>
+            <Group gap={4}><Box w={10} h={10} style={{ background: PURPLE, borderRadius: 2 }} /><Text size="sm" fw={600}>Inversión</Text></Group>
           </Group>
           {proyectoActual ? (
             <Stack gap={4} mt="sm">
@@ -694,8 +696,8 @@ export default function PdiGraficas() {
                   <Box style={{ minWidth: 0, flex: 1 }}>
                     <Group justify="space-between" align="center" wrap="nowrap">
                       <Box style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={800}>{entity.codigo}</Text>
-                        <Text size="xs" c="dimmed" lineClamp={1}>{entity.nombre}</Text>
+                        <Text size="md" fw={800}>{entity.codigo}</Text>
+                        <Text size="sm" c="dimmed" lineClamp={1}>{entity.nombre}</Text>
                       </Box>
                       <Group gap={8} align="center" style={{ flexShrink: 0 }}>
                         <Text fw={900} size="xl" lh={1} style={{ color: SEMAFORO_COLOR[entity.semaforo] ?? color }}>
@@ -715,20 +717,20 @@ export default function PdiGraficas() {
                 </Group>
                 <Grid gutter="sm">
                   <Grid.Col span={{ base: 12, md: 6 }}>
-                    <Text size="xs" fw={600} c="dimmed" mb={4}>Meta vs Avance por Año</Text>
+                    <Text size="sm" fw={700} mb={4}>Meta vs Avance por Año</Text>
                     {!hasAnio ? (
                       <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
                     ) : (
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={data} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                          <XAxis dataKey="anio" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="anio" tick={{ fontSize: 13, fontWeight: 600 }} />
+                          <YAxis tick={{ fontSize: 12 }} />
                           <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
                           <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={22} />
                           <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={22}>
                             <LabelList dataKey="avance" position="top"
-                              style={{ fontSize: 10, fontWeight: 700, fill: "#555" }}
+                              style={{ fontSize: 12, fontWeight: 700, fill: "#555" }}
                               formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
                           </Bar>
                         </BarChart>
@@ -736,20 +738,20 @@ export default function PdiGraficas() {
                     )}
                   </Grid.Col>
                   <Grid.Col span={{ base: 12, md: 6 }}>
-                    <Text size="xs" fw={600} c="dimmed" mb={4}>Meta vs Avance por Periodo</Text>
+                    <Text size="sm" fw={700} mb={4}>Meta vs Avance por Periodo</Text>
                     {!hasPeriodo ? (
                       <Center h={160}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
                     ) : (
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={dataPeriodo} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                          <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
-                          <YAxis tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="corte" tick={{ fontSize: 11, fontWeight: 600 }} />
+                          <YAxis tick={{ fontSize: 12 }} />
                           <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
                           <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={16} />
                           <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={16}>
                             <LabelList dataKey="avance" position="top"
-                              style={{ fontSize: 9, fontWeight: 700, fill: "#555" }}
+                              style={{ fontSize: 11, fontWeight: 700, fill: "#555" }}
                               formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
                           </Bar>
                         </BarChart>
@@ -770,7 +772,7 @@ export default function PdiGraficas() {
             <Paper withBorder radius="xl" p="md" h="100%">
               <Group justify="space-between" mb="sm" align="flex-start">
                 <Box>
-                  <Text size="sm" fw={700}>Top 5 indicadores críticos</Text>
+                  <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
                   <Text size="xs" c="red" fw={600}>
                     {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
                   </Text>
@@ -801,20 +803,20 @@ export default function PdiGraficas() {
                       indicadoresCriticosTop.map((row, i) => (
                         <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
                           <td style={{ ...tdStyle, maxWidth: 420 }}>
-                            <Text size="xs" fw={700} c="blue">{row.codigo}</Text>
-                            <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
+                            <Text size="sm" fw={700} c="blue">{row.codigo}</Text>
+                            <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="xs" fw={600}>{fmtValue(row.meta)}</Text>
+                            <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="xs">{fmtValue(row.dato)}</Text>
+                            <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
                           </td>
                           <td style={{ ...tdStyle, minWidth: 150 }}>
                             <PctBar pct={row.pct} semaforo={row.semaforo} />
                           </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
-                            <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="sm" style={{ fontSize: 9 }}>
+                            <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
                               {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
                             </Badge>
                           </td>
@@ -829,8 +831,8 @@ export default function PdiGraficas() {
 
           <Grid.Col span={{ base: 12, md: 3 }}>
             <Paper withBorder radius="xl" p="md" h="100%">
-              <Text size="sm" fw={700} mb={4}>Semaforización</Text>
-              <Text size="xs" c="dimmed" mb="sm">Rangos de cumplimiento</Text>
+              <Text size="md" fw={700} mb={4}>Semaforización</Text>
+              <Text size="sm" c="dimmed" mb="sm">Rangos de cumplimiento</Text>
               <Stack gap="sm">
                 {[
                   { color: "#fa5252", badge: "red",    label: "Crítico",         rango: "< 60%" },
@@ -838,13 +840,13 @@ export default function PdiGraficas() {
                   { color: "#40c057", badge: "green",  label: "En cumplimiento", rango: "≥ 90%" },
                 ].map(({ color, badge, label, rango }) => (
                   <Box key={label} style={{ borderLeft: `4px solid ${color}`, paddingLeft: 10, paddingTop: 6, paddingBottom: 6, borderRadius: "0 6px 6px 0", background: `${color}11` }}>
-                    <Badge color={badge} variant="filled" size="xs" mb={4}>{label}</Badge>
-                    <Text size="xs" fw={700} style={{ color }}>Rango: {rango}</Text>
+                    <Badge color={badge} variant="filled" size="sm" mb={4}>{label}</Badge>
+                    <Text size="sm" fw={700} style={{ color }}>Rango: {rango}</Text>
                   </Box>
                 ))}
               </Stack>
               <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
-                <Text size="xs" c="dimmed" lh={1.5}>
+                <Text size="sm" c="dimmed" lh={1.5}>
                   El <b>% de cumplimiento</b> se calcula como el avance alcanzado dividido entre la meta definida para el indicador.
                 </Text>
               </Box>
@@ -977,20 +979,20 @@ export default function PdiGraficas() {
                   </Group>
                   <Grid gutter="sm">
                     <Grid.Col span={{ base: 12, md: 6 }}>
-                      <Text size="xs" fw={600} c="dimmed" mb={4}>Meta vs Avance por Año</Text>
+                      <Text size="sm" fw={700} mb={4}>Meta vs Avance por Año</Text>
                       {!hasAnio ? (
                         <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
                       ) : (
                         <ResponsiveContainer width="100%" height={180}>
                           <BarChart data={data} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                            <XAxis dataKey="anio" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
+                            <XAxis dataKey="anio" tick={{ fontSize: 13, fontWeight: 600 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
                             <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
                             <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={22} />
                             <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={22}>
                               <LabelList dataKey="avance" position="top"
-                                style={{ fontSize: 10, fontWeight: 700, fill: "#555" }}
+                                style={{ fontSize: 12, fontWeight: 700, fill: "#555" }}
                                 formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
                             </Bar>
                           </BarChart>
@@ -998,20 +1000,20 @@ export default function PdiGraficas() {
                       )}
                     </Grid.Col>
                     <Grid.Col span={{ base: 12, md: 6 }}>
-                      <Text size="xs" fw={600} c="dimmed" mb={4}>Meta vs Avance por Periodo</Text>
+                      <Text size="sm" fw={700} mb={4}>Meta vs Avance por Periodo</Text>
                       {!hasPeriodo ? (
                         <Center h={160}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
                       ) : (
                         <ResponsiveContainer width="100%" height={180}>
                           <BarChart data={dataPeriodo} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                            <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
-                            <YAxis tick={{ fontSize: 10 }} />
+                            <XAxis dataKey="corte" tick={{ fontSize: 11, fontWeight: 600 }} />
+                            <YAxis tick={{ fontSize: 12 }} />
                             <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
                             <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={16} />
                             <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={16}>
                               <LabelList dataKey="avance" position="top"
-                                style={{ fontSize: 9, fontWeight: 700, fill: "#555" }}
+                                style={{ fontSize: 11, fontWeight: 700, fill: "#555" }}
                                 formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
                             </Bar>
                           </BarChart>
@@ -1030,7 +1032,7 @@ export default function PdiGraficas() {
               <Paper withBorder radius="xl" p="md" h="100%">
                 <Group justify="space-between" mb="sm" align="flex-start">
                   <Box>
-                    <Text size="sm" fw={700}>Top 5 indicadores críticos</Text>
+                    <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
                     <Text size="xs" c="red" fw={600}>
                       {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
                     </Text>
@@ -1065,16 +1067,16 @@ export default function PdiGraficas() {
                               <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="xs" fw={600}>{fmtValue(row.meta)}</Text>
+                              <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="xs">{fmtValue(row.dato)}</Text>
+                              <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
                             </td>
                             <td style={{ ...tdStyle, minWidth: 150 }}>
                               <PctBar pct={row.pct} semaforo={row.semaforo} />
                             </td>
                             <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="sm" style={{ fontSize: 9 }}>
+                              <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
                                 {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
                               </Badge>
                             </td>
@@ -1173,11 +1175,12 @@ export default function PdiGraficas() {
             </Grid.Col>
 
             <Grid.Col span={{ base: 12, md: 8 }}>
-              <Paper withBorder radius="xl" p="md" h="100%">
+              <Paper withBorder radius="xl" p="md" h="100%"
+                style={{ display: "flex", flexDirection: "column" }}>
                 <Text size="sm" fw={700} mb={2}>Indicadores vs Meta</Text>
                 <Text size="xs" c="dimmed" mb="sm">Avance acumulado frente a la meta final de cada indicador</Text>
                 {indsDelAccion.length === 0 ? (
-                  <Center h={220}><Text size="xs" c="dimmed">Sin indicadores</Text></Center>
+                  <Center style={{ flex: 1 }}><Text size="xs" c="dimmed">Sin indicadores</Text></Center>
                 ) : (() => {
                   const data = indsDelAccion.map((ind) => ({
                     codigo:   ind.codigo,
@@ -1185,32 +1188,33 @@ export default function PdiGraficas() {
                     avance:   Math.max(toNumberValue(ind.avance_total_real ?? ind.avance) ?? 0, 0),
                     semaforo: ind.semaforo,
                   }));
-                  const barH = Math.max(220, data.length * 52);
                   return (
                     <>
-                      <ResponsiveContainer width="100%" height={barH}>
-                        <BarChart layout="vertical" data={data}
-                          margin={{ top: 8, right: 40, left: 10, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eee" />
-                          <XAxis type="number" tick={{ fontSize: 10 }} />
-                          <YAxis type="category" dataKey="codigo" tick={{ fontSize: 10 }} width={75} />
-                          <ReTooltip />
-                          <Bar dataKey="meta"   name="Meta"   fill="#dee2e6" radius={[0, 3, 3, 0]} barSize={13} />
-                          <Bar dataKey="avance" name="Avance" fill={PURPLE}  radius={[0, 3, 3, 0]} barSize={13}>
-                            <LabelList dataKey="avance" position="right"
-                              style={{ fontSize: 9, fontWeight: 700, fill: "#555" }}
-                              formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO", { maximumFractionDigits: 1 }) : ""} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+                      <Box style={{ flex: 1, minHeight: Math.max(200, data.length * 60) }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart layout="vertical" data={data}
+                            margin={{ top: 8, right: 50, left: 10, bottom: 8 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#eee" />
+                            <XAxis type="number" tick={{ fontSize: 12 }} />
+                            <YAxis type="category" dataKey="codigo" tick={{ fontSize: 12, fontWeight: 600 }} width={90} />
+                            <ReTooltip />
+                            <Bar dataKey="meta"   name="Meta"   fill="#dee2e6" radius={[0, 4, 4, 0]} barSize={18} />
+                            <Bar dataKey="avance" name="Avance" fill={PURPLE}  radius={[0, 4, 4, 0]} barSize={18}>
+                              <LabelList dataKey="avance" position="right"
+                                style={{ fontSize: 12, fontWeight: 700, fill: "#555" }}
+                                formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO", { maximumFractionDigits: 1 }) : ""} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Box>
                       <Group gap={14} justify="center" mt={8}>
                         <Group gap={4}>
-                          <Box w={10} h={10} style={{ background: PURPLE, borderRadius: 2 }} />
-                          <Text size="xs">Avance</Text>
+                          <Box w={12} h={12} style={{ background: PURPLE, borderRadius: 2 }} />
+                          <Text size="sm" fw={600}>Avance</Text>
                         </Group>
                         <Group gap={4}>
-                          <Box w={10} h={10} style={{ background: "#dee2e6", borderRadius: 2 }} />
-                          <Text size="xs">Meta</Text>
+                          <Box w={12} h={12} style={{ background: "#dee2e6", borderRadius: 2 }} />
+                          <Text size="sm" fw={600}>Meta</Text>
                         </Group>
                       </Group>
                     </>
@@ -1227,11 +1231,11 @@ export default function PdiGraficas() {
 }
 
 const thStyle: React.CSSProperties = {
-  padding: "8px 10px",
+  padding: "10px 12px",
   textAlign: "left",
   borderBottom: "2px solid #e9ecef",
   fontWeight: 700,
-  fontSize: 11,
+  fontSize: 13,
   color: "#495057",
   background: "#f8f9fa",
   position: "sticky",
@@ -1240,10 +1244,10 @@ const thStyle: React.CSSProperties = {
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "8px 10px",
+  padding: "10px 12px",
   borderBottom: "1px solid #f1f3f5",
   verticalAlign: "middle",
-  fontSize: 11,
+  fontSize: 13,
 };
 
 const tableScrollStyle: React.CSSProperties = {

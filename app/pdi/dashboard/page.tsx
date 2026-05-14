@@ -87,7 +87,7 @@ export default function DashboardPage() {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", height: "100vh" }}>
         <Container size="xl" py="xl">
 
           {/* Header */}
