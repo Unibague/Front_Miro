@@ -737,6 +737,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
+            {(corteActivo && periodoActivo) && (<>
             <Divider />
 
             {/* Formulario de evidencias */}
@@ -1167,6 +1168,7 @@ export default function SubirEvidenciasPage() {
                 </Group>
               </Paper>
             )}
+            </>)}
 
           </Stack>
         </Container>
