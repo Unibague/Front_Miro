@@ -77,14 +77,13 @@ const linksByRole: Record<Roles, LinkItem[]> = {
   ],
   Responsable: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/templates/published", label: "Plantillas publicadas" },
-    { link: "/responsible/reports", label: "Reportes" },
-    { link: "/responsible/dimension", label: "Ámbito" },
+    { link: "/reports", label: "Gestion de información" },
+    { link: "/pdi-modulo", label: "PDI" },
+    { link: "/responsible/admin", label: "Administración" },
   ],
   Productor: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/producer/templates", label: "Plantillas pendientes" },
-    { link: "/templates-with-filters", label: "Plantillas con filtros" },
+    { link: "/reports", label: "Gestion de información" },
   ],
 };
 
@@ -109,9 +108,9 @@ export default function Navbar() {
   const PERIOD_SELECTOR_PATHS = [
     "/snies", "/cna", "/reports", "/admin/templates", "/admin/reports",
     "/templates", "/producer", "/responsible", "/templates-with-filters",
-    "/dependency", "/traceability", "/reportproducers",
+    "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
     "/admin/templates-management", "/admin/logs", "/admin/audit",
-    "/admin/validations", "/validations",
+    "/admin/validations", "/validations", "/historico-docentes",
   ];
   const showPeriodSelector =
     !!pathname &&

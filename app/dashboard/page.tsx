@@ -38,7 +38,6 @@ const DashboardPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
-  const showResponsibleScopeCards = false;
   const showSupportTemplatesModule = true;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
@@ -51,25 +50,22 @@ const DashboardPage = () => {
     }
   }, [searchParams, router]);
 
-  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" | "configuracion" =
+  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" | "configuracion" | "responsible-admin" =
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
       : pathname === "/snies"
         ? "snies"
         : pathname === "/cna"
           ? "cna"
-          : pathname === "/pdi"
+          : pathname === "/pdi-modulo"
             ? "pdi"
             : pathname === "/configuracion"
               ? "configuracion"
-              : "home";
+              : pathname === "/responsible/admin"
+                ? "responsible-admin"
+                : "home";
 
-  const shouldRedirectFromDashboardHome =
-    pathname === "/dashboard" &&
-    status === "authenticated" &&
-    !opened &&
-    !!userRole &&
-    userRole !== "Administrador";
+  const shouldRedirectFromDashboardHome = false;
 
   const shouldWaitDashboardRedirect =
     pathname === "/dashboard" &&
@@ -82,9 +78,9 @@ const DashboardPage = () => {
       case "Administrador":
         return "/dashboard";
       case "Responsable":
-        return "/reports";
+        return "/dashboard";
       case "Productor":
-        return "/reports";
+        return "/dashboard";
       default:
         return "/dashboard";
     }
@@ -469,7 +465,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos')} style={{ cursor: "pointer" }}>
                <Center style={{ position: "relative" }}>
                 <IconClipboard size={80}/>
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
@@ -486,7 +482,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos/uploaded')} style={{ cursor: "pointer" }}>
               <Center>
                 <IconReportSearch size={80}/>
               </Center>
@@ -677,7 +673,7 @@ const DashboardPage = () => {
       case "Responsable":
         cards.push(
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-published-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates/published')} style={{ cursor: "pointer" }}>
               <Center><IconChecklist size={80}></IconChecklist></Center>
               <Group mt="md" mb="xs">
                   <Text ta={"center"} w={500}>Gestionar Plantillas Productores</Text>
@@ -691,7 +687,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/reportproducers')} style={{ cursor: "pointer" }}>
              <Center><IconClipboardData size={80}/></Center>
              <Group mt="md" mb="xs">
                <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
@@ -704,43 +700,8 @@ const DashboardPage = () => {
              </Button>
             </Card>
          </Grid.Col>,
-          showResponsibleScopeCards && (
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="dimension-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center style={{ position: "relative" }}>
-                <IconClipboard size={80}/>
-                <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
-                </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Informe de Ámbito</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-              Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/reports')}>
-                Ir a Informes de Ámbito
-              </Button>
-            </Card>
-          </Grid.Col>
-          ),
-          showResponsibleScopeCards && (
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconHexagon3d size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Mi Ámbito</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el ámbito del que eres responsable.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-                Ir a Gestión de Mi Ámbito
-              </Button>
-            </Card>
-          </Grid.Col>
-          ),
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
-  <Card shadow="sm" padding="lg" radius="md" withBorder>
+  <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/responsible/reports')} style={{ cursor: "pointer" }}>
     <Center>
       <IconChartBarPopular size={80} />
     </Center>
@@ -767,7 +728,7 @@ const DashboardPage = () => {
   </Card>
 </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
               <Center><IconFilter size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
@@ -780,8 +741,22 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-validations">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/validations')} style={{ cursor: "pointer" }}>
+              <Center><IconCheckbox size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Validaciones</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Conoce las validaciones que deben cumplir los datos de tus plantillas.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/validations')}>
+                Ir a Validaciones
+              </Button>
+            </Card>
+          </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
               <Center><IconChartHistogram size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Historial de Cambios</Text>
@@ -794,31 +769,17 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-pdi-indicadores">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
-              <Center><IconTarget size={80} /></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Proyectos PDI</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Proyectos PDI
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-historico-docentes">
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-consulta-informacion">
             <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
-              <Center><IconUsersGroup size={80} /></Center>
+              <Center><IconUsersGroup size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Histórico Docentes (SNIES)</Text>
+                <Text ta={"center"} w={500}>Consulta de Información</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Consulta el histórico de información de docentes.
+                Consulta plantillas, informes e información SNIES.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
-                Ir a Histórico Docentes
+                Abrir módulo
               </Button>
             </Card>
           </Grid.Col>,
@@ -827,7 +788,7 @@ const DashboardPage = () => {
       case "Productor":
         cards.push(
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-my-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/templates')} style={{ cursor: "pointer" }}>
               <Center><IconFileAnalytics size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
@@ -841,7 +802,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-reports">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/reports')} style={{ cursor: "pointer" }}>
             <Center><IconClipboardData size={80}/></Center>
             <Group mt="md" mb="xs">
               <Text ta={"center"} w={500}>Informe de gestión de productor</Text>
@@ -854,22 +815,8 @@ const DashboardPage = () => {
             </Button>
           </Card>
         </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-validations">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconCheckbox size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Validaciones</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-            Conoce las validaciones que deben cumplir los datos de tus plantillas
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/validations')}>
-              Ir a Validaciones
-            </Button>
-          </Card>
-        </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-templates-with-filters-all">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
               <Center><IconFilter size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
@@ -883,7 +830,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
               <Center><IconChartHistogram size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Historial de Cambios</Text>
@@ -896,130 +843,22 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-pdi-indicadores">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
-              <Center><IconTarget size={80} /></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Proyectos PDI</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Proyectos PDI
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-historico-docentes">
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-consulta-informacion">
             <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
-              <Center><IconUsersGroup size={80} /></Center>
+              <Center><IconUsersGroup size={80}/></Center>
               <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Histórico Docentes (SNIES)</Text>
+                <Text ta={"center"} w={500}>Consulta de Información</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Consulta el histórico de información de docentes.
+                Consulta plantillas, informes e información SNIES.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
-                Ir a Histórico Docentes
+                Abrir módulo
               </Button>
             </Card>
           </Grid.Col>,
         );
-        if (isVisualizer) {
-
-          cards.push(
-            <Grid.Col
-            span={{ base: 12, md: 5, lg: 4 }}
-            key="administer-dependency"
-          >
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center>
-                <IconUserStar size={80} />
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>
-                  Ver Mi Dependencia
-                </Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Selecciona qué miembros de tu equipo tendrán acceso a Miró
-              </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push("/dependency")}
-              >
-                Ir a Gestión de Dependencia
-              </Button>
-            </Card>
-          </Grid.Col>,
-
-            <Grid.Col
-              span={{ base: 12, md: 5, lg: 4 }}
-              key="view-child-dependency-templates"
-            >
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center>
-                  <IconHierarchy2 size={80} />
-                </Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>
-                    Visualizar plantillas de dependencias hijo
-                  </Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Observa el progreso de carga de las plantillas de tus
-                  dependencias hijo
-                </Text>
-                <Button
-                  variant="light"
-                  fullWidth
-                  mt="md"
-                  radius="md"
-                  onClick={() =>
-                    router.push("/dependency/children-dependencies/templates")
-                  }
-                >
-                  Ir a visualizador
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col
-              span={{ base: 12, md: 5, lg: 4 }}
-              key="view-child-dependency-reports"
-            >
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center>
-                  <IconClipboardData size={80} />
-                </Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>
-                    Visualizar reportes de dependencias hijo
-                  </Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Observa los reportes generados por las dependencias hijo y su
-                  estado de cumplimiento.
-                </Text>
-                <Button
-                  variant="light"
-                  fullWidth
-                  mt="md"
-                  radius="md"
-                  onClick={() =>
-                    router.push("/dependency/children-dependencies/reports")
-                  }
-                >
-                  Ir a visualizador de reportes
-                </Button>
-              </Card>
-            </Grid.Col>,
-
-          );
-        }
-  break;
+        break;
       case "Usuario":
       default:
         cards.push(
@@ -1166,6 +1005,104 @@ const DashboardPage = () => {
     );
   };
 
+  const renderResponsiblePdiCards = () => {
+    if (userRole !== "Responsable") {
+      return (
+        <Grid.Col span={12}>
+          <Center>
+            <Text c="dimmed">No tienes permisos para este modulo.</Text>
+          </Center>
+        </Grid.Col>
+      );
+    }
+
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/pdi/mis-indicadores")} style={{ cursor: "pointer" }}>
+          <Center>
+            <IconTarget size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Proyectos PDI</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Consulta y actualiza el avance de los proyectos PDI asignados a ti.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/pdi/mis-indicadores")}>
+            Ir a Mis Proyectos PDI
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
+  const renderResponsibleAdminCards = () => {
+    if (userRole !== "Responsable") {
+      return (
+        <Grid.Col span={12}>
+          <Center>
+            <Text c="dimmed">No tienes permisos para este modulo.</Text>
+          </Center>
+        </Grid.Col>
+      );
+    }
+
+    return (
+      <>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconUserStar size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Ver Mi Dependencia</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Selecciona que miembros de tu equipo tendran acceso a Miro.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency")}>
+              Ir a Gestion de Dependencia
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/templates")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconHierarchy2 size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Visualizar plantillas de dependencias hijo</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Observa el progreso de carga de las plantillas de tus dependencias hijo.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/templates")}>
+              Ir a visualizador
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/reports")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconClipboardData size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Visualizar reportes de dependencias hijo</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Observa los reportes generados por las dependencias hijo y su estado de cumplimiento.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/reports")}>
+              Ir a visualizador de reportes
+            </Button>
+          </Card>
+        </Grid.Col>
+      </>
+    );
+  };
+
   if (shouldRedirectFromDashboardHome || shouldWaitDashboardRedirect) {
     return (
       <Container size="xl" py="xl">
@@ -1222,7 +1159,7 @@ const DashboardPage = () => {
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {(activeModule !== "home" || avRcOpen) && !(activeModule === "reports" && ["Productor", "Responsable"].includes(userRole)) && (
+        {(activeModule !== "home" || avRcOpen) && (
           <Group justify="flex-start">
             <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
               Volver a módulos
@@ -1235,7 +1172,7 @@ const DashboardPage = () => {
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => router.push(userRole === "Responsable" ? "/responsible/reports" : "/reports")}
+                onClick={() => router.push("/reports")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
@@ -1251,12 +1188,12 @@ const DashboardPage = () => {
                       <IconFileAnalytics size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      Plantillas y reportes
+                      {userRole === "Administrador" ? "Plantillas y reportes" : "Gestion de información"}
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      {userRole === "Responsable"
-                        ? "Accede a tus plantillas publicadas y reportes asignados."
-                        : "Gestión plantillas y reportes."}
+                      {userRole === "Administrador"
+                        ? "Gestión plantillas y reportes."
+                        : "Plantillas, informes, filtros, validaciones e historial."}
                     </Text>
                   </Stack>
                   <Button variant="white" color="blue" radius="xl">
@@ -1266,42 +1203,8 @@ const DashboardPage = () => {
               </Card>
             </Grid.Col>
 
-            {showSupportTemplatesModule && userRole === "Administrador" && (
-              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                <Card
-                  radius="xl"
-                  p="xl"
-                  onClick={() => router.push("/apoyos-plantillas")}
-                  style={{
-                    cursor: "pointer",
-                    minHeight: 260,
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "linear-gradient(135deg, #0e3a4a 0%, #168aad 100%)",
-                    boxShadow: "0 18px 45px rgba(14, 58, 74, 0.22)",
-                  }}
-                >
-                  <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconClipboardData size={28} />
-                      </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
-                        Cruce de apoyos
-                      </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
-                        Plantillas con datos SIGA/Iceberg.
-                      </Text>
-                    </Stack>
-                    <Button variant="white" color="cyan" radius="xl">
-                      Abrir modulo
-                    </Button>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-            )}
 
-            {userRole !== "Responsable" && (
+            {userRole === "Administrador" && (
               <>
                 <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                   <Card
@@ -1409,7 +1312,7 @@ const DashboardPage = () => {
                 <Card
                   radius="xl"
                   p="xl"
-                  onClick={() => router.push(userRole === "Responsable" ? "/pdi/mis-indicadores" : "/pdi")}
+                  onClick={() => router.push(userRole === "Responsable" ? "/pdi-modulo" : "/pdi")}
                   style={{
                     cursor: "pointer",
                     minHeight: 260,
@@ -1441,6 +1344,41 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
+            {userRole === "Responsable" && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push("/responsible/admin")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #263238 0%, #607d8b 100%)",
+                    boxShadow: "0 18px 45px rgba(38, 50, 56, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconBuilding size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Administración
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        Dependencia y visualizadores de dependencias hijo.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="gray" radius="xl">
+                      Abrir modulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
+
             {userRole === "Administrador" && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
@@ -1462,7 +1400,7 @@ const DashboardPage = () => {
                         <IconHomeCog size={28} />
                       </ThemeIcon>
                       <Title order={2} c="white" ta="center">
-                        Configuracion
+                      Configuración
                       </Title>
                       <Text c="rgba(255,255,255,0.82)" ta="center">
                         Perfiles y permisos de vistas.
@@ -1476,6 +1414,7 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
+            {(userRole === "Administrador" || userRole === "Responsable" || userRole === "Productor") && (
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
@@ -1496,10 +1435,10 @@ const DashboardPage = () => {
                       <IconUsersGroup size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      Histórico Docentes (SNIES)
+                      Consulta de Información
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Consulta el histórico de información de docentes.
+                      Consulta plantillas, informes e histórico docentes (SNIES).
                     </Text>
                   </Stack>
                   <Button variant="white" color="violet" radius="xl">
@@ -1508,6 +1447,7 @@ const DashboardPage = () => {
                 </Stack>
               </Card>
             </Grid.Col>
+            )}
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
@@ -1520,7 +1460,9 @@ const DashboardPage = () => {
               : activeModule === "configuracion"
               ? renderConfigurationCards()
               : activeModule === "pdi"
-              ? null
+              ? renderResponsiblePdiCards()
+              : activeModule === "responsible-admin"
+              ? renderResponsibleAdminCards()
               : renderCnaCards()}
           </Grid>
         )}

@@ -36,6 +36,15 @@ export default function PdiSidebar() {
       <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
 
       <NavLink
+        label="Dashboard"
+        leftSection={<IconChartBarPopular size={16} />}
+        active={currentPath === "/pdi"}
+        color="violet"
+        onClick={() => router.push("/pdi")}
+        style={{ borderRadius: 8 }}
+      />
+
+      <NavLink
         label="Gestión de cambios"
         leftSection={<IconGitPullRequest size={16} />}
         active={currentPath === "/pdi/cambios"}

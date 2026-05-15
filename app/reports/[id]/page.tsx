@@ -2,7 +2,7 @@
 
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { useRole } from "@/app/context/RoleContext";
-import { Accordion, Badge, Button, Center, Collapse, Container, Group, Modal, rem, Select, Table, Text, Textarea, Title, Tooltip, useMantineColorScheme, useMantineTheme } from "@mantine/core";
+import { Accordion, ActionIcon, Badge, Button, Center, Collapse, Container, Group, Modal, rem, Select, Table, Text, Textarea, Title, Tooltip, useMantineColorScheme, useMantineTheme } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconCancel, IconCheckupList, IconChevronsLeft, IconDeviceFloppy, IconHistory } from "@tabler/icons-react";
 import axios from "axios";
@@ -392,6 +392,11 @@ const UploadedReportsPage = () => {
 
   return (
     <Container size={"xl"}>
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reportproducers")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <DateConfig/>
       <Title ta="center">{`Envíos para: ${publishedReport?.report.name}`}</Title>
 

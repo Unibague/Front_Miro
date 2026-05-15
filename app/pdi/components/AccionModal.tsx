@@ -128,7 +128,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
             <Tabs defaultValue="asignado">
               <Tabs.List>
                 <Tabs.Tab value="asignado">Presupuesto asignado por año</Tabs.Tab>
-                <Tabs.Tab value="ejecutado">Ejecutado por año</Tabs.Tab>
+                <Tabs.Tab value="ejecutado">Causado por año</Tabs.Tab>
               </Tabs.List>
 
               <Tabs.Panel value="asignado" pt="sm">
@@ -172,7 +172,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
                 </SimpleGrid>
                 {totalEjecutado > 0 && (
                   <Text size="xs" c="dimmed" ta="right" mt={6}>
-                    Total ejecutado: $ {totalEjecutado.toLocaleString("es-CO")}
+                    Total causado: $ {totalEjecutado.toLocaleString("es-CO")}
                   </Text>
                 )}
               </Tabs.Panel>
