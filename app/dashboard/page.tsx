@@ -39,7 +39,7 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
-  const showSupportTemplatesModule = false;
+  const showSupportTemplatesModule = true;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);

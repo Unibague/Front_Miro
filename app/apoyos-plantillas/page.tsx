@@ -34,7 +34,7 @@ type PreviewRow = {
   row_number: number;
   identificacion: string;
   nombre_identificado: string;
-  fuente_persona: string;
+  programa_dependencia: string;
   tipo_apoyo_detectado: string;
   nombre_apoyo_detectado: string;
   apoyos_otros_periodos: string;
@@ -219,8 +219,9 @@ export default function ApoyosPlantillasPage() {
           </Stack>
         </Paper>
 
-        {preview && (
-          <>
+        {preview && (() => {
+          const tieneApoyo = preview.rows.some(r => r.tipo_apoyo_detectado || r.nombre_apoyo_detectado);
+          return (<>
             <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
               {summaryCards.map((item) => (
                 <Paper key={item.label} withBorder radius="lg" p="md">
@@ -259,11 +260,10 @@ export default function ApoyosPlantillasPage() {
                       <Table.Th>Fila</Table.Th>
                       <Table.Th>Cedula</Table.Th>
                       <Table.Th>Nombre</Table.Th>
-                      <Table.Th>Fuente</Table.Th>
-                      <Table.Th>Tipo apoyo</Table.Th>
-                      <Table.Th>Apoyo</Table.Th>
+                      <Table.Th>Programa / dependencia</Table.Th>
+                      {tieneApoyo && <Table.Th>Tipo apoyo</Table.Th>}
+                      {tieneApoyo && <Table.Th>Apoyo</Table.Th>}
                       <Table.Th>Validadores</Table.Th>
-                      <Table.Th>Otros periodos</Table.Th>
                       <Table.Th>Estado</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
@@ -273,30 +273,18 @@ export default function ApoyosPlantillasPage() {
                         <Table.Td>{row.row_number}</Table.Td>
                         <Table.Td>{row.identificacion || "-"}</Table.Td>
                         <Table.Td>{row.nombre_identificado || "-"}</Table.Td>
-                        <Table.Td>{row.fuente_persona || "-"}</Table.Td>
-                        <Table.Td>{row.tipo_apoyo_detectado || "-"}</Table.Td>
-                        <Table.Td>{row.nombre_apoyo_detectado || "-"}</Table.Td>
+                        <Table.Td>{row.programa_dependencia || "-"}</Table.Td>
+                        {tieneApoyo && <Table.Td>{row.tipo_apoyo_detectado || "-"}</Table.Td>}
+                        {tieneApoyo && <Table.Td>{row.nombre_apoyo_detectado || "-"}</Table.Td>}
                         <Table.Td>
                           {Object.keys(row.validadores_resueltos || {}).length === 0 ? (
                             "-"
                           ) : (
-                            <Stack gap={4}>
-                              {Object.entries(row.validadores_resueltos || {}).map(([column, value]) => (
-                                <Text key={column} size="xs" lineClamp={1}>
-                                  <Text span fw={700}>{column.replace(/^DESC_/, "")}:</Text> {value}
-                                </Text>
+                            <Stack gap={2}>
+                              {Object.values(row.validadores_resueltos || {}).map((value, i) => (
+                                <Text key={i} size="xs" lineClamp={1}>{value}</Text>
                               ))}
                             </Stack>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="sm" lineClamp={2}>
-                            {row.apoyos_otros_periodos || "-"}
-                          </Text>
-                          {row.periodos_apoyo_previo && (
-                            <Text size="xs" c="dimmed" lineClamp={1}>
-                              {row.periodos_apoyo_previo}
-                            </Text>
                           )}
                         </Table.Td>
                         <Table.Td>
@@ -310,8 +298,8 @@ export default function ApoyosPlantillasPage() {
                 </Table>
               </Box>
             </Paper>
-          </>
-        )}
+          </>);
+        })()}
       </Stack>
     </Container>
   );
