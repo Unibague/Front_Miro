@@ -13,6 +13,11 @@ const GoBackButton = () => {
   if (pathname === "/" || pathname === "/dashboard") return null;
   if (pathname?.startsWith("/date-review")) return null;
   if (pathname?.startsWith("/pdi")) return null;
+  if (pathname?.startsWith("/historico-docentes")) return null;
+
+  const handleVolver = () => {
+    router.back();
+  };
 
   return (
     <div
@@ -25,7 +30,7 @@ const GoBackButton = () => {
     >
       <Tooltip label="Volver" withArrow position="right">
         <ActionIcon
-          onClick={() => router.back()}
+          onClick={handleVolver}
           variant="light"
           color="blue"
           size="lg"
