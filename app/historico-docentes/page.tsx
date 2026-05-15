@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
   ActionIcon,
@@ -84,7 +84,7 @@ export default function HistoricoDocentesPage() {
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch] = useDebouncedValue(searchText, 350);
 
-  const fetchData = async (
+  const fetchData = useCallback(async (
     sheetIndex = 0,
     pageNum = 1,
     year: string | null = null,
@@ -114,11 +114,11 @@ export default function HistoricoDocentesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session?.user?.email]);
 
   useEffect(() => {
     fetchData(activeSheet, page, selectedYear, debouncedSearch);
-  }, [session?.user?.email, activeSheet, page, selectedYear, debouncedSearch]);
+  }, [fetchData, activeSheet, page, selectedYear, debouncedSearch]);
 
   const handleSheetChange = (value: string | null) => {
     setActiveSheet(parseInt(value ?? "0", 10));
