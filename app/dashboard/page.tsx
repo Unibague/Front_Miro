@@ -14,6 +14,7 @@ import "dayjs/locale/es";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
+import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
@@ -1158,9 +1159,9 @@ const DashboardPage = () => {
               <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
             </Group>
             <Text ta={"center"} size="sm" color="dimmed">
-              Registro calificado, acreditación voluntaria y seguimiento por facultad.
+              Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
             </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/date-review")}>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
               Ir a gestión de procesos MEN
             </Button>
           </Card>
@@ -1172,14 +1173,14 @@ const DashboardPage = () => {
               <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
             </Group>
             <Text ta={"center"} size="sm" color="dimmed">
-              Gestión de PQR ante el MEN
+              Gestión ante el MEN.
             </Text>
             <Button
               variant="light"
               fullWidth
               mt="md"
               radius="md"
-              onClick={() => router.push("/date-review?modulo=comunicaciones")}
+              onClick={() => router.push(processesMenRoutes.comunicaciones)}
             >
               Ir a comunicaciones MEN
             </Button>
@@ -1364,7 +1365,7 @@ const DashboardPage = () => {
                           Procesos de calidad MEN
                         </Title>
                         <Text c="rgba(255,255,255,0.82)" ta="center">
-                          RC, AV y comunicaciones MEN (por facultad y programa).
+                          RC, AV y comunicaciones MEN.
                         </Text>
                       </Stack>
                       <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>

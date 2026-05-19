@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { Paper, Text, ScrollArea, Table, Stack, Badge, Anchor } from "@mantine/core";
 import FaseBadge from "./FaseBadge";
 import { COLS_9 } from "../constants";
-import type { ProcesoRow, Program } from "../types";
+import type { ProcesoRow } from "../types";
+import { lineasAuxPrograma } from "../utils/programDisplay";
 
 const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro }: {
   title: string;
@@ -47,12 +48,14 @@ const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro }: {
                 <Table.Tr key={i}>
                   <Table.Td style={{ verticalAlign: "middle" }}>
                     <Stack align="center" gap={4} justify="center">
-                      <Anchor href={`/date-review/program/${row.programa._id}`} size="xs" fw={600} underline="hover" ta="center" display="block">
+                      <Anchor href={`/processes-MEN/program/${row.programa._id}`} size="xs" fw={600} underline="hover" ta="center" display="block">
                         {row.programa.nombre}
                       </Anchor>
-                      <Text size="xs" c={row.programa.codigo_snies ? "dimmed" : "red"} ta="center">
-                        {row.programa.codigo_snies ? `SNIES: ${row.programa.codigo_snies}` : "No tiene SNIES"}
-                      </Text>
+                      {lineasAuxPrograma(row.programa).map((ln, idx) => (
+                        <Text key={idx} size="xs" c="dimmed" ta="center">
+                          {ln}
+                        </Text>
+                      ))}
                     </Stack>
                   </Table.Td>
                   {modoPrograma
@@ -63,15 +66,15 @@ const ProcesoTable = ({ title, rows, tipoProceso, programaFiltro }: {
                       ))
                     : <>
                         {mostrarRC && (
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Stack align="center" justify="center">
+                          <Table.Td style={{ verticalAlign: "middle", textAlign: "center" }}>
+                            <Stack align="center" justify="center" w="100%">
                               <FaseBadge fase={row.registro} actividad={row.actividadRc ?? null} />
                             </Stack>
                           </Table.Td>
                         )}
                         {mostrarAV && (
-                          <Table.Td style={{ verticalAlign: "middle" }}>
-                            <Stack align="center" justify="center">
+                          <Table.Td style={{ verticalAlign: "middle", textAlign: "center" }}>
+                            <Stack align="center" justify="center" w="100%">
                               <FaseBadge fase={row.acreditacion} actividad={row.actividadAv ?? null} />
                             </Stack>
                           </Table.Td>
