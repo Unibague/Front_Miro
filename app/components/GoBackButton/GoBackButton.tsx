@@ -14,6 +14,8 @@ const GoBackButton = () => {
   if (pathname === "/" || pathname === "/dashboard") return null;
   /* En processes-MEN el botón vive en el Navbar */
   if (isProcessesMenOrLegacyPath(pathname)) return null;
+  if (pathname?.startsWith("/date-review")) return null;
+  if (pathname?.startsWith("/pdi")) return null;
 
   const handleVolver = () => {
     router.back();
@@ -34,7 +36,7 @@ const GoBackButton = () => {
         variant="light"
         color="blue"
         size="sm"
-        leftSection={<IconArrowLeft size={16}/>}
+        leftSection={<IconArrowLeft size={16} />}
       >
         Volver
       </Button>
