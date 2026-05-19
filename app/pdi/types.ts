@@ -7,6 +7,10 @@ export interface PdiConfig {
   anio_fin: number;
   lema: string;
   anios: number[]; // array derivado [anio_inicio ... anio_fin]
+  num_macroproyectos: number;
+  proyectos_por_macro: number;
+  acciones_por_proyecto: number;
+  indicadores_por_accion: number;
 }
 
 export interface Macroproyecto {
@@ -15,9 +19,12 @@ export interface Macroproyecto {
   nombre: string;
   lider?: string;
   lider_email?: string;
+  num_proyectos?: number;
   peso: number;
   avance: number;
   semaforo: Semaforo;
+  presupuesto: number;
+  presupuesto_ejecutado: number;
 }
 
 export type EstadoAval = "Pendiente" | "Aprobado" | "Rechazado";
@@ -43,6 +50,11 @@ export interface RespuestaFormulario {
   fecha_envio: string | null;
   word_filename: string;
   word_url: string;
+  word_nombre_original: string;
+  documento_filename: string;
+  documento_url: string;
+  documento_nombre_original: string;
+  documento_mimetype: string;
   estado_aval: EstadoAval | null;
   lider_email_aval: string;
   aval_por: string;
@@ -57,6 +69,7 @@ export interface Proyecto {
   nombre: string;
   descripcion: string;
   proposito?: string;
+  num_acciones?: number;
   peso: number;
   avance: number;
   semaforo: Semaforo;
@@ -130,15 +143,22 @@ export interface EjecutadoAccionImportada {
   codigo_proyecto?: string;
   nombre?: string;
   nombre_accion?: string;
+  nombre_proyecto?: string;
   fila?: number;
+  fila_excel?: number;
   proyecto_codigo?: string;
+  tipo?: "gasto" | "inversion" | "mixto" | "general";
+  gasto?: number;
+  inversion?: number;
   presupuesto_ejecutado: number;
+  observacion?: string;
 }
 
 export interface ImportExecutedResponse {
   archivo: string;
   hoja: string;
   proyecto_excel: string | null;
+  macro_detectado?: { _id: string; codigo: string; nombre: string };
   filas_leidas: number;
   acciones_detectadas: number;
   acciones_actualizadas: number;
@@ -147,11 +167,16 @@ export interface ImportExecutedResponse {
   proyectos_no_encontrados: number;
   totales_importados: {
     presupuesto_ejecutado: number;
+    gasto?: number;
+    inversion?: number;
   };
   actualizados: EjecutadoProyectoImportado[];
   acciones: EjecutadoAccionImportada[];
   acciones_actualizadas_detalle: EjecutadoAccionImportada[];
-  no_encontrados: EjecutadoProyectoImportado[];
+  no_encontrados: {
+    proyectos: EjecutadoProyectoImportado[];
+    acciones: EjecutadoAccionImportada[];
+  };
   criterio: {
     presupuesto_ejecutado: string;
   };
@@ -165,6 +190,7 @@ export interface Accion {
   alcance: string;
   responsable: string;
   responsable_email: string;
+  num_indicadores?: number;
   peso: number;
   avance: number;
   semaforo: Semaforo;
@@ -172,6 +198,10 @@ export interface Accion {
   fecha_fin: string | null;
   presupuesto: number;
   presupuesto_ejecutado: number;
+  gasto: number;
+  inversion: number;
+  presupuesto_por_anio?: Record<string, number>;
+  presupuesto_ejecutado_por_anio?: Record<string, number>;
   proyecto_id: { _id: string; codigo: string; nombre: string };
 }
 

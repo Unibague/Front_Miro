@@ -25,6 +25,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import styles from "./AdminValidationUpdatePage.module.css";
 import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Column {
   name: string;
@@ -38,6 +39,7 @@ const AdminValidationUpdatePage = () => {
   const params = useParams();
   const id = paramId(params);
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
 
   const [name, setName] = useState<string>("");
   const [columns, setColumns] = useState<Column[]>([]);
@@ -51,9 +53,10 @@ const AdminValidationUpdatePage = () => {
 
   useEffect(() => {
     const fetchValidation = async () => {
+      if (!id || !selectedPeriodId) return;
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-          params: { id: id }
+          params: { id: id, periodId: selectedPeriodId }
         });
         const { validator } = response.data;
         setName(validator.name);
@@ -66,7 +69,7 @@ const AdminValidationUpdatePage = () => {
     };
 
     fetchValidation();
-  }, [id]);
+  }, [id, selectedPeriodId]);
 
   useEffect(() => {
   }, [columns]);
@@ -151,6 +154,15 @@ const AdminValidationUpdatePage = () => {
       return;
     }
 
+    if (!selectedPeriodId) {
+      showNotification({
+        title: "Periodo requerido",
+        message: "Selecciona un periodo antes de actualizar la validación",
+        color: "orange",
+      });
+      return;
+    }
+
     // Convert values to their respective types before saving
     const columnsToSave = columns.map(column => ({
       ...column,
@@ -163,6 +175,7 @@ const AdminValidationUpdatePage = () => {
         name,
         columns: columnsToSave,
         adminEmail: session?.user?.email,
+        periodId: selectedPeriodId,
       });
       showNotification({
         title: "Validación actualizada",

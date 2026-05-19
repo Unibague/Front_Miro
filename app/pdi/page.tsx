@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
@@ -10,14 +10,14 @@ import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFlag, IconAlertTriangle,
-  IconListCheck, IconExternalLink, IconSettings,
+  IconListCheck, IconExternalLink, IconSettings, IconFolderOpen, IconUpload,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador } from "./types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen, ImportExecutedResponse } from "./types";
 import { PDI_ROUTES } from "./api";
 import MacroproyectoModal from "./components/MacroproyectoModal";
 import ProyectoModal from "./components/ProyectoModal";
@@ -89,12 +89,17 @@ function PdiConfigModal({
     descripcion: string;
     anio_inicio: number;
     anio_fin: number;
+    num_macroproyectos: number;
+    proyectos_por_macro: number;
+    acciones_por_proyecto: number;
+    indicadores_por_accion: number;
   };
   onSaved: () => Promise<void>;
 }) {
   const [nombre, setNombre] = useState(initialConfig.nombre);
   const [anioInicio, setAnioInicio] = useState<number | string>(initialConfig.anio_inicio);
   const [anioFin, setAnioFin] = useState<number | string>(initialConfig.anio_fin);
+  const [numMacros, setNumMacros] = useState<number | string>(initialConfig.num_macroproyectos);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -102,6 +107,7 @@ function PdiConfigModal({
     setNombre(initialConfig.nombre);
     setAnioInicio(initialConfig.anio_inicio);
     setAnioFin(initialConfig.anio_fin);
+    setNumMacros(initialConfig.num_macroproyectos);
   }, [opened, initialConfig]);
 
   const handleSave = async () => {
@@ -125,12 +131,16 @@ function PdiConfigModal({
         descripcion: String(nombre).trim(),
         anio_inicio: Number(anioInicio),
         anio_fin: Number(anioFin),
+        num_macroproyectos: Number(numMacros) || 0,
       });
+      if (Number(numMacros) > 0) {
+        await axios.post(PDI_ROUTES.configRedistribuir());
+      }
       await onSaved();
-      showNotification({ title: "Actualizado", message: "ConfiguraciÃ³n del PDI guardada", color: "teal" });
+      showNotification({ title: "Actualizado", message: "Configuración del PDI guardada y pesos redistribuidos", color: "teal" });
       onClose();
     } catch (e: any) {
-      showNotification({ title: "Error", message: e.response?.data?.error ?? "No se pudo guardar la configuraciÃ³n", color: "red" });
+      showNotification({ title: "Error", message: e.response?.data?.error ?? "No se pudo guardar la configuración", color: "red" });
     } finally {
       setLoading(false);
     }
@@ -144,7 +154,21 @@ function PdiConfigModal({
           <NumberInput label="Año inicial" value={anioInicio} onChange={setAnioInicio} allowDecimal={false} />
           <NumberInput label="Año final" value={anioFin} onChange={setAnioFin} allowDecimal={false} />
         </Group>
-        <Group justify="flex-end" mt="sm">
+
+        <Divider label="Estructura del PDI" labelPosition="center" mt="xs" />
+        <Text size="xs" c="dimmed">
+          El peso de cada macroproyecto se redistribuirá automáticamente
+        </Text>
+        <NumberInput
+          label="Número de macroproyectos"
+          value={numMacros}
+          onChange={setNumMacros}
+          min={0}
+          allowDecimal={false}
+        />
+
+        <Divider mt="xs" />
+        <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
           <Button color="violet" loading={loading} onClick={handleSave}>Guardar</Button>
         </Group>
@@ -510,11 +534,13 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 }
 
 // ── Stats cards ───────────────────────────────────────────────────────────
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
+  alertasActivas: number;
+  resumen: DashboardResumen | null;
 }) {
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
@@ -527,14 +553,19 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
   const verdes = macros.filter((m) => m.semaforo === "verde").length;
   const sinAvance = macros.filter((m) => m.avance === 0).length;
-  const alertas = criticos + amarillos;
+  const alertas = alertasActivas;
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
-  const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Critico";
+  const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Crítico";
+  const avanceFinanciero = resumen?.presupuesto?.porcentaje_ejecucion ?? 0;
+  const presupuestoTotal = resumen?.presupuesto?.total ?? 0;
+  const presupuestoEjecutado = resumen?.presupuesto?.ejecutado ?? 0;
+  const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
+  const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
   const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
   const estructuraResumen = [
-    { label: "Macros", value: macros.length, color: "violet" },
+    { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
-    { label: "Acciones", value: totalAcciones, color: "orange" },
+    { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
   return (
@@ -560,22 +591,34 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
             </Group>
 
             <Text size="sm" c="dimmed" maw={560}>
-              Vista general del portafolio del PDI. 
+              Vista general del portafolio del PDI
             </Text>
 
-            <Group justify="space-between" align="flex-end" wrap="wrap" mt={6}>
+            <Stack gap="xs" mt={6}>
               <div>
                 <Text size="xs" c="dimmed">Avance ponderado</Text>
                 <Group gap="sm" align="flex-end">
                   <Text size="2.8rem" fw={900} lh={1}>{avancePonderado}%</Text>
                   <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
                 </Group>
+                <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
               </div>
-            </Group>
+              <div>
+                <Text size="xs" c="dimmed">Avance financiero</Text>
+                <Group gap="sm" align="flex-end">
+                  <Text size="2.8rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
+                  <Badge size="md" color={finColor} variant="light" radius="xl" mb={6}>{finBadge}</Badge>
+                </Group>
+                <Progress value={avanceFinanciero} color={finColor} size="md" radius="xl" mt="xs" />
+                {presupuestoTotal > 0 && (
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {formatCOP(presupuestoEjecutado)} / {formatCOP(presupuestoTotal)}
+                  </Text>
+                )}
+              </div>
+            </Stack>
 
-            <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
-
-            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mt="sm">
               {estructuraResumen.map((item) => (
                 <Paper
                   key={item.label}
@@ -602,12 +645,12 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   <IconFlag size={20} />
                 </ThemeIcon>
                 <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" radius="xl">
-                  {criticos > 0 ? "Critico" : amarillos > 0 ? "En riesgo" : "Estable"}
+                  {criticos > 0 ? "Crítico" : amarillos > 0 ? "En riesgo" : "Estable"}
                 </Badge>
               </Group>
               <Text size="xs" c="dimmed">Estado del portafolio</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
-              <Text size="xs" c="dimmed" mt={6}>Macros en cumplimiento adecuado</Text>
+              <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">
@@ -619,14 +662,14 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   {alertas > 0 ? "Revisar" : "Controlado"}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Alertas activas</Text>
+              <Text size="xs" c="dimmed">Indicadores de resultado</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{alertas}</Text>
               <Text size="xs" c="dimmed" mt={6}>
-                {alertas === 0 ? "Sin macros en riesgo" : `${criticos} critico${criticos !== 1 ? "s" : ""} y ${amarillos} en riesgo`}
+                {alertas === 0 ? "Todos los indicadores han reportado" : "Sin reporte enviado"}
               </Text>
               {sinAvance > 0 && (
                 <Text size="xs" c="red" mt={6} fw={600}>
-                  {sinAvance} macro{sinAvance !== 1 ? "s" : ""} sin avance registrado
+                  {sinAvance} Macroproyecto{sinAvance !== 1 ? "s" : ""} sin avance registrado
                 </Text>
               )}
             </Paper>
@@ -638,9 +681,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macros al 50% o mas</Text>
+              <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
-              <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} macroproyectos</Text>
+              <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} Macroproyectos</Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">
@@ -650,7 +693,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 </ThemeIcon>
                 <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macro con mayor avance</Text>
+              <Text size="xs" c="dimmed">Macroproyectos con mayor avance</Text>
               <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
                 {macroLider?.codigo ?? "Sin datos"}
               </Text>
@@ -681,6 +724,10 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
   const statusColor = macro.semaforo === "verde" ? "green"
     : macro.semaforo === "amarillo" ? "yellow" : "red";
   const barColor = macro.avance >= 50 ? "#22c55e" : macro.avance >= 25 ? "#f59e0b" : "#ef4444";
+  const presupuesto = Number(macro.presupuesto) || 0;
+  const presupuestoEjecutado = Number(macro.presupuesto_ejecutado) || 0;
+  const avanceFinanciero = presupuesto > 0 ? Math.round((presupuestoEjecutado / presupuesto) * 100) : 0;
+  const finBarColor = avanceFinanciero >= 50 ? "#22c55e" : avanceFinanciero >= 25 ? "#f59e0b" : "#ef4444";
 
   return (
     <Paper
@@ -702,50 +749,48 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
 
       <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {macro.peso}%</Text>
 
-      <Group justify="space-between" align="flex-end" mb={6}>
+      <SimpleGrid cols={2} spacing="md" mb={6}>
         <div>
-          <Text size="2.2rem" fw={800} lh={1}>{macro.avance}%</Text>
-          <Text size="xs" c="dimmed">Avance consolidado</Text>
+          <Text size="xs" c="dimmed" fw={600} mb={2}>Avance ponderado</Text>
+          <Text size="2rem" fw={900} lh={1}>{macro.avance}%</Text>
+          <Box mt={8} style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+            <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
+          </Box>
         </div>
-      </Group>
+        <div>
+          <Text size="xs" c="dimmed" fw={600} mb={2}>Avance financiero</Text>
+          <Text size="2rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
+          <Box mt={8} style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+            <Box style={{ height: "100%", width: `${avanceFinanciero}%`, background: finBarColor, borderRadius: 99, transition: "width .4s" }} />
+          </Box>
+          {presupuesto > 0 && (
+            <Text size="xs" c="dimmed" mt={4}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
+          )}
+        </div>
+      </SimpleGrid>
 
-      <Box
-        style={{
-          height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)",
-          overflow: "hidden", marginBottom: 16,
-        }}
-      >
-        <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
-      </Box>
-
-      <SimpleGrid cols={3} mb="md">
+      <SimpleGrid cols={3} mb="md" mt="md">
         {[
           { label: "Proyectos", value: proyectos.length },
           { label: "Acciones", value: accionesCount },
           { label: "Indicadores", value: indicadoresCount },
         ].map(s => (
-          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "10px 4px" }}>
-            <Text fw={800} size="xl" lh={1}>{s.value}</Text>
-            <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
+          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "14px 4px" }}>
+            <Text fw={900} size="2rem" lh={1}>{s.value}</Text>
+            <Text size="sm" c="dimmed" fw={500} mt={4}>{s.label}</Text>
           </Box>
         ))}
       </SimpleGrid>
 
-      <Group justify="space-between" align="center">
-        <div>
-          <Text size="xs" c="dimmed" style={{ textTransform: "uppercase", letterSpacing: "0.1em" }}>Código</Text>
-          <Text fw={600} size="sm">{macro.codigo}</Text>
-        </div>
-        <Button
-          variant="gradient"
-          gradient={{ from: "violet", to: "blue", deg: 135 }}
-          radius="xl" size="sm"
-          rightSection={<IconExternalLink size={14} />}
-          onClick={() => router.push(`/pdi/${macro._id}`)}
-        >
-          Ver detalle
-        </Button>
-      </Group>
+      <Button
+        variant="gradient"
+        gradient={{ from: "violet", to: "blue", deg: 135 }}
+        radius="xl" size="md" fullWidth
+        rightSection={<IconExternalLink size={15} />}
+        onClick={() => router.push(`/pdi/${macro._id}`)}
+      >
+        Ver detalle
+      </Button>
     </Paper>
   );
 }
@@ -758,6 +803,7 @@ export default function PdiPage() {
   const { config, refresh: refreshConfig } = usePdiConfig();
 
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
+  const [resumen, setResumen] = useState<DashboardResumen | null>(null);
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
@@ -765,15 +811,79 @@ export default function PdiPage() {
   const [macroModal, setMacroModal] = useState(false);
   const [configModal, setConfigModal] = useState(false);
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
+  const [executedFile, setExecutedFile] = useState<File | null>(null);
+  const [uploadingExecuted, setUploadingExecuted] = useState(false);
+  const [executedImportResult, setExecutedImportResultState] = useState<ImportExecutedResponse | null>(() => {
+    try { const s = localStorage.getItem("pdi_executed_import_result"); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  const setExecutedImportResult = (val: ImportExecutedResponse | null) => {
+    setExecutedImportResultState(val);
+    try { if (val) localStorage.setItem("pdi_executed_import_result", JSON.stringify(val)); else localStorage.removeItem("pdi_executed_import_result"); } catch {}
+  };
+
+  const handleImportExecuted = async () => {
+    if (!executedFile) {
+      showNotification({ title: "Archivo requerido", message: "Selecciona un archivo Excel antes de importar", color: "orange" });
+      return;
+    }
+    const fileName = executedFile.name.toLowerCase();
+    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
+      showNotification({ title: "Formato inválido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", executedFile);
+    setUploadingExecuted(true);
+    try {
+      const res = await axios.post<ImportExecutedResponse>(
+        PDI_ROUTES.importarEjecutadoProyecto(),
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      setExecutedImportResult(res.data);
+      await cargarPortfolio();
+      if (res.data.acciones_actualizadas === 0) {
+        showNotification({
+          title: "Sin coincidencias",
+          message: res.data.observacion ?? "Ninguna acción del archivo coincidió con el sistema.",
+          color: "orange",
+        });
+      } else {
+        showNotification({
+          title: "Ejecución importada",
+          message: `${res.data.acciones_actualizadas} acción(es) actualizadas — ${res.data.macro_detectado?.nombre ?? "búsqueda global"}`,
+          color: "teal",
+        });
+      }
+    } catch (e: any) {
+      const errData = e.response?.data;
+      const macrosDisponibles: { codigo: string; nombre: string; similitud: number }[] = errData?.macros_disponibles ?? [];
+      const extra = macrosDisponibles.length
+        ? `\nMacros en sistema: ${macrosDisponibles.map((m) => `${m.codigo} (${m.similitud}%)`).join(", ")}`
+        : "";
+      showNotification({
+        title: "Error al importar",
+        message: (errData?.error ?? "No se pudo procesar el archivo de ejecución") + extra,
+        color: "red",
+        autoClose: 12000,
+      });
+    } finally {
+      setUploadingExecuted(false);
+    }
+  };
 
   const cargarPortfolio = async () => {
     try {
-      const [macrosRes, proyectosRes, accionesRes, indicadoresRes] = await Promise.all([
+      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes] = await Promise.all([
         axios.get(PDI_ROUTES.macroproyectos()),
         axios.get(PDI_ROUTES.proyectos()),
         axios.get(PDI_ROUTES.acciones()),
         axios.get(PDI_ROUTES.indicadores()),
+        axios.get(PDI_ROUTES.dashboardResumen()),
       ]);
+      setResumen(resumenRes.data);
 
       const macrosData: Macroproyecto[] = macrosRes.data;
       const proyectosData: Proyecto[] = proyectosRes.data;
@@ -906,12 +1016,12 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
-      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} />
+      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} />
 
       <Group justify="space-between" align="center" mb="md">
         <div>
           <Text fw={700} size="xl">Macroproyectos</Text>
-          <Text size="xs" c="dimmed">Vista tipo portfolio — navega la jerarquía del PDI</Text>
+          <Text size="xs" c="dimmed">Vista tipo portafolio — Jerarquía del PDI</Text>
         </div>
         
       </Group>
@@ -935,6 +1045,155 @@ export default function PdiPage() {
             />
           ))}
         </SimpleGrid>
+      )}
+
+      {admin && macros.length > 0 && (
+        <Paper withBorder radius="lg" p="md" mt="md"
+          style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(255,255,255,0.98) 58%)" }}>
+          <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+            <div style={{ minWidth: 0 }}>
+              <Text fw={700}>Importar ejecución presupuestal</Text>
+              <Text size="sm" c="dimmed" mt={2}>
+                El macroproyecto se identifica automáticamente desde el archivo Excel.
+              </Text>
+            </div>
+            <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".xlsx,.xlsm"
+                style={{ display: "none" }}
+                onChange={(e) => { setExecutedFile(e.currentTarget.files?.[0] ?? null); }}
+              />
+              <Button variant="default" leftSection={<IconFolderOpen size={14} />}
+                onClick={() => importInputRef.current?.click()}>
+                {executedFile ? executedFile.name.slice(0, 20) + (executedFile.name.length > 20 ? "…" : "") : "Seleccionar Excel"}
+              </Button>
+              <Button color="blue" leftSection={<IconUpload size={14} />}
+                loading={uploadingExecuted}
+                disabled={!executedFile}
+                onClick={handleImportExecuted}>
+                Importar ejecutado
+              </Button>
+            </Group>
+          </Group>
+
+          {executedImportResult && (() => {
+            const r = executedImportResult;
+            const detalle = r.acciones_actualizadas_detalle ?? [];
+            // Agrupar por proyecto
+            const byProyecto = new Map<string, { nombre: string; acciones: typeof detalle }>();
+            for (const a of detalle) {
+              const key = a.codigo_proyecto ?? a.nombre_proyecto ?? "Sin proyecto";
+              if (!byProyecto.has(key)) byProyecto.set(key, { nombre: a.nombre_proyecto ?? key, acciones: [] });
+              byProyecto.get(key)!.acciones.push(a);
+            }
+            const noEncontradosAcciones = r.no_encontrados?.acciones ?? [];
+            const noEncontradosProyectos = r.no_encontrados?.proyectos ?? [];
+
+            return (
+              <Stack gap="md" mt="md">
+                {/* Aviso cuando no hubo coincidencias */}
+                {r.acciones_actualizadas === 0 && r.observacion && (
+                  <Paper withBorder radius="lg" p="sm" style={{ background: "#fffbeb", borderColor: "#fbbf24" }}>
+                    <Group gap={8}>
+                      <Badge color="orange" variant="light" size="sm">Sin coincidencias</Badge>
+                      <Text size="sm">{r.observacion}</Text>
+                    </Group>
+                  </Paper>
+                )}
+                {/* Resumen del macro detectado */}
+                {r.macro_detectado && (
+                  <Paper withBorder radius="lg" p="sm" style={{ background: "#f0fdf4", borderColor: "#86efac" }}>
+                    <Group gap={8} align="center">
+                      <Badge color="green" variant="filled" size="sm">Macro detectado</Badge>
+                      <Text size="sm" fw={700}>{r.macro_detectado.codigo} — {r.macro_detectado.nombre}</Text>
+                      <Text size="xs" c="dimmed" ml="auto">{r.acciones_actualizadas} acción(es) actualizada(s) · {r.proyectos_actualizados} proyecto(s)</Text>
+                    </Group>
+                  </Paper>
+                )}
+
+                {/* Tabla de resultados por proyecto */}
+                {byProyecto.size > 0 && (
+                  <Stack gap="sm">
+                    {Array.from(byProyecto.entries()).map(([key, { nombre, acciones: accs }]) => {
+                      const totalGasto    = accs.reduce((s, a) => s + (a.gasto ?? 0), 0);
+                      const totalInversion = accs.reduce((s, a) => s + (a.inversion ?? 0), 0);
+                      const totalEjec     = accs.reduce((s, a) => s + a.presupuesto_ejecutado, 0);
+                      return (
+                        <Paper key={key} withBorder radius="lg" p="md">
+                          <Group justify="space-between" mb="xs" wrap="wrap">
+                            <Group gap={6}>
+                              <Badge color="blue" variant="light" size="sm">{key}</Badge>
+                              <Text size="sm" fw={700}>{nombre}</Text>
+                            </Group>
+                            <Group gap={12}>
+                              <Text size="xs" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(totalGasto)}</b></Text>
+                              <Text size="xs" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(totalInversion)}</b></Text>
+                              <Text size="xs" fw={700}>Total: {formatCOP(totalEjec)}</Text>
+                            </Group>
+                          </Group>
+                          <Box style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                              <thead>
+                                <tr style={{ background: "#f8f9fa" }}>
+                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057" }}>Acción estratégica</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#2563eb", width: 110 }}>Gasto</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#7c3aed", width: 110 }}>Inversión</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total ejecutado</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#6b7280", width: 160 }}>Observación</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {accs.map((a, idx) => (
+                                  <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f9fafb" }}>
+                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", verticalAlign: "middle" }}>
+                                      <Group gap={6} wrap="nowrap">
+                                        {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">Gasto</Badge>}
+                                        {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">Inversión</Badge>}
+                                        {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">Gasto + Inv.</Badge>}
+                                        <Text size="xs">{a.nombre ?? a.nombre_accion}</Text>
+                                      </Group>
+                                    </td>
+                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400 }}>
+                                      {(a.gasto ?? 0) > 0 ? formatCOP(a.gasto!) : "—"}
+                                    </td>
+                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#7c3aed", fontWeight: (a.inversion ?? 0) > 0 ? 700 : 400 }}>
+                                      {(a.inversion ?? 0) > 0 ? formatCOP(a.inversion!) : "—"}
+                                    </td>
+                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", fontWeight: 700 }}>
+                                      {formatCOP(a.presupuesto_ejecutado)}
+                                    </td>
+                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", color: "#6b7280", fontSize: 11 }}>
+                                      {a.observacion || "—"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </Box>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                )}
+
+                {/* Totales globales */}
+                {detalle.length > 0 && (
+                  <Paper withBorder radius="lg" p="sm" style={{ background: "#eff6ff", borderColor: "#93c5fd" }}>
+                    <Group gap={24} wrap="wrap">
+                      <Text size="sm" fw={700} c="blue">Totales importados</Text>
+                      <Text size="sm" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(r.totales_importados.gasto ?? 0)}</b></Text>
+                      <Text size="sm" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(r.totales_importados.inversion ?? 0)}</b></Text>
+                      <Text size="sm" fw={700}>Total ejecutado: {formatCOP(r.totales_importados.presupuesto_ejecutado)}</Text>
+                    </Group>
+                  </Paper>
+                )}
+
+              </Stack>
+            );
+          })()}
+        </Paper>
       )}
 
       <MacroproyectoModal

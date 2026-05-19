@@ -34,7 +34,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
 import { modals } from "@mantine/modals";
 
 interface Field {
@@ -270,8 +270,6 @@ const dateFields = new Set(
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
       // Usar las claves que realmente vienen del backend
       const dataKeys = Object.keys(data[0]);
       // Asegurar que Dependencia esté primero

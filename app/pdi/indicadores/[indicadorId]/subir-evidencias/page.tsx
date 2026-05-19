@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  ActionIcon, Badge, Button, Center, Container, Divider,
-  FileButton, Group, Loader, Paper, Progress, Stack,
+  ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
+  FileButton, Group, Loader, Paper, Progress, Select, Stack,
   Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -26,9 +26,12 @@ interface CorteVigente { _id: string; nombre: string; }
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "archivo_pdf";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  max_caracteres?: number | null;
+  opciones?: string[];
+  condicional_valor?: "supero_meta" | "no_supero_meta" | null;
 }
 
 interface FormularioPDI {
@@ -60,6 +63,11 @@ interface RespuestaFormulario {
   fecha_envio?: string | null;
   word_filename?: string;
   word_url?: string;
+  word_nombre_original?: string;
+  documento_nombre_original?: string;
+  documento_filename?: string;
+  documento_url?: string;
+  documento_mimetype?: string;
   estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
   lider_email_aval?: string;
   aval_por?: string;
@@ -121,8 +129,10 @@ export default function SubirEvidenciasPage() {
   const [formularios, setFormularios] = useState<FormularioPDI[]>([]);
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaFormulario | null>>({});
   const [textos, setTextos] = useState<Record<string, string>>({});
+  const [otrosTextos, setOtrosTextos] = useState<Record<string, string>>({});
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
 
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -130,6 +140,26 @@ export default function SubirEvidenciasPage() {
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
   const corteActivo = cortesVigentes[0]?.nombre ?? "";
+
+  // ── Superó meta del corte activo (para lógica condicional de campos) ──────
+  const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
+  const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
+  const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
+  const superoMeta = avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
+    ? avanceCorteNum >= metaCorteNum
+    : null;
+
+  const shouldShowCampo = (campo: CampoFormulario): boolean => {
+    if (!campo.condicional_valor) return true;
+    if (superoMeta === null) return true;
+    if (campo.condicional_valor === "supero_meta") return superoMeta === true;
+    if (campo.condicional_valor === "no_supero_meta") return superoMeta === false;
+    return true;
+  };
+
+  const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
+  const setOtroTexto = (formId: string, campoId: string, val: string) =>
+    setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
 
   // ── Calcular si ya está todo enviado ──────────────────────────────────────
   const todosEnviados =
@@ -195,14 +225,13 @@ export default function SubirEvidenciasPage() {
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
+  const formTieneDocumento = (formId: string) => Boolean(respuestas[formId]?.documento_url);
   const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
-    const esObligatorio = campo.requerido !== false;
-    if (!esObligatorio) return true;
-
-    if (campo.tipo === "texto_largo") {
+    if (!campo.requerido) return true;
+    if (!shouldShowCampo(campo)) return true;
+    if (["texto_largo", "texto_corto", "select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
       return Boolean(getTexto(formId, campo._id).trim());
     }
-
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
   };
   const periodosEditablesSinAvance = (indicador?.periodos ?? []).filter((p: Periodo) => {
@@ -212,6 +241,7 @@ export default function SubirEvidenciasPage() {
   const formulariosIncompletos = formularios.filter((form) =>
     form.campos.some((campo) => !campoEstaCompleto(form._id, campo))
   );
+  const formulariosSinDocumento = formularios.filter((form) => !formTieneDocumento(form._id));
 
   const recargarRespuestas = async (formsOverride?: FormularioPDI[]) => {
     const formsToLoad = formsOverride ?? formularios;
@@ -227,9 +257,20 @@ export default function SubirEvidenciasPage() {
         const resp: RespuestaFormulario | null = res.data[0] ?? null;
         respMap[f._id] = resp;
         if (resp) {
+          const otroMap: Record<string, string> = {};
           resp.respuestas.forEach((r) => {
-            if (r.tipo === "texto_largo") textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+            if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
+              textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
+            } else if (r.tipo === "select_con_otro" && r.valor_texto) {
+              if (r.valor_texto.startsWith("Otro: ")) {
+                textMap[`${f._id}-${r.campo_id}`] = "Otro";
+                otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+              } else {
+                textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+              }
+            }
           });
+          setOtrosTextos(prev => ({ ...prev, ...otroMap }));
         }
       } catch {
         respMap[f._id] = null;
@@ -248,31 +289,45 @@ export default function SubirEvidenciasPage() {
     const fechaEnvio = new Date().toISOString();
     const periodosPayload = (indicador.periodos ?? []).map((p: Periodo) => {
       const val = parseAvance(avancesStr[p.periodo] ?? "");
+      const editable = esPeriodoEditable(p.periodo, cortesVigentes);
+      const seEnvia = modo === "enviar" && editable;
       return {
         periodo: p.periodo, meta: p.meta,
         presupuesto_ejecutado: p.presupuesto_ejecutado ?? 0,
-        avance: val === 0 && !esPeriodoEditable(p.periodo, cortesVigentes) ? null : val,
+        avance: val === 0 && !editable ? null : val,
         resultados_alcanzados: p.resultados_alcanzados ?? "",
         logros: p.logros ?? "", alertas: p.alertas ?? "",
         justificacion_retrasos: p.justificacion_retrasos ?? "",
-        estado_reporte: modo === "enviar" ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
-        fecha_envio: modo === "enviar" ? fechaEnvio : (p.fecha_envio ?? null),
-        reportado_por: modo === "enviar" ? email : (p.reportado_por ?? ""),
+        estado_reporte: seEnvia ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
+        fecha_envio: seEnvia ? fechaEnvio : (p.fecha_envio ?? null),
+        reportado_por: seEnvia ? email : (p.reportado_por ?? ""),
       };
     });
     const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
       periodos: periodosPayload,
       accion_id: typeof indicador.accion_id === "string"
         ? indicador.accion_id : (indicador.accion_id as any)._id,
+      modificado_por: email,
     });
     setIndicador(res.data);
   };
 
   // ── Guardar respuesta formulario ──────────────────────────────────────────
+  const buildValorTexto = (form: FormularioPDI, c: CampoFormulario): string => {
+    if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
+    if (c.tipo === "select") return getTexto(form._id, c._id);
+    if (c.tipo === "select_con_otro") {
+      const sel = getTexto(form._id, c._id);
+      return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+    }
+    if (c.tipo === "checkbox") return getTexto(form._id, c._id) || "false";
+    return "";
+  };
+
   const guardarFormulario = async (form: FormularioPDI, enviar: boolean) => {
     const respuestasPayload = form.campos.map(c => ({
       campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
-      valor_texto: c.tipo === "texto_largo" ? getTexto(form._id, c._id) : "",
+      valor_texto: buildValorTexto(form, c),
       nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
       filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
       url: getRespuestaCampo(form._id, c._id)?.url ?? "",
@@ -357,6 +412,81 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
+  const handleUploadDocumento = async (form: FormularioPDI, file: File | null) => {
+    if (!file) return;
+    let respActual = respuestas[form._id];
+    if (!respActual) {
+      try {
+        const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
+          respondido_por: email,
+          corte: corteActivo,
+          indicador_id: indicadorId,
+          respuestas: form.campos.map(c => ({
+            campo_id: c._id,
+            etiqueta: c.etiqueta,
+            tipo: c.tipo,
+            valor_texto: "",
+            nombre_original: "",
+            filename: "",
+            url: "",
+          })),
+          estado: "Borrador",
+        });
+        respActual = res.data;
+        setRespuestas(prev => ({ ...prev, [form._id]: res.data }));
+      } catch {
+        showNotification({ title: "Error", message: "No se pudo preparar la respuesta", color: "red" });
+        return;
+      }
+    }
+
+    setUploadingDocumento(prev => ({ ...prev, [form._id]: true }));
+    try {
+      const fd = new FormData();
+      fd.append("archivo", file);
+      const res = await axios.post(
+        PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      setRespuestas(prev => {
+        const actual = prev[form._id] ?? respActual;
+        if (!actual) return prev;
+        return { ...prev, [form._id]: { ...actual, ...res.data } };
+      });
+      showNotification({ title: "Subido", message: "Evidencia adjuntada correctamente", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "Solo se permiten archivos Word o PDF", color: "red" });
+    } finally {
+      setUploadingDocumento(prev => ({ ...prev, [form._id]: false }));
+    }
+  };
+
+  const handleDeleteDocumento = async (form: FormularioPDI) => {
+    const resp = respuestas[form._id];
+    if (!resp) return;
+    try {
+      await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id));
+      setRespuestas(prev => {
+        const actual = prev[form._id];
+        if (!actual) return prev;
+        return {
+          ...prev,
+          [form._id]: {
+            ...actual,
+            documento_filename: "",
+            documento_url: "",
+            documento_nombre_original: "",
+            documento_mimetype: "",
+          },
+        };
+      });
+      showNotification({ title: "Eliminado", message: "Evidencia eliminada", color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo eliminar la evidencia", color: "red" });
+    }
+  };
+
   const handleGuardarBorrador = async () => {
     setSavingDraft(true);
     try {
@@ -380,6 +510,9 @@ export default function SubirEvidenciasPage() {
       }
       if (formulariosIncompletos.length > 0) {
         errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
+      }
+      if (formulariosSinDocumento.length > 0) {
+        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -434,10 +567,12 @@ export default function SubirEvidenciasPage() {
   const hayPeriodosEditables = indicador.periodos.some((p: Periodo) =>
     esPeriodoEditable(p.periodo, cortesVigentes)
   );
+  
   const puedeEnviarTodo =
     hayPeriodosEditables &&
     periodosEditablesSinAvance.length === 0 &&
-    formulariosIncompletos.length === 0;
+    formulariosIncompletos.length === 0 &&
+    formulariosSinDocumento.length === 0;
   const bloqueado = todosEnviados && !tieneFormulariosRechazados;
 
   return (
@@ -481,7 +616,6 @@ export default function SubirEvidenciasPage() {
                 {[
                   { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                  { label: "Cálculo", value: (indicador.tipo_calculo ?? "—").replace(/_/g, " ") },
                   { label: "Avance actual", value: `${avanceActual}%` },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
@@ -603,6 +737,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
+            {(corteActivo && periodoActivo) && (<>
             <Divider />
 
             {/* Formulario de evidencias */}
@@ -653,7 +788,8 @@ export default function SubirEvidenciasPage() {
                             ? "En revisión"
                             : null;
                     return (
-                      <Paper key={form._id} withBorder radius="xl" p="lg"
+                      <Stack key={form._id} gap="sm">
+                        <Paper withBorder radius="xl" p="lg"
                         style={{
                           borderLeft: `4px solid ${
                             estadoAval === "Rechazado"
@@ -743,33 +879,121 @@ export default function SubirEvidenciasPage() {
                                   Descargar Word aprobado
                                 </Button>
                               )}
+                              {estadoAval === "Aprobado" && resp.documento_url && (
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="violet"
+                                  component="a"
+                                  href={resp.documento_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ alignSelf: "flex-start" }}
+                                >
+                                  Ver evidencia aprobada
+                                </Button>
+                              )}
                             </Stack>
                           </Paper>
                         )}
                         <Stack gap="sm">
                           {form.campos.map(campo => {
+                            if (!shouldShowCampo(campo)) return null;
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
+                            const maxChars = campo.max_caracteres ?? null;
+                            const currentLen = getTexto(form._id, campo._id).length;
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
                                 style={{ background: bloqueado ? "rgba(248,250,252,0.8)" : "#fff" }}>
-                                <Group gap={6} mb={6}>
-                                  <Text size="sm" fw={700}>{campo.etiqueta}</Text>
-                                  {campo.requerido && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
-                                </Group>
-                                {campo.descripcion && (
-                                  <Text size="xs" c="dimmed" mb={8}>{campo.descripcion}</Text>
+                                {campo.tipo !== "checkbox" && (
+                                  <>
+                                    <Group gap={6} mb={6}>
+                                      <Text size="sm" fw={700}>{campo.etiqueta}</Text>
+                                      {campo.requerido && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
+                                    </Group>
+                                    {campo.descripcion && (
+                                      <Text size="xs" c="dimmed" mb={8}>{campo.descripcion}</Text>
+                                    )}
+                                  </>
                                 )}
-                                {campo.tipo === "texto_largo" ? (
-                                  <Textarea
+
+                                {campo.tipo === "texto_largo" && (
+                                  <Stack gap={4}>
+                                    <Textarea
+                                      placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                      value={getTexto(form._id, campo._id)}
+                                      onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                      rows={4} disabled={bloqueado} autosize minRows={3}
+                                      maxLength={maxChars ?? undefined}
+                                    />
+                                    {maxChars && (
+                                      <Text size="xs" ta="right"
+                                        c={currentLen >= maxChars ? "red" : currentLen > maxChars * 0.9 ? "orange" : "dimmed"}>
+                                        {currentLen} / {maxChars}
+                                      </Text>
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "texto_corto" && (
+                                  <TextInput
                                     placeholder={bloqueado ? "" : "Escribe aquí..."}
                                     value={getTexto(form._id, campo._id)}
                                     onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                    rows={4}
                                     disabled={bloqueado}
-                                    autosize
-                                    minRows={3}
+                                    maxLength={maxChars ?? undefined}
                                   />
-                                ) : (
+                                )}
+
+                                {campo.tipo === "select" && (
+                                  <Select
+                                    placeholder="Selecciona una opción..."
+                                    value={getTexto(form._id, campo._id) || null}
+                                    onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
+                                    data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                    disabled={bloqueado} clearable
+                                  />
+                                )}
+
+                                {campo.tipo === "select_con_otro" && (
+                                  <Stack gap={6}>
+                                    <Select
+                                      placeholder="Selecciona una opción..."
+                                      value={getTexto(form._id, campo._id) || null}
+                                      onChange={v => {
+                                        if (!bloqueado) {
+                                          setTexto(form._id, campo._id, v ?? "");
+                                          if (v !== "Otro") setOtroTexto(form._id, campo._id, "");
+                                        }
+                                      }}
+                                      data={[
+                                        ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                                        { value: "Otro", label: "Otro ¿Cuál?" },
+                                      ]}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {getTexto(form._id, campo._id) === "Otro" && (
+                                      <TextInput
+                                        placeholder="Especifica..."
+                                        value={getOtroTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                      />
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "checkbox" && (
+                                  <Checkbox
+                                    label={campo.etiqueta}
+                                    description={campo.descripcion}
+                                    checked={getTexto(form._id, campo._id) === "true"}
+                                    onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.checked ? "true" : "false")}
+                                    disabled={bloqueado}
+                                  />
+                                )}
+
+                                {campo.tipo === "archivo_pdf" && (
                                   <Group gap={8}>
                                     {archivoCampo?.url ? (
                                       <Group gap={6}>
@@ -806,6 +1030,87 @@ export default function SubirEvidenciasPage() {
                           })}
                         </Stack>
                       </Paper>
+
+                      <div>
+                        <Group gap={8} mb="md">
+                          <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+                            <IconUpload size={16} />
+                          </ThemeIcon>
+                          <div>
+                            <Title order={5}>Evidencias</Title>
+                            <Text size="xs" c="dimmed">Archivo Word o PDF para revisión</Text>
+                          </div>
+                        </Group>
+                        <Paper
+                          withBorder
+                          radius="xl"
+                          p="lg"
+                          style={{ background: "rgba(124,58,237,0.04)", borderColor: "#ede9fe" }}
+                        >
+                          <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
+                            <div>
+                              <Group gap={6} mb={4}>
+                                <ThemeIcon size={24} radius="xl" color="violet" variant="light">
+                                  <IconUpload size={13} />
+                                </ThemeIcon>
+                                <Text size="sm" fw={700}>Archivo de evidencias</Text>
+                                <Badge size="xs" color="red" variant="dot">Requerido</Badge>
+                              </Group>
+                              <Text size="xs" c="dimmed">
+                                Adjunta un archivo PDF o Word para que el lider lo revise con el formulario.
+                              </Text>
+                            </div>
+
+                            {resp?.documento_url ? (
+                              <Group gap={8}>
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="violet"
+                                  component="a"
+                                  href={resp.documento_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  leftSection={<IconExternalLink size={13} />}
+                                >
+                                  {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
+                                </Button>
+                                {!bloqueado && (
+                                  <ActionIcon
+                                    size="sm"
+                                    variant="subtle"
+                                    color="red"
+                                    onClick={() => handleDeleteDocumento(form)}
+                                  >
+                                    <IconTrash size={13} />
+                                  </ActionIcon>
+                                )}
+                              </Group>
+                            ) : !bloqueado ? (
+                              <FileButton
+                                onChange={file => handleUploadDocumento(form, file)}
+                                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                              >
+                                {props => (
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="violet"
+                                    loading={uploadingDocumento[form._id]}
+                                    leftSection={<IconUpload size={13} />}
+                                    {...props}
+                                  >
+                                    Subir Word/PDF
+                                  </Button>
+                                )}
+                              </FileButton>
+                            ) : (
+                              <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
+                            )}
+                          </Group>
+                        </Paper>
+                      </div>
+                    </Stack>
                     );
                   })}
                 </Stack>
@@ -835,7 +1140,7 @@ export default function SubirEvidenciasPage() {
                     style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
                   >
                     <Text size="sm" c="red" fw={600}>
-                      Debes diligenciar el avance del corte activo y completar todos los campos obligatorios del formulario antes de enviar.
+                      Debes diligenciar el avance del corte activo, completar los campos obligatorios y adjuntar la evidencia Word o PDF antes de enviar.
                     </Text>
                   </Paper>
                 )}
@@ -863,6 +1168,7 @@ export default function SubirEvidenciasPage() {
                 </Group>
               </Paper>
             )}
+            </>)}
 
           </Stack>
         </Container>

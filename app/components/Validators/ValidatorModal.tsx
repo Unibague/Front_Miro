@@ -17,6 +17,7 @@ interface ValidatorModalProps {
   opened: boolean;
   onClose: () => void;
   validatorId: string;
+  periodId?: string;
   onCopy: (value: string, description?: string) => void;
 }
 
@@ -25,7 +26,7 @@ interface ValidatorData {
   columns: { name: string; is_validator: boolean; values: any[] }[];
 }
 
-export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: ValidatorModalProps) => {
+export const ValidatorModal = ({ opened, onClose, validatorId, periodId, onCopy }: ValidatorModalProps) => {
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -38,7 +39,9 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
       }
       
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+          params: { id: validatorId, periodId },
+        });
         setValidatorData(response.data.validator);
       } catch (error) {
         console.error('Error en fetchValidatorData:', error);
@@ -53,7 +56,7 @@ export const ValidatorModal = ({ opened, onClose, validatorId, onCopy }: Validat
     if (validatorId && validatorId !== 'undefined' && validatorId.trim() !== '') {
       fetchValidatorData();
     }
-  }, [validatorId]);
+  }, [validatorId, periodId]);
 
   const handleCopy = (value: string, description?: string) => {
     console.log('handleCopy ejecutado con valor:', value, 'descripción:', description);

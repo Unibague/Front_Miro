@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Pagination, Center, TextInput, Group } from "@mantine/core";
+import { Container, Table, Button, Pagination, Center, TextInput, Group, ActionIcon, Tooltip } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconEdit, IconTrash, IconCirclePlus, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconCirclePlus, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconArrowLeft } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useDisclosure } from '@mantine/hooks';
+import { useSession } from "next-auth/react";
 import { useSort } from "../../hooks/useSort";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Validation {
   _id: string;
@@ -26,13 +28,15 @@ const AdminValidationsPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const router = useRouter();
+  const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
   const { sortedItems: sortedValidations, handleSort, sortConfig } = useSort<Validation>(validations, { key: null, direction: "asc" });
 
 
   const fetchValidations = async (page: number, search: string) => {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/pagination`, {
-        params: { page, limit: 10, search },
+        params: { page, limit: 10, search, periodId: selectedPeriodId },
       });
       if (response.data) {
         setValidations(response.data.validators || []);
@@ -45,21 +49,23 @@ const AdminValidationsPage = () => {
   };
 
   useEffect(() => {
+    if (!selectedPeriodId) return;
     fetchValidations(page, search);
-  }, [page]);
+  }, [page, selectedPeriodId]);
 
   useEffect(() => {
+    if (!selectedPeriodId) return;
     const delayDebounceFn = setTimeout(() => {
       fetchValidations(page, search);
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search]);
+  }, [search, selectedPeriodId]);
 
   const handleDelete = async (id: string) => {
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/validators/delete`, {
-        data: { id } 
+        data: { id, periodId: selectedPeriodId, email: session?.user?.email }
       });
       showNotification({
         title: "Eliminado",
@@ -108,6 +114,17 @@ const AdminValidationsPage = () => {
         mb="md"
       />
       <Group mb="md">
+        <Tooltip label="Volver" withArrow>
+          <ActionIcon
+            variant="subtle"
+            color="blue"
+            size="lg"
+            onClick={() => router.back()}
+            aria-label="Volver"
+          >
+            <IconArrowLeft size={18} />
+          </ActionIcon>
+        </Tooltip>
         <Button onClick={() => router.push('/admin/validations/create')} leftSection={<IconCirclePlus/>}>
           Crear Nueva Validación
         </Button>

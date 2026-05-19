@@ -46,6 +46,9 @@ interface Template {
 interface PublishedTemplateResponse {
   name: string;
   template: Template;
+  publishedTemplate?: {
+    period?: string | { _id: string };
+  };
 }
 
 interface ValidatorData {
@@ -73,6 +76,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
   const [displayValues, setDisplayValues] = useState<Record<string, Record<string, string>>>({});
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
+  const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
 
   const fetchTemplate = async () => {
     try {
@@ -81,6 +85,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       );
       setPublishedTemplateName(response.data.name);
       setTemplate(response.data.template);
+      const periodId =
+        typeof response.data.publishedTemplate?.period === "string"
+          ? response.data.publishedTemplate.period
+          : response.data.publishedTemplate?.period?._id || "";
+      setTemplatePeriodId(periodId);
 
       const validatorCheckPromises = response.data.template.fields.map(async (field) => {
         if (field.validate_with) {
@@ -94,7 +103,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             }
             
             if (validatorId) {
-              const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
+              const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+                params: { id: validatorId, periodId },
+              });
               return { [field.name]: !!validatorResponse.data.validator };
             }
           } catch {
@@ -131,7 +142,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             return { fieldName: field.name, options: [], isMultiple: field.multiple };
           }
           
-          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
+          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+            params: { id: validatorId, periodId },
+          });
           const validatorData = validatorResponse.data.validator;
           
           // Buscar columna de valores y columna de descripciones
@@ -253,7 +266,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
     console.log('handleValidatorOpen - validatorId:', validatorId, 'rowIndex:', rowIndex, 'fieldName:', fieldName);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id?id=${validatorId}`);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+        params: { id: validatorId, periodId: templatePeriodId },
+      });
       setValidatorData(response.data.validator);
       setCurrentValidatorId(validatorId);
       setActiveRowIndex(rowIndex);
@@ -674,6 +689,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           setCurrentValidatorId("");
         }}
         validatorId={currentValidatorId}
+        periodId={templatePeriodId}
         onCopy={(value: string, description?: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
             const updatedRows = [...rows];

@@ -6,8 +6,6 @@ import Navbar from "./components/navbar/Navbar";
 import Footer from "./components/footer/Footer";
 import ProtectedRoutes from "./utils/ProtectedRoutes";
 import AffixButton from "./components/Affix/AffixButton";
-import GoBackButton from "./components/GoBackButton/GoBackButton";
-
 interface ClientLayoutProps {
   children: React.ReactNode;
 }
@@ -20,7 +18,6 @@ const ClientLayout = ({ children }: ClientLayoutProps) => {
   return (
     <>
       {!isSignInPage && <Navbar />}
-      <GoBackButton />
       <AffixButton/>
       <ProtectedRoutes>{children}</ProtectedRoutes>
       {!isSignInPage && <Footer />}

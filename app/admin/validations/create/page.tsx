@@ -25,6 +25,7 @@ import axios from "axios";
 import styles from './AdminValidationCreatePage.module.css';
 import '@mantine/dropzone/styles.css';
 import dynamic from "next/dynamic";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 const ValidationDropzone = dynamic(
   () => import("@/app/components/ValidationDropzone/ValidationDropzone").then(mod => mod.ValidationDropzone),
@@ -49,6 +50,7 @@ const AdminValidationCreatePage = () => {
   const [isFormValid, setIsFormValid] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
+  const { selectedPeriodId } = usePeriod();
 
   const handleFileProcessed = (data: any[]) => {
     const processedColumns = data.map((column) => {
@@ -143,6 +145,15 @@ const AdminValidationCreatePage = () => {
       setShowTooltip(true);
       return;
     }
+
+    if (!selectedPeriodId) {
+      showNotification({
+        title: "Periodo requerido",
+        message: "Selecciona un periodo antes de crear la validación",
+        color: "orange",
+      });
+      return;
+    }
     
     const columnsToSave = columns.map(column => ({
       ...column,
@@ -153,6 +164,7 @@ const AdminValidationCreatePage = () => {
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/validators/create`, {
         name,
         columns: columnsToSave,
+        periodId: selectedPeriodId,
       });
       showNotification({
         title: "Validación creada",

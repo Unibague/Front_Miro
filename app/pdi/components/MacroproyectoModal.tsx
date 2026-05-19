@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack, Autocomplete } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack, Autocomplete, NumberInput } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import type { Macroproyecto } from "../types";
 import { PDI_ROUTES } from "../api";
+import { usePdiConfig } from "../hooks/usePdiConfig";
 
 interface Props {
   opened: boolean;
@@ -14,16 +15,15 @@ interface Props {
   onSaved: (doc: Macroproyecto) => void;
 }
 
-const toNum = (v: string) => Number(v.replace(',', '.'));
-
 export default function MacroproyectoModal({ opened, onClose, selected, onSaved }: Props) {
-  const [codigo, setCodigo]         = useState("");
-  const [nombre, setNombre]         = useState("");
-  const [lider, setLider]           = useState("");
-  const [liderEmail, setLiderEmail] = useState("");
-  const [usuarios, setUsuarios]     = useState<{ name: string; email: string }[]>([]);
-  const [peso, setPeso]             = useState("");
-  const [loading, setLoading]       = useState(false);
+  const { config } = usePdiConfig();
+  const [codigo, setCodigo]               = useState("");
+  const [nombre, setNombre]               = useState("");
+  const [lider, setLider]                 = useState("");
+  const [liderEmail, setLiderEmail]       = useState("");
+  const [numProyectos, setNumProyectos]   = useState<number | string>(0);
+  const [usuarios, setUsuarios]           = useState<{ name: string; email: string }[]>([]);
+  const [loading, setLoading]             = useState(false);
 
   useEffect(() => {
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
@@ -51,9 +51,9 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
       setNombre(selected.nombre);
       setLider(selected.lider ?? "");
       setLiderEmail(selected.lider_email ?? "");
-      setPeso(String(selected.peso));
+      setNumProyectos(selected.num_proyectos ?? 0);
     } else {
-      setCodigo(""); setNombre(""); setLider(""); setLiderEmail(""); setPeso("");
+      setCodigo(""); setNombre(""); setLider(""); setLiderEmail(""); setNumProyectos(0);
     }
   }, [opened]);
 
@@ -64,6 +64,10 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     else setLiderEmail("");
   };
 
+  const pesoAuto = selected
+    ? selected.peso
+    : (config.num_macroproyectos > 0 ? parseFloat((100 / config.num_macroproyectos).toFixed(6)) : 0);
+
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim()) {
       showNotification({ title: "Error", message: "Código y nombre son requeridos", color: "red" });
@@ -72,11 +76,12 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     setLoading(true);
     try {
       const payload = {
-        codigo:      codigo.trim(),
-        nombre:      nombre.trim(),
-        lider:       lider.trim(),
-        lider_email: liderEmail.trim().toLowerCase(),
-        peso:        toNum(peso),
+        codigo:        codigo.trim(),
+        nombre:        nombre.trim(),
+        lider:         lider.trim(),
+        lider_email:   liderEmail.trim().toLowerCase(),
+        peso:          pesoAuto,
+        num_proyectos: Number(numProyectos) || 0,
       };
       const res = selected
         ? await axios.put(PDI_ROUTES.macroproyecto(selected._id), payload)
@@ -107,7 +112,16 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
         {liderEmail && (
           <TextInput label="Email del líder" value={liderEmail} readOnly styles={{ input: { color: "gray" } }} />
         )}
-        <TextInput label="Peso (%)" placeholder="Ej: 33,33" value={peso} onChange={(e) => setPeso(e.currentTarget.value)} />
+        <NumberInput
+          label="Número de proyectos"
+          description="El peso de cada proyecto se calculará como 100 / n"
+          placeholder="Ej: 3"
+          value={numProyectos}
+          onChange={setNumProyectos}
+          min={0}
+          step={1}
+          allowDecimal={false}
+        />
         <Group justify="flex-end" mt="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
           <Button loading={loading} onClick={handleSave}>Guardar</Button>

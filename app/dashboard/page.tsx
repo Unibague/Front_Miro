@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -40,6 +40,7 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showResponsibleScopeCards = false;
+  const showSupportTemplatesModule = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
@@ -51,7 +52,7 @@ const DashboardPage = () => {
     }
   }, [searchParams, router]);
 
-  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" =
+  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" | "configuracion" =
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
       : pathname === "/snies"
@@ -60,7 +61,9 @@ const DashboardPage = () => {
           ? "cna"
           : pathname === "/pdi"
             ? "pdi"
-            : "home";
+            : pathname === "/configuracion"
+              ? "configuracion"
+              : "home";
 
   const shouldRedirectFromDashboardHome =
     pathname === "/dashboard" &&
@@ -590,20 +593,6 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-users">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconUserHexagon size={80}></IconUserHexagon></Center>
-              <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestionar Usuarios</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra los roles y permisos de los usuarios.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/users')}>
-                Ir a Gestión de Usuarios
-              </Button>
-            </Card>
-            </Grid.Col>,
               <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-logs">
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Center><IconFilesOff size={80}/></Center>
@@ -615,20 +604,6 @@ const DashboardPage = () => {
                 </Text>
                 <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/logs')}>
                   Ir a los registros de error
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-homeSettings">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconHomeCog size={80}/></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Ajustes Pagina Inicial</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Ajusta la información de la pagina de inicio.
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/homeSettings')}>
-                  Ir a los ajustes de inicio
                 </Button>
               </Card>
             </Grid.Col>,
@@ -1097,6 +1072,73 @@ const DashboardPage = () => {
     );
   };
 
+  const renderConfigurationCards = () => {
+    if (userRole !== "Administrador") {
+      return (
+        <Grid.Col span={12}>
+          <Center>
+            <Text c="dimmed">No tienes permisos para este modulo.</Text>
+          </Center>
+        </Grid.Col>
+      );
+    }
+
+    return (
+      <>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/users")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconUserHexagon size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta="center" w={500}>Gestionar Usuarios</Text>
+            </Group>
+            <Text ta="center" size="sm" color="dimmed">
+              Administra los roles y permisos de los usuarios.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/admin/users")}>
+              Ir a Gestión de Usuarios
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconShield size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta="center" w={500}>Gestionar perfiles</Text>
+            </Group>
+            <Text ta="center" size="sm" color="dimmed">
+              Define qué vistas puede consultar o administrar cada perfil del sistema.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/configuracion/perfiles")}>
+              Ir a Gestion de Perfiles
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/homeSettings")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconHomeCog size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta="center" w={500}>Ajustes Pagina Inicial</Text>
+            </Group>
+            <Text ta="center" size="sm" color="dimmed">
+              Ajusta la información de la pagina de inicio.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/admin/homeSettings")}>
+              Ir a los ajustes de inicio
+            </Button>
+          </Card>
+        </Grid.Col>
+      </>
+    );
+  };
+
   if (shouldRedirectFromDashboardHome || shouldWaitDashboardRedirect) {
     return (
       <Container size="xl" py="xl">
@@ -1196,6 +1238,41 @@ const DashboardPage = () => {
                 </Stack>
               </Card>
             </Grid.Col>
+
+            {showSupportTemplatesModule && userRole === "Administrador" && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push("/apoyos-plantillas")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #0e3a4a 0%, #168aad 100%)",
+                    boxShadow: "0 18px 45px rgba(14, 58, 74, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconClipboardData size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Cruce de apoyos
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        Plantillas con datos SIGA/Iceberg.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="cyan" radius="xl">
+                      Abrir modulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
 
             {userRole !== "Responsable" && (
               <>
@@ -1336,10 +1413,55 @@ const DashboardPage = () => {
                 </Card>
               </Grid.Col>
             )}
+
+            {userRole === "Administrador" && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push("/configuracion")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #263238 0%, #546e7a 100%)",
+                    boxShadow: "0 18px 45px rgba(38, 50, 56, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconHomeCog size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Configuracion
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        Perfiles y permisos de vistas.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="gray" radius="xl">
+                      Abrir modulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {avRcOpen ? renderAvRcCards() : activeModule === "reports" ? renderCards() : activeModule === "snies" ? renderSniesCards() : activeModule === "pdi" ? null : renderCnaCards()}
+            {avRcOpen
+              ? renderAvRcCards()
+              : activeModule === "reports"
+              ? renderCards()
+              : activeModule === "snies"
+              ? renderSniesCards()
+              : activeModule === "configuracion"
+              ? renderConfigurationCards()
+              : activeModule === "pdi"
+              ? null
+              : renderCnaCards()}
           </Grid>
         )}
         </Stack>

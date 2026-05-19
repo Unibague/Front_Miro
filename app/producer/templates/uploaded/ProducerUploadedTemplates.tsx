@@ -38,7 +38,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils"; 
+import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils"; 
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -200,8 +200,6 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     const { template, validators } = publishedTemplate;
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
     // Campos de tipo fecha para formatear correctamente
     const dateFields = new Set(
       template.fields
@@ -468,7 +466,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
           const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
           const promptBase = normalizedComment.slice(0, 220);
           const promptText = normalizedComment.length > 220
-            ? `${promptBase}... (ver hoja Guía)`
+            ? `${promptBase}...`
             : promptBase;
           cell.dataValidation = {
             ...cell.dataValidation,

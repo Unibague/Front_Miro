@@ -10,6 +10,7 @@ import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange } from "@/app/utils/auditUtils";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Field {
   name: string;
@@ -66,6 +67,7 @@ const CreateTemplatePage = () => {
   const router = useRouter();
   const { data: session } = useSession();
   const { userRole } = useRole();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
     const fetchDimensions = async () => {
@@ -107,7 +109,8 @@ const CreateTemplatePage = () => {
     const fetchValidatorOptions = async () => {
       try {
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/validators/options`
+          `${process.env.NEXT_PUBLIC_API_URL}/validators/options`,
+          { params: { periodId: selectedPeriodId } }
         );
         setValidatorOptions(response.data.options);
       } catch (error) {
@@ -125,7 +128,7 @@ const CreateTemplatePage = () => {
       fetchDependencies();
       fetchValidatorOptions();
     }
-  }, [session, userRole]);
+  }, [session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
     const updatedFields = [...fields];
