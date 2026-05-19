@@ -1,19 +1,11 @@
 /** Replica la lógica de `Back_Miro/controllers/processes.js` (calcularFechas) para vista previa en el cliente. */
+import { siguienteDiaHabil } from "./diasHabilesColombia";
 
 function sumarMeses(fechaStr: string, meses: number): string | null {
   if (!fechaStr || meses == null) return null;
   const d = new Date(`${fechaStr}T12:00:00`);
   if (Number.isNaN(d.getTime())) return null;
   d.setMonth(d.getMonth() + meses);
-  return d.toISOString().split("T")[0];
-}
-
-function siguienteDiaHabil(fechaStr: string | null): string | null {
-  if (!fechaStr) return null;
-  const d = new Date(`${fechaStr}T12:00:00`);
-  const dow = d.getDay();
-  if (dow === 6) d.setDate(d.getDate() + 2);
-  if (dow === 0) d.setDate(d.getDate() + 1);
   return d.toISOString().split("T")[0];
 }
 

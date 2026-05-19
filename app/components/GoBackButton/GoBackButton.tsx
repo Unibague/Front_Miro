@@ -3,16 +3,23 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
-import { ActionIcon, Tooltip } from "@mantine/core";
+import { Button } from "@mantine/core";
 import { IconArrowLeft } from "@tabler/icons-react";
+import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
 
 const GoBackButton = () => {
   const router = useRouter();
   const pathname = usePathname();
 
   if (pathname === "/" || pathname === "/dashboard") return null;
+  /* En processes-MEN el botón vive en el Navbar */
+  if (isProcessesMenOrLegacyPath(pathname)) return null;
   if (pathname?.startsWith("/date-review")) return null;
   if (pathname?.startsWith("/pdi")) return null;
+
+  const handleVolver = () => {
+    router.back();
+  };
 
   return (
     <div
@@ -21,18 +28,18 @@ const GoBackButton = () => {
         top: 63,
         left: 16,
         zIndex: 1000,
+        backdropFilter: "blur(10px)",
       }}
     >
-      <Tooltip label="Volver" withArrow position="right">
-        <ActionIcon
-          onClick={() => router.back()}
-          variant="light"
-          color="blue"
-          size="lg"
-        >
-          <IconArrowLeft size={18} />
-        </ActionIcon>
-      </Tooltip>
+      <Button
+        onClick={handleVolver}
+        variant="light"
+        color="blue"
+        size="sm"
+        leftSection={<IconArrowLeft size={16} />}
+      >
+        Volver
+      </Button>
     </div>
   );
 };

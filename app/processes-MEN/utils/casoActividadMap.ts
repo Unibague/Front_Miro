@@ -23,12 +23,20 @@ const F5_ACT: Record<string, CasoFechaKey> = {
   [norm("Acto administrativo")]: "fecha_resolucion",
 };
 
+/** Fase 4 + subactividad (plantilla actual sin subs; listo por si se añaden). */
+const F4_SUB: Record<string, CasoFechaKey> = {};
+
 /** Fase 5 + subactividad */
 const F5_SUB: Record<string, CasoFechaKey> = {
+  // Acto administrativo — notificación MEN (satisfactorio o no): ambas llenan fecha_resolucion
+  [norm("Notificación del acto administrativo satisfactorio por parte del MEN")]:    "fecha_resolucion",
+  [norm("Notificación del acto administrativo no satisfactorio por parte del MEN")]: "fecha_resolucion",
+  // Flujo de completitud
   [norm("Notificación de solicitud de completitud por parte del MEN")]: "fecha_notificacion_completitud",
-  [norm("Elaboración de respuesta de la completitud")]: "fecha_respuesta_completitud",
+  [norm("Elaboración de respuesta de la completitud")]:                 "fecha_respuesta_completitud",
+  // Recurso de reposición
   [norm("Radicación del recurso de reposición en plataforma del MEN")]: "fecha_resolucion_apelacion",
-  [norm("Notificación de respuesta del MEN")]: "fecha_respuesta_men",
+  [norm("Notificación de respuesta del MEN")]:                          "fecha_respuesta_men",
 };
 
 export function getCasoFechaKeyForActividad(faseNumero: number, nombre: string): CasoFechaKey | null {
@@ -44,8 +52,10 @@ export function getCasoFechaKeyForActividad(faseNumero: number, nombre: string):
 }
 
 export function getCasoFechaKeyForSubactividad(faseNumero: number, nombre: string): CasoFechaKey | null {
+  const n = norm(nombre);
+  if (faseNumero === 4) return F4_SUB[n] ?? null;
   if (faseNumero !== 5) return null;
-  return F5_SUB[norm(nombre)] ?? null;
+  return F5_SUB[n] ?? null;
 }
 
 export function findActividadByCasoKey(
