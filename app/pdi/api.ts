@@ -54,6 +54,9 @@ export const PDI_ROUTES = {
   config:                          () => `${BASE()}/pdi/config`,
   configRedistribuir:              () => `${BASE()}/pdi/config/redistribuir-pesos`,
 
+  // Presupuesto desde Google Sheets
+  presupuestoData:                 (refresh?: boolean) => `${BASE()}/pdi/presupuesto/data${refresh ? "?refresh=true" : ""}`,
+
   // Informes consolidados (admin)
   informesLista:                   () => `${BASE()}/pdi/informes/lista`,
   informesCortes:                  () => `${BASE()}/pdi/informes/cortes`,

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActionIcon,
   Container,
   Grid,
   Text,
@@ -19,9 +20,10 @@ import {
   Tooltip,
 } from '@mantine/core';
 import axios from 'axios';
-import { IconBulb, IconClipboardCheck, IconCopy } from '@tabler/icons-react';
+import { IconArrowLeft, IconBulb, IconClipboardCheck, IconCopy } from '@tabler/icons-react';
 import { showNotification } from '@mantine/notifications';
 import { usePeriod } from '@/app/context/PeriodContext';
+import { useRouter } from 'next/navigation';
 
 interface Validator {
   _id: string;
@@ -38,6 +40,7 @@ interface Column {
 }
 
 const ValidationsPage = () => {
+  const router = useRouter();
   const [validators, setValidators] = useState<Validator[]>([]);
   const [selectedValidator, setSelectedValidator] = useState<Validator | null>(null);
   const [loading, setLoading] = useState(false);
@@ -119,6 +122,11 @@ const ValidationsPage = () => {
 
   return (
     <Container size="xl">
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Grid>
         <Grid.Col span={{ base: 12, md: 3 }}>
           <Box>

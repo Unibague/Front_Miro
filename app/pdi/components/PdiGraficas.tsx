@@ -598,7 +598,7 @@ export default function PdiGraficas() {
               />
               <StatCard
                 icon={<IconTrendingUp size={18} />}
-                title="Presupuesto ejecutado"
+                title="Presupuesto causado"
                 value={fmtCOP(budgetStats.ejecutado)}
                 sub={`${budgetStats.porcentaje_ejecucion}% del total`}
                 color={budgetStats.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
@@ -625,18 +625,18 @@ export default function PdiGraficas() {
       {budgetExecChartData.some((d) => d.gasto > 0 || d.inversion > 0) && (
         <Paper withBorder radius="xl" p="md">
           <Text size="md" fw={700} mb={2}>
-            Ejecución presupuestal — Gasto vs Inversión por {
+            Causado presupuestal — Gasto vs Inversión por {
               proyectoActual ? "acción estratégica" : !verTodos ? "proyecto" : "macroproyecto"
             }
           </Text>
-          <Text size="sm" c="dimmed" mb="sm">Monto ejecutado clasificado por tipo</Text>
+          <Text size="sm" c="dimmed" mb="sm">Monto causado clasificado por tipo</Text>
           <ResponsiveContainer width="100%" height={Math.max(220, budgetExecChartData.length * 38)}>
             <BarChart data={budgetExecChartData} margin={{ top: 10, right: 20, left: 10, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 12, fontWeight: 700 }} interval={0} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} />
               <ReTooltip
-                formatter={(v: any, name: any) => [fmtCOP(Number(v)), name === "gasto" ? "Gasto" : name === "inversion" ? "Inversión" : "Ejecutado"]}
+                formatter={(v: any, name: any) => [fmtCOP(Number(v)), name === "gasto" ? "Gasto" : name === "inversion" ? "Inversión" : "Causado"]}
                 labelFormatter={(label: any) => label}
               />
               <Bar dataKey="gasto" name="gasto" fill={BLUE} radius={[4, 4, 0, 0]} barSize={20}>

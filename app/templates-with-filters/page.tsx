@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -623,9 +624,14 @@ const TemplatesWithFiltersPage = () => {
           <DateConfig/>
           
           <Group justify="space-between" mb="md">
-            <Title ta="center">
-              Gestión de Plantillas con Filtros
-            </Title>
+            <Group gap={8}>
+              <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+                <IconArrowLeft size={20} />
+              </ActionIcon>
+              <Title ta="center">
+                Gestión de Plantillas con Filtros
+              </Title>
+            </Group>
             <Button 
               variant="outline"
               leftSection={<IconFilter size={16} />} 

@@ -502,7 +502,7 @@ export default function AdminReportsAmbitosPage() {
       <DateConfig />
 
       <Title mb="md" ta="center">
-        Configuracion Informes de ambitos
+        Configuración Informes de ambitos
       </Title>
 
       <Group mb="md">

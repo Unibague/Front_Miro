@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Modal } from "@mantine/core";
 import PQRActivosView from "./PQRActivosView";
@@ -13,7 +13,7 @@ interface Props {
   onCerrar: (id: string) => void;
 }
 
-/** @deprecated Prefer módulo Comunicaciones MEN en date-review (vista embebida). */
+/** @deprecated Prefer módulo Comunicaciones MEN en processes-MEN (vista embebida). */
 export default function PQRListModal({ opened, onClose, pqrs, programas, onUpdate, onCerrar }: Props) {
   return (
     <Modal opened={opened} onClose={onClose} title="PQR activos" size="95vw" radius="md" centered

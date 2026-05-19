@@ -25,6 +25,7 @@ import AccionModal from "./components/AccionModal";
 import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
 import PdiResumenSidebar from "./components/PdiResumenSidebar";
+import PdiPresupuesto from "./components/PdiPresupuesto";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 
 const formatCOP = (value: number) =>
@@ -852,7 +853,7 @@ export default function PdiPage() {
         });
       } else {
         showNotification({
-          title: "Ejecución importada",
+          title: "Causado importado",
           message: `${res.data.acciones_actualizadas} acción(es) actualizadas — ${res.data.macro_detectado?.nombre ?? "búsqueda global"}`,
           color: "teal",
         });
@@ -865,7 +866,7 @@ export default function PdiPage() {
         : "";
       showNotification({
         title: "Error al importar",
-        message: (errData?.error ?? "No se pudo procesar el archivo de ejecución") + extra,
+        message: (errData?.error ?? "No se pudo procesar el archivo de causado") + extra,
         color: "red",
         autoClose: 12000,
       });
@@ -1047,12 +1048,24 @@ export default function PdiPage() {
         </SimpleGrid>
       )}
 
+      {/* ── Presupuesto PDI desde Google Sheets ─────────────────────────── */}
+      {macros.length > 0 && (
+        <Paper withBorder radius="lg" p="md" mt="md"
+          style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.05), rgba(255,255,255,0.98) 58%)" }}>
+          <Text fw={700} mb={4}>Presupuesto PDI</Text>
+          <Text size="sm" c="dimmed" mb="md">
+            Presupuesto asignado y comprometido por proyectos.
+          </Text>
+          <PdiPresupuesto />
+        </Paper>
+      )}
+
       {admin && macros.length > 0 && (
         <Paper withBorder radius="lg" p="md" mt="md"
           style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(255,255,255,0.98) 58%)" }}>
           <Group justify="space-between" align="center" wrap="nowrap" gap="md">
             <div style={{ minWidth: 0 }}>
-              <Text fw={700}>Importar ejecución presupuestal</Text>
+              <Text fw={700}>Importar causado presupuestal</Text>
               <Text size="sm" c="dimmed" mt={2}>
                 El macroproyecto se identifica automáticamente desde el archivo Excel.
               </Text>
@@ -1073,7 +1086,7 @@ export default function PdiPage() {
                 loading={uploadingExecuted}
                 disabled={!executedFile}
                 onClick={handleImportExecuted}>
-                Importar ejecutado
+                Importar causado
               </Button>
             </Group>
           </Group>
@@ -1137,11 +1150,10 @@ export default function PdiPage() {
                             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                               <thead>
                                 <tr style={{ background: "#f8f9fa" }}>
-                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057" }}>Acción estratégica</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057", width: 100 }}>Código</th>
                                   <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#2563eb", width: 110 }}>Gasto</th>
                                   <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#7c3aed", width: 110 }}>Inversión</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total ejecutado</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#6b7280", width: 160 }}>Observación</th>
+                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total causado</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1149,10 +1161,10 @@ export default function PdiPage() {
                                   <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f9fafb" }}>
                                     <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", verticalAlign: "middle" }}>
                                       <Group gap={6} wrap="nowrap">
-                                        {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">Gasto</Badge>}
-                                        {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">Inversión</Badge>}
-                                        {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">Gasto + Inv.</Badge>}
-                                        <Text size="xs">{a.nombre ?? a.nombre_accion}</Text>
+                                        {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">G</Badge>}
+                                        {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">I</Badge>}
+                                        {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">G+I</Badge>}
+                                        <Text size="xs" fw={700}>{a.codigo_accion ?? a.codigo ?? (a.nombre ?? a.nombre_accion)}</Text>
                                       </Group>
                                     </td>
                                     <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400 }}>
@@ -1163,9 +1175,6 @@ export default function PdiPage() {
                                     </td>
                                     <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", fontWeight: 700 }}>
                                       {formatCOP(a.presupuesto_ejecutado)}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", color: "#6b7280", fontSize: 11 }}>
-                                      {a.observacion || "—"}
                                     </td>
                                   </tr>
                                 ))}
@@ -1185,7 +1194,7 @@ export default function PdiPage() {
                       <Text size="sm" fw={700} c="blue">Totales importados</Text>
                       <Text size="sm" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(r.totales_importados.gasto ?? 0)}</b></Text>
                       <Text size="sm" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(r.totales_importados.inversion ?? 0)}</b></Text>
-                      <Text size="sm" fw={700}>Total ejecutado: {formatCOP(r.totales_importados.presupuesto_ejecutado)}</Text>
+                      <Text size="sm" fw={700}>Total causado: {formatCOP(r.totales_importados.presupuesto_ejecutado)}</Text>
                     </Group>
                   </Paper>
                 )}

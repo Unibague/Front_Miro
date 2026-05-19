@@ -2,14 +2,17 @@
 
 import DependencyTree from "@/app/components/DependencyTree"; // Adjust the import path
 import Dependency from "@/app/interfaces/Dependency";
-import { Title } from "@mantine/core";
+import { Title, Group, ActionIcon } from "@mantine/core";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext"; 
 
 const Page = () => {
+  const router = useRouter();
   const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
   const [loading, setLoading] = useState<boolean>(false);
@@ -53,6 +56,11 @@ const Page = () => {
 
   return (
     <div style={{ margin: "0px 20px 0px 20px" }}>
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/responsible/admin")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       {fatherDependency && (
         <>
           <Title __size="sm" mb={15}>

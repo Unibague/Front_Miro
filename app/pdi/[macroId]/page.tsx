@@ -341,7 +341,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           { label: "Peso", value: `${Number(accion.peso).toFixed(2)}%` },
           { label: "Indicadores", value: loaded ? indicadores.length : (indicadoresCount ?? "—") },
           { label: "Presupuesto", value: Number(accion.presupuesto) > 0 ? formatCOP(Number(accion.presupuesto)) : "Pendiente" },
-          { label: "Ejecutado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
+          { label: "Causado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "10px 6px" }}>
             <Text fw={800} size="lg" lh={1}>{item.value}</Text>
@@ -380,7 +380,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                         <Text size="xs" fw={700} c="blue">{formatCOP(asignado)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Ejecutado</Text>
+                        <Text size="xs" c="dimmed" lh={1}>Causado</Text>
                         <Text size="xs" fw={700} c="teal">{formatCOP(ejecutado)}</Text>
                       </div>
                     </Group>
@@ -640,7 +640,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           { label: "Peso", value: `${Number(proyecto.peso).toFixed(2)}%` },
           { label: "Acciones", value: loaded ? acciones.length : (accionesCount ?? "—") },
           { label: "Presupuesto", value: presupuestoProyecto > 0 ? formatCOP(presupuestoProyecto) : "Pendiente" },
-          { label: "Ejecutado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
+          { label: "Causado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "rgba(255,255,255,0.82)", border: "1px solid rgba(124,58,237,0.08)", borderRadius: 16, padding: "12px 8px" }}>
             <Text fw={800} size="1.1rem" lh={1}>{item.value}</Text>
@@ -848,7 +848,7 @@ export default function MacroproyectoDetallePage() {
                       <Text size="sm" c="dimmed">
                         Presupuesto: <b>{formatCOP(presupuestoMacro)}</b>
                         {presupuestoEjecutadoMacro > 0 && (
-                          <> · Ejecutado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
+                          <> · Causado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
                         )}
                       </Text>
                     )}

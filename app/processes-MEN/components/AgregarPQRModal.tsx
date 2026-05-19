@@ -10,7 +10,7 @@ interface Props {
   programas: Program[];
   onCreado: (pqr: PQR) => void;
 }
-
+//prueba
 export default function AgregarPQRModal({ opened, onClose, programas, onCreado }: Props) {
   return (
     <Modal opened={opened} onClose={onClose} title="Agregar PQR" centered size="md" radius="md">

@@ -1872,7 +1872,7 @@ export default function MisIndicadoresPage() {
     <Container size="xl" py="xl">
       <Group mb="lg" justify="space-between">
         <Group gap={10}>
-          <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <ActionIcon variant="subtle" onClick={() => router.push("/pdi-modulo")}>
             <IconArrowLeft size={18} />
           </ActionIcon>
           <ThemeIcon size={40} radius="xl" color="violet" variant="light">

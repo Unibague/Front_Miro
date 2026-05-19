@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Container, TextInput, Table, Switch, Button, Group, Select, Title, MultiSelect } from "@mantine/core";
+import { Container, TextInput, Table, Switch, Button, Group, Title, MultiSelect, ActionIcon } from "@mantine/core";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -16,9 +17,8 @@ interface Member {
 const DependencyPage = () => {
   const router = useRouter();
   const { data: session } = useSession();
-  
-  // Solo el rol Administrador puede editar
-  const isAdmin = session?.user?.role === 'admin' || false;
+
+  const canEdit = ['admin', 'Administrador', 'Responsable'].includes(session?.user?.role ?? '');
   const [dependency, setDependency] = useState({
     _id: "",
     dep_code: "",
@@ -28,6 +28,7 @@ const DependencyPage = () => {
     members: [] as string[],
     visualizers: [] as string[],
   });
+  const [parentDependencyName, setParentDependencyName] = useState<string>("");
   const [members, setMembers] = useState<Member[]>([]);
   const [secondaryMembers, setSecondaryMembers] = useState<Member[]>([]);
   const [selectAllProducers, setSelectAllProducers] = useState(false);
@@ -41,6 +42,16 @@ const DependencyPage = () => {
         );
         setDependency(response.data);
 
+        if (response.data.dep_father) {
+          try {
+            const parentResponse = await axios.get(
+              `${process.env.NEXT_PUBLIC_API_URL}/dependencies/by-code/${response.data.dep_father}`
+            );
+            setParentDependencyName(parentResponse.data?.name ?? response.data.dep_father);
+          } catch {
+            setParentDependencyName(response.data.dep_father);
+          }
+        }
 
         const membersResponse = await axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${response.data.dep_code}/members`
@@ -61,12 +72,11 @@ const DependencyPage = () => {
         );
 
         setMembers(updatedMembers);
-        
-        // Obtener miembros secundarios (con dependencias adicionales)
+
         const secondaryResponse = await axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependency/${response.data.dep_code}/secondary-members`
         );
-        
+
         if (secondaryResponse.data) {
           const updatedSecondaryMembers = await Promise.all(
             secondaryResponse.data.map(async (member: any) => {
@@ -94,9 +104,8 @@ const DependencyPage = () => {
 
   const handleSave = async () => {
     try {
-      // Combinar miembros principales y secundarios
       const allMembers = [...members, ...secondaryMembers];
-      
+
       const producers = allMembers
         .filter((member) => member.isProducer)
         .map((member) => member.email);
@@ -122,7 +131,6 @@ const DependencyPage = () => {
       if (dependency.visualizers && Array.isArray(dependency.visualizers)) {
         await axios.put(
           `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${dependency._id}/visualizers`,
-
           { visualizers: dependency.visualizers }
         );
       }
@@ -143,7 +151,6 @@ const DependencyPage = () => {
   };
 
   const toggleProducer = (email: string) => {
-    // Actualizar en miembros principales
     setMembers((prevMembers) =>
       prevMembers.map((member) =>
         member.email === email
@@ -151,8 +158,7 @@ const DependencyPage = () => {
           : member
       )
     );
-    
-    // Actualizar en miembros secundarios
+
     setSecondaryMembers((prevMembers) =>
       prevMembers.map((member) =>
         member.email === email
@@ -164,16 +170,14 @@ const DependencyPage = () => {
 
   const toggleAllProducers = () => {
     setSelectAllProducers((prevState) => !prevState);
-    
-    // Actualizar miembros principales
+
     setMembers((prevMembers) =>
       prevMembers.map((member) => ({
         ...member,
         isProducer: !selectAllProducers,
       }))
     );
-    
-    // Actualizar miembros secundarios
+
     setSecondaryMembers((prevMembers) =>
       prevMembers.map((member) => ({
         ...member,
@@ -184,30 +188,23 @@ const DependencyPage = () => {
 
   return (
     <Container size="md">
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/responsible/admin")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
+
       <Title ta={"center"} order={2}>
         Gestionar Mi Dependencia
       </Title>
       <TextInput label="Código" value={dependency.dep_code} readOnly mb="md" />
       <TextInput
         label="Dependencia Padre"
-        value={dependency.dep_father}
+        value={parentDependencyName}
         readOnly
         mb="md"
       />
       <TextInput label="Nombre" value={dependency.name} readOnly mb="md" />
-      {/* <Select
-        label="Líder de Dependencia"
-        value={dependency.responsible}
-        onChange={(value) =>
-          setDependency({ ...dependency, responsible: value ?? "" })
-        }
-        data={members.map((member) => ({
-          value: member.email,
-          label: member.full_name,
-        }))}
-        mb="md"
-        readOnly        
-      /> */}
       <MultiSelect
         label="Líderes"
         placeholder={
@@ -226,14 +223,14 @@ const DependencyPage = () => {
         searchable
         clearable
         mb="md"
-        disabled={!isAdmin}
+        disabled={!canEdit}
       />
       <Switch
         label="Activar todos los colaboradores"
         checked={selectAllProducers}
         onChange={toggleAllProducers}
         mb="md"
-        disabled={!isAdmin}
+        disabled={!canEdit}
       />
 
       <Table striped withTableBorder mt="md">
@@ -253,7 +250,7 @@ const DependencyPage = () => {
                 <Switch
                   checked={member.isProducer}
                   onChange={() => toggleProducer(member.email)}
-                  disabled={!isAdmin}
+                  disabled={!canEdit}
                 />
               </Table.Td>
             </Table.Tr>
@@ -282,7 +279,7 @@ const DependencyPage = () => {
                   <Switch
                     checked={member.isProducer}
                     onChange={() => toggleProducer(member.email)}
-                    disabled={!isAdmin}
+                    disabled={!canEdit}
                   />
                 </Table.Td>
               </Table.Tr>
@@ -298,10 +295,7 @@ const DependencyPage = () => {
       </Table>
 
       <Group mt="md">
-        {isAdmin && <Button onClick={handleSave}>Guardar</Button>}
-        <Button variant="outline" onClick={() => router.push("/dashboard")}>
-          {isAdmin ? 'Cancelar' : 'Volver'}
-        </Button>
+        {canEdit && <Button onClick={handleSave}>Guardar</Button>}
       </Group>
     </Container>
   );

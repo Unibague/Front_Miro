@@ -24,11 +24,13 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const managementProducerReportsRoute = /^\/reportproducers$/;
     const templatesWithFiltersRoute = /^\/templates-with-filters/;
     const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/;
+    const responsiblePdiModuleRoute = /^\/pdi-modulo$/;
 
     if (
       (adminRoutes.test(pathname) && role !== "Administrador") ||
       (responsibleRoutes.test(pathname) && role !== "Responsable") ||
       (producerRoutes.test(pathname) && role !== "Productor") ||
+      (responsiblePdiModuleRoute.test(pathname) && role !== "Responsable") ||
       (templateRoutes.test(pathname) &&
         !templatesWithFiltersRoute.test(pathname) &&
         !templateDetailRoute.test(pathname) &&

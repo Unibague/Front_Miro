@@ -25,6 +25,7 @@
     "@tabler/icons-react": "^3.14.0",
     "axios": "^1.6.8",
     "clsx": "^2.1.1",
+    "date-holidays": "^3.29.0",
     "dayjs": "^1.11.11",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",

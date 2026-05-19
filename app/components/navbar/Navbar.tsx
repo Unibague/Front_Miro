@@ -24,6 +24,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
@@ -77,14 +78,13 @@ const linksByRole: Record<Roles, LinkItem[]> = {
   ],
   Responsable: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/templates/published", label: "Plantillas publicadas" },
-    { link: "/responsible/reports", label: "Reportes" },
-    { link: "/responsible/dimension", label: "Ámbito" },
+    { link: "/reports", label: "Gestion de información" },
+    { link: "/pdi-modulo", label: "PDI" },
+    { link: "/responsible/admin", label: "Administración" },
   ],
   Productor: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/producer/templates", label: "Plantillas pendientes" },
-    { link: "/templates-with-filters", label: "Plantillas con filtros" },
+    { link: "/reports", label: "Gestion de información" },
   ],
 };
 
@@ -94,7 +94,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
-  const showDateReviewVolver = pathname?.startsWith("/date-review") ?? false;
+  const showProcessesMenVolver = isProcessesMenOrLegacyPath(pathname);
   const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
@@ -109,9 +109,9 @@ export default function Navbar() {
   const PERIOD_SELECTOR_PATHS = [
     "/snies", "/cna", "/reports", "/admin/templates", "/admin/reports",
     "/templates", "/producer", "/responsible", "/templates-with-filters",
-    "/dependency", "/traceability", "/reportproducers",
+    "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
     "/admin/templates-management", "/admin/logs", "/admin/audit",
-    "/admin/validations", "/validations",
+    "/admin/validations", "/validations", "/historico-docentes",
   ];
   const showPeriodSelector =
     !!pathname &&
@@ -254,7 +254,7 @@ export default function Navbar() {
         <Container size="xl" className={classes.inner}>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            {showDateReviewVolver && (
+            {showProcessesMenVolver && (
               <Tooltip label="Volver" withArrow>
                 <ActionIcon
                   variant="default"
@@ -426,7 +426,7 @@ export default function Navbar() {
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
-              {showDateReviewVolver && (
+              {showProcessesMenVolver && (
                 <Tooltip label="Volver" withArrow>
                   <ActionIcon
                     variant="default"

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -135,13 +136,14 @@ const PublishedTemplatesPage = () => {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension`,
         {
-          params: { 
+          params: {
             page,
             limit: 10,
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
+            filterByUserScope: true,
+            userRole,
           },
         }
       );
@@ -657,8 +659,13 @@ const dateFields = new Set(
   return (
     <Container size="xl">
       <DateConfig />
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Title ta="center" mb={"md"}>
-        Gestión de Plantillas
+        {userRole === "Responsable" ? "Plantillas de mis Productores" : "Gestión de Plantillas"}
       </Title>
       <TextInput
         placeholder="Buscar plantillas"
