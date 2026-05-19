@@ -281,7 +281,7 @@ function FormularioModal({
                     Agregar opción
                   </Button>
                   {campo.tipo === "select_con_otro" && (
-                    <Text size="xs" c="dimmed">"Otro ¿Cuál?" se agrega automáticamente al final</Text>
+                    <Text size="xs" c="dimmed">&quot;Otro ¿Cuál?&quot; se agrega automáticamente al final</Text>
                   )}
                 </Stack>
               )}
