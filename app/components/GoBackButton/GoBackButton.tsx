@@ -3,7 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
-import { Button } from "@mantine/core";
+import { ActionIcon, Tooltip } from "@mantine/core";
 import { IconArrowLeft } from "@tabler/icons-react";
 import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
 
@@ -17,10 +17,6 @@ const GoBackButton = () => {
   if (pathname?.startsWith("/date-review")) return null;
   if (pathname?.startsWith("/pdi")) return null;
 
-  const handleVolver = () => {
-    router.back();
-  };
-
   return (
     <div
       style={{
@@ -28,18 +24,18 @@ const GoBackButton = () => {
         top: 63,
         left: 16,
         zIndex: 1000,
-        backdropFilter: "blur(10px)",
       }}
     >
-      <Button
-        onClick={handleVolver}
-        variant="light"
-        color="blue"
-        size="sm"
-        leftSection={<IconArrowLeft size={16} />}
-      >
-        Volver
-      </Button>
+      <Tooltip label="Volver" withArrow position="right">
+        <ActionIcon
+          onClick={() => router.back()}
+          variant="light"
+          color="blue"
+          size="lg"
+        >
+          <IconArrowLeft size={18} />
+        </ActionIcon>
+      </Tooltip>
     </div>
   );
 };
