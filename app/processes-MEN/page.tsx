@@ -2041,8 +2041,8 @@ const ProcessesMenPage = () => {
                                     <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
                                       nombrePrograma: prog.nombre,
                                       tipo: proc.tipo_proceso as "RC" | "AV" | "AE",
-                                      dep_code_programa: prog.dep_code_programa,
-                                      dep_code_facultad: prog.dep_code_facultad,
+                                      dep_code_programa: prog.dep_code_programa ?? undefined,
+                                      dep_code_facultad: prog.dep_code_facultad ?? undefined,
                                     })}>
                                       Gestionar
                                     </Button>
@@ -2214,8 +2214,8 @@ const ProcessesMenPage = () => {
                                     <Button size="xs" variant="light" color="grape" onClick={() => irAGestionarProcesoDesdeModal({
                                       nombrePrograma: prog.nombre,
                                       tipo: "PM",
-                                      dep_code_programa: prog.dep_code_programa,
-                                      dep_code_facultad: prog.dep_code_facultad,
+                                      dep_code_programa: prog.dep_code_programa ?? undefined,
+                                      dep_code_facultad: prog.dep_code_facultad ?? undefined,
                                     })}>
                                       Gestionar PM
                                     </Button>

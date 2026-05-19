@@ -691,8 +691,8 @@ export default function AgregarProcesoModal({
             programId: progSel?._id ?? createdProgram?._id,
             nombrePrograma: nombreProg,
             tipo,
-            dep_code_programa: progSel?.dep_code_programa ?? createdProgram?.dep_code_programa,
-            dep_code_facultad: progSel?.dep_code_facultad ?? createdProgram?.dep_code_facultad,
+            dep_code_programa: progSel?.dep_code_programa ?? createdProgram?.dep_code_programa ?? undefined,
+            dep_code_facultad: progSel?.dep_code_facultad ?? createdProgram?.dep_code_facultad ?? undefined,
           });
         } else {
           await onCreated();

@@ -123,6 +123,8 @@ export type Process = {
   /** RC de oficio tras vigencia de gracia (cierre AV pendiente de oficio). */
   rc_oficio_contexto?: "post_av_gracia" | null;
   rc_gracia_vigente_snapshot?: UltimoProcesoPrograma | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type ProcessDocument = {

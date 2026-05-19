@@ -3943,7 +3943,7 @@ const ProcesoDetalleCard = ({
                   No aplica (fase completa)
                 </Button>
               ) : (
-                faseActual.numero < 5 && proceso.tipo_proceso !== "PM" && (
+                faseActual.numero < 5 && (
                   <Button
                     size="xs"
                     color="green"
