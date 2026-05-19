@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Modal } from "@mantine/core";
 import PQRHistorialView from "./PQRHistorialView";
@@ -11,7 +11,7 @@ interface Props {
   programas: Program[];
 }
 
-/** @deprecated Prefer módulo Comunicaciones MEN en date-review (vista embebida). */
+/** @deprecated Prefer módulo Comunicaciones MEN en processes-MEN (vista embebida). */
 export default function PQRHistorialModal({ opened, onClose, pqrs, programas }: Props) {
   return (
     <Modal opened={opened} onClose={onClose} title="Historial de PQR" size="95vw" radius="md" centered

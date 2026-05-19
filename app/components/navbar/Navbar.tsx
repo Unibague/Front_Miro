@@ -23,6 +23,7 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
@@ -86,7 +87,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
-  const showDateReviewVolver = pathname?.startsWith("/date-review") ?? false;
+  const showProcessesMenVolver = isProcessesMenOrLegacyPath(pathname);
   const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
@@ -233,7 +234,7 @@ export default function Navbar() {
         <Container size="xl" className={classes.inner}>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            {showDateReviewVolver && (
+            {showProcessesMenVolver && (
               <Tooltip label="Volver" withArrow>
                 <ActionIcon
                   variant="default"
@@ -378,7 +379,7 @@ export default function Navbar() {
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
-              {showDateReviewVolver && (
+              {showProcessesMenVolver && (
                 <Tooltip label="Volver" withArrow>
                   <ActionIcon
                     variant="default"
