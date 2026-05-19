@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActionIcon, Box, Center, Group, Loader, Paper,
+  ActionIcon, Alert, Box, Center, Group, Loader, Paper,
   SimpleGrid, Text, ThemeIcon, Tooltip,
 } from "@mantine/core";
 import {
@@ -13,51 +13,27 @@ import { PDI_ROUTES } from "../api";
 
 const POLL_INTERVAL_MS = 60_000;
 
-type PresupuestoProjectRow = {
-  centroCosto: string;
+type PresupuestoRow = {
   macroproyecto: string;
   proyecto: string;
-  proyectoNombre?: string;
-  presupuesto: number;
-  presupuestoGasto?: number;
-  presupuestoInversion?: number;
   comprometido: number;
-  comprometidoGasto?: number;
-  comprometidoInversion?: number;
-  causado: number;
-};
-
-type PresupuestoActionRow = {
-  centroCosto: string;
-  proyecto: string;
-  proyectoNombre: string;
-  accionEstrategica: string;
-  presupuestoAsignado: number;
   comprometidoGasto: number;
   comprometidoInversion: number;
-  totalComprometido: number;
+  causado: number;
   causadoGasto: number;
   causadoInversion: number;
-  totalCausado: number;
   autorizaciones: number;
-  aprobadas: number;
 };
 
 type PresupuestoData = {
-  rows: PresupuestoProjectRow[];
-  actionRows?: PresupuestoActionRow[];
+  rows: PresupuestoRow[];
   totals: {
-    presupuesto: number;
     comprometido: number;
+    comprometidoGasto: number;
+    comprometidoInversion: number;
     causado: number;
-    comprometidoGasto?: number;
-    comprometidoInversion?: number;
-    detalle?: {
-      comprometidoGasto: number;
-      comprometidoInversion: number;
-      totalComprometido: number;
-      totalCausado: number;
-    };
+    causadoGasto: number;
+    causadoInversion: number;
   };
   updatedAt: string;
   stale?: boolean;
@@ -88,7 +64,7 @@ function KpiCard({ title, value, sub, color, icon }: {
       <ThemeIcon size={38} radius="xl" color={color} variant="light" mb={8}>
         {icon}
       </ThemeIcon>
-      <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={2}>{title}</Text>
+      <Text size="xs" c="dimmed" fw={700} mb={2}>{title}</Text>
       <Text fw={800} size="1.25rem" lh={1.1}>{value}</Text>
       {sub && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
     </Paper>
@@ -107,7 +83,8 @@ export default function PdiPresupuesto() {
       const res = await axios.get<PresupuestoData>(PDI_ROUTES.presupuestoData(forceRefresh));
       setData(res.data);
     } catch (e: any) {
-      setError(e?.response?.data?.message || "Error al cargar el presupuesto.");
+      const payload = e?.response?.data || {};
+      setError(payload.message || "Error al cargar el presupuesto.");
     } finally {
       setLoading(false);
     }
@@ -125,14 +102,17 @@ export default function PdiPresupuesto() {
   };
 
   if (loading) return <Center py="xl"><Loader color="violet" /></Center>;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (error) {
+    return (
+      <Alert color="red" variant="light" title="No se pudo cargar el presupuesto">
+        <Text size="sm">{error}</Text>
+      </Alert>
+    );
+  }
   if (!data) return null;
 
-  const { totals, rows, actionRows = [], updatedAt } = data;
-  const totalComprometido = totals.detalle?.totalComprometido || totals.comprometido || 0;
-  const comprometidoGasto = totals.detalle?.comprometidoGasto ?? totals.comprometidoGasto ?? 0;
-  const comprometidoInversion = totals.detalle?.comprometidoInversion ?? totals.comprometidoInversion ?? 0;
-  const pctComp = pct(totalComprometido, totals.presupuesto);
+  const { totals, rows, updatedAt } = data;
+  const pctCausado = pct(totals.causado, totals.comprometido);
 
   const updatedLabel = updatedAt
     ? new Date(updatedAt).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })
@@ -142,7 +122,6 @@ export default function PdiPresupuesto() {
     <Box>
       <Group justify="space-between" mb="md" gap={8} align="center">
         <Text size="sm" c="dimmed">
-          Lectura en linea desde Google Sheets. {data.stale ? "Mostrando cache por error de lectura." : ""}
         </Text>
         <Group gap={8} align="center">
           {updatedLabel && <Text size="xs" c="dimmed">Actualizado: {updatedLabel}</Text>}
@@ -156,66 +135,61 @@ export default function PdiPresupuesto() {
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" mb="xl">
         <KpiCard
-          title="Presupuesto asignado"
-          value={fmtCOP(totals.presupuesto)}
-          color="blue"
-          icon={<IconCurrencyDollar size={18} />}
+          title="Total comprometido"
+          value={fmtCOP(totals.comprometido)}
+          color="violet"
+          icon={<IconChartPie size={18} />}
         />
         <KpiCard
           title="Comprometido gasto"
-          value={fmtCOP(comprometidoGasto)}
+          value={fmtCOP(totals.comprometidoGasto)}
           color="cyan"
           icon={<IconTrendingUp size={18} />}
         />
         <KpiCard
           title="Comprometido inversion"
-          value={fmtCOP(comprometidoInversion)}
-          color="violet"
+          value={fmtCOP(totals.comprometidoInversion)}
+          color="blue"
           icon={<IconTrendingUp size={18} />}
         />
         <KpiCard
-          title="Total comprometido"
-          value={fmtCOP(totalComprometido)}
-          sub={`${pctComp}% del presupuesto`}
-          color={pctComp >= 80 ? "teal" : "orange"}
-          icon={<IconChartPie size={18} />}
+          title="Total causado"
+          value={fmtCOP(totals.causado)}
+          sub={totals.comprometido > 0 ? `${pctCausado}% del comprometido` : undefined}
+          color={pctCausado >= 80 ? "teal" : "orange"}
+          icon={<IconCurrencyDollar size={18} />}
         />
       </SimpleGrid>
 
-      {actionRows.length > 0 && (
+      {rows.length > 0 && (
         <>
-          <Text fw={700} mb="xs">Detalle por accion estrategica</Text>
+          <Text fw={700} mb="xs">Comprometido por proyecto</Text>
           <Box style={{ overflowX: "auto", border: "1px solid #f1f3f5", borderRadius: 8 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#f8f9fa" }}>
                   <th style={thStyle}>Proyecto</th>
-                  <th style={thStyle}>Accion estrategica</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Presupuesto asignado</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Gasto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Inversion</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido gasto</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido inversion</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Total comprometido</th>
-                  <th style={{ ...thStyle, textAlign: "center" }}>%</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Total causado</th>
+                  <th style={{ ...thStyle, textAlign: "center" }}>% causado</th>
                 </tr>
               </thead>
               <tbody>
-                {actionRows.map((row, i) => {
-                  const pc = pct(row.totalComprometido, row.presupuestoAsignado);
+                {rows.map((row, i) => {
+                  const pc = pct(row.causado, row.comprometido);
                   return (
-                    <tr key={`${row.proyectoNombre}-${row.accionEstrategica}-${i}`} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
-                      <td style={{ ...tdStyle, minWidth: 210 }}>
-                        <Text size="xs" fw={700}>{row.proyectoNombre || row.proyecto}</Text>
-                        <Text size="xs" c="dimmed">{row.centroCosto}</Text>
+                    <tr key={`${row.proyecto}-${i}`} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
+                      <td style={tdStyle}>
+                        <Text size="xs" fw={700}>{row.proyecto}</Text>
+                        <Text size="xs" c="dimmed">{row.macroproyecto}</Text>
                       </td>
-                      <td style={{ ...tdStyle, minWidth: 340 }}>
-                        <Text size="xs" lineClamp={3}>{row.accionEstrategica}</Text>
-                        <Text size="xs" c="dimmed">{row.aprobadas}/{row.autorizaciones} autorizaciones aprobadas</Text>
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.presupuestoAsignado)}</td>
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>{fmtCOP(row.comprometidoGasto)}</td>
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8" }}>{fmtCOP(row.comprometidoInversion)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(row.totalComprometido)}</td>
-                      <td style={{ ...tdStyle, minWidth: 120 }}>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(row.comprometido)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.causado)}</td>
+                      <td style={{ ...tdStyle, minWidth: 100 }}>
                         <Group gap={4} wrap="nowrap">
                           <Box style={{ flex: 1, height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
                             <Box style={{ width: `${pc}%`, height: "100%", background: pc >= 80 ? "#20c997" : "#fd7e14" }} />
@@ -227,45 +201,22 @@ export default function PdiPresupuesto() {
                   );
                 })}
               </tbody>
-            </table>
-          </Box>
-        </>
-      )}
-
-      {rows.length > 0 && (
-        <>
-          <Text fw={700} mt="xl" mb="xs">Resumen por proyecto</Text>
-          <Box style={{ overflowX: "auto", border: "1px solid #f1f3f5", borderRadius: 8 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: "#f8f9fa" }}>
-                  <th style={thStyle}>Proyecto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Presupuesto asignado</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido gasto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido inversion</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Total comprometido</th>
+              <tfoot>
+                <tr style={{ background: "#f1f3f5", fontWeight: 800 }}>
+                  <td style={{ ...tdStyle, fontWeight: 800 }}>Total</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>{fmtCOP(totals.comprometidoGasto)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8", fontWeight: 800 }}>{fmtCOP(totals.comprometidoInversion)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(totals.comprometido)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(totals.causado)}</td>
+                  <td style={tdStyle} />
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr key={`${row.proyecto}-${i}`} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
-                    <td style={tdStyle}>
-                      <Text size="xs" fw={700}>{row.proyectoNombre || row.proyecto}</Text>
-                      <Text size="xs" c="dimmed">{row.macroproyecto}</Text>
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.presupuesto)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.comprometidoGasto || 0)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.comprometidoInversion || 0)}</td>
-                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(row.comprometido)}</td>
-                  </tr>
-                ))}
-              </tbody>
+              </tfoot>
             </table>
           </Box>
         </>
       )}
 
-      {rows.length === 0 && actionRows.length === 0 && (
+      {rows.length === 0 && (
         <Text c="dimmed" size="sm" ta="center" py="md">
           No se encontraron filas en la hoja de presupuesto.
         </Text>
