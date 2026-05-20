@@ -68,6 +68,7 @@ interface RespuestaFormulario {
   documento_filename?: string;
   documento_url?: string;
   documento_mimetype?: string;
+  documento_size?: number;
   estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
   lider_email_aval?: string;
   aval_por?: string;
@@ -139,7 +140,24 @@ export default function SubirEvidenciasPage() {
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
-  const corteActivo = cortesVigentes[0]?.nombre ?? "";
+
+  // Busca el corte vigente que coincide con un período real del indicador
+  const corteQueCoincide = indicador
+    ? (cortesVigentes.find(c =>
+        (indicador.periodos ?? []).some((p: Periodo) => p.periodo === c.nombre)
+      )?.nombre ?? "")
+    : "";
+  // Fallback: si ningún vigente coincide con períodos del indicador, usa el primero vigente
+  // Si tampoco hay vigentes, usa el último período no-Aprobado del indicador
+  const corteActivoFallback = !corteQueCoincide
+    ? (cortesVigentes[0]?.nombre || (() => {
+        const periodos = indicador?.periodos ?? [];
+        const editables = periodos.filter((p: Periodo) => p.estado_reporte !== "Aprobado");
+        const lista = editables.length ? editables : periodos;
+        return lista.length ? lista[lista.length - 1].periodo : "";
+      })())
+    : "";
+  const corteActivo = corteQueCoincide || corteActivoFallback;
 
   // ── Superó meta del corte activo (para lógica condicional de campos) ──────
   const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
@@ -412,8 +430,18 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
+  const MAX_DOC_SIZE = 20 * 1024 * 1024; // 20 MB
+
   const handleUploadDocumento = async (form: FormularioPDI, file: File | null) => {
     if (!file) return;
+    if (file.size > MAX_DOC_SIZE) {
+      showNotification({
+        title: "Archivo demasiado grande",
+        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 20 MB.`,
+        color: "red",
+      });
+      return;
+    }
     let respActual = respuestas[form._id];
     if (!respActual) {
       try {
@@ -512,7 +540,7 @@ export default function SubirEvidenciasPage() {
         errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
       }
       if (formulariosSinDocumento.length > 0) {
-        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form) => `"${form.nombre}"`).join(", ")}.`);
+        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -525,8 +553,10 @@ export default function SubirEvidenciasPage() {
     setSending(true);
     try {
       const autoAprobado = esLiderDelIndicador || esLiderDesdeListado;
-      await guardarAvances("enviar");
+      // Primero el formulario (genera Word y sube a Drive); si falla, el avance NO se marca como Enviado
       await Promise.all(formularios.map(f => guardarFormulario(f, true)));
+      // Solo si el formulario se envió correctamente, marcar el avance como Enviado
+      await guardarAvances("enviar");
       await recargarRespuestas();
       showNotification({
         title: autoAprobado ? "Aprobado" : "Enviado",
@@ -535,8 +565,16 @@ export default function SubirEvidenciasPage() {
           : "Avances y formulario enviados correctamente. El reporte quedó en revisión del líder.",
         color: "teal",
       });
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo enviar", color: "red" });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || "No se pudo enviar";
+      showNotification({
+        title: "Error al enviar",
+        message: msg.includes("Drive")
+          ? msg
+          : "No se pudo completar el envío. Verifica la configuración de Google Drive e intenta de nuevo.",
+        color: "red",
+        autoClose: 8000,
+      });
     } finally {
       setSending(false);
     }
@@ -737,7 +775,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {(corteActivo && periodoActivo) && (<>
+            {corteActivo && (<>
             <Divider />
 
             {/* Formulario de evidencias */}
@@ -1057,24 +1095,36 @@ export default function SubirEvidenciasPage() {
                                 <Badge size="xs" color="red" variant="dot">Requerido</Badge>
                               </Group>
                               <Text size="xs" c="dimmed">
-                                Adjunta un archivo PDF o Word para que el lider lo revise con el formulario.
+                                Adjunta un archivo PDF o Word para que el líder lo revise con el formulario.
+                              </Text>
+                              <Text size="xs" c="dimmed" mt={2}>
+                                Formatos: <b>.pdf, .doc, .docx</b> · Tamaño máximo: <b>20 MB</b>
                               </Text>
                             </div>
 
                             {resp?.documento_url ? (
-                              <Group gap={8}>
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="violet"
-                                  component="a"
-                                  href={resp.documento_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  leftSection={<IconExternalLink size={13} />}
-                                >
-                                  {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
-                                </Button>
+                              <Group gap={8} align="center">
+                                <div>
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="violet"
+                                    component="a"
+                                    href={resp.documento_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    leftSection={<IconExternalLink size={13} />}
+                                  >
+                                    {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
+                                  </Button>
+                                  {resp.documento_size != null && resp.documento_size > 0 && (
+                                    <Text size="xs" c="dimmed" mt={4}>
+                                      {resp.documento_size >= 1024 * 1024
+                                        ? `${(resp.documento_size / 1024 / 1024).toFixed(1)} MB`
+                                        : `${Math.round(resp.documento_size / 1024)} KB`}
+                                    </Text>
+                                  )}
+                                </div>
                                 {!bloqueado && (
                                   <ActionIcon
                                     size="sm"

@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield, IconUsersGroup } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -39,10 +39,13 @@ const DashboardPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
-  const showSupportTemplatesModule = true;
+  const showSupportTemplatesModule = false;
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
+
+  // gestionReportesOpen vive en la URL para que el historial del navegador funcione
+  const gestionReportesOpen = searchParams?.get("view") === "gestion";
 
   useEffect(() => {
     if (searchParams?.get("gestionProcesos") === "1") {
@@ -1160,41 +1163,45 @@ const DashboardPage = () => {
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {(activeModule !== "home" || avRcOpen) && (
+        {(activeModule !== "home" || avRcOpen || gestionReportesOpen) && (
           <Group justify="flex-start">
-            <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
-              Volver a módulos
+            <Button variant="subtle" onClick={() => {
+              if (avRcOpen) {
+                setAvRcOpen(false);
+              } else {
+                router.back();
+              }
+            }}>
+              Volver al módulo
             </Button>
           </Group>
         )}
-        {activeModule === "home" && !avRcOpen ? (
+        {activeModule === "home" && !avRcOpen && !gestionReportesOpen ? (
           <Grid justify="center" align="stretch">
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => router.push("/reports")}
+                onClick={() => router.push("/dashboard?view=gestion")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
                   color: "white",
                   border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
-                  boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
+                  background: "linear-gradient(135deg, #0f4c75 0%, #1b6ca8 100%)",
+                  boxShadow: "0 18px 45px rgba(15, 76, 117, 0.22)",
                 }}
               >
                 <Stack justify="space-between" h="100%" align="center">
                   <Stack align="center" gap="md">
                     <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconFileAnalytics size={28} />
+                      <IconReportSearch size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      {userRole === "Administrador" ? "Plantillas y reportes" : "Gestion de información"}
+                      Gestión de reportes
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      {userRole === "Administrador"
-                        ? "Gestión plantillas y reportes."
-                        : "Plantillas, informes, filtros, validaciones e historial."}
+                      Plantillas, reportes, SNIES, CNA y consulta de información.
                     </Text>
                   </Stack>
                   <Button variant="white" color="blue" radius="xl">
@@ -1204,74 +1211,43 @@ const DashboardPage = () => {
               </Card>
             </Grid.Col>
 
-
             {userRole === "Administrador" && (
               <>
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => router.push("/snies")}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
-                      boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconHexagon3d size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          SNIES
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          Gestión SNIES.
-                        </Text>
-                      </Stack>
-                      <Button variant="white" color="teal" radius="xl">
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
 
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => router.push("/cna")}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
-                      boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconReport size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          CNA
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          Gestión CNA.
-                        </Text>
+                {showSupportTemplatesModule && (
+                  <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                    <Card
+                      radius="xl"
+                      p="xl"
+                      onClick={() => router.push("/apoyos-plantillas")}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 260,
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "linear-gradient(135deg, #164e63 0%, #0891b2 100%)",
+                        boxShadow: "0 18px 45px rgba(8, 145, 178, 0.22)",
+                      }}
+                    >
+                      <Stack justify="space-between" h="100%" align="center">
+                        <Stack align="center" gap="md">
+                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                            <IconDatabase size={28} />
+                          </ThemeIcon>
+                          <Title order={2} c="white" ta="center">
+                            Cruce de apoyos SIGA/Iceberg
+                          </Title>
+                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                            Cruza plantillas de apoyos con SIGA/Iceberg e historial de periodos.
+                          </Text>
+                        </Stack>
+                        <Button variant="white" color="cyan" radius="xl">
+                          Abrir modulo
+                        </Button>
                       </Stack>
-                      <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}>
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
+                    </Card>
+                  </Grid.Col>
+                )}
 
                 <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                   <Card
@@ -1373,7 +1349,7 @@ const DashboardPage = () => {
                       </Text>
                     </Stack>
                     <Button variant="white" color="gray" radius="xl">
-                      Abrir modulo
+                      Abrir módulo
                     </Button>
                   </Stack>
                 </Card>
@@ -1408,51 +1384,161 @@ const DashboardPage = () => {
                       </Text>
                     </Stack>
                     <Button variant="white" color="gray" radius="xl">
-                      Abrir modulo
+                      Abrir módulo
                     </Button>
                   </Stack>
                 </Card>
               </Grid.Col>
             )}
 
-            {(userRole === "Administrador" || userRole === "Responsable" || userRole === "Productor") && (
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card
-                radius="xl"
-                p="xl"
-                onClick={() => router.push("/historico-docentes")}
-                style={{
-                  cursor: "pointer",
-                  minHeight: 260,
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
-                  boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
-                }}
-              >
-                <Stack justify="space-between" h="100%" align="center">
-                  <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconUsersGroup size={28} />
-                    </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
-                      Consulta de Información
-                    </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
-                      Consulta plantillas, informes e histórico docentes (SNIES).
-                    </Text>
-                  </Stack>
-                  <Button variant="white" color="violet" radius="xl">
-                    Abrir módulo
-                  </Button>
-                </Stack>
-              </Card>
-            </Grid.Col>
-            )}
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {avRcOpen
+            {gestionReportesOpen
+              ? (
+                <>
+                  <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                    <Card
+                      radius="xl"
+                      p="xl"
+                      onClick={() => router.push("/reports")}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 260,
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
+                        boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
+                      }}
+                    >
+                      <Stack justify="space-between" h="100%" align="center">
+                        <Stack align="center" gap="md">
+                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                            <IconFileAnalytics size={28} />
+                          </ThemeIcon>
+                          <Title order={2} c="white" ta="center">
+                            Plantillas y reportes
+                          </Title>
+                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                            {userRole === "Administrador"
+                              ? "Gestión plantillas y reportes."
+                              : "Plantillas, informes, filtros, validaciones e historial."}
+                          </Text>
+                        </Stack>
+                        <Button variant="white" color="blue" radius="xl">
+                          Abrir módulo
+                        </Button>
+                      </Stack>
+                    </Card>
+                  </Grid.Col>
+
+                  {userRole === "Administrador" && (
+                    <>
+                      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                        <Card
+                          radius="xl"
+                          p="xl"
+                          onClick={() => router.push("/snies")}
+                          style={{
+                            cursor: "pointer",
+                            minHeight: 260,
+                            color: "white",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
+                            boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
+                          }}
+                        >
+                          <Stack justify="space-between" h="100%" align="center">
+                            <Stack align="center" gap="md">
+                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                                <IconHexagon3d size={28} />
+                              </ThemeIcon>
+                              <Title order={2} c="white" ta="center">
+                                SNIES
+                              </Title>
+                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                                Gestión SNIES.
+                              </Text>
+                            </Stack>
+                            <Button variant="white" color="teal" radius="xl">
+                              Abrir módulo
+                            </Button>
+                          </Stack>
+                        </Card>
+                      </Grid.Col>
+
+                      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                        <Card
+                          radius="xl"
+                          p="xl"
+                          onClick={() => router.push("/cna")}
+                          style={{
+                            cursor: "pointer",
+                            minHeight: 260,
+                            color: "white",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
+                            boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
+                          }}
+                        >
+                          <Stack justify="space-between" h="100%" align="center">
+                            <Stack align="center" gap="md">
+                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                                <IconReport size={28} />
+                              </ThemeIcon>
+                              <Title order={2} c="white" ta="center">
+                                CNA
+                              </Title>
+                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                                Gestión CNA.
+                              </Text>
+                            </Stack>
+                            <Button variant="white" color="orange" radius="xl">
+                              Abrir módulo
+                            </Button>
+                          </Stack>
+                        </Card>
+                      </Grid.Col>
+                    </>
+                  )}
+
+                  {(userRole === "Administrador" || userRole === "Responsable" || userRole === "Productor") && (
+                    <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                      <Card
+                        radius="xl"
+                        p="xl"
+                        onClick={() => router.push("/historico-docentes")}
+                        style={{
+                          cursor: "pointer",
+                          minHeight: 260,
+                          color: "white",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
+                          boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
+                        }}
+                      >
+                        <Stack justify="space-between" h="100%" align="center">
+                          <Stack align="center" gap="md">
+                            <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                              <IconUsersGroup size={28} />
+                            </ThemeIcon>
+                            <Title order={2} c="white" ta="center">
+                              Consulta de Información
+                            </Title>
+                            <Text c="rgba(255,255,255,0.82)" ta="center">
+                              Consulta plantillas, informes e histórico docentes (SNIES).
+                            </Text>
+                          </Stack>
+                          <Button variant="white" color="violet" radius="xl">
+                            Abrir módulo
+                          </Button>
+                        </Stack>
+                      </Card>
+                    </Grid.Col>
+                  )}
+                </>
+              )
+              : avRcOpen
               ? renderAvRcCards()
               : activeModule === "reports"
               ? renderCards()

@@ -74,6 +74,7 @@ const linksByRole: Record<Roles, LinkItem[]> = {
     { link: "/admin/dimensions", label: "Ámbitos" },
     { link: "/admin/dependencies", label: "Dependencias" },
     { link: "/admin/validations", label: "Validaciones" },
+    { link: "/apoyos-plantillas", label: "Cruce de apoyos" },
     { link: "/admin/users", label: "Usuarios" },
   ],
   Responsable: [
@@ -112,6 +113,7 @@ export default function Navbar() {
     "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
     "/admin/templates-management", "/admin/logs", "/admin/audit",
     "/admin/validations", "/validations", "/historico-docentes",
+    "/apoyos-plantillas",
   ];
   const showPeriodSelector =
     !!pathname &&
