@@ -1095,6 +1095,7 @@ export default function IndicadorEvidenciasPage() {
   const [reportePeriodo, setReportePeriodo] = useState<string | null>(null);
   const [isLider, setIsLider]     = useState(false);
   const [liderEmail, setLiderEmail] = useState("");
+  const [cortesVigentes, setCortesVigentes] = useState<Array<{ nombre: string; estado: string }>>([]);
 
   const load = () => {
     if (!indicadorId) return;
@@ -1122,8 +1123,15 @@ export default function IndicadorEvidenciasPage() {
       .catch(() => {});
   }, [indicadorId, session?.user?.email]);
 
+  useEffect(() => {
+    axios.get(PDI_ROUTES.cortesVigentes())
+      .then(r => setCortesVigentes(r.data))
+      .catch(() => {});
+  }, []);
+
   const mostrarVistaLider = isLider || fuerzaVistaEvaluacion;
   const emailSesion = (session?.user?.email ?? "").toLowerCase().trim();
+  const corteActivo = cortesVigentes[0]?.nombre ?? null;
   const semColor = indicador ? SEMAFORO_COLORS[indicador.semaforo] : "#aaa";
   const avanceMostrado = indicador ? getIndicadorAvanceMostrado(indicador) : null;
   const periodosVisibles = indicador
@@ -1272,6 +1280,63 @@ export default function IndicadorEvidenciasPage() {
                 </div>
               ) : (
                 <>
+                  {!admin && corteActivo && (() => {
+                    const periodoActivo = (indicador.periodos ?? []).find(
+                      p => normalizePeriodo(p.periodo) === normalizePeriodo(corteActivo)
+                    );
+                    const avanceNum = periodoActivo?.avance != null ? Number(periodoActivo.avance) : null;
+                    const metaNum   = periodoActivo?.meta   != null ? Number(periodoActivo.meta)   : null;
+                    const pct = avanceNum != null && metaNum && metaNum > 0
+                      ? Math.min(Math.round((avanceNum / metaNum) * 100), 100)
+                      : null;
+                    const yaReportado = periodoActivo?.estado_reporte && periodoActivo.estado_reporte !== "Borrador";
+                    return (
+                      <Paper
+                        withBorder
+                        radius="xl"
+                        p="lg"
+                        style={{
+                          borderLeft: "4px solid #7c3aed",
+                          background: "linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(124,58,237,0.02) 100%)",
+                        }}
+                      >
+                        <Group justify="space-between" align="flex-start" wrap="wrap" mb={pct != null ? "md" : 0}>
+                          <div>
+                            <Group gap={8} mb={6}>
+                              <Badge color="violet" variant="filled" radius="xl" size="lg">
+                                Corte activo: {corteActivo}
+                              </Badge>
+                              {periodoActivo?.estado_reporte && periodoActivo.estado_reporte !== "Borrador" && (
+                                <Badge color={ESTADO_COLORS[periodoActivo.estado_reporte]} variant="light" radius="xl">
+                                  {periodoActivo.estado_reporte}
+                                </Badge>
+                              )}
+                            </Group>
+                            <Text fw={700} size="md">
+                              {yaReportado ? "Reporte enviado para este corte" : "Este es el corte activo a reportar"}
+                            </Text>
+                            <Group gap={16} mt={4}>
+                              <Text size="sm" c="dimmed">Meta: <b>{periodoActivo?.meta ?? "—"}</b></Text>
+                              {avanceNum != null && <Text size="sm" c="dimmed">Avance reportado: <b>{avanceNum}</b></Text>}
+                              {pct != null && <Text size="sm" c="dimmed">Cumplimiento: <b>{pct}%</b></Text>}
+                            </Group>
+                          </div>
+                          <Button
+                            color="violet"
+                            radius="xl"
+                            leftSection={<IconEdit size={14} />}
+                            onClick={() => setReportePeriodo(corteActivo)}
+                          >
+                            {yaReportado ? "Actualizar reporte" : "Reportar este corte"}
+                          </Button>
+                        </Group>
+                        {pct != null && (
+                          <Progress value={pct} color="violet" size="sm" radius="xl" />
+                        )}
+                      </Paper>
+                    );
+                  })()}
+
                   {!admin && (
                   <div>
                     <Group justify="space-between" mb="sm">

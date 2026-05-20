@@ -79,6 +79,7 @@ interface TemplateWorksheet {
   rawRows?: any[][];
   cellNotes?: { row: number; col: number; note: string }[];
   columnWidths?: number[];
+  producers?: string[];
 }
 
 const UpdateTemplatePage = () => {
@@ -145,6 +146,7 @@ const UpdateTemplatePage = () => {
         rawRows: Array.isArray(sheet?.rawRows) ? sheet.rawRows : undefined,
         cellNotes: Array.isArray(sheet?.cellNotes) ? sheet.cellNotes : undefined,
         columnWidths: Array.isArray(sheet?.columnWidths) ? sheet.columnWidths : undefined,
+        producers: Array.isArray(sheet?.producers) ? sheet.producers.map((p: any) => String(p)) : [],
       }))
       .filter((sheet: TemplateWorksheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields.length > 0);
   };
@@ -426,13 +428,17 @@ const UpdateTemplatePage = () => {
   const handleSave = async () => {
     const fieldsToSave = hasWorkbookSheets ? flattenWorkbookSheets(workbookSheets) : fields;
 
+    const derivedProducers = hasWorkbookSheets
+      ? [...new Set(workbookSheets.flatMap(s => s.producers || []))]
+      : selectedDependencies;
+
     const missing: string[] = [];
     if (!name) missing.push("Nombre de la plantilla");
     if (!fileName) missing.push("Nombre del archivo");
     if (!fileDescription) missing.push("Descripción del archivo");
     if (fieldsToSave.length === 0) missing.push("Al menos un campo");
     if (selectedDimensions.length === 0) missing.push("Ámbito");
-    if (selectedDependencies.length === 0) missing.push("Productores");
+    if (derivedProducers.length === 0) missing.push("Productores");
 
     if (missing.length > 0) {
       showNotification({
@@ -454,7 +460,7 @@ const UpdateTemplatePage = () => {
       original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
       dimensions: selectedDimensions,
-      producers: selectedDependencies,
+      producers: derivedProducers,
       email: session?.user?.email,
       full_name: session?.user?.name
     };
@@ -861,15 +867,17 @@ router.back();
         searchable
       />
       )}
-      <MultiSelect
-        mb={'xl'}
-        label="Productores"
-        placeholder="Seleccionar productores"
-        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-        onChange={setSelectedDependencies}
-        value={selectedDependencies}
-        searchable
-      />
+      {!hasWorkbookSheets && (
+        <MultiSelect
+          mb={'xl'}
+          label="Productores"
+          placeholder="Seleccionar productores"
+          data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+          onChange={setSelectedDependencies}
+          value={selectedDependencies}
+          searchable
+        />
+      )}
       <Switch
         label="Activo"
         checked={active}
@@ -908,6 +916,21 @@ router.back();
               ))}
             </Tabs.List>
           </Tabs>
+          {activeSheet && (
+            <MultiSelect
+              label={`Productores para la hoja "${activeSheet}"`}
+              placeholder="Asignar productores a esta hoja"
+              data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+              value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
+              onChange={(values) => {
+                setWorkbookSheets(prev => prev.map(s =>
+                  s.name === activeSheet ? { ...s, producers: values } : s
+                ));
+              }}
+              searchable
+              mb="md"
+            />
+          )}
         </>
       )}
 

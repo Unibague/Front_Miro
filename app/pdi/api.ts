@@ -60,6 +60,8 @@ export const PDI_ROUTES = {
   // Informes consolidados (admin)
   informesLista:                   () => `${BASE()}/pdi/informes/lista`,
   informesCortes:                  () => `${BASE()}/pdi/informes/cortes`,
+  informeIndicador: (id: string)   => `${BASE()}/pdi/informes/indicador/${id}`,
+  informeAccion:    (id: string)   => `${BASE()}/pdi/informes/accion/${id}`,
   informeProyecto: (id: string)    => `${BASE()}/pdi/informes/proyecto/${id}`,
   informeMacro:    (id: string)    => `${BASE()}/pdi/informes/macro/${id}`,
 };

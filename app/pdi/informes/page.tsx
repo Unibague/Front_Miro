@@ -21,6 +21,24 @@ interface ProyectoResumen {
   nombre: string;
   avance: number;
   responsable: string;
+  acciones: AccionResumen[];
+}
+
+interface AccionResumen {
+  _id: string;
+  codigo: string;
+  nombre: string;
+  avance: number;
+  responsable: string;
+  indicadores: IndicadorResumen[];
+}
+
+interface IndicadorResumen {
+  _id: string;
+  codigo: string;
+  nombre: string;
+  avance: number;
+  responsable: string;
 }
 
 interface MacroResumen {
@@ -40,7 +58,127 @@ function semaforoColor(avance: number) {
 
 // ── Fila de proyecto ──────────────────────────────────────────────────────────
 
+function FilaIndicador({ indicador, corteGlobal }: { indicador: IndicadorResumen; corteGlobal: string }) {
+  const [loading, setLoading] = useState(false);
+
+  const descargar = async () => {
+    setLoading(true);
+    try {
+      const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeIndicador(indicador._id), params);
+      window.open(data.url, "_blank");
+      showNotification({
+        title: "Informe generado",
+        message: `${indicador.nombre}${corteGlobal ? ` - ${corteGlobal}` : " - Todos los periodos"}`,
+        color: "teal",
+      });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Paper withBorder radius="md" p="xs" style={{ background: "#fff" }}>
+      <Group justify="space-between" wrap="nowrap">
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={8} mb={2}>
+            <Text size="xs" c="dimmed" fw={600}>{indicador.codigo}</Text>
+            <Badge size="xs" color={semaforoColor(indicador.avance)} variant="light">
+              {indicador.avance ?? 0}%
+            </Badge>
+          </Group>
+          <Text fw={600} size="sm" truncate="end">{indicador.nombre}</Text>
+          {indicador.responsable && <Text size="xs" c="dimmed">Responsable: {indicador.responsable}</Text>}
+        </Box>
+        <Button
+          size="xs"
+          variant="subtle"
+          color="violet"
+          radius="xl"
+          loading={loading}
+          leftSection={<IconFileWord size={13} />}
+          onClick={descargar}
+        >
+          Evidencias
+        </Button>
+      </Group>
+    </Paper>
+  );
+}
+
+function FilaAccion({ accion, corteGlobal }: { accion: AccionResumen; corteGlobal: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const descargar = async () => {
+    setLoading(true);
+    try {
+      const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeAccion(accion._id), params);
+      window.open(data.url, "_blank");
+      showNotification({
+        title: "Informe generado",
+        message: `${accion.nombre}${corteGlobal ? ` - ${corteGlobal}` : " - Todos los periodos"}`,
+        color: "teal",
+      });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Paper withBorder radius="lg" p="sm" style={{ background: "rgba(255,255,255,0.95)" }}>
+      <Group justify="space-between" wrap="nowrap" mb={abierto ? "xs" : 0}>
+        <Group gap={8} style={{ flex: 1, minWidth: 0 }} wrap="nowrap">
+          <ActionIcon variant="subtle" size="sm" onClick={() => setAbierto((v) => !v)}>
+            {abierto ? <IconChevronDown size={15} /> : <IconChevronRight size={15} />}
+          </ActionIcon>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={8} mb={2}>
+              <Text size="xs" c="dimmed" fw={700}>{accion.codigo}</Text>
+              <Badge size="xs" color={semaforoColor(accion.avance)} variant="light">{accion.avance ?? 0}%</Badge>
+              <Badge size="xs" variant="dot" color="indigo">
+                {accion.indicadores.length} indicador{accion.indicadores.length !== 1 ? "es" : ""}
+              </Badge>
+            </Group>
+            <Text fw={700} size="sm" truncate="end">{accion.nombre}</Text>
+            {accion.responsable && <Text size="xs" c="dimmed">Responsable: {accion.responsable}</Text>}
+          </Box>
+        </Group>
+        <Button
+          size="xs"
+          variant="light"
+          color="violet"
+          radius="xl"
+          loading={loading}
+          leftSection={<IconFileWord size={13} />}
+          onClick={descargar}
+        >
+          Informe accion
+        </Button>
+      </Group>
+
+      <Collapse in={abierto}>
+        {accion.indicadores.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="xs">Sin indicadores registrados</Text>
+        ) : (
+          <Stack gap={6} mt="xs" pl="lg">
+            {accion.indicadores.map((i) => (
+              <FilaIndicador key={i._id} indicador={i} corteGlobal={corteGlobal} />
+            ))}
+          </Stack>
+        )}
+      </Collapse>
+    </Paper>
+  );
+}
+
 function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; corteGlobal: string }) {
+  const [abierto, setAbierto] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const descargar = async () => {
@@ -63,20 +201,28 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
 
   return (
     <Paper withBorder radius="lg" p="sm" style={{ background: "rgba(248,250,252,0.9)" }}>
-      <Group justify="space-between" wrap="nowrap">
-        <Box style={{ flex: 1, minWidth: 0 }}>
-          <Group gap={8} mb={4}>
-            <Text size="xs" c="dimmed" fw={600}>{proyecto.codigo}</Text>
-            <Badge size="xs" color={semaforoColor(proyecto.avance)} variant="light">
-              {proyecto.avance}%
-            </Badge>
-          </Group>
-          <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
-          {proyecto.responsable && (
-            <Text size="xs" c="dimmed" mt={2}>Responsable: {proyecto.responsable}</Text>
-          )}
-          <Progress value={proyecto.avance} color={semaforoColor(proyecto.avance)} size="xs" radius="xl" mt={6} />
-        </Box>
+      <Group justify="space-between" wrap="nowrap" mb={abierto ? "xs" : 0}>
+        <Group gap={8} style={{ flex: 1, minWidth: 0 }} wrap="nowrap">
+          <ActionIcon variant="subtle" size="sm" onClick={() => setAbierto((v) => !v)}>
+            {abierto ? <IconChevronDown size={15} /> : <IconChevronRight size={15} />}
+          </ActionIcon>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={8} mb={4}>
+              <Text size="xs" c="dimmed" fw={600}>{proyecto.codigo}</Text>
+              <Badge size="xs" color={semaforoColor(proyecto.avance)} variant="light">
+                {proyecto.avance}%
+              </Badge>
+              <Badge size="xs" variant="dot" color="blue">
+                {proyecto.acciones.length} accion{proyecto.acciones.length !== 1 ? "es" : ""}
+              </Badge>
+            </Group>
+            <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
+            {proyecto.responsable && (
+              <Text size="xs" c="dimmed" mt={2}>Responsable: {proyecto.responsable}</Text>
+            )}
+            <Progress value={proyecto.avance} color={semaforoColor(proyecto.avance)} size="xs" radius="xl" mt={6} />
+          </Box>
+        </Group>
         <Button
           size="xs"
           variant="light"
@@ -86,9 +232,21 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
           leftSection={<IconFileWord size={13} />}
           onClick={descargar}
         >
-          Informe
+          Informe proyecto
         </Button>
       </Group>
+
+      <Collapse in={abierto}>
+        {proyecto.acciones.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="xs">Sin acciones registradas</Text>
+        ) : (
+          <Stack gap="xs" mt="xs" pl="lg">
+            {proyecto.acciones.map((a) => (
+              <FilaAccion key={a._id} accion={a} corteGlobal={corteGlobal} />
+            ))}
+          </Stack>
+        )}
+      </Collapse>
     </Paper>
   );
 }
