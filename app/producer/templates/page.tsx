@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Container,
   Table,
@@ -15,6 +15,9 @@ import {
   Text,
   Badge,
   Select,
+  CopyButton,
+  Stack,
+  Divider,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -29,7 +32,9 @@ import {
   IconEdit,
   IconPencil,
   IconUpload,
+  IconQrcode,
 } from "@tabler/icons-react";
+import QRCode from "react-qr-code";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -89,6 +94,12 @@ interface Category{
   templateSequence: number
 }
 
+interface Producer {
+  _id: string;
+  dep_code: string;
+  name: string;
+}
+
 interface Template {
   _id: string;
   name: string;
@@ -99,7 +110,8 @@ interface Template {
   workbook_sheets?: TemplateWorksheet[];
   original_workbook_base64?: string;
   active: boolean;
-  category: Category
+  category: Category;
+  producers?: Producer[];
 }
 
 interface TemplateWorksheet {
@@ -109,6 +121,8 @@ interface TemplateWorksheet {
   rawRows?: any[][];
   cellNotes?: { row: number; col: number; note: string }[];
   columnWidths?: number[];
+  producers?: string[];
+  shared?: boolean;
 }
 
 interface FilledFieldData {
@@ -168,6 +182,43 @@ const ProducerTemplatesPage = () => {
   );
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+  const [qrTemplateName, setQrTemplateName] = useState('');
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  const getQrBaseUrl = () => {
+    const configuredUrl = process.env.NEXT_PUBLIC_QR_BASE_URL?.trim().replace(/\/+$/, "");
+    const currentOrigin = window.location.origin.replace(/\/+$/, "");
+    if (!configuredUrl) return currentOrigin;
+    try {
+      const host = new URL(configuredUrl).hostname;
+      const isDockerInternalIp = /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+      return isDockerInternalIp ? currentOrigin : configuredUrl;
+    } catch {
+      return currentOrigin;
+    }
+  };
+
+  const downloadQR = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, size, size);
+      const link = document.createElement('a');
+      link.download = `QR_${qrTemplateName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+  };
   const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
   const [selectedDependency, setSelectedDependency] = useState<string>('');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
@@ -326,6 +377,52 @@ const ProducerTemplatesPage = () => {
       (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
     );
 
+    // Mapa de ID de productor → dep_code para resolver las hojas
+    const producerIdMap = new Map<string, string>();
+    (template.producers || []).forEach((p) => {
+      if (p._id && p.dep_code) producerIdMap.set(p._id.toString(), p.dep_code);
+    });
+
+    // dep_codes del usuario actual (principal + adicionales)
+    const userDepCodes = new Set(userDependencies.map((d) => d.value));
+
+    // Hojas editables: solo si tiene productores asignados Y el usuario es uno de ellos
+    // Hojas sin productores (ej. INFO) → siempre bloqueadas
+    const canUserEditSheet = (sheet: TemplateWorksheet): boolean => {
+      if (!sheet.producers || sheet.producers.length === 0) return false;
+      return sheet.producers.some((producerId) => {
+        const depCode = producerIdMap.get(producerId.toString());
+        return depCode !== undefined && userDepCodes.has(depCode);
+      });
+    };
+
+    const applySheetTabColor = (ws: ExcelJS.Worksheet, editable: boolean) => {
+      ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
+    };
+
+    // Pre-rellena una hoja compartida con los datos ya subidos por otro productor
+    const prefillSharedSheet = (ws: ExcelJS.Worksheet, sheet: TemplateWorksheet, startDataRow: number) => {
+      if (!sheet.shared) return;
+      // Buscar qué dep_codes están asignados a esta hoja
+      const sheetDepCodes = new Set(
+        (sheet.producers || []).map((id) => producerIdMap.get(id.toString())).filter(Boolean) as string[]
+      );
+      // Encontrar datos cargados por alguno de esos productores
+      const uploadedEntry = publishedTemplate.loaded_data?.find((ld) => sheetDepCodes.has(ld.dependency));
+      if (!uploadedEntry || !uploadedEntry.filled_data?.length) return;
+
+      const fieldValueMap = new Map<string, any[]>();
+      uploadedEntry.filled_data.forEach((fd) => fieldValueMap.set(fd.field_name, fd.values));
+
+      const maxRows = Math.max(...sheet.fields.map((f) => (fieldValueMap.get(f.name) || []).length), 0);
+      for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+        const wsRow = ws.getRow(startDataRow + rowIdx);
+        sheet.fields.forEach((field, colIdx) => {
+          wsRow.getCell(colIdx + 1).value = fieldValueMap.get(field.name)?.[rowIdx] ?? null;
+        });
+      }
+    };
+
     if (template.original_workbook_base64) {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
@@ -357,6 +454,30 @@ const ProducerTemplatesPage = () => {
         originalCommentsBySheet,
       });
 
+      // Pre-rellenar hojas compartidas y bloqueadas con datos de otros productores
+      for (const sheet of workbookSheets) {
+        if (!canUserEditSheet(sheet) && sheet.shared) {
+          const ws = workbook.getWorksheet(sheet.name);
+          if (ws) {
+            // Detectar la primera fila de datos (la siguiente al encabezado)
+            const headerRow = sheet.fields.length > 0 && sheet.fields[0].header_row
+              ? sheet.fields[0].header_row
+              : 1;
+            prefillSharedSheet(ws, sheet, headerRow + 1);
+          }
+        }
+      }
+
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const ws = workbook.getWorksheet(sheet.name);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
+
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
@@ -366,7 +487,11 @@ const ProducerTemplatesPage = () => {
     const workbook = new ExcelJS.Workbook();
 
     if (workbookSheets.length > 0) {
-      workbookSheets.forEach((sheet, sheetIndex) => {
+      // Mapa de nombre original de hoja → nombre real en el workbook (puede tener sufijo por deduplicación)
+      const sheetNameMap = new Map<string, string>();
+
+      for (let sheetIndex = 0; sheetIndex < workbookSheets.length; sheetIndex++) {
+        const sheet = workbookSheets[sheetIndex];
         const baseName = sanitizeSheetName(sheet.name || `Hoja_${sheetIndex + 1}`) || `Hoja_${sheetIndex + 1}`;
         let worksheetName = baseName;
         let counter = 1;
@@ -375,6 +500,7 @@ const ProducerTemplatesPage = () => {
           worksheetName = `${baseName.slice(0, 31 - suffix.length)}${suffix}`;
           counter += 1;
         }
+        sheetNameMap.set(sheet.name, worksheetName);
 
         if (sheet.preserveOriginalContent) {
           const worksheet = workbook.addWorksheet(worksheetName);
@@ -394,7 +520,7 @@ const ProducerTemplatesPage = () => {
             startRow: 2,
             endRow: 1000,
           });
-          return;
+          continue;
         }
 
         const worksheet = workbook.addWorksheet(worksheetName);
@@ -430,7 +556,27 @@ const ProducerTemplatesPage = () => {
           startRow: 2,
           endRow: 1000,
         });
-      });
+      }
+
+      // Pre-rellenar hojas compartidas y bloqueadas con datos de otros productores
+      for (const sheet of workbookSheets) {
+        if (!canUserEditSheet(sheet) && sheet.shared) {
+          const actualName = sheetNameMap.get(sheet.name) || sheet.name;
+          const ws = workbook.getWorksheet(actualName);
+          if (ws) prefillSharedSheet(ws, sheet, 2);
+        }
+      }
+
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const actualName = sheetNameMap.get(sheet.name) || sheet.name;
+        const ws = workbook.getWorksheet(actualName);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
@@ -798,6 +944,27 @@ if (field.multiple) {
       }
     }
   }
+  const handleGenerateQR = async (pubTemId: string, templateName: string) => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/qr/generate`,
+        { pubTemId, email: session?.user?.email }
+      );
+      const token = response.data.token;
+      const baseUrl = getQrBaseUrl();
+      const formUrl = `${baseUrl}/public/form/${token}`;
+      setQrUrl(formUrl);
+      setQrTemplateName(templateName);
+      setQrModalOpen(true);
+    } catch (error) {
+      showNotification({
+        title: 'Error',
+        message: 'No se pudo generar el código QR',
+        color: 'red',
+      });
+    }
+  };
+
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
     const now = new Date();
     const deadline = new Date(publishedTemplate.deadline);
@@ -845,17 +1012,31 @@ if (field.multiple) {
         </Table.Td>
         <Table.Td>
           <Center>
-            <Tooltip
-              label="Descargar plantilla"
-              transitionProps={{ transition: "fade-up", duration: 300 }}
-            >
-              <Button
-                variant="outline"
-                onClick={() => handleDownload(publishedTemplate)}
+            <Group gap="xs">
+              <Tooltip
+                label="Descargar plantilla"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
               >
-                <IconDownload size={16} />
-              </Button>
-            </Tooltip>
+                <Button
+                  variant="outline"
+                  onClick={() => handleDownload(publishedTemplate)}
+                >
+                  <IconDownload size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label="Generar código QR"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="violet"
+                  onClick={() => handleGenerateQR(publishedTemplate._id, publishedTemplate.name)}
+                >
+                  <IconQrcode size={16} />
+                </Button>
+              </Tooltip>
+            </Group>
           </Center>
         </Table.Td>
         <Table.Td>
@@ -1121,11 +1302,46 @@ if (field.multiple) {
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage 
-        fetchTemp={fetchTemplates} 
+      <ProducerUploadedTemplatesPage
+        fetchTemp={fetchTemplates}
         selectedDependency={selectedDependency}
         userDependencies={userDependencies}
       />
+
+      <Modal
+        opened={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title={`Código QR — ${qrTemplateName}`}
+        centered
+        size="md"
+      >
+        <Stack align="center" gap="md">
+          <div ref={qrRef}>
+            <QRCode value={qrUrl} size={220} />
+          </div>
+          <Divider w="100%" />
+          <Text size="xs" ta="center" style={{ wordBreak: 'break-all' }}>
+            <a href={qrUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1c7ed6' }}>
+              {qrUrl}
+            </a>
+          </Text>
+          <Group>
+            <Button leftSection={<IconDownload size={16} />} color="blue" onClick={downloadQR}>
+              Descargar QR
+            </Button>
+            <CopyButton value={qrUrl}>
+              {({ copied, copy }) => (
+                <Button color={copied ? 'teal' : 'violet'} onClick={copy}>
+                  {copied ? 'Enlace copiado' : 'Copiar enlace'}
+                </Button>
+              )}
+            </CopyButton>
+            <Button variant="outline" onClick={() => setQrModalOpen(false)}>
+              Cerrar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

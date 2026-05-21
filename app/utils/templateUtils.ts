@@ -64,11 +64,22 @@ const applyHeaderCommentNote = (
   fieldIndex: number,
   fallbackOptions: string[] = []
 ) => {
-  const comment = getFieldCommentForNote(field) || (
-    fallbackOptions.length > 0
-      ? `Opciones:\n${fallbackOptions.join("\n")}`
-      : ""
-  );
+  const baseComment = getFieldCommentForNote(field);
+  const normalizedBase = baseComment
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  const missingOptions = fallbackOptions.filter((option) => {
+    const normalizedOption = String(option || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase();
+    return normalizedOption && !normalizedBase.includes(normalizedOption);
+  });
+  const optionsComment = missingOptions.length > 0
+    ? `Opciones:\n${missingOptions.join("\n")}`
+    : "";
+  const comment = [baseComment, optionsComment].filter(Boolean).join("\n\n");
   if (!comment) return;
 
   const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
@@ -335,6 +346,27 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
   return [...new Set(options)].filter(Boolean);
 };
 
+const appendOptionTexts = (
+  options: { value: string; displayLabel: string }[],
+  optionTexts: string[]
+): { value: string; displayLabel: string }[] => {
+  const seen = new Set(options.map((option) => normalizeToken(option.displayLabel)));
+  const merged = [...options];
+
+  optionTexts.forEach((optionText) => {
+    const displayLabel = String(optionText || "").trim();
+    if (!displayLabel) return;
+
+    const key = normalizeToken(displayLabel);
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    merged.push({ value: displayLabel, displayLabel });
+  });
+
+  return merged;
+};
+
 export const applyValidatorDropdowns = ({
   workbook,
   worksheet,
@@ -365,17 +397,11 @@ export const applyValidatorDropdowns = ({
       const validatorName = validateWithParts[0]?.trim();
       const validatorColumnName = validateWithParts.slice(1).join(" - ").trim();
       if (!validatorName) {
-        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
-        return;
+        options = [];
+      } else {
+        const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
+        options = validator ? getValidatorOptions(validator, validatorColumnName) : [];
       }
-
-      const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
-      if (!validator) {
-        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
-        return;
-      }
-
-      options = getValidatorOptions(validator, validatorColumnName);
     } else if (field.comment) {
       // Comment present: only create dropdown if comment has numeric-prefixed lines
       const commentOptions = extractOptionsFromCommentValidators(field.comment);
@@ -398,6 +424,14 @@ export const applyValidatorDropdowns = ({
     } else {
       applyHeaderCommentNote(worksheet, field, fieldIndex, []);
       return;
+    }
+
+    if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+      options = appendOptionTexts(options, field.dropdown_options);
+    }
+
+    if (field.comment) {
+      options = appendOptionTexts(options, extractOptionsFromCommentValidators(field.comment));
     }
 
     applyHeaderCommentNote(

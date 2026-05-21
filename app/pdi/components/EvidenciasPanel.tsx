@@ -60,7 +60,7 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   const [uploadProgress, setUploadProgress] = useState(0);
   const [visorEv, setVisorEv]       = useState<Evidencia | null>(null);
 
-  const [file, setFile]             = useState<File | null>(null);
+  const [files, setFiles]           = useState<File[]>([]);
   const [periodo, setPeriodo]       = useState("");
   const [descripcion, setDescripcion] = useState("");
   const fileInputRef                = useRef<HTMLInputElement>(null);
@@ -68,15 +68,9 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   // Para el panel de revisión (admin)
   const [revision, setRevision] = useState<Record<string, { estado: string; comentario: string }>>({});
 
-  const evidenciasVigentesPorPeriodo = new Map(
-    evidencias
-      .filter((e) => e.periodo && e.estado !== "Rechazado")
-      .map((e) => [e.periodo, e] as const)
-  );
-  const periodosDisponibles = periodos.filter((p) => !evidenciasVigentesPorPeriodo.has(p.periodo));
-  const evidenciaBloqueante = periodo ? evidenciasVigentesPorPeriodo.get(periodo) : undefined;
-  const hayPeriodosDisponibles = periodos.length === 0 || periodosDisponibles.length > 0;
-  const puedeSubir = !!file && !evidenciaBloqueante && (periodos.length === 0 || !!periodo) && hayPeriodosDisponibles;
+  const periodosDisponibles = periodos;
+  const hayPeriodosDisponibles = true;
+  const puedeSubir = files.length > 0 && (periodos.length === 0 || !!periodo);
 
   const handleEstado = async (evId: string) => {
     const r = revision[evId];
@@ -106,45 +100,35 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
   };
 
   useEffect(() => { if (indicadorId) fetchEvidencias(); }, [indicadorId]);
-  useEffect(() => {
-    if (periodo && evidenciaBloqueante) setPeriodo("");
-  }, [periodo, evidenciaBloqueante]);
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (f.type !== "application/pdf") {
+    const selected = Array.from(e.target.files ?? []);
+    if (selected.length === 0) return;
+    const invalid = selected.find((f) => f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf"));
+    if (invalid) {
       showNotification({ title: "Formato inválido", message: "Solo se permiten archivos PDF", color: "orange" });
       return;
     }
-    if (f.size > 20 * 1024 * 1024) {
-      showNotification({ title: "Archivo muy grande", message: "El PDF no puede superar 20 MB", color: "orange" });
+    const tooLarge = selected.find((f) => f.size > 10 * 1024 * 1024);
+    if (tooLarge) {
+      showNotification({ title: "Archivo muy grande", message: "Cada PDF puede pesar maximo 10 MB", color: "orange" });
       return;
     }
-    setFile(f);
+    setFiles(selected);
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      showNotification({ title: "Sin archivo", message: "Selecciona un PDF primero", color: "orange" });
+    if (files.length === 0) {
+      showNotification({ title: "Sin archivo", message: "Selecciona uno o varios PDFs primero", color: "orange" });
       return;
     }
     if (periodos.length > 0 && !periodo) {
       showNotification({ title: "Periodo requerido", message: "Selecciona un periodo disponible", color: "orange" });
       return;
     }
-    if (evidenciaBloqueante) {
-      showNotification({
-        title: "Periodo bloqueado",
-        message: `El periodo ${periodo} ya tiene una evidencia ${evidenciaBloqueante.estado?.toLowerCase() ?? "vigente"}.`,
-        color: "orange",
-      });
-      return;
-    }
     setUploading(true);
     setUploadProgress(0);
     const formData = new FormData();
-    formData.append("pdf", file);
+    files.forEach((f) => formData.append("pdf", f));
     formData.append("periodo", periodo);
     formData.append("descripcion", descripcion);
     try {
@@ -154,7 +138,7 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
           if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100));
         },
       });
-      const nueva = res.data;
+      const nuevas = Array.isArray(res.data) ? res.data : [res.data];
       // Eliminar automáticamente evidencias rechazadas del mismo periodo
       const rechazadasMismoPeriodo = evidencias.filter(
         e => e.estado === "Rechazado" && e.periodo === periodo
@@ -164,11 +148,11 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
       );
       setEvidencias((prev) => [
         ...prev.filter(e => !(e.estado === "Rechazado" && e.periodo === periodo)),
-        nueva,
+        ...nuevas,
       ]);
-      setFile(null); setPeriodo(""); setDescripcion("");
+      setFiles([]); setPeriodo(""); setDescripcion("");
       if (fileInputRef.current) fileInputRef.current.value = "";
-      showNotification({ title: "¡Listo!", message: "Evidencia subida correctamente", color: "teal" });
+      showNotification({ title: "Listo", message: nuevas.length === 1 ? "Evidencia subida correctamente" : `${nuevas.length} evidencias subidas correctamente`, color: "teal" });
     } catch (e: any) {
       showNotification({ title: "Error", message: e.response?.data?.error ?? "Error al subir", color: "red" });
     } finally {
@@ -239,10 +223,10 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
                 onClick={() => hayPeriodosDisponibles && fileInputRef.current?.click()}
                 style={{
                   cursor: hayPeriodosDisponibles ? "pointer" : "not-allowed",
-                  border: `2px dashed ${file ? "#7c3aed" : "#d7e0ee"}`,
+                  border: `2px dashed ${files.length > 0 ? "#7c3aed" : "#d7e0ee"}`,
                   borderRadius: 18,
                   padding: "18px 16px",
-                  background: file ? "#faf5ff" : "#f8fbff",
+                  background: files.length > 0 ? "#faf5ff" : "#f8fbff",
                   transition: "border-color 0.2s, background 0.2s",
                   display: "flex",
                   alignItems: "center",
@@ -252,30 +236,30 @@ export default function EvidenciasPanel({ indicadorId, readOnly = false, periodo
               >
                 <Box style={{
                   width: 48, height: 48, borderRadius: 14, flexShrink: 0,
-                  background: file ? "#ede9fe" : "#eef4ff",
+                  background: files.length > 0 ? "#ede9fe" : "#eef4ff",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <IconFileTypePdf size={24} color={file ? "#7c3aed" : BLUE.main} />
+                  <IconFileTypePdf size={24} color={files.length > 0 ? "#7c3aed" : BLUE.main} />
                 </Box>
                 <Box style={{ flex: 1, minWidth: 0 }}>
-                  <Text size="sm" fw={700} c={file ? "violet" : BLUE.dark} truncate="end">
-                    {file ? file.name : "Seleccionar PDF"}
+                  <Text size="sm" fw={700} c={files.length > 0 ? "violet" : BLUE.dark} truncate="end">
+                    {files.length === 1 ? files[0].name : files.length > 1 ? `${files.length} archivos seleccionados` : "Seleccionar PDF"}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "Máximo 20 MB · Solo PDF"}
+                    {files.length > 0 ? `${files.reduce((a, f) => a + f.size, 0) / 1024 / 1024 < 1 ? (files.reduce((a, f) => a + f.size, 0) / 1024).toFixed(0) + " KB" : (files.reduce((a, f) => a + f.size, 0) / 1024 / 1024).toFixed(2) + " MB"}` : "Máximo 10 MB · Solo PDF"}
                   </Text>
                 </Box>
-                {file && (
+                {files.length > 0 && (
                   <ActionIcon
                     size="sm" variant="subtle" color="red" radius="xl"
-                    onClick={(e) => { e.stopPropagation(); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    onClick={(e) => { e.stopPropagation(); setFiles([]); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                   >
                     <IconX size={13} />
                   </ActionIcon>
                 )}
               </Box>
-              <input ref={fileInputRef} type="file" accept="application/pdf"
-                style={{ display: "none" }} onChange={handleFileChange} />
+              <input ref={fileInputRef} type="file" accept="application/pdf,.pdf"
+                style={{ display: "none" }} onChange={handleFileChange} multiple />
 
               <Group grow align="flex-start">
                 {periodos.length > 0 ? (

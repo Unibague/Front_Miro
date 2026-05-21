@@ -100,7 +100,7 @@ const options: NextAuthOptions = {
     async signIn({ user }) {
       try {
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/users`,
+          `${process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL}/users`,
           {
             params: { email: user.email },
           }
@@ -160,7 +160,7 @@ const options: NextAuthOptions = {
 
         try {
           const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_API_URL}/users`,
+            `${process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL}/users`,
             {
               params: { email: session.user.email },
             }

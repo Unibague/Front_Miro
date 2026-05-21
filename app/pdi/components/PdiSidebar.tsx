@@ -4,6 +4,7 @@ import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
   IconLayoutDashboard, IconGitPullRequest, IconForms, IconReportAnalytics,
+  IconCurrencyDollar,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -50,6 +51,15 @@ export default function PdiSidebar() {
         active={currentPath === "/pdi/cambios"}
         color="violet"
         onClick={() => router.push("/pdi/cambios")}
+        style={{ borderRadius: 8 }}
+      />
+
+      <NavLink
+        label="Presupuesto"
+        leftSection={<IconCurrencyDollar size={16} />}
+        active={currentPath === "/pdi/presupuesto"}
+        color="violet"
+        onClick={() => router.push("/pdi/presupuesto")}
         style={{ borderRadius: 8 }}
       />
 

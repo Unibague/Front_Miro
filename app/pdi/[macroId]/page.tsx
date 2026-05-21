@@ -9,7 +9,7 @@ import {
   IconArrowLeft, IconTarget, IconBulb,
   IconEdit, IconTrash, IconPlus, IconChevronRight,
   IconChartBarPopular, IconFolderOpen,
-  IconCheck, IconAlertTriangle, IconX,
+  IconCheck, IconAlertTriangle, IconX, IconFlag,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -24,6 +24,25 @@ import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+
+interface CorteVigente {
+  _id: string;
+  nombre: string;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+}
+
+function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
+  return indicadores.flatMap((ind) =>
+    (ind.periodos ?? [])
+      .filter((p) => (p.estado_reporte ?? "") === "Enviado")
+      .map((p) => ({
+        indicadorId: ind._id,
+        indicadorCodigo: ind.codigo,
+        corte: p.periodo,
+      }))
+  );
+}
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -52,7 +71,7 @@ function formatIndicadorTotalActual(ind: Indicador) {
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
-  verde: "Cumplimiento adecuado",
+  verde: "En cumplimiento",
   amarillo: "Requiere atención",
   rojo: "Crítico",
 };
@@ -227,14 +246,22 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const [indModal, setIndModal] = useState(false);
   const [selectedInd, setSelectedInd] = useState<Indicador | null>(null);
   const [indicadoresCount, setIndicadoresCount] = useState<number | null>(null);
+  const [indicadoresPrevio, setIndicadoresPrevio] = useState<Indicador[]>([]);
 
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
   useEffect(() => {
     axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accionInicial._id } })
-      .then(res => setIndicadoresCount(res.data.length))
+      .then(res => {
+        setIndicadoresCount(res.data.length);
+        setIndicadoresPrevio(res.data);
+      })
       .catch(() => {});
   }, [accionInicial._id]);
+
+  const pendientesBadges = getEvaluacionesPendientesAccion(
+    loaded ? indicadores : indicadoresPrevio
+  );
 
   const cargar = async () => {
     if (loaded) {
@@ -318,6 +345,22 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
           <Text size="md" lh={1.35}>{accion.nombre}</Text>
+          {pendientesBadges.length > 0 && (
+            <Group gap={4} mt={8} wrap="wrap">
+              {pendientesBadges.map((r) => (
+                <Badge
+                  key={`${r.indicadorId}-${r.corte}`}
+                  size="sm"
+                  color="teal"
+                  variant="filled"
+                  radius="xl"
+                  leftSection={<IconFlag size={10} />}
+                >
+                  Evaluar · {r.indicadorCodigo} · {r.corte}
+                </Badge>
+              ))}
+            </Group>
+          )}
         </div>
 
         <Group gap={6}>

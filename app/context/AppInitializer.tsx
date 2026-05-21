@@ -2,13 +2,16 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRole } from './RoleContext';
+import { usePathname } from 'next/navigation';
 import axios from 'axios';
 import LoadingScreen from '../components/LoadingScreen';
 
 export const AppInitializer = ({ children }: { children: React.ReactNode }) => {
   const { data: session, status } = useSession();
   const { setUserRole } = useRole();
-  const [isRoleLoaded, setIsRoleLoaded] = useState(false);
+  const pathname = usePathname() ?? '';
+  const isPublic = pathname.startsWith('/public');
+  const [isRoleLoaded, setIsRoleLoaded] = useState(isPublic);
 
   useEffect(() => {
     const fetchUserRole = async () => {

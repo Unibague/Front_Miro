@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Stack } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
@@ -80,6 +80,7 @@ interface TemplateWorksheet {
   cellNotes?: { row: number; col: number; note: string }[];
   columnWidths?: number[];
   producers?: string[];
+  shared?: boolean;
 }
 
 const UpdateTemplatePage = () => {
@@ -147,6 +148,7 @@ const UpdateTemplatePage = () => {
         cellNotes: Array.isArray(sheet?.cellNotes) ? sheet.cellNotes : undefined,
         columnWidths: Array.isArray(sheet?.columnWidths) ? sheet.columnWidths : undefined,
         producers: Array.isArray(sheet?.producers) ? sheet.producers.map((p: any) => String(p)) : [],
+        shared: sheet?.shared ?? false,
       }))
       .filter((sheet: TemplateWorksheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields.length > 0);
   };
@@ -186,6 +188,16 @@ const UpdateTemplatePage = () => {
           : sheet
       )
     );
+  };
+
+  const toggleBaseFieldRequired = (fieldName: string, required: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => (f.name === fieldName ? { ...f, required } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
   };
 
   const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string) => {
@@ -917,44 +929,103 @@ router.back();
             </Tabs.List>
           </Tabs>
           {activeSheet && (
-            <MultiSelect
-              label={`Productores para la hoja "${activeSheet}"`}
-              placeholder="Asignar productores a esta hoja"
-              data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-              value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
-              onChange={(values) => {
-                setWorkbookSheets(prev => prev.map(s =>
-                  s.name === activeSheet ? { ...s, producers: values } : s
-                ));
-              }}
-              searchable
-              mb="md"
-            />
+            <>
+              <MultiSelect
+                label={`Productores para la hoja "${activeSheet}"`}
+                placeholder="Asignar productores a esta hoja"
+                data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+                value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
+                onChange={(values) => {
+                  setWorkbookSheets(prev => prev.map(s =>
+                    s.name === activeSheet ? { ...s, producers: values } : s
+                  ));
+                }}
+                searchable
+                mb="xs"
+              />
+              <Tooltip
+                label="Cuando está activo, los demás productores podrán ver (en modo lectura) la información que se cargue en esta hoja dentro del Excel descargado."
+                multiline
+                w={320}
+                withArrow
+              >
+                <Switch
+                  label="Información visible para otros productores"
+                  checked={workbookSheets.find(s => s.name === activeSheet)?.shared ?? false}
+                  onChange={(e) => {
+                    setWorkbookSheets(prev => prev.map(s =>
+                      s.name === activeSheet ? { ...s, shared: e.currentTarget.checked } : s
+                    ));
+                  }}
+                  mb="md"
+                />
+              </Tooltip>
+            </>
           )}
         </>
       )}
 
       {baseFields.length > 0 && (
-        <Box
-          mt="sm"
-          mb="sm"
-          p="sm"
-          style={{
-            background: "var(--mantine-color-gray-0)",
-            borderRadius: "var(--mantine-radius-sm)",
-            border: "1px solid var(--mantine-color-gray-3)",
-          }}
-        >
-          <Text size="xs" fw={600} c="dimmed" mb={8}>
-            Campos base (solo lectura)
-          </Text>
-          <Stack gap={4}>
-            {baseFields.map((field, i) => (
-              <Text key={i} size="sm">
-                {i + 1}. {field.name}
-              </Text>
-            ))}
-          </Stack>
+        <Box mt="sm" mb="sm" style={{ borderRadius: "var(--mantine-radius-md)", border: "1px solid var(--mantine-color-gray-3)", overflow: "hidden" }}>
+          {/* Encabezado */}
+          <Group
+            justify="space-between"
+            px="sm"
+            py={8}
+            style={{ background: "var(--mantine-color-gray-1)", borderBottom: "1px solid var(--mantine-color-gray-3)" }}
+          >
+            <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+              Campos base
+            </Text>
+            <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+              ¿Obligatorio?
+            </Text>
+          </Group>
+          {/* Filas */}
+          {baseFields.map((field, i) => (
+            <Group
+              key={i}
+              justify="space-between"
+              align="center"
+              px="sm"
+              py={7}
+              style={{
+                background: i % 2 === 0 ? "white" : "var(--mantine-color-gray-0)",
+                borderBottom: i < baseFields.length - 1 ? "1px solid var(--mantine-color-gray-2)" : "none",
+                transition: "background 0.15s",
+              }}
+            >
+              <Group gap="xs" align="center">
+                <Text
+                  size="xs"
+                  fw={500}
+                  style={{
+                    minWidth: 22,
+                    textAlign: "right",
+                    color: "var(--mantine-color-gray-5)",
+                  }}
+                >
+                  {i + 1}.
+                </Text>
+                <Text
+                  size="sm"
+                  fw={field.required ? 600 : 400}
+                  c={field.required ? "dark" : "dimmed"}
+                >
+                  {field.name}
+                </Text>
+              </Group>
+              <Tooltip label={field.required ? "Obligatorio" : "Opcional"} withArrow position="left">
+                <Checkbox
+                  size="sm"
+                  checked={field.required}
+                  color={field.required ? "blue" : "gray"}
+                  onChange={(e) => toggleBaseFieldRequired(field.name, e.currentTarget.checked)}
+                  aria-label={`${field.name} obligatorio`}
+                />
+              </Tooltip>
+            </Group>
+          ))}
         </Box>
       )}
 

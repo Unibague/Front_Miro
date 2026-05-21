@@ -14,13 +14,14 @@ const ClientLayout = ({ children }: ClientLayoutProps) => {
   const pathname = usePathname();
 
   const isSignInPage = pathname === '/';
+  const isPublicPage = pathname?.startsWith('/public');
 
   return (
     <>
-      {!isSignInPage && <Navbar />}
-      <AffixButton/>
+      {!isSignInPage && !isPublicPage && <Navbar />}
+      {!isPublicPage && <AffixButton />}
       <ProtectedRoutes>{children}</ProtectedRoutes>
-      {!isSignInPage && <Footer />}
+      {!isSignInPage && !isPublicPage && <Footer />}
     </>
   );
 };
