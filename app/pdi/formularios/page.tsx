@@ -48,7 +48,8 @@ interface Campo {
   requerido: boolean;
   descripcion: string;
   orden: number;
-  max_caracteres: number | null;
+  min_caracteres: number | null;
+  max_caracteres?: number | null;
   opciones: string[];
   condicional_valor: "supero_meta" | "no_supero_meta" | null;
 }
@@ -105,7 +106,7 @@ function FormularioModal({
       setDescripcion(selected.descripcion);
       setCampos(selected.campos.map(c => ({
         ...c,
-        max_caracteres: c.max_caracteres ?? null,
+        min_caracteres: c.min_caracteres ?? c.max_caracteres ?? null,
         opciones: c.opciones ?? [],
         condicional_valor: (c.condicional_valor === "supero_meta" || c.condicional_valor === "no_supero_meta")
           ? c.condicional_valor : null,
@@ -120,7 +121,7 @@ function FormularioModal({
   const addCampo = () =>
     setCampos(prev => [
       ...prev,
-      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, max_caracteres: null, opciones: [], condicional_valor: null },
+      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, opciones: [], condicional_valor: null },
     ]);
 
   const removeCampo = (idx: number) =>
@@ -151,7 +152,17 @@ function FormularioModal({
         activo: true,
         alcance: "general",
         indicador_id: null,
-        campos: campos.map((c, index) => ({ ...c, orden: index })),
+        campos: campos.map((c, index) => ({
+          ...(c._id ? { _id: c._id } : {}),
+          etiqueta: c.etiqueta,
+          tipo: c.tipo,
+          requerido: c.requerido,
+          descripcion: c.descripcion,
+          orden: index,
+          min_caracteres: c.min_caracteres,
+          opciones: c.opciones,
+          condicional_valor: c.condicional_valor,
+        })),
       };
       const res = selected
         ? await axios.put(PDI_ROUTES.formulario(selected._id), payload)
@@ -222,7 +233,7 @@ function FormularioModal({
                   value={campo.tipo}
                   onChange={v => {
                     updateCampo(idx, "tipo", (v as TipoCampo) ?? "texto_largo");
-                    updateCampo(idx, "max_caracteres", null);
+                    updateCampo(idx, "min_caracteres", null);
                     updateCampo(idx, "opciones", []);
                   }}
                   allowDeselect={false}
@@ -249,11 +260,11 @@ function FormularioModal({
               {tieneTexto(campo.tipo) && (
                 <NumberInput
                   size="xs"
-                  label="Límite de caracteres (dejar vacío = sin límite)"
-                  placeholder="Ej: 1500"
-                  value={campo.max_caracteres ?? ""}
-                  onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
-                  min={10}
+                  label="Mínimo de caracteres (dejar vacío = sin mínimo)"
+                  placeholder="Ej: 50"
+                  value={campo.min_caracteres ?? ""}
+                  onChange={v => updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null)}
+                  min={1}
                   max={5000}
                   allowDecimal={false}
                 />
@@ -370,8 +381,8 @@ function FormularioCard({
                   <Badge size="xs" variant="outline" color="gray">
                     {TIPO_LABELS[campo.tipo as TipoCampo] ?? campo.tipo}
                   </Badge>
-                  {campo.max_caracteres && (
-                    <Badge size="xs" variant="light" color="blue">max {campo.max_caracteres}</Badge>
+                  {campo.min_caracteres && (
+                    <Badge size="xs" variant="light" color="blue">min {campo.min_caracteres}</Badge>
                   )}
                   {campo.condicional_valor === "supero_meta" && (
                     <Badge size="xs" variant="light" color="green">si superó meta</Badge>

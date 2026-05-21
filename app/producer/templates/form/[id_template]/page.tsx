@@ -20,8 +20,10 @@ import {
   rem,
   MultiSelect,
   Select,
+  Tabs,
+  Alert,
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEye, IconCancel, IconSend2 } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconEye, IconCancel, IconSend2, IconLock, IconInfoCircle } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -37,10 +39,23 @@ interface Field {
   multiple?: boolean;
 }
 
+interface WorkbookSheet {
+  name: string;
+  fields: Field[];
+  producers: string[];  // ObjectIds
+  shared: boolean;
+}
+
 interface Template {
   _id: string;
   name: string;
   fields: Field[];
+  workbook_sheets?: WorkbookSheet[];
+}
+
+interface QrDraftEntry {
+  dependency: string;
+  filled_data: { field_name: string; values: any[] }[];
 }
 
 interface PublishedTemplateResponse {
@@ -49,6 +64,7 @@ interface PublishedTemplateResponse {
   publishedTemplate?: {
     period?: string | { _id: string };
   };
+  qr_draft_data?: QrDraftEntry[];
 }
 
 interface ValidatorData {
@@ -63,6 +79,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const router = useRouter();
   const [publishedTemplateName, setPublishedTemplateName] = useState<string>("");
   const [template, setTemplate] = useState<Template | null>(null);
+  const [allSheets, setAllSheets] = useState<WorkbookSheet[]>([]);
+  const [accessibleSheets, setAccessibleSheets] = useState<WorkbookSheet[]>([]);
+  const [activeSheet, setActiveSheet] = useState<string | null>(null);
+  // rows por hoja: { sheetName: rows[] }
+  const [sheetRows, setSheetRows] = useState<Record<string, Record<string, any>[]>>({});
+  // rows para plantillas sin hojas (legacy)
   const [rows, setRows] = useState<Record<string, any>[]>([{}]);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [validatorModalOpen, setValidatorModalOpen] = useState(false);
@@ -77,6 +99,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [displayValues, setDisplayValues] = useState<Record<string, Record<string, string>>>({});
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
+  const [hasQrDraft, setHasQrDraft] = useState(false);
 
   const fetchTemplate = async () => {
     try {
@@ -85,13 +108,105 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       );
       setPublishedTemplateName(response.data.name);
       setTemplate(response.data.template);
+
+      // Cargar todas las hojas y determinar cuáles son editables
+      const wbSheets = response.data.template.workbook_sheets || [];
+      if (wbSheets.length > 0) {
+        setAllSheets(wbSheets);
+        try {
+          let editable: WorkbookSheet[] = wbSheets;
+          if (session?.user?.email) {
+            const userRes = await axios.get(
+              `${process.env.NEXT_PUBLIC_API_URL}/users`,
+              { params: { email: session.user.email } }
+            );
+            const user = userRes.data;
+            const allDepCodes: string[] = [user.dep_code, ...(user.additional_dependencies || [])].filter(Boolean);
+            const depsRes = await axios.get(
+              `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${encodeURIComponent(session.user.email)}`
+            );
+            const allDeps: any[] = depsRes.data || [];
+            const userDepIds: string[] = allDeps
+              .filter((d: any) => allDepCodes.includes(d.dep_code))
+              .map((d: any) => d._id?.toString());
+            editable = wbSheets.filter((sheet: WorkbookSheet) => {
+              if (!sheet.fields?.length) return false; // sin campos → solo admin
+              if (!sheet.producers?.length || sheet.shared) return true;
+              return sheet.producers.some((p: string) => userDepIds.includes(p.toString()));
+            });
+          }
+          setAccessibleSheets(editable);
+          // Inicializar filas solo para hojas editables
+          if (wbSheets.length > 0) {
+            setActiveSheet(wbSheets[0].name);
+            const initialRows: Record<string, Record<string, any>[]> = {};
+            editable.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
+            setSheetRows(initialRows);
+          }
+        } catch {
+          setAccessibleSheets(wbSheets);
+          setActiveSheet(wbSheets[0].name);
+          const initialRows: Record<string, Record<string, any>[]> = {};
+          wbSheets.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
+          setSheetRows(initialRows);
+        }
+      }
       const periodId =
         typeof response.data.publishedTemplate?.period === "string"
           ? response.data.publishedTemplate.period
           : response.data.publishedTemplate?.period?._id || "";
       setTemplatePeriodId(periodId);
 
-      const validatorCheckPromises = response.data.template.fields.map(async (field) => {
+      // Pre-cargar datos del borrador QR si existen para la dependencia del usuario
+      const qrDrafts = response.data.qr_draft_data || [];
+      if (qrDrafts.length && session?.user?.email) {
+        try {
+          const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+            params: { email: session.user.email },
+          });
+          const userDepCode: string = userRes.data?.dep_code || '';
+          const allDepCodes: string[] = [userDepCode, ...(userRes.data?.additional_dependencies || [])].filter(Boolean);
+          const draft = qrDrafts.find((d: QrDraftEntry) => allDepCodes.includes(d.dependency));
+          if (draft?.filled_data?.length) {
+            const maxLen = Math.max(...draft.filled_data.map((f: any) => f.values?.length || 0), 1);
+            const preloadedRows: Record<string, any>[] = Array.from({ length: maxLen }, (_, i) => {
+              const row: Record<string, any> = {};
+              draft.filled_data.forEach((f: any) => { row[f.field_name] = f.values?.[i] ?? null; });
+              return row;
+            });
+            setRows(preloadedRows);
+
+            // Pre-cargar también por hojas si aplica
+            const wbSheets = response.data.template.workbook_sheets || [];
+            if (wbSheets.length) {
+              const draftSheetRows: Record<string, Record<string, any>[]> = {};
+              wbSheets.forEach((sheet: WorkbookSheet) => {
+                const sheetFieldNames = new Set(sheet.fields.map((f: Field) => f.name));
+                const sheetFilled = draft.filled_data.filter((f: any) => sheetFieldNames.has(f.field_name));
+                if (sheetFilled.length) {
+                  const sheetMaxLen = Math.max(...sheetFilled.map((f: any) => f.values?.length || 0), 1);
+                  draftSheetRows[sheet.name] = Array.from({ length: sheetMaxLen }, (_, i) => {
+                    const row: Record<string, any> = {};
+                    sheetFilled.forEach((f: any) => { row[f.field_name] = f.values?.[i] ?? null; });
+                    return row;
+                  });
+                }
+              });
+              if (Object.keys(draftSheetRows).length) setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
+            }
+
+            setHasQrDraft(true);
+          }
+        } catch { /* ignorar error de pre-carga */ }
+      }
+
+      // Recolectar campos de top-level + todos los workbook_sheets
+      const allTemplateFields: Field[] = [
+        ...(response.data.template.fields || []),
+        ...((response.data.template.workbook_sheets || []).flatMap((s: WorkbookSheet) => s.fields || [])),
+      ];
+
+      const validatorCheckPromises = allTemplateFields.map(async (field) => {
         if (field.validate_with) {
           try {
             let validatorId = '';
@@ -99,9 +214,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               const parts = field.validate_with.split(' - ');
               validatorId = parts.length >= 2 ? parts[1].trim() : '';
             } else {
-              validatorId = field.validate_with.id;
+              validatorId = (field.validate_with as any).id;
             }
-            
+
             if (validatorId) {
               const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
                 params: { id: validatorId, periodId },
@@ -120,52 +235,35 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       setValidatorExists(validatorCheckResults);
 
       // Cargar opciones para campos con validador (tanto múltiples como simples)
-      const allValidatorOptionsPromises = response.data.template.fields
+      const allValidatorOptionsPromises = allTemplateFields
       .filter(field => field.validate_with)
       .map(async (field) => {
         try {
           let validatorId = '';
-          let columnToValidate = '';
-          
+          let validateWith = '';
+
           if (typeof field.validate_with === 'string') {
             const parts = field.validate_with.split(' - ');
             if (parts.length >= 2) {
               validatorId = parts[1].trim();
-              columnToValidate = parts[0].trim().toLowerCase();
+              validateWith = field.validate_with;
             }
           } else if (field.validate_with?.id) {
             validatorId = field.validate_with.id;
-            columnToValidate = field.validate_with.name.split(" - ")[0]?.trim().toLowerCase();
+            validateWith = field.validate_with.name || '';
           }
-          
+
           if (!validatorId) {
             return { fieldName: field.name, options: [], isMultiple: field.multiple };
           }
-          
-          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-            params: { id: validatorId, periodId },
+
+          const vRes = await axios.get(`/api/validators/${validatorId}`, {
+            params: { periodId, validateWith },
           });
-          const validatorData = validatorResponse.data.validator;
-          
-          // Buscar columna de valores y columna de descripciones
-          const valueColumn = validatorData.columns.find((col: any) => col.is_validator);
-          const descColumn = validatorData.columns.find((col: any) => !col.is_validator);
-          
-          if (valueColumn) {
-            const options = valueColumn.values.map((value: any, index: number) => ({
-              value: String(value),
-              label: descColumn?.values[index] ? String(descColumn.values[index]) : String(value)
-            }));
-            
-            // Eliminar duplicados
-            const uniqueOptions = options.filter((option: any, index: number, self: any[]) => 
-              index === self.findIndex(o => o.value === option.value)
-            );
-            
-            return { fieldName: field.name, options: uniqueOptions, isMultiple: field.multiple };
-          }
-          
-          return { fieldName: field.name, options: [], isMultiple: field.multiple };
+          const optionStrings: string[] = vRes.data || [];
+          const options = optionStrings.map((v) => ({ value: v, label: v }));
+
+          return { fieldName: field.name, options, isMultiple: field.multiple };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
           return { fieldName: field.name, options: [], isMultiple: field.multiple };
@@ -205,6 +303,20 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       fetchTemplate();
     }
   }, [id_template]);
+
+  const updateSheetCell = (sheetName: string, rowIdx: number, fieldName: string, value: any) => {
+    setSheetRows(prev => {
+      const rows = [...(prev[sheetName] || [{}])];
+      rows[rowIdx] = { ...rows[rowIdx], [fieldName]: value };
+      return { ...prev, [sheetName]: rows };
+    });
+  };
+
+  const addSheetRow = (sheetName: string) =>
+    setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), {}] }));
+
+  const removeSheetRow = (sheetName: string, idx: number) =>
+    setSheetRows(prev => ({ ...prev, [sheetName]: (prev[sheetName] || []).filter((_, i) => i !== idx) }));
 
   const handleInputChange = (rowIndex: number, fieldName: string, value: any) => {
     const updatedRows = [...rows];
@@ -358,9 +470,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
   };
 
-  const renderInputField = (field: Field, row: Record<string, any>, rowIndex: number) => {
-    const fieldError = errors[field.name]?.[rowIndex];
-  
+  const renderInputField = (field: Field, row: Record<string, any>, rowIndex: number, onInputChange?: (rowIndex: number, fieldName: string, value: any) => void, readOnly = false) => {
+    const inputChange = onInputChange || handleInputChange;
+    const fieldError = readOnly ? undefined : errors[field.name]?.[rowIndex];
+
     const wrapWithTooltip = (input: React.ReactNode) => {
       return field.comment ? (
         <Tooltip
@@ -373,24 +486,26 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         </Tooltip>
       ) : input;
     };
-  
+
     const commonProps = {
       required: field.required,
       placeholder: field.comment,
       style: { minWidth: "280px", width: "100%" },
       error: fieldError || undefined,
+      disabled: readOnly,
     };
   
     if (field.multiple && field.validate_with) {
       return wrapWithTooltip(
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
-          onChange={(value) => handleInputChange(rowIndex, field.name, value)}
+          onChange={(value) => !readOnly && inputChange(rowIndex, field.name, value)}
           data={Array.from(new Set(multiSelectOptions[field.name] || [])).map(value => ({ value: String(value), label: String(value) }))}
           searchable
           placeholder={field.comment || "Seleccione opciones"}
           style={{ width: "100%" }}
           error={fieldError || undefined}
+          disabled={readOnly}
         />
       );
     }
@@ -411,7 +526,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               delete updatedDisplayValues[rowIndex][field.name];
               setDisplayValues(updatedDisplayValues);
             }
-            handleInputChange(rowIndex, field.name, value);
+            inputChange(rowIndex, field.name, value);
           }}
           data={selectOptions[field.name] || []}
           searchable
@@ -441,7 +556,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 setDisplayValues(updatedDisplayValues);
               }
               const numValue = parseFloat(e.target.value);
-              handleInputChange(rowIndex, field.name, isNaN(numValue) ? null : numValue);
+              inputChange(rowIndex, field.name, isNaN(numValue) ? null : numValue);
             }}
           />
         );
@@ -464,11 +579,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 delete updatedDisplayValues[rowIndex][field.name];
                 setDisplayValues(updatedDisplayValues);
               }
-              handleInputChange(rowIndex, field.name, e.target.value);
+              inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
-  
+
       case "Texto Corto":
       case "Link":
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
@@ -487,26 +602,28 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 delete updatedDisplayValues[rowIndex][field.name];
                 setDisplayValues(updatedDisplayValues);
               }
-              handleInputChange(rowIndex, field.name, e.target.value);
+              inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
-  
+
       case "True/False":
-        const switchDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? displayValues[rowIndex][field.name] 
+        const switchDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name]
+          ? displayValues[rowIndex][field.name]
           : row[field.name];
-          
+
         return wrapWithTooltip(
           <Switch
             checked={switchDisplayValue === true || switchDisplayValue === "Si"}
+            disabled={readOnly}
             onChange={(event) => {
+              if (readOnly) return;
               if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
                 const updatedDisplayValues = { ...displayValues };
                 delete updatedDisplayValues[rowIndex][field.name];
                 setDisplayValues(updatedDisplayValues);
               }
-              handleInputChange(rowIndex, field.name, event.currentTarget.checked);
+              inputChange(rowIndex, field.name, event.currentTarget.checked);
             }}
           />
         );
@@ -528,7 +645,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 delete updatedDisplayValues[rowIndex][field.name];
                 setDisplayValues(updatedDisplayValues);
               }
-              handleInputChange(rowIndex, field.name, date);
+              inputChange(rowIndex, field.name, date);
             }}
           />
         );
@@ -550,108 +667,153 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 delete updatedDisplayValues[rowIndex][field.name];
                 setDisplayValues(updatedDisplayValues);
               }
-              handleInputChange(rowIndex, field.name, e.target.value);
+              inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
     }
   };
-  
-  
+
+  const renderSheetTable = (fields: Field[], sheetName?: string, readOnly = false) => {
+    const isSheetMode = !!sheetName;
+    const currentRows = isSheetMode ? (sheetRows[sheetName] || [{}]) : rows;
+    const onInputChange = isSheetMode
+      ? (rowIndex: number, fieldName: string, value: any) => updateSheetCell(sheetName, rowIndex, fieldName, value)
+      : handleInputChange;
+    const onRemoveRow = isSheetMode
+      ? (rowIndex: number) => removeSheetRow(sheetName, rowIndex)
+      : removeRow;
+
+    return (
+      <ScrollArea viewportRef={scrollAreaRef}>
+        <ScrollArea type="always" offsetScrollbars>
+          <Table mb="xs" withTableBorder withColumnBorders withRowBorders>
+            <Table.Thead>
+              <Table.Tr>
+                {fields.map((field) => (
+                  <Table.Th key={field.name} style={{ minWidth: '250px' }}>
+                    <Group>
+                      {field.name} {field.required && <Text span c="red">*</Text>}
+                    </Group>
+                  </Table.Th>
+                ))}
+                {!readOnly && <Table.Th maw={rem(120)}><Center>Acciones</Center></Table.Th>}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {currentRows.map((row, rowIndex) => (
+                <Table.Tr key={rowIndex}>
+                  {fields.map((field) => (
+                    <Table.Td key={field.name} style={{ minWidth: '250px' }}>
+                      <Group align="center">
+                        {renderInputField(field, row, rowIndex, onInputChange, readOnly)}
+                        {field.validate_with && !readOnly && (
+                          <ActionIcon
+                            size="sm"
+                            onClick={() => {
+                              let validatorId = '';
+                              if (typeof field.validate_with === 'string') {
+                                const parts = field.validate_with.split(' - ');
+                                if (parts.length >= 2) validatorId = parts[1].trim();
+                              } else if (field.validate_with?.id) {
+                                validatorId = field.validate_with.id;
+                              }
+                              if (validatorId) {
+                                setActiveRowIndex(rowIndex);
+                                setActiveFieldName(field.name);
+                                handleValidatorOpen(validatorId, rowIndex, field.name);
+                              }
+                            }}
+                            title="Ver valores aceptados"
+                            variant={activeRowIndex === rowIndex && activeFieldName === field.name ? "filled" : "light"}
+                            color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
+                          >
+                            <IconEye />
+                          </ActionIcon>
+                        )}
+                      </Group>
+                    </Table.Td>
+                  ))}
+                  {!readOnly && (
+                    <Table.Td maw={rem(120)}>
+                      <Center>
+                        <Button size="xs" color="red" onClick={() => onRemoveRow(rowIndex)} rightSection={<IconTrash />}>
+                          Borrar
+                        </Button>
+                      </Center>
+                    </Table.Td>
+                  )}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
+      </ScrollArea>
+    );
+  };
 
   if (!template) {
     return <Text ta="center" c="dimmed">Cargando Información...</Text>;
   }
 
+  const useSheets = allSheets.length > 0;
+  const accessibleSheetNames = new Set(accessibleSheets.map(s => s.name));
+
   return (
     <Container size="xl">
       <Title ta="center" mb="md">{`Completar Plantilla: ${publishedTemplateName}`}</Title>
-        <ScrollArea viewportRef={scrollAreaRef}>
-          <ScrollArea type="always" offsetScrollbars>
-            <Table mb={"xs"} withTableBorder withColumnBorders withRowBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  {template.fields.map((field) => (
-                    <Table.Th key={field.name} style={{ minWidth: '250px' }}>
-                      <Group>
-                        {field.name} {field.required && <Text span color="red">*</Text>}
-                      </Group>
-                    </Table.Th>
-                  ))}
-                  <Table.Th maw={rem(120)}><Center>Acciones</Center></Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((row, rowIndex) => (
-                  <Table.Tr key={rowIndex}>
-                    {template.fields.map((field) => (
-                      <Table.Td key={field.name} style={{ minWidth: '250px' }}>
-                        <Group align="center">
-                          {renderInputField(field, row, rowIndex)}
-                          {field.validate_with && (
-                            <ActionIcon
-                              size={"sm"}
-                              onClick={() => {
-                                console.log('Botón ojo clickeado - field:', field.name);
-                                console.log('field.validate_with completo:', field.validate_with);
-                                
-                                // Extraer ID del validador del string
-                                let validatorId = '';
-                                if (typeof field.validate_with === 'string') {
-                                  // Formato esperado: "NOMBRE_VALIDADOR - ID_VALIDADOR"
-                                  const parts = field.validate_with.split(' - ');
-                                  if (parts.length >= 2) {
-                                    validatorId = parts[1].trim();
-                                  }
-                                } else if (field.validate_with?.id) {
-                                  validatorId = field.validate_with.id;
-                                }
-                                
-                                console.log('ID extraído:', validatorId);
-                                
-                                if (validatorId) {
-                                  setActiveRowIndex(rowIndex);
-                                  setActiveFieldName(field.name);
-                                  handleValidatorOpen(validatorId, rowIndex, field.name);
-                                } else {
-                                  console.error('No se pudo extraer ID del validador para campo:', field.name);
-                                  console.error('validate_with:', field.validate_with);
-                                  showNotification({
-                                    title: "Error",
-                                    message: `No se pudo obtener ID del validador para ${field.name}`,
-                                    color: "red",
-                                  });
-                                }
-                              }}
-                              title="Ver valores aceptados"
-                              color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
-                              variant={activeRowIndex === rowIndex && activeFieldName === field.name ? "filled" : "light"}
-                            >
-                              <IconEye />
-                            </ActionIcon>
-                          )}
 
-                        </Group>
-                      </Table.Td>
-                    ))}
-                    <Table.Td maw={rem(120)}>
-                      <Center>
-                        <Button
-                          size={"xs"}
-                          color="red"
-                          onClick={() => removeRow(rowIndex)}
-                          rightSection={<IconTrash/>}
-                        >
-                          Borrar
-                        </Button>
-                      </Center>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
-        </ScrollArea>
+      {hasQrDraft && (
+        <Alert icon={<IconInfoCircle size={16} />} color="yellow" mb="md" title="Datos enviados por QR">
+          Se han cargado datos enviados mediante el formulario QR. Revísalos y haz clic en <strong>Enviar</strong> para confirmarlos.
+        </Alert>
+      )}
+
+      {useSheets ? (
+        <Tabs value={activeSheet} onChange={setActiveSheet} keepMounted={false}>
+          <Tabs.List mb="md">
+            {allSheets.map(sheet => {
+              const canEdit = accessibleSheetNames.has(sheet.name);
+              return (
+                <Tabs.Tab
+                  key={sheet.name}
+                  value={sheet.name}
+                  fw={600}
+                  leftSection={!canEdit ? <IconLock size={13} /> : undefined}
+                  color={!canEdit ? "gray" : undefined}
+                >
+                  {sheet.name}
+                </Tabs.Tab>
+              );
+            })}
+          </Tabs.List>
+          {allSheets.map(sheet => {
+            const canEdit = accessibleSheetNames.has(sheet.name);
+            return (
+              <Tabs.Panel key={sheet.name} value={sheet.name}>
+                {!canEdit && (
+                  <Text ta="center" c="dimmed" py="xs" size="xs">
+                    <IconLock size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                    Solo lectura — no tienes permiso para editar esta hoja.
+                  </Text>
+                )}
+                {renderSheetTable(sheet.fields, sheet.name, !canEdit)}
+                {canEdit && (
+                  <Group justify="center" mt="sm" mb="md">
+                    <Button variant="light" onClick={() => addSheetRow(sheet.name)} leftSection={<IconPlus />}>
+                      Agregar Fila
+                    </Button>
+                  </Group>
+                )}
+              </Tabs.Panel>
+            );
+          })}
+        </Tabs>
+      ) : (
+        <>
+          {renderSheetTable(template.fields)}
+        </>
+      )}
       <Group justify="center" mt={rem(50)}>
         <Button 
           color={"red"}

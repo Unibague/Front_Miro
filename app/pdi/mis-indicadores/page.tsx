@@ -76,9 +76,38 @@ function sortByCodigo<T extends { codigo: string }>(a: T, b: T) {
 }
 
 function esPeriodoEditable(periodo: string, cortesVigentes: CorteVigente[]): boolean {
-  // Si no hay cortes configurados con fechas, todo es editable
-  if (!cortesVigentes.length) return true;
   return cortesVigentes.some(c => c.nombre === periodo);
+}
+
+function getReportesPendientesAccion(indicadores: Indicador[], cortesVigentes: CorteVigente[]) {
+  const estadosReportados = new Set(["Enviado", "Aprobado"]);
+
+  return indicadores.flatMap((indicador) =>
+    (indicador.periodos ?? [])
+      .filter((periodo) =>
+        esPeriodoEditable(periodo.periodo, cortesVigentes) &&
+        !estadosReportados.has(periodo.estado_reporte ?? "Borrador")
+      )
+      .map((periodo) => ({
+        indicadorId: indicador._id,
+        indicadorCodigo: indicador.codigo,
+        indicadorNombre: indicador.nombre,
+        corte: periodo.periodo,
+        estado: periodo.estado_reporte ?? "Borrador",
+      }))
+  );
+}
+
+function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
+  return indicadores.flatMap((ind) =>
+    (ind.periodos ?? [])
+      .filter((p) => (p.estado_reporte ?? "") === "Enviado")
+      .map((p) => ({
+        indicadorId: ind._id,
+        indicadorCodigo: ind.codigo,
+        corte: p.periodo,
+      }))
+  );
 }
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
@@ -1317,6 +1346,8 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
     : Number(accion.avance) || 0;
   const semaforoAccion = getSemaforoByAvance(avanceAccion);
   const avanceAccionBarra = Math.min(Math.max(avanceAccion, 0), 100);
+  const reportesPendientes = esResponsable ? getReportesPendientesAccion(indicadores, cortesVigentes) : [];
+  const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion(indicadores) : [];
   return (
     <Paper withBorder radius="xl" p="lg"
       style={{ background: "rgba(255,255,255,0.72)", cursor: "pointer", transition: "box-shadow 0.2s" }}
@@ -1334,6 +1365,34 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
             <Text fw={700} size="lg" style={{ lineHeight: 1.25 }}>{accion.nombre}</Text>
             {accion.responsable && (
               <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
+            )}
+            {(reportesPendientes.length > 0 || evaluacionesPendientes.length > 0) && (
+              <Group gap={4} mt={8} wrap="wrap">
+                {reportesPendientes.map((r) => (
+                  <Badge
+                    key={`rep-${r.indicadorId}-${r.corte}`}
+                    size="sm"
+                    color={r.estado === "Rechazado" ? "red" : "orange"}
+                    variant="filled"
+                    radius="xl"
+                    leftSection={<IconFlag size={10} />}
+                  >
+                    Reportar · {r.indicadorCodigo} · {r.corte}{r.estado === "Rechazado" ? " · Rechazado" : ""}
+                  </Badge>
+                ))}
+                {evaluacionesPendientes.map((e) => (
+                  <Badge
+                    key={`eval-${e.indicadorId}-${e.corte}`}
+                    size="sm"
+                    color="teal"
+                    variant="filled"
+                    radius="xl"
+                    leftSection={<IconFlag size={10} />}
+                  >
+                    Evaluar · {e.indicadorCodigo} · {e.corte}
+                  </Badge>
+                ))}
+              </Group>
             )}
           </div>
         </Group>
@@ -1401,6 +1460,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           </Group>
           <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
         </Box>
+
 
         {indicadores.length === 0 ? (
           <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }} onClick={(e) => e.stopPropagation()}>

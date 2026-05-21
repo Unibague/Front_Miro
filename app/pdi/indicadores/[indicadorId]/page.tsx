@@ -115,6 +115,19 @@ function resolvePeriodoForRespuesta(periodos: Periodo[], respuesta: RespuestaFor
   return null;
 }
 
+function getDocumentosFormulario(respuesta: RespuestaFormulario) {
+  if (Array.isArray(respuesta.documentos) && respuesta.documentos.length > 0) return respuesta.documentos;
+  if (respuesta.documento_url || respuesta.documento_nombre_original || respuesta.documento_filename) {
+    return [{
+      _id: "legacy",
+      nombre_original: respuesta.documento_nombre_original,
+      filename: respuesta.documento_filename,
+      url: respuesta.documento_url,
+    }];
+  }
+  return [];
+}
+
 function PeriodoCard({
   p,
   onReportar,
@@ -430,7 +443,7 @@ function FormulariosRespuestasPanel({
                 <Textarea
                   placeholder="Comentario para el responsable (opcional)..."
                   value={comentarios[r._id] ?? ""}
-                  onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                  onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                   rows={2}
                   radius="md"
                   mt="sm"
@@ -535,6 +548,7 @@ function LiderRevisionPanel({
             r.lider_email_aval?.toLowerCase().trim() === liderEmail.toLowerCase().trim();
           const formularioNombre =
             typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
 
           return (
             <Paper key={r._id} withBorder radius="xl" p="lg" shadow="xs">
@@ -666,7 +680,7 @@ function LiderRevisionPanel({
                   <Textarea
                     placeholder="Comentario de evaluacion para el responsable (opcional)..."
                     value={comentarios[r._id] ?? ""}
-                    onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                    onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                     rows={3}
                     radius="md"
                     mb="sm"
@@ -820,6 +834,7 @@ function LiderRevisionPanelV2({
           const estadoSeleccionado = estadosSeleccionados[r._id] ?? avalEstado;
           const formularioNombre =
             typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
 
           return (
             <Paper key={r._id} withBorder radius="xl" p="lg" shadow="sm">
@@ -920,7 +935,6 @@ function LiderRevisionPanelV2({
                       <Text size="xs" c="dimmed" mt={4}>Periodo: {periodoMostrado}</Text>
                     </div>
                     <Group gap="xs">
-                      <Badge variant="outline" color="gray" radius="xl">Formato Word</Badge>
                       {r.word_url && (
                           <Button
                             size="xs"
@@ -928,9 +942,10 @@ function LiderRevisionPanelV2({
                             color="blue"
                             component="a"
                             href={r.word_url}
-                            download={r.word_filename || true}
+                            target="_blank"
+                            rel="noreferrer"
                           >
-                            Descargar Word
+                            Ver reporte
                           </Button>
                       )}
                     </Group>
@@ -939,25 +954,32 @@ function LiderRevisionPanelV2({
                   <Paper withBorder radius="md" p="md" style={{ background: "var(--mantine-color-default-hover)" }}>
                     <Group justify="space-between" align="center" wrap="wrap" gap="sm">
                       <div>
-                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencia adjunta</Text>
+                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencias adjuntas</Text>
                         <Text size="sm" fw={600} mt={3}>
-                          {r.documento_nombre_original || r.documento_filename || "Sin evidencia adjunta"}
+                          {documentosFormulario.length > 0
+                            ? `${documentosFormulario.length} archivo(s) PDF`
+                            : "Sin evidencia adjunta"}
                         </Text>
-                        <Text size="xs" c="dimmed" mt={2}>Archivo Word o PDF enviado por el responsable</Text>
+                        <Text size="xs" c="dimmed" mt={2}>PDF enviado por el responsable</Text>
                       </div>
-                      {r.documento_url ? (
-                        <Button
-                          size="xs"
-                          variant="light"
-                          color="violet"
-                          component="a"
-                          href={r.documento_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          leftSection={<IconFileTypePdf size={13} />}
-                        >
-                          Abrir evidencia
-                        </Button>
+                      {documentosFormulario.length > 0 ? (
+                        <Group gap="xs" wrap="wrap">
+                          {documentosFormulario.filter((doc) => !!doc.url).map((doc, index) => (
+                            <Button
+                              key={doc._id ?? `${doc.url}-${index}`}
+                              size="xs"
+                              variant="light"
+                              color="violet"
+                              component="a"
+                              href={doc.url!}
+                              target="_blank"
+                              rel="noreferrer"
+                              leftSection={<IconFileTypePdf size={13} />}
+                            >
+                              {documentosFormulario.length > 1 ? `Abrir evidencia ${index + 1}` : "Abrir evidencia"}
+                            </Button>
+                          ))}
+                        </Group>
                       ) : (
                         <Badge color="gray" variant="light">Sin archivo</Badge>
                       )}
@@ -1009,7 +1031,7 @@ function LiderRevisionPanelV2({
                   label="Observaciones"
                   placeholder="Escribe aquí las observaciones para el responsable..."
                   value={comentarios[r._id] ?? r.aval_comentario ?? ""}
-                  onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                  onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                   rows={4}
                   radius="md"
                   disabled={readOnly || !puedoAval}
@@ -1026,24 +1048,6 @@ function LiderRevisionPanelV2({
                   </Paper>
                 )}
 
-                {(r.aval_por || r.aval_comentario) && (
-                  <Paper
-                    withBorder
-                    radius="md"
-                    p="sm"
-                    mb="md"
-                    style={{ background: avalEstado === "Rechazado" ? "rgba(239,68,68,0.04)" : "rgba(13,148,136,0.04)" }}
-                  >
-                    {r.aval_por && (
-                      <Text size="sm" c={avalEstado === "Rechazado" ? "red" : "teal"}>
-                        Evaluado por: {r.aval_por}{r.aval_fecha ? ` · ${new Date(r.aval_fecha).toLocaleDateString("es-CO")}` : ""}
-                      </Text>
-                    )}
-                    {r.aval_comentario && (
-                      <Text size="sm" mt={4}>Observaciones registradas: {r.aval_comentario}</Text>
-                    )}
-                  </Paper>
-                )}
 
                 {puedoAval && (
                   <Group justify="flex-end">
@@ -1131,7 +1135,11 @@ export default function IndicadorEvidenciasPage() {
 
   const mostrarVistaLider = isLider || fuerzaVistaEvaluacion;
   const emailSesion = (session?.user?.email ?? "").toLowerCase().trim();
-  const corteActivo = cortesVigentes[0]?.nombre ?? null;
+  const corteActivo = indicador
+    ? (cortesVigentes.find((c) =>
+        (indicador.periodos ?? []).some((p) => normalizePeriodo(p.periodo) === normalizePeriodo(c.nombre))
+      )?.nombre ?? null)
+    : null;
   const semColor = indicador ? SEMAFORO_COLORS[indicador.semaforo] : "#aaa";
   const avanceMostrado = indicador ? getIndicadorAvanceMostrado(indicador) : null;
   const periodosVisibles = indicador

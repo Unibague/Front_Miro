@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
@@ -10,22 +10,19 @@ import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFlag, IconAlertTriangle,
-  IconListCheck, IconExternalLink, IconSettings, IconFolderOpen, IconUpload,
+  IconListCheck, IconExternalLink, IconSettings,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen, ImportExecutedResponse } from "./types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen } from "./types";
 import { PDI_ROUTES } from "./api";
 import MacroproyectoModal from "./components/MacroproyectoModal";
-import ProyectoModal from "./components/ProyectoModal";
 import AccionModal from "./components/AccionModal";
 import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
-import PdiResumenSidebar from "./components/PdiResumenSidebar";
-import PdiPresupuesto from "./components/PdiPresupuesto";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 
 const formatCOP = (value: number) =>
@@ -40,29 +37,8 @@ const PDI_FIXED_NAME = "Plan de Desarrollo Institucional (PDI)";
 const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
   anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
 
-function getSemaforoByAvance(avance: number) {
-  if (avance >= 90) return "verde";
-  if (avance >= 60) return "amarillo";
-  return "rojo";
-}
-
-function normalizePeso(peso: number) {
-  const value = Number(peso) || 0;
-  return value <= 1 ? value * 100 : value;
-}
-
-function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
-  );
-}
-
 function getIndicadorAvanceMostrado(ind: Indicador) {
   return ind.avance_total_real ?? ind.avance;
-}
-
-function getIndicadorAvancePonderado(ind: Indicador) {
-  return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
@@ -296,6 +272,8 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
 
   // Sincronizar si el padre actualiza la acción
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
+  const presupuestoAccion = Number(accion.presupuesto) || 0;
+  const presupuestoEjecutadoAccion = Number(accion.presupuesto_ejecutado) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }
@@ -356,8 +334,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
       <Group gap={8} mt={4}>
         <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
-        {admin && accion.presupuesto > 0 && (
-          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(accion.presupuesto)}</b></Text>
+        {presupuestoAccion > 0 && (
+          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoAccion)}</b></Text>
+        )}
+        {presupuestoEjecutadoAccion > 0 && (
+          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoAccion)}</b></Text>
         )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar indicadores" : "Ver indicadores"}
@@ -417,6 +398,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
   const presupuestoProyecto = Number(proyecto.presupuesto) || 0;
+  const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }
@@ -488,6 +470,9 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
         <Text size="xs" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
         <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
         <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
+        {presupuestoEjecutadoProyecto > 0 && (
+          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
+        )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar acciones" : "Ver acciones estratégicas"}
         </Button>
@@ -812,69 +797,6 @@ export default function PdiPage() {
   const [macroModal, setMacroModal] = useState(false);
   const [configModal, setConfigModal] = useState(false);
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
-  const [executedFile, setExecutedFile] = useState<File | null>(null);
-  const [uploadingExecuted, setUploadingExecuted] = useState(false);
-  const [executedImportResult, setExecutedImportResultState] = useState<ImportExecutedResponse | null>(() => {
-    try { const s = localStorage.getItem("pdi_executed_import_result"); return s ? JSON.parse(s) : null; } catch { return null; }
-  });
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-
-  const setExecutedImportResult = (val: ImportExecutedResponse | null) => {
-    setExecutedImportResultState(val);
-    try { if (val) localStorage.setItem("pdi_executed_import_result", JSON.stringify(val)); else localStorage.removeItem("pdi_executed_import_result"); } catch {}
-  };
-
-  const handleImportExecuted = async () => {
-    if (!executedFile) {
-      showNotification({ title: "Archivo requerido", message: "Selecciona un archivo Excel antes de importar", color: "orange" });
-      return;
-    }
-    const fileName = executedFile.name.toLowerCase();
-    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
-      showNotification({ title: "Formato inválido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
-      return;
-    }
-    const formData = new FormData();
-    formData.append("file", executedFile);
-    setUploadingExecuted(true);
-    try {
-      const res = await axios.post<ImportExecutedResponse>(
-        PDI_ROUTES.importarEjecutadoProyecto(),
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      setExecutedImportResult(res.data);
-      await cargarPortfolio();
-      if (res.data.acciones_actualizadas === 0) {
-        showNotification({
-          title: "Sin coincidencias",
-          message: res.data.observacion ?? "Ninguna acción del archivo coincidió con el sistema.",
-          color: "orange",
-        });
-      } else {
-        showNotification({
-          title: "Causado importado",
-          message: `${res.data.acciones_actualizadas} acción(es) actualizadas — ${res.data.macro_detectado?.nombre ?? "búsqueda global"}`,
-          color: "teal",
-        });
-      }
-    } catch (e: any) {
-      const errData = e.response?.data;
-      const macrosDisponibles: { codigo: string; nombre: string; similitud: number }[] = errData?.macros_disponibles ?? [];
-      const extra = macrosDisponibles.length
-        ? `\nMacros en sistema: ${macrosDisponibles.map((m) => `${m.codigo} (${m.similitud}%)`).join(", ")}`
-        : "";
-      showNotification({
-        title: "Error al importar",
-        message: (errData?.error ?? "No se pudo procesar el archivo de causado") + extra,
-        color: "red",
-        autoClose: 12000,
-      });
-    } finally {
-      setUploadingExecuted(false);
-    }
-  };
-
   const cargarPortfolio = async () => {
     try {
       const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes] = await Promise.all([
@@ -967,23 +889,6 @@ export default function PdiPage() {
     });
   };
 
-  const handleDeleteProyecto = (macroId: string, id: string) => {
-    modals.openConfirmModal({
-      title: "Eliminar proyecto",
-      children: <Text size="sm">¿Seguro que deseas eliminar este proyecto?</Text>,
-      labels: { confirm: "Eliminar", cancel: "Cancelar" },
-      confirmProps: { color: "red" },
-      onConfirm: async () => {
-        try {
-          await axios.delete(PDI_ROUTES.proyecto(id));
-          setProyectosPorMacro(prev => ({ ...prev, [macroId]: prev[macroId].filter(p => p._id !== id) }));
-          showNotification({ title: "Eliminado", message: "Proyecto eliminado", color: "teal" });
-          await refrescarMacro(macroId);
-        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
-      },
-    });
-  };
-
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
     <PdiSidebar />
@@ -1046,163 +951,6 @@ export default function PdiPage() {
             />
           ))}
         </SimpleGrid>
-      )}
-
-      {/* ── Presupuesto PDI desde Google Sheets ─────────────────────────── */}
-      {macros.length > 0 && (
-        <Paper withBorder radius="lg" p="md" mt="md"
-          style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.05), rgba(255,255,255,0.98) 58%)" }}>
-          <Text fw={700} mb={4}>Presupuesto PDI</Text>
-          <Text size="sm" c="dimmed" mb="md">
-            Presupuesto asignado y comprometido por proyectos.
-          </Text>
-          <PdiPresupuesto />
-        </Paper>
-      )}
-
-      {admin && macros.length > 0 && (
-        <Paper withBorder radius="lg" p="md" mt="md"
-          style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(255,255,255,0.98) 58%)" }}>
-          <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-            <div style={{ minWidth: 0 }}>
-              <Text fw={700}>Importar causado presupuestal</Text>
-              <Text size="sm" c="dimmed" mt={2}>
-                El macroproyecto se identifica automáticamente desde el archivo Excel.
-              </Text>
-            </div>
-            <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".xlsx,.xlsm"
-                style={{ display: "none" }}
-                onChange={(e) => { setExecutedFile(e.currentTarget.files?.[0] ?? null); }}
-              />
-              <Button variant="default" leftSection={<IconFolderOpen size={14} />}
-                onClick={() => importInputRef.current?.click()}>
-                {executedFile ? executedFile.name.slice(0, 20) + (executedFile.name.length > 20 ? "…" : "") : "Seleccionar Excel"}
-              </Button>
-              <Button color="blue" leftSection={<IconUpload size={14} />}
-                loading={uploadingExecuted}
-                disabled={!executedFile}
-                onClick={handleImportExecuted}>
-                Importar causado
-              </Button>
-            </Group>
-          </Group>
-
-          {executedImportResult && (() => {
-            const r = executedImportResult;
-            const detalle = r.acciones_actualizadas_detalle ?? [];
-            // Agrupar por proyecto
-            const byProyecto = new Map<string, { nombre: string; acciones: typeof detalle }>();
-            for (const a of detalle) {
-              const key = a.codigo_proyecto ?? a.nombre_proyecto ?? "Sin proyecto";
-              if (!byProyecto.has(key)) byProyecto.set(key, { nombre: a.nombre_proyecto ?? key, acciones: [] });
-              byProyecto.get(key)!.acciones.push(a);
-            }
-            const noEncontradosAcciones = r.no_encontrados?.acciones ?? [];
-            const noEncontradosProyectos = r.no_encontrados?.proyectos ?? [];
-
-            return (
-              <Stack gap="md" mt="md">
-                {/* Aviso cuando no hubo coincidencias */}
-                {r.acciones_actualizadas === 0 && r.observacion && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#fffbeb", borderColor: "#fbbf24" }}>
-                    <Group gap={8}>
-                      <Badge color="orange" variant="light" size="sm">Sin coincidencias</Badge>
-                      <Text size="sm">{r.observacion}</Text>
-                    </Group>
-                  </Paper>
-                )}
-                {/* Resumen del macro detectado */}
-                {r.macro_detectado && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#f0fdf4", borderColor: "#86efac" }}>
-                    <Group gap={8} align="center">
-                      <Badge color="green" variant="filled" size="sm">Macro detectado</Badge>
-                      <Text size="sm" fw={700}>{r.macro_detectado.codigo} — {r.macro_detectado.nombre}</Text>
-                      <Text size="xs" c="dimmed" ml="auto">{r.acciones_actualizadas} acción(es) actualizada(s) · {r.proyectos_actualizados} proyecto(s)</Text>
-                    </Group>
-                  </Paper>
-                )}
-
-                {/* Tabla de resultados por proyecto */}
-                {byProyecto.size > 0 && (
-                  <Stack gap="sm">
-                    {Array.from(byProyecto.entries()).map(([key, { nombre, acciones: accs }]) => {
-                      const totalGasto    = accs.reduce((s, a) => s + (a.gasto ?? 0), 0);
-                      const totalInversion = accs.reduce((s, a) => s + (a.inversion ?? 0), 0);
-                      const totalEjec     = accs.reduce((s, a) => s + a.presupuesto_ejecutado, 0);
-                      return (
-                        <Paper key={key} withBorder radius="lg" p="md">
-                          <Group justify="space-between" mb="xs" wrap="wrap">
-                            <Group gap={6}>
-                              <Badge color="blue" variant="light" size="sm">{key}</Badge>
-                              <Text size="sm" fw={700}>{nombre}</Text>
-                            </Group>
-                            <Group gap={12}>
-                              <Text size="xs" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(totalGasto)}</b></Text>
-                              <Text size="xs" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(totalInversion)}</b></Text>
-                              <Text size="xs" fw={700}>Total: {formatCOP(totalEjec)}</Text>
-                            </Group>
-                          </Group>
-                          <Box style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                              <thead>
-                                <tr style={{ background: "#f8f9fa" }}>
-                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057", width: 100 }}>Código</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#2563eb", width: 110 }}>Gasto</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#7c3aed", width: 110 }}>Inversión</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total causado</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {accs.map((a, idx) => (
-                                  <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f9fafb" }}>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", verticalAlign: "middle" }}>
-                                      <Group gap={6} wrap="nowrap">
-                                        {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">G</Badge>}
-                                        {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">I</Badge>}
-                                        {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">G+I</Badge>}
-                                        <Text size="xs" fw={700}>{a.codigo_accion ?? a.codigo ?? (a.nombre ?? a.nombre_accion)}</Text>
-                                      </Group>
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400 }}>
-                                      {(a.gasto ?? 0) > 0 ? formatCOP(a.gasto!) : "—"}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#7c3aed", fontWeight: (a.inversion ?? 0) > 0 ? 700 : 400 }}>
-                                      {(a.inversion ?? 0) > 0 ? formatCOP(a.inversion!) : "—"}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", fontWeight: 700 }}>
-                                      {formatCOP(a.presupuesto_ejecutado)}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </Box>
-                        </Paper>
-                      );
-                    })}
-                  </Stack>
-                )}
-
-                {/* Totales globales */}
-                {detalle.length > 0 && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#eff6ff", borderColor: "#93c5fd" }}>
-                    <Group gap={24} wrap="wrap">
-                      <Text size="sm" fw={700} c="blue">Totales importados</Text>
-                      <Text size="sm" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(r.totales_importados.gasto ?? 0)}</b></Text>
-                      <Text size="sm" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(r.totales_importados.inversion ?? 0)}</b></Text>
-                      <Text size="sm" fw={700}>Total causado: {formatCOP(r.totales_importados.presupuesto_ejecutado)}</Text>
-                    </Group>
-                  </Paper>
-                )}
-
-              </Stack>
-            );
-          })()}
-        </Paper>
       )}
 
       <MacroproyectoModal

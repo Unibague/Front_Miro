@@ -16,6 +16,11 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
   const role = userRole?.trim() ? userRole : "Usuario";
 
   useEffect(() => {
+    if (pathname?.startsWith('/public')) {
+      setIsVerifying(false);
+      return;
+    }
+
     const adminRoutes = /^\/admin/;
     const responsibleRoutes = /^\/responsible/;
     const producerRoutes = /^\/producer/;

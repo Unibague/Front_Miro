@@ -29,6 +29,7 @@ interface CampoFormulario {
   tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  min_caracteres?: number | null;
   max_caracteres?: number | null;
   opciones?: string[];
   condicional_valor?: "supero_meta" | "no_supero_meta" | null;
@@ -69,11 +70,21 @@ interface RespuestaFormulario {
   documento_url?: string;
   documento_mimetype?: string;
   documento_size?: number;
+  documentos?: DocumentoEvidencia[];
   estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
   lider_email_aval?: string;
   aval_por?: string;
   aval_comentario?: string;
   aval_fecha?: string | null;
+}
+
+interface DocumentoEvidencia {
+  _id?: string;
+  nombre_original?: string;
+  filename?: string;
+  url?: string;
+  mimetype?: string;
+  size?: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,7 +94,6 @@ const SEMAFORO_COLORS: Record<string, string> = {
 };
 
 function esPeriodoEditable(periodo: string, cortes: CorteVigente[]) {
-  if (!cortes.length) return true;
   return cortes.some(c => c.nombre === periodo);
 }
 
@@ -102,6 +112,37 @@ function formatFechaCorta(fecha?: string | null) {
   const date = new Date(fecha);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("es-CO");
+}
+
+const MAX_DOC_SIZE = 10 * 1024 * 1024;
+const EVIDENCE_HELP_TEXT =
+  "Adjunte uno o varios archivos en formato PDF que permitan soportar el resultado alcanzado frente al indicador. Las evidencias pueden corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan verificar el avance reportado frente a la meta o línea base.";
+const EVIDENCE_HELP_TEXT_2 =
+  "Lo importante es que la evidencia cargada permita comprobar el avance reportado del indicador de resultado y no corresponda únicamente a información general sin relación directa con el resultado.";
+
+function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvidencia[] {
+  if (!resp) return [];
+  if (Array.isArray(resp.documentos) && resp.documentos.length > 0) return resp.documentos;
+  if (resp.documento_url || resp.documento_nombre_original || resp.documento_filename) {
+    return [{
+      _id: "legacy",
+      nombre_original: resp.documento_nombre_original,
+      filename: resp.documento_filename,
+      url: resp.documento_url,
+      mimetype: resp.documento_mimetype,
+      size: resp.documento_size,
+    }];
+  }
+  return [];
+}
+
+function formatFileSize(size?: number) {
+  if (!size || size <= 0) return "";
+  return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(size / 1024)} KB`;
+}
+
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
 
 // ── Página ───────────────────────────────────────────────────────────────────
@@ -141,23 +182,14 @@ export default function SubirEvidenciasPage() {
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
 
-  // Busca el corte vigente que coincide con un período real del indicador
+  // Busca el corte vigente que coincide con un período real del indicador.
+  // Si no hay coincidencia, el indicador no debe quedar abierto para reportar.
   const corteQueCoincide = indicador
     ? (cortesVigentes.find(c =>
         (indicador.periodos ?? []).some((p: Periodo) => p.periodo === c.nombre)
       )?.nombre ?? "")
     : "";
-  // Fallback: si ningún vigente coincide con períodos del indicador, usa el primero vigente
-  // Si tampoco hay vigentes, usa el último período no-Aprobado del indicador
-  const corteActivoFallback = !corteQueCoincide
-    ? (cortesVigentes[0]?.nombre || (() => {
-        const periodos = indicador?.periodos ?? [];
-        const editables = periodos.filter((p: Periodo) => p.estado_reporte !== "Aprobado");
-        const lista = editables.length ? editables : periodos;
-        return lista.length ? lista[lista.length - 1].periodo : "";
-      })())
-    : "";
-  const corteActivo = corteQueCoincide || corteActivoFallback;
+  const corteActivo = corteQueCoincide;
 
   // ── Superó meta del corte activo (para lógica condicional de campos) ──────
   const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
@@ -243,11 +275,18 @@ export default function SubirEvidenciasPage() {
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
-  const formTieneDocumento = (formId: string) => Boolean(respuestas[formId]?.documento_url);
+  const formTieneDocumento = (formId: string) => getDocumentosEvidencia(respuestas[formId]).length > 0;
+  const getMinCaracteres = (campo: CampoFormulario) => campo.min_caracteres ?? campo.max_caracteres ?? null;
   const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
-    if (!campo.requerido) return true;
     if (!shouldShowCampo(campo)) return true;
-    if (["texto_largo", "texto_corto", "select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
+    if (campo.tipo === "texto_largo" || campo.tipo === "texto_corto") {
+      const texto = getTexto(formId, campo._id).trim();
+      const minChars = getMinCaracteres(campo);
+      if (campo.requerido && !texto) return false;
+      return !texto || !minChars || texto.length >= minChars;
+    }
+    if (!campo.requerido) return true;
+    if (["select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
       return Boolean(getTexto(formId, campo._id).trim());
     }
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
@@ -430,14 +469,23 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
-  const MAX_DOC_SIZE = 20 * 1024 * 1024; // 20 MB
-
-  const handleUploadDocumento = async (form: FormularioPDI, file: File | null) => {
-    if (!file) return;
-    if (file.size > MAX_DOC_SIZE) {
+  const handleUploadDocumento = async (form: FormularioPDI, selectedFiles: File[] | File | null) => {
+    const files = Array.isArray(selectedFiles) ? selectedFiles : selectedFiles ? [selectedFiles] : [];
+    if (files.length === 0) return;
+    const invalidFile = files.find(file => !isPdfFile(file));
+    if (invalidFile) {
+      showNotification({
+        title: "Formato inválido",
+        message: `El archivo "${invalidFile.name}" no es PDF. Solo se permiten archivos PDF.`,
+        color: "red",
+      });
+      return;
+    }
+    const oversizedFile = files.find(file => file.size > MAX_DOC_SIZE);
+    if (oversizedFile) {
       showNotification({
         title: "Archivo demasiado grande",
-        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 20 MB.`,
+        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
         color: "red",
       });
       return;
@@ -471,7 +519,7 @@ export default function SubirEvidenciasPage() {
     setUploadingDocumento(prev => ({ ...prev, [form._id]: true }));
     try {
       const fd = new FormData();
-      fd.append("archivo", file);
+      files.forEach(f => fd.append("archivo", f));
       const res = await axios.post(
         PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
         fd,
@@ -482,19 +530,25 @@ export default function SubirEvidenciasPage() {
         if (!actual) return prev;
         return { ...prev, [form._id]: { ...actual, ...res.data } };
       });
-      showNotification({ title: "Subido", message: "Evidencia adjuntada correctamente", color: "teal" });
-    } catch {
-      showNotification({ title: "Error", message: "Solo se permiten archivos Word o PDF", color: "red" });
+      showNotification({
+        title: "Subido",
+        message: files.length === 1 ? "Evidencia adjuntada correctamente" : `${files.length} evidencias adjuntadas correctamente`,
+        color: "teal",
+      });
+    } catch (e: any) {
+      showNotification({ title: "Error", message: e.response?.data?.error ?? "Solo se permiten archivos PDF", color: "red" });
     } finally {
       setUploadingDocumento(prev => ({ ...prev, [form._id]: false }));
     }
   };
 
-  const handleDeleteDocumento = async (form: FormularioPDI) => {
+  const handleDeleteDocumento = async (form: FormularioPDI, documento?: DocumentoEvidencia) => {
     const resp = respuestas[form._id];
     if (!resp) return;
     try {
-      await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id));
+      const res = await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id), {
+        params: documento?._id ? { documentoId: documento._id } : undefined,
+      });
       setRespuestas(prev => {
         const actual = prev[form._id];
         if (!actual) return prev;
@@ -502,10 +556,7 @@ export default function SubirEvidenciasPage() {
           ...prev,
           [form._id]: {
             ...actual,
-            documento_filename: "",
-            documento_url: "",
-            documento_nombre_original: "",
-            documento_mimetype: "",
+            ...res.data,
           },
         };
       });
@@ -540,7 +591,7 @@ export default function SubirEvidenciasPage() {
         errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
       }
       if (formulariosSinDocumento.length > 0) {
-        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
+        errores.push(`Debes adjuntar al menos una evidencia PDF del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -817,14 +868,7 @@ export default function SubirEvidenciasPage() {
                     const estadoAval = resp?.estado_aval ?? (autoAprobadoFormulario ? "Aprobado" : enviado ? "Pendiente" : null);
                     const fechaAval = formatFechaCorta(resp?.aval_fecha);
                     const fechaEnvio = formatFechaCorta(resp?.fecha_envio);
-                    const avalLabel =
-                      estadoAval === "Aprobado"
-                        ? "Aprobado"
-                        : estadoAval === "Rechazado"
-                          ? "Rechazado"
-                          : estadoAval === "Pendiente"
-                            ? "En revisión"
-                            : null;
+                    const documentosAdjuntos = getDocumentosEvidencia(resp);
                     return (
                       <Stack key={form._id} gap="sm">
                         <Paper withBorder radius="xl" p="lg"
@@ -842,23 +886,22 @@ export default function SubirEvidenciasPage() {
                         <Group justify="space-between" mb="md">
                           <Text fw={700} size="md">{form.nombre}</Text>
                           <Group gap={8}>
-                            <Badge color={autoAprobadoFormulario ? "teal" : enviado ? "teal" : resp ? "yellow" : "gray"} variant="light">
-                              {autoAprobadoFormulario ? "Aprobado" : enviado ? "Enviado" : resp ? "Guardado" : "Sin responder"}
+                            <Badge
+                              color={
+                                autoAprobadoFormulario ? "teal"
+                                : estadoAval === "Rechazado" ? "red"
+                                : enviado ? "teal"
+                                : resp ? "yellow"
+                                : "gray"
+                              }
+                              variant="light"
+                            >
+                              {autoAprobadoFormulario ? "Aprobado"
+                                : estadoAval === "Rechazado" ? "Rechazado — corrige y reenvía"
+                                : enviado ? "Enviado"
+                                : resp ? "Borrador"
+                                : "Sin responder"}
                             </Badge>
-                            {avalLabel && (
-                              <Badge
-                                color={
-                                  estadoAval === "Aprobado"
-                                    ? "green"
-                                    : estadoAval === "Rechazado"
-                                      ? "red"
-                                      : "yellow"
-                                }
-                                variant="light"
-                              >
-                                {avalLabel}
-                              </Badge>
-                            )}
                           </Group>
                         </Group>
                         {resp?.estado === "Enviado" && (
@@ -900,7 +943,7 @@ export default function SubirEvidenciasPage() {
                               )}
                               {estadoAval === "Rechazado" && (
                                 <Text size="sm" c="red" fw={600}>
-                                  El líder rechazó este envío. Puedes corregir el formulario y volver a reportar.
+                                  El líder rechazó este envío. Corrige el formulario y sube nuevas evidencias — los archivos anteriores serán reemplazados automáticamente al subir nuevos.
                                 </Text>
                               )}
                               {estadoAval === "Aprobado" && resp.word_url && (
@@ -917,19 +960,23 @@ export default function SubirEvidenciasPage() {
                                   Descargar Word aprobado
                                 </Button>
                               )}
-                              {estadoAval === "Aprobado" && resp.documento_url && (
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="violet"
-                                  component="a"
-                                  href={resp.documento_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ alignSelf: "flex-start" }}
-                                >
-                                  Ver evidencia aprobada
-                                </Button>
+                              {estadoAval === "Aprobado" && documentosAdjuntos.length > 0 && (
+                                <Group gap="xs" wrap="wrap">
+                                  {documentosAdjuntos.filter(doc => !!doc.url).map((doc, index) => (
+                                    <Button
+                                      key={doc._id ?? `${doc.url}-${index}`}
+                                      size="xs"
+                                      variant="light"
+                                      color="violet"
+                                      component="a"
+                                      href={doc.url!}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {documentosAdjuntos.length > 1 ? `Ver evidencia ${index + 1}` : "Ver evidencia aprobada"}
+                                    </Button>
+                                  ))}
+                                </Group>
                               )}
                             </Stack>
                           </Paper>
@@ -938,7 +985,7 @@ export default function SubirEvidenciasPage() {
                           {form.campos.map(campo => {
                             if (!shouldShowCampo(campo)) return null;
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
-                            const maxChars = campo.max_caracteres ?? null;
+                            const minChars = getMinCaracteres(campo);
                             const currentLen = getTexto(form._id, campo._id).length;
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
@@ -962,12 +1009,19 @@ export default function SubirEvidenciasPage() {
                                       value={getTexto(form._id, campo._id)}
                                       onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
                                       rows={4} disabled={bloqueado} autosize minRows={3}
-                                      maxLength={maxChars ?? undefined}
+                                      minLength={minChars ?? undefined}
+                                      error={
+                                        !bloqueado && campo.requerido && currentLen === 0
+                                          ? "Este campo es obligatorio"
+                                          : !bloqueado && minChars && currentLen > 0 && currentLen < minChars
+                                          ? `Faltan ${minChars - currentLen} caracteres para cumplir el mínimo de ${minChars}`
+                                          : undefined
+                                      }
                                     />
-                                    {maxChars && (
+                                    {minChars && (
                                       <Text size="xs" ta="right"
-                                        c={currentLen >= maxChars ? "red" : currentLen > maxChars * 0.9 ? "orange" : "dimmed"}>
-                                        {currentLen} / {maxChars}
+                                        c={currentLen > 0 && currentLen < minChars ? "red" : currentLen >= minChars ? "teal" : "dimmed"}>
+                                        {currentLen} / mínimo {minChars}
                                       </Text>
                                     )}
                                   </Stack>
@@ -979,7 +1033,7 @@ export default function SubirEvidenciasPage() {
                                     value={getTexto(form._id, campo._id)}
                                     onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
                                     disabled={bloqueado}
-                                    maxLength={maxChars ?? undefined}
+                                    minLength={minChars ?? undefined}
                                   />
                                 )}
 
@@ -1048,7 +1102,7 @@ export default function SubirEvidenciasPage() {
                                         )}
                                       </Group>
                                     ) : !bloqueado ? (
-                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf">
+                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf,.pdf">
                                         {props => (
                                           <Button size="sm" variant="light" color="teal"
                                             leftSection={<IconUpload size={14} />}
@@ -1076,7 +1130,7 @@ export default function SubirEvidenciasPage() {
                           </ThemeIcon>
                           <div>
                             <Title order={5}>Evidencias</Title>
-                            <Text size="xs" c="dimmed">Archivo Word o PDF para revisión</Text>
+                            <Text size="xs" c="dimmed">Uno o varios archivos PDF para revisión</Text>
                           </div>
                         </Group>
                         <Paper
@@ -1094,69 +1148,102 @@ export default function SubirEvidenciasPage() {
                                 <Text size="sm" fw={700}>Archivo de evidencias</Text>
                                 <Badge size="xs" color="red" variant="dot">Requerido</Badge>
                               </Group>
-                              <Text size="xs" c="dimmed">
-                                Adjunta un archivo PDF o Word para que el líder lo revise con el formulario.
-                              </Text>
-                              <Text size="xs" c="dimmed" mt={2}>
-                                Formatos: <b>.pdf, .doc, .docx</b> · Tamaño máximo: <b>20 MB</b>
-                              </Text>
+                              <Stack gap={4}>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT}</Text>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_2}</Text>
+                                <Text size="xs" c="dimmed">
+                                  Formato permitido: <b>PDF</b> · Tamaño máximo: <b>10 MB por archivo</b>
+                                </Text>
+                              </Stack>
                             </div>
 
-                            {resp?.documento_url ? (
-                              <Group gap={8} align="center">
-                                <div>
-                                  <Button
-                                    size="xs"
-                                    variant="light"
-                                    color="violet"
-                                    component="a"
-                                    href={resp.documento_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    leftSection={<IconExternalLink size={13} />}
-                                  >
-                                    {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
-                                  </Button>
-                                  {resp.documento_size != null && resp.documento_size > 0 && (
-                                    <Text size="xs" c="dimmed" mt={4}>
-                                      {resp.documento_size >= 1024 * 1024
-                                        ? `${(resp.documento_size / 1024 / 1024).toFixed(1)} MB`
-                                        : `${Math.round(resp.documento_size / 1024)} KB`}
-                                    </Text>
+                            <Stack gap="xs" w="100%" mt="sm">
+                              {documentosAdjuntos.length > 0 && (
+                                <Stack gap={6}>
+                                  {documentosAdjuntos.map((doc, index) => (
+                                    <Paper
+                                      key={doc._id ?? `${doc.url}-${index}`}
+                                      withBorder
+                                      radius="md"
+                                      p="xs"
+                                      style={{ borderColor: "#ede9fe", background: "#faf5ff" }}
+                                    >
+                                      <Group gap={8} align="center" wrap="nowrap">
+                                        <ThemeIcon size={32} radius="md" color="violet" variant="light" style={{ flexShrink: 0 }}>
+                                          <IconForms size={16} />
+                                        </ThemeIcon>
+                                        <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+                                          <Text
+                                            size="xs"
+                                            fw={600}
+                                            truncate="end"
+                                            title={doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
+                                          >
+                                            {doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
+                                          </Text>
+                                          <Text size="xs" c="dimmed">
+                                            {formatFileSize(doc.size) || "PDF"}
+                                            {doc.url && doc.url.includes("drive.google") ? " · Drive" : ""}
+                                          </Text>
+                                        </Stack>
+                                        <Group gap={4} style={{ flexShrink: 0 }}>
+                                          {doc.url && (
+                                            <ActionIcon
+                                              size="sm"
+                                              variant="subtle"
+                                              color="violet"
+                                              component="a"
+                                              href={doc.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                            >
+                                              <IconExternalLink size={13} />
+                                            </ActionIcon>
+                                          )}
+                                          {!bloqueado && (
+                                            <ActionIcon
+                                              size="sm"
+                                              variant="subtle"
+                                              color="red"
+                                              onClick={() => handleDeleteDocumento(form, doc)}
+                                            >
+                                              <IconTrash size={13} />
+                                            </ActionIcon>
+                                          )}
+                                        </Group>
+                                      </Group>
+                                    </Paper>
+                                  ))}
+                                </Stack>
+                              )}
+
+                              {bloqueado && documentosAdjuntos.length === 0 && (
+                                <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
+                              )}
+
+                              {!bloqueado && (
+                                <FileButton
+                                  multiple
+                                  onChange={files => handleUploadDocumento(form, files)}
+                                  accept="application/pdf,.pdf"
+                                >
+                                  {props => (
+                                    <Button
+                                      size="sm"
+                                      variant="light"
+                                      color="violet"
+                                      radius="xl"
+                                      loading={uploadingDocumento[form._id]}
+                                      leftSection={<IconUpload size={13} />}
+                                      fullWidth
+                                      {...props}
+                                    >
+                                      Subir PDF
+                                    </Button>
                                   )}
-                                </div>
-                                {!bloqueado && (
-                                  <ActionIcon
-                                    size="sm"
-                                    variant="subtle"
-                                    color="red"
-                                    onClick={() => handleDeleteDocumento(form)}
-                                  >
-                                    <IconTrash size={13} />
-                                  </ActionIcon>
-                                )}
-                              </Group>
-                            ) : !bloqueado ? (
-                              <FileButton
-                                onChange={file => handleUploadDocumento(form, file)}
-                                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                              >
-                                {props => (
-                                  <Button
-                                    size="xs"
-                                    variant="light"
-                                    color="violet"
-                                    loading={uploadingDocumento[form._id]}
-                                    leftSection={<IconUpload size={13} />}
-                                    {...props}
-                                  >
-                                    Subir Word/PDF
-                                  </Button>
-                                )}
-                              </FileButton>
-                            ) : (
-                              <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
-                            )}
+                                </FileButton>
+                              )}
+                            </Stack>
                           </Group>
                         </Paper>
                       </div>
@@ -1181,19 +1268,45 @@ export default function SubirEvidenciasPage() {
                       : " Una vez enviado, el líder del macroproyecto recibirá tu reporte para revisión."}
                   </b>
                 </Text>
-                {!puedeEnviarTodo && (
-                  <Paper
-                    withBorder
-                    radius="md"
-                    p="sm"
-                    mb="md"
-                    style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
-                  >
-                    <Text size="sm" c="red" fw={600}>
-                      Debes diligenciar el avance del corte activo, completar los campos obligatorios y adjuntar la evidencia Word o PDF antes de enviar.
-                    </Text>
-                  </Paper>
-                )}
+                {!puedeEnviarTodo && (() => {
+                  const erroresDetalle: string[] = [];
+                  if (!hayPeriodosEditables) {
+                    erroresDetalle.push("No hay un corte activo para reportar.");
+                  }
+                  if (periodosEditablesSinAvance.length > 0) {
+                    erroresDetalle.push(`Registra el avance del corte: ${periodosEditablesSinAvance.map(p => p.periodo).join(", ")}.`);
+                  }
+                  formularios.forEach(form => {
+                    form.campos.forEach(campo => {
+                      if (!shouldShowCampo(campo)) return;
+                      const minChars = getMinCaracteres(campo);
+                      const currentLen = getTexto(form._id, campo._id).trim().length;
+                      if (campo.requerido && currentLen === 0) {
+                        erroresDetalle.push(`"${campo.etiqueta}" está vacío (obligatorio).`);
+                      } else if (minChars && currentLen > 0 && currentLen < minChars) {
+                        erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, se requieren mínimo ${minChars}.`);
+                      }
+                    });
+                  });
+                  formulariosSinDocumento.forEach((form: FormularioPDI) => {
+                    erroresDetalle.push(`Adjunta al menos una evidencia PDF en "${form.nombre}".`);
+                  });
+                  return (
+                    <Paper
+                      withBorder radius="md" p="sm" mb="md"
+                      style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
+                    >
+                      <Text size="sm" c="red" fw={700} mb={erroresDetalle.length > 1 ? 6 : 0}>
+                        Para poder enviar, corrige lo siguiente:
+                      </Text>
+                      {erroresDetalle.map((err, i) => (
+                        <Text key={i} size="sm" c="red" mt={4}>
+                          • {err}
+                        </Text>
+                      ))}
+                    </Paper>
+                  );
+                })()}
                 <Group justify="center" gap="md">
                   <Button
                     variant="default"

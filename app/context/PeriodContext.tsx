@@ -48,7 +48,7 @@ export const PeriodProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshPeriods = useCallback(async () => {
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/periods/allperiods`);
+      const response = await axios.get(`/api/periods/allperiods`);
       if (Array.isArray(response.data)) {
         const periods = response.data as Period[];
         setAvailablePeriods(periods);

@@ -18,6 +18,7 @@ interface CampoFormulario {
   tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  min_caracteres?: number | null;
   max_caracteres?: number | null;
   opciones?: string[];
   condicional_campo_id?: string | null;
@@ -148,6 +149,25 @@ export default function FormulariosIndicadorPanel({
   };
 
   const handleGuardar = async (form: FormularioPDI, enviar = false) => {
+    if (enviar) {
+      const camposConMinimoIncompleto = form.campos.filter(c => {
+        if (c.tipo !== "texto_largo" && c.tipo !== "texto_corto") return false;
+        if (!shouldShowCampo(form, c)) return false;
+        const minChars = c.min_caracteres ?? c.max_caracteres ?? null;
+        const texto = buildValorTexto(form, c).trim();
+        return Boolean(minChars && texto && texto.length < minChars);
+      });
+      if (camposConMinimoIncompleto.length > 0) {
+        showNotification({
+          title: "Mínimo de caracteres",
+          message: camposConMinimoIncompleto
+            .map(c => `"${c.etiqueta}" requiere mínimo ${c.min_caracteres ?? c.max_caracteres} caracteres.`)
+            .join(" "),
+          color: "red",
+        });
+        return;
+      }
+    }
     setSaving(prev => ({ ...prev, [form._id]: true }));
     try {
       const respuestasPayload = form.campos.map(c => ({
@@ -365,7 +385,7 @@ export default function FormulariosIndicadorPanel({
               {form.campos.map(campo => {
                 if (!shouldShowCampo(form, campo)) return null;
                 const archivoCampo = getRespuestaCampo(form._id, campo._id);
-                const maxChars = campo.max_caracteres ?? null;
+                const minChars = campo.min_caracteres ?? campo.max_caracteres ?? null;
                 const currentLen = getTexto(form._id, campo._id).length;
                 return (
                   <Paper key={campo._id} withBorder radius="md" p="md"
@@ -390,11 +410,11 @@ export default function FormulariosIndicadorPanel({
                           disabled={enviado}
                           autosize
                           minRows={3}
-                          maxLength={maxChars ?? undefined}
+                          minLength={minChars ?? undefined}
                         />
-                        {maxChars && (
-                          <Text size="xs" ta="right" c={currentLen > maxChars * 0.9 ? (currentLen >= maxChars ? "red" : "orange") : "dimmed"}>
-                            {currentLen} / {maxChars}
+                        {minChars && (
+                          <Text size="xs" ta="right" c={currentLen > 0 && currentLen < minChars ? "red" : currentLen >= minChars ? "teal" : "dimmed"}>
+                            {currentLen} / mínimo {minChars}
                           </Text>
                         )}
                       </Stack>
@@ -406,7 +426,7 @@ export default function FormulariosIndicadorPanel({
                         value={getTexto(form._id, campo._id)}
                         onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
                         disabled={enviado}
-                        maxLength={maxChars ?? undefined}
+                        minLength={minChars ?? undefined}
                       />
                     )}
 
