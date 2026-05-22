@@ -14,6 +14,7 @@ import {
   IconBuilding, IconCalendar, IconCircleCheck,
   IconAlertCircle, IconForms, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
+import { buildValidatorOptions, getPreferredValidatorColumnName } from "../../../utils/validatorOptions";
 
 interface Field {
   name: string;
@@ -57,7 +58,7 @@ export default function PublicFormPage() {
     if (!token) return;
     const load = async () => {
       try {
-        const res = await axios.get(`/api/qr/form/${token}`);
+        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/qr/form/${token}`);
         const fd: FormData = res.data;
         setFormData(fd);
 
@@ -83,11 +84,13 @@ export default function PublicFormPage() {
 
             if (field.validate_with && typeof field.validate_with === "object") {
               try {
-                const vRes = await axios.get(
-                  `/api/qr/validators/${field.validate_with.id}`,
-                  { params: { periodId: fd.periodId, validateWith: field.validate_with.name } }
+                const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+                  params: { id: field.validate_with.id, periodId: fd.periodId },
+                });
+                vMap[field.name] = buildValidatorOptions(
+                  vRes.data?.validator,
+                  getPreferredValidatorColumnName(field.validate_with.name)
                 );
-                vMap[field.name] = (vRes.data || []).map((v: any) => String(v));
               } catch { vMap[field.name] = []; }
             }
           })
@@ -141,7 +144,7 @@ export default function PublicFormPage() {
         name: sheet.name,
         data: sheetRows[sheet.name] || [],
       }));
-      await axios.post(`/api/qr/submit/${token}`, { sheetsData });
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/qr/submit/${token}`, { sheetsData });
       setSubmitted(true);
     } catch (err: any) {
       showNotification({

@@ -29,6 +29,7 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../components/Validators/ValidatorModal";
+import { buildValidatorOptions, getPreferredValidatorColumnName } from "../../../../utils/validatorOptions";
 
 interface Field {
   name: string;
@@ -262,10 +263,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             return { fieldName: field.name, options: [], isMultiple: field.multiple };
           }
 
-          const vRes = await axios.get(`/api/validators/${validatorId}`, {
-            params: { periodId, validateWith },
+          const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+            params: { id: validatorId, periodId },
           });
-          const optionStrings: string[] = vRes.data || [];
+          const optionStrings = buildValidatorOptions(
+            vRes.data?.validator,
+            getPreferredValidatorColumnName(validateWith)
+          );
           const options = optionStrings.map((v) => ({ value: v, label: v }));
 
           return { fieldName: field.name, options, isMultiple: field.multiple };

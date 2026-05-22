@@ -65,7 +65,10 @@ export async function GET(
   const periodId = req.nextUrl.searchParams.get("periodId") ?? "";
   const validateWith = req.nextUrl.searchParams.get("validateWith") ?? "";
   const preferredColumnName = validateWith.split(" - ").slice(1).join(" - ").trim();
-  const backendUrl = `${process.env.API_URL}/validators/id?id=${encodeURIComponent(params.id)}&periodId=${encodeURIComponent(periodId)}`;
+  const apiUrl = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return NextResponse.json([], { status: 500 });
+
+  const backendUrl = `${apiUrl}/validators/id?id=${encodeURIComponent(params.id)}&periodId=${encodeURIComponent(periodId)}`;
   try {
     const res = await fetch(backendUrl, { cache: "no-store" });
     const data = await res.json();

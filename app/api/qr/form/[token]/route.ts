@@ -4,7 +4,12 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { token: string } }
 ) {
-  const backendUrl = `${process.env.API_URL}/qr/form/${params.token}`;
+  const apiUrl = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) {
+    return NextResponse.json({ error: "API_URL no esta configurado." }, { status: 500 });
+  }
+
+  const backendUrl = `${apiUrl}/qr/form/${params.token}`;
   try {
     const res = await fetch(backendUrl, { cache: "no-store" });
     const data = await res.json();

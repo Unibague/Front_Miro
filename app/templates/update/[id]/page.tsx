@@ -97,6 +97,7 @@ const UpdateTemplatePage = () => {
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
   const [shared, setShared] = useState(false);
+  const [allowsQr, setAllowsQr] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -239,6 +240,7 @@ const UpdateTemplatePage = () => {
             setFields(nextFields);
             setActive(response.data.active);
             setShared(response.data.shared ?? false);
+            setAllowsQr(response.data.allows_qr ?? false);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -474,6 +476,7 @@ const UpdateTemplatePage = () => {
       original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
       shared,
+      allows_qr: allowsQr,
       dimensions: selectedDimensions,
       producers: derivedProducers,
       email: session?.user?.email,
@@ -907,6 +910,16 @@ router.back();
           const checked = e.currentTarget.checked;
           setShared(checked);
         }}
+        mb="sm"
+      />
+      <Switch
+        label="Permite generación de código QR"
+        description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla. También habilita la configuración de campos obligatorios."
+        checked={allowsQr}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setAllowsQr(checked);
+        }}
         mb="md"
       />
               <Group>
@@ -973,9 +986,24 @@ router.back();
             <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
               Campos base
             </Text>
-            <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-              ¿Obligatorio?
-            </Text>
+            {allowsQr && (
+              <Group gap="xs" align="center">
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="blue"
+                  onClick={() => {
+                    const allRequired = baseFields.every(f => f.required);
+                    baseFields.forEach(f => toggleBaseFieldRequired(f.name, !allRequired));
+                  }}
+                >
+                  {baseFields.every(f => f.required) ? "Desmarcar todos" : "Marcar todos"}
+                </Button>
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+                  ¿Obligatorio?
+                </Text>
+              </Group>
+            )}
           </Group>
           {/* Filas */}
           {baseFields.map((field, i) => (
@@ -1005,21 +1033,23 @@ router.back();
                 </Text>
                 <Text
                   size="sm"
-                  fw={field.required ? 600 : 400}
-                  c={field.required ? "dark" : "dimmed"}
+                  fw={allowsQr && field.required ? 600 : 400}
+                  c={allowsQr && field.required ? "dark" : "dimmed"}
                 >
                   {field.name}
                 </Text>
               </Group>
-              <Tooltip label={field.required ? "Obligatorio" : "Opcional"} withArrow position="left">
-                <Checkbox
-                  size="sm"
-                  checked={field.required}
-                  color={field.required ? "blue" : "gray"}
-                  onChange={(e) => toggleBaseFieldRequired(field.name, e.currentTarget.checked)}
-                  aria-label={`${field.name} obligatorio`}
-                />
-              </Tooltip>
+              {allowsQr && (
+                <Tooltip label={field.required ? "Obligatorio" : "Opcional"} withArrow position="left">
+                  <Checkbox
+                    size="sm"
+                    checked={field.required}
+                    color={field.required ? "blue" : "gray"}
+                    onChange={(e) => toggleBaseFieldRequired(field.name, e.currentTarget.checked)}
+                    aria-label={`${field.name} obligatorio`}
+                  />
+                </Tooltip>
+              )}
             </Group>
           ))}
         </Box>

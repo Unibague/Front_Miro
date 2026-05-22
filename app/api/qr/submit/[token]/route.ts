@@ -4,7 +4,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { token: string } }
 ) {
-  const backendUrl = `${process.env.API_URL}/qr/submit/${params.token}`;
+  const apiUrl = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) {
+    return NextResponse.json({ error: "API_URL no esta configurado." }, { status: 500 });
+  }
+
+  const backendUrl = `${apiUrl}/qr/submit/${params.token}`;
   try {
     const body = await req.json();
     const res = await fetch(backendUrl, {

@@ -1,6 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
-
-const normalizeText = (value: unknown) =>
+export const normalizeValidatorText = (value: unknown) =>
   String(value ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -23,14 +21,17 @@ const toOptionText = (value: any) => {
 };
 
 const isDescriptionColumn = (columnName: string) => {
-  const normalized = normalizeText(columnName);
+  const normalized = normalizeValidatorText(columnName);
   return normalized.includes("DESCRIPCION") || normalized.includes("NOMBRE") || normalized.startsWith("DESC");
 };
 
-const buildOptions = (validator: any, preferredColumnName = ""): string[] => {
+export const getPreferredValidatorColumnName = (validateWith = "") =>
+  validateWith.split(" - ").slice(1).join(" - ").trim();
+
+export const buildValidatorOptions = (validator: any, preferredColumnName = ""): string[] => {
   const columns = Array.isArray(validator?.columns) ? validator.columns : [];
   const preferredColumn = preferredColumnName
-    ? columns.find((column: any) => normalizeText(column?.name) === normalizeText(preferredColumnName))
+    ? columns.find((column: any) => normalizeValidatorText(column?.name) === normalizeValidatorText(preferredColumnName))
     : null;
   const valueColumn = preferredColumn || columns.find((column: any) => column?.is_validator) || columns[0];
   if (!valueColumn) return [];
@@ -47,34 +48,13 @@ const buildOptions = (validator: any, preferredColumnName = ""): string[] => {
     if (!idText) return [];
 
     const descriptionText = toOptionText(descriptionColumn?.values?.[index]);
-    const optionText = descriptionText && normalizeText(descriptionText) !== normalizeText(idText)
+    const optionText = descriptionText && normalizeValidatorText(descriptionText) !== normalizeValidatorText(idText)
       ? `${idText} - ${descriptionText}`
       : idText;
-    const key = normalizeText(optionText);
+    const key = normalizeValidatorText(optionText);
     if (seen.has(key)) return [];
 
     seen.add(key);
     return [optionText];
   });
 };
-
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const periodId = req.nextUrl.searchParams.get("periodId") ?? "";
-  const validateWith = req.nextUrl.searchParams.get("validateWith") ?? "";
-  const preferredColumnName = validateWith.split(" - ").slice(1).join(" - ").trim();
-  const apiUrl = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL;
-  if (!apiUrl) return NextResponse.json([], { status: 500 });
-
-  const backendUrl = `${apiUrl}/validators/id?id=${encodeURIComponent(params.id)}&periodId=${encodeURIComponent(periodId)}`;
-  try {
-    const res = await fetch(backendUrl, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) return NextResponse.json([], { status: res.status });
-    return NextResponse.json(buildOptions(data.validator, preferredColumnName), { status: 200 });
-  } catch {
-    return NextResponse.json([], { status: 500 });
-  }
-}

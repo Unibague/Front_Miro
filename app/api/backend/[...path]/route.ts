@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND = process.env.API_URL ?? "";
+const BACKEND = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function proxy(req: NextRequest, params: { path: string[] }) {
   if (!BACKEND) {
