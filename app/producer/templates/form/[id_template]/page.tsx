@@ -51,6 +51,7 @@ interface Template {
   name: string;
   fields: Field[];
   workbook_sheets?: WorkbookSheet[];
+  shared?: boolean;
 }
 
 interface QrDraftEntry {
@@ -65,6 +66,7 @@ interface PublishedTemplateResponse {
     period?: string | { _id: string };
   };
   qr_draft_data?: QrDraftEntry[];
+  shared_sheets_data?: Record<string, Record<string, any>[]>;
 }
 
 interface ValidatorData {
@@ -100,6 +102,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
   const [hasQrDraft, setHasQrDraft] = useState(false);
+  const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
 
   const fetchTemplate = async () => {
     try {
@@ -111,10 +114,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = response.data.template.workbook_sheets || [];
+      const templateShared = response.data.template?.shared ?? false;
       if (wbSheets.length > 0) {
         setAllSheets(wbSheets);
+        let editable: WorkbookSheet[] = wbSheets;
         try {
-          let editable: WorkbookSheet[] = wbSheets;
           if (session?.user?.email) {
             const userRes = await axios.get(
               `${process.env.NEXT_PUBLIC_API_URL}/users`,
@@ -130,26 +134,27 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               .filter((d: any) => allDepCodes.includes(d.dep_code))
               .map((d: any) => d._id?.toString());
             editable = wbSheets.filter((sheet: WorkbookSheet) => {
-              if (!sheet.fields?.length) return false; // sin campos → solo admin
-              if (!sheet.producers?.length || sheet.shared) return true;
+              if (!sheet.fields?.length) return false;
+              if (!sheet.producers?.length) return true;
               return sheet.producers.some((p: string) => userDepIds.includes(p.toString()));
             });
           }
-          setAccessibleSheets(editable);
-          // Inicializar filas solo para hojas editables
-          if (wbSheets.length > 0) {
-            setActiveSheet(wbSheets[0].name);
-            const initialRows: Record<string, Record<string, any>[]> = {};
-            editable.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
-            setSheetRows(initialRows);
-          }
-        } catch {
-          setAccessibleSheets(wbSheets);
-          setActiveSheet(wbSheets[0].name);
-          const initialRows: Record<string, Record<string, any>[]> = {};
-          wbSheets.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
-          setSheetRows(initialRows);
+        } catch { /* si falla, editable = todas las hojas */ }
+
+        setAccessibleSheets(editable);
+        setActiveSheet(wbSheets[0].name);
+        const sharedData = response.data.shared_sheets_data || {};
+        const initialRows: Record<string, Record<string, any>[]> = {};
+        editable.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
+        // Si template.shared=true, hojas no editables muestran datos de otros productores
+        if (templateShared) {
+          wbSheets
+            .filter((s: WorkbookSheet) => !editable.some((e: WorkbookSheet) => e.name === s.name))
+            .forEach((s: WorkbookSheet) => {
+              initialRows[s.name] = sharedData[s.name]?.length ? sharedData[s.name] : [{}];
+            });
         }
+        setSheetRows(initialRows);
       }
       const periodId =
         typeof response.data.publishedTemplate?.period === "string"
@@ -511,11 +516,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
     
     // Si el campo tiene validador pero NO es múltiple, usar Select
-    if (field.validate_with && !field.multiple && selectOptions[field.name]) {
-      const selectDisplayValue = displayValues[rowIndex]?.[field.name] 
-        ? selectOptions[field.name].find(opt => opt.label === displayValues[rowIndex][field.name])?.value || row[field.name]
+    if (field.validate_with && !field.multiple) {
+      const opts = selectOptions[field.name] || [];
+      const selectDisplayValue = displayValues[rowIndex]?.[field.name]
+        ? opts.find(opt => opt.label === displayValues[rowIndex][field.name])?.value || row[field.name]
         : row[field.name];
-        
+
       return wrapWithTooltip(
         <Select
           {...commonProps}
@@ -528,9 +534,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             }
             inputChange(rowIndex, field.name, value);
           }}
-          data={selectOptions[field.name] || []}
+          data={opts}
           searchable
-          placeholder={field.comment || "Seleccione una opción"}
+          placeholder={opts.length === 0 ? "Cargando opciones..." : (field.comment || "Seleccione una opción")}
+          nothingFoundMessage={opts.length === 0 ? "Cargando..." : "Sin resultados"}
         />
       );
     }
@@ -721,6 +728,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                               if (validatorId) {
                                 setActiveRowIndex(rowIndex);
                                 setActiveFieldName(field.name);
+                                setActiveSheetForValidator(sheetName || null);
                                 handleValidatorOpen(validatorId, rowIndex, field.name);
                               }
                             }}
@@ -758,6 +766,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
   const useSheets = allSheets.length > 0;
   const accessibleSheetNames = new Set(accessibleSheets.map(s => s.name));
+  const templateSharedUI = template?.shared ?? false;
 
   return (
     <Container size="xl">
@@ -779,8 +788,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                   key={sheet.name}
                   value={sheet.name}
                   fw={600}
-                  leftSection={!canEdit ? <IconLock size={13} /> : undefined}
-                  color={!canEdit ? "gray" : undefined}
+                  leftSection={!canEdit ? (templateSharedUI ? <IconEye size={13} /> : <IconLock size={13} />) : undefined}
+                  color={!canEdit ? (templateSharedUI ? "blue" : "gray") : undefined}
                 >
                   {sheet.name}
                 </Tabs.Tab>
@@ -792,9 +801,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             return (
               <Tabs.Panel key={sheet.name} value={sheet.name}>
                 {!canEdit && (
-                  <Text ta="center" c="dimmed" py="xs" size="xs">
-                    <IconLock size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
-                    Solo lectura — no tienes permiso para editar esta hoja.
+                  <Text ta="center" c={templateSharedUI ? "blue" : "dimmed"} py="xs" size="xs">
+                    {templateSharedUI ? (
+                      <>
+                        <IconEye size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                        Información compartida por otros productores (solo lectura)
+                      </>
+                    ) : (
+                      <>
+                        <IconLock size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                        Solo lectura — no tienes permiso para editar esta hoja.
+                      </>
+                    )}
                   </Text>
                 )}
                 {renderSheetTable(sheet.fields, sheet.name, !canEdit)}
@@ -848,17 +866,21 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           setValidatorModalOpen(false);
           setActiveRowIndex(null);
           setActiveFieldName(null);
+          setActiveSheetForValidator(null);
           setCurrentValidatorId("");
         }}
         validatorId={currentValidatorId}
         periodId={templatePeriodId}
         onCopy={(value: string, description?: string) => {
           if (activeRowIndex !== null && activeFieldName !== null) {
-            const updatedRows = [...rows];
-            updatedRows[activeRowIndex][activeFieldName] = value;
-            setRows(updatedRows);
-            
-            // Guardar la descripción para mostrar en el campo
+            if (activeSheetForValidator) {
+              updateSheetCell(activeSheetForValidator, activeRowIndex, activeFieldName, value);
+            } else {
+              const updatedRows = [...rows];
+              updatedRows[activeRowIndex][activeFieldName] = value;
+              setRows(updatedRows);
+            }
+
             if (description) {
               const updatedDisplayValues = { ...displayValues };
               if (!updatedDisplayValues[activeRowIndex]) {
@@ -867,12 +889,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               updatedDisplayValues[activeRowIndex][activeFieldName] = description;
               setDisplayValues(updatedDisplayValues);
             }
-            
-            console.log('Valor colocado en fila:', activeRowIndex, 'campo:', activeFieldName, 'valor:', value, 'descripción:', description);
           }
           setValidatorModalOpen(false);
           setActiveRowIndex(null);
           setActiveFieldName(null);
+          setActiveSheetForValidator(null);
           setCurrentValidatorId("");
         }}
       />

@@ -96,6 +96,7 @@ const UpdateTemplatePage = () => {
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
+  const [shared, setShared] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -237,6 +238,7 @@ const UpdateTemplatePage = () => {
             setActiveSheet(firstEditableSheet?.name || null);
             setFields(nextFields);
             setActive(response.data.active);
+            setShared(response.data.shared ?? false);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -471,6 +473,7 @@ const UpdateTemplatePage = () => {
       workbook_sheets: hasWorkbookSheets ? workbookSheets : [],
       original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
+      shared,
       dimensions: selectedDimensions,
       producers: derivedProducers,
       email: session?.user?.email,
@@ -894,6 +897,16 @@ router.back();
         label="Activo"
         checked={active}
         onChange={(event) => setActive(event.currentTarget.checked)}
+        mb="sm"
+      />
+      <Switch
+        label="Información visible para otros productores"
+        description="Cuando está activo, todos los productores podrán ver (en modo lectura) la información que otros productores hayan cargado en esta plantilla."
+        checked={shared}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setShared(checked);
+        }}
         mb="md"
       />
               <Group>
@@ -943,23 +956,6 @@ router.back();
                 searchable
                 mb="xs"
               />
-              <Tooltip
-                label="Cuando está activo, los demás productores podrán ver (en modo lectura) la información que se cargue en esta hoja dentro del Excel descargado."
-                multiline
-                w={320}
-                withArrow
-              >
-                <Switch
-                  label="Información visible para otros productores"
-                  checked={workbookSheets.find(s => s.name === activeSheet)?.shared ?? false}
-                  onChange={(e) => {
-                    setWorkbookSheets(prev => prev.map(s =>
-                      s.name === activeSheet ? { ...s, shared: e.currentTarget.checked } : s
-                    ));
-                  }}
-                  mb="md"
-                />
-              </Tooltip>
             </>
           )}
         </>
