@@ -28,7 +28,7 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const { userRole, setUserRole } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, userAccessProfiles, setUserAccessProfiles } = useRole();
   const [notificationShown, setNotificationShown] = useState(false);
   const [isResponsible, setIsResponsible] = useState(false);
   const colorScheme = useColorScheme();
@@ -40,6 +40,18 @@ const DashboardPage = () => {
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
   const showSupportTemplatesModule = false;
+
+  const hasViewPermission = (key: string) =>
+    Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
+
+  // Si tiene perfil: el perfil manda, el rol no agrega nada
+  // Si no tiene perfil: el rol decide todo normalmente
+  const hasProfile = userAccessProfiles.length > 0;
+
+  const canSee = (key: string, roles: string[]) => {
+    if (hasProfile) return hasViewPermission(key);
+    return roles.includes(userRole);
+  };
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
@@ -348,15 +360,20 @@ const DashboardPage = () => {
     if (!session?.user?.email) return;
 
     try {
-      const response = await axios.put(
+      await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`,
-        {
-          email: session.user.email,
-          activeRole: role,
-        }
+        { email: session.user.email, activeRole: role }
       );
-      console.log("Active role updated:", response.data);
+
+      // Recargar permisos del cargo para el nuevo rol activo
+      const permResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
+        { params: { email: session.user.email } }
+      );
       setUserRole(role);
+      setViewPermissions(permResponse.data.viewPermissions || {});
+      setUserAccessProfiles(permResponse.data.accessProfiles || []);
+
       setOpened(false);
       const targetRoute = getDefaultRouteByRole(role);
       if (targetRoute !== pathname) {
@@ -865,6 +882,11 @@ const DashboardPage = () => {
         break;
       case "Usuario":
       default:
+        if (Object.keys(viewPermissions).length > 0) {
+          // Usuario con permisos por cargo: no mostrar tarjetas extra aquí,
+          // las tarjetas de módulo ya aparecen en el home por hasViewPermission
+          break;
+        }
         cards.push(
           <Container key="default-message">
             <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menú superior.</Text>
@@ -943,7 +965,7 @@ const DashboardPage = () => {
   };
 
   const renderConfigurationCards = () => {
-    if (userRole !== "Administrador") {
+    if (!hasViewPermission("configuration") && !hasViewPermission("profiles") && !hasViewPermission("users") && userRole !== "Administrador") {
       return (
         <Grid.Col span={12}>
           <Center>
@@ -1010,7 +1032,7 @@ const DashboardPage = () => {
   };
 
   const renderResponsiblePdiCards = () => {
-    if (userRole !== "Responsable") {
+    if (!hasViewPermission("pdi") && !hasViewPermission("pdiMine") && !hasViewPermission("pdiDashboard") && userRole !== "Responsable" && userRole !== "Administrador") {
       return (
         <Grid.Col span={12}>
           <Center>
@@ -1041,7 +1063,7 @@ const DashboardPage = () => {
   };
 
   const renderResponsibleAdminCards = () => {
-    if (userRole !== "Responsable") {
+    if (!hasViewPermission("responsibleReports") && !hasViewPermission("publishedTemplates") && userRole !== "Responsable" && userRole !== "Administrador") {
       return (
         <Grid.Col span={12}>
           <Center>
@@ -1120,40 +1142,44 @@ const DashboardPage = () => {
   const renderAvRcCards = () => {
     return (
       <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconCalendarMonth size={80} /></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
-              Ir a gestión de procesos MEN
-            </Button>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Gestión ante el MEN.
-            </Text>
-            <Button
-              variant="light"
-              fullWidth
-              mt="md"
-              radius="md"
-              onClick={() => router.push(processesMenRoutes.comunicaciones)}
-            >
-              Ir a comunicaciones MEN
-            </Button>
-          </Card>
-        </Grid.Col>
+    {canSee("dateReview", ["Administrador", "Responsable", "Productor"]) && (
+        <>
+          <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconCalendarMonth size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
+                Ir a gestión de procesos MEN
+              </Button>
+            </Card>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Gestión ante el MEN.
+              </Text>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push(processesMenRoutes.comunicaciones)}
+              >
+                Ir a comunicaciones MEN
+              </Button>
+            </Card>
+          </Grid.Col>
+        </>
+      )}
       </>
     );
   };
@@ -1178,6 +1204,7 @@ const DashboardPage = () => {
         )}
         {activeModule === "home" && !avRcOpen && !gestionReportesOpen ? (
           <Grid justify="center" align="stretch">
+            {canSee("adminTemplates", ["Administrador", "Responsable", "Productor"]) && (
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
@@ -1210,10 +1237,10 @@ const DashboardPage = () => {
                 </Stack>
               </Card>
             </Grid.Col>
+            )}
 
             {userRole === "Administrador" && (
               <>
-
                 {showSupportTemplatesModule && (
                   <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                     <Card
@@ -1248,43 +1275,45 @@ const DashboardPage = () => {
                     </Card>
                   </Grid.Col>
                 )}
-
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => setAvRcOpen(true)}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
-                      boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconCalendarMonth size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          Procesos de calidad MEN
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          RC, AV y comunicaciones MEN.
-                        </Text>
-                      </Stack>
-                      <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
               </>
             )}
 
-            {(userRole === "Responsable" || userRole === "Administrador") && (
+            {canSee("dateReview", ["Administrador", "Responsable", "Productor"]) && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => setAvRcOpen(true)}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                    boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconCalendarMonth size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Procesos de calidad MEN
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        RC, AV y comunicaciones MEN.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>
+                      Abrir módulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
+
+            {canSee("pdi", ["Administrador", "Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1321,7 +1350,8 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
-            {userRole === "Responsable" && (
+
+            {canSee("responsibleReports", ["Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1355,8 +1385,9 @@ const DashboardPage = () => {
                 </Card>
               </Grid.Col>
             )}
+            
 
-            {userRole === "Administrador" && (
+            {canSee("configuration", ["Administrador"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1432,7 +1463,7 @@ const DashboardPage = () => {
                     </Card>
                   </Grid.Col>
 
-                  {userRole === "Administrador" && (
+                  {(userRole === "Administrador" || hasViewPermission("snies")) && (
                     <>
                       <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                         <Card
@@ -1502,7 +1533,7 @@ const DashboardPage = () => {
                     </>
                   )}
 
-                  {(userRole === "Administrador" || userRole === "Responsable" || userRole === "Productor") && (
+                  {(userRole === "Administrador" || userRole === "Responsable" || userRole === "Productor" || hasViewPermission("dashboard")) && (
                     <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                       <Card
                         radius="xl"

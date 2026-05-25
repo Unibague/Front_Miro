@@ -7,11 +7,51 @@ import {
   IconCurrencyDollar,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
+import { useRole } from "@/app/context/RoleContext";
+
+const SIDEBAR_LINKS = [
+  {
+    section: "CONTROL",
+    items: [
+      { label: "Dashboard", icon: IconChartBarPopular, path: "/pdi", permissionKey: "pdi", color: "violet", exact: true },
+      { label: "Gestión de cambios", icon: IconGitPullRequest, path: "/pdi/cambios", permissionKey: "pdi", color: "violet", exact: true },
+      { label: "Presupuesto", icon: IconCurrencyDollar, path: "/pdi/presupuesto", permissionKey: "pdi", color: "violet", exact: true },
+    ],
+  },
+  {
+    section: "FORMULARIOS",
+    items: [
+      { label: "Avances y evidencias", icon: IconForms, path: "/pdi/formularios", permissionKey: "pdiForms", color: "teal", exact: false },
+    ],
+  },
+  {
+    section: "VISTAS",
+    items: [
+      { label: "Tablero de control", icon: IconLayoutDashboard, path: "/pdi/dashboard", permissionKey: "pdiDashboard", color: "blue", exact: true },
+      { label: "Historial PDI", icon: IconHistory, path: "/pdi/historial", permissionKey: "pdi", color: "blue", exact: false },
+      { label: "Cortes PDI", icon: IconCalendarStats, path: "/pdi/cortes", permissionKey: "pdi", color: "blue", exact: true },
+    ],
+  },
+  {
+    section: "INFORMES",
+    items: [
+      { label: "Informes de avance", icon: IconReportAnalytics, path: "/pdi/informes", permissionKey: "pdi", color: "violet", exact: false },
+    ],
+  },
+];
 
 export default function PdiSidebar() {
-  const router   = useRouter();
+  const router = useRouter();
   const pathname = usePathname();
   const currentPath = pathname ?? "";
+  const { userRole, viewPermissions } = useRole();
+
+  const hasPermission = (key: string) => {
+    // Solo Administrador tiene acceso total sin restricciones
+    if (userRole === "Administrador") return true;
+    // Todos los demás respetan viewPermissions del cargo
+    return Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
+  };
 
   return (
     <Stack
@@ -32,93 +72,28 @@ export default function PdiSidebar() {
         <Text size="xs" fw={700} c="violet" mt={4}>Panel PDI</Text>
       </Stack>
 
-      <Divider />
+      {SIDEBAR_LINKS.map((group) => {
+        const visibleItems = group.items.filter((item) => hasPermission(item.permissionKey));
+        if (visibleItems.length === 0) return null;
 
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
-
-      <NavLink
-        label="Dashboard"
-        leftSection={<IconChartBarPopular size={16} />}
-        active={currentPath === "/pdi"}
-        color="violet"
-        onClick={() => router.push("/pdi")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
-        label="Gestión de cambios"
-        leftSection={<IconGitPullRequest size={16} />}
-        active={currentPath === "/pdi/cambios"}
-        color="violet"
-        onClick={() => router.push("/pdi/cambios")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
-        label="Presupuesto"
-        leftSection={<IconCurrencyDollar size={16} />}
-        active={currentPath === "/pdi/presupuesto"}
-        color="violet"
-        onClick={() => router.push("/pdi/presupuesto")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <Divider />
-
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>FORMULARIOS</Text>
-
-      <NavLink
-        label="Avances y evidencias"
-        leftSection={<IconForms size={16} />}
-        active={currentPath.startsWith("/pdi/formularios")}
-        color="teal"
-        onClick={() => router.push("/pdi/formularios")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <Divider />
-
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>VISTAS</Text>
-
-      <NavLink
-        label="Tablero de control"
-        leftSection={<IconLayoutDashboard size={16} />}
-        active={currentPath === "/pdi/dashboard"}
-        color="blue"
-        onClick={() => router.push("/pdi/dashboard")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
-        label="Historial PDI"
-        leftSection={<IconHistory size={16} />}
-        active={currentPath === "/pdi/historial" || currentPath === "/pdi/historial-cortes"}
-        color="blue"
-        onClick={() => router.push("/pdi/historial")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <NavLink
-        label="Cortes PDI"
-        leftSection={<IconCalendarStats size={16} />}
-        active={currentPath === "/pdi/cortes"}
-        color="blue"
-        onClick={() => router.push("/pdi/cortes")}
-        style={{ borderRadius: 8 }}
-      />
-
-      <Divider />
-
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>INFORMES</Text>
-
-      <NavLink
-        label="Informes de avance"
-        leftSection={<IconReportAnalytics size={16} />}
-        active={currentPath.startsWith("/pdi/informes")}
-        color="violet"
-        onClick={() => router.push("/pdi/informes")}
-        style={{ borderRadius: 8 }}
-      />
+        return (
+          <Stack key={group.section} gap={0}>
+            <Divider />
+            <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>{group.section}</Text>
+            {visibleItems.map((item) => (
+              <NavLink
+                key={item.path}
+                label={item.label}
+                leftSection={<item.icon size={16} />}
+                active={item.exact ? currentPath === item.path : currentPath.startsWith(item.path)}
+                color={item.color}
+                onClick={() => router.push(item.path)}
+                style={{ borderRadius: 8 }}
+              />
+            ))}
+          </Stack>
+        );
+      })}
     </Stack>
   );
 }

@@ -24,6 +24,7 @@ import AccionModal from "./components/AccionModal";
 import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
+import PermissionGate from "@/app/components/PermissionGate";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -908,6 +909,7 @@ export default function PdiPage() {
           </div>
         </Group>
         {admin && (
+          <PermissionGate viewKey="pdi">
           <Group gap="sm">
             <Button variant="default" leftSection={<IconSettings size={15} />} onClick={() => setConfigModal(true)}>
               Editar PDI
@@ -917,6 +919,7 @@ export default function PdiPage() {
               Nuevo macroproyecto
             </Button>
           </Group>
+          </PermissionGate>
         )}
       </Group>
 

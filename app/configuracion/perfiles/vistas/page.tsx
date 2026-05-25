@@ -122,10 +122,12 @@ export default function PositionViewsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session } = useSession();
-  const { userRole } = useRole();
+  const { userRole, viewPermissions } = useRole();
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   const isAdmin = userRole === "Administrador";
+  const profilesPermission = viewPermissions["profiles"] || [];
+  const canManage = isAdmin || profilesPermission.includes("Gestionar") || profilesPermission.includes("Administrar");
   const profileId = searchParams?.get("perfil")?.trim() || "";
   const position = searchParams?.get("cargo")?.trim() || "";
   const isProfileMode = Boolean(profileId);
@@ -280,6 +282,17 @@ export default function PositionViewsPage() {
 
   const handleSavePermissions = async () => {
     if (managedPositionNames.length === 0 || !session?.user?.email || !apiUrl) return;
+
+    // Validar que al menos un permiso esté seleccionado
+    const totalPermissions = countPermissionChecks(selectedPositionPermissions);
+    if (totalPermissions === 0) {
+      showNotification({
+        title: "Validación requerida",
+        message: "Debe seleccionar al menos un permiso de vista antes de guardar.",
+        color: "yellow",
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -457,9 +470,9 @@ export default function PositionViewsPage() {
             </Text>
         </div>
 
-        {!isAdmin && (
+        {!canManage && (
           <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
-            Solo los administradores pueden guardar permisos o cambiar personas.
+            Solo los administradores o usuarios con permiso de gestión pueden guardar cambios.
           </Alert>
         )}
 
@@ -559,13 +572,13 @@ export default function PositionViewsPage() {
                         }
                       }}
                       inputMode="numeric"
-                      disabled={!isAdmin}
+                      disabled={!canManage}
                     />
                     <Button
                       leftSection={<IconUserPlus size={16} />}
                       onClick={handleAddUser}
                       loading={addingUser}
-                      disabled={!isAdmin || !identification.trim()}
+                      disabled={!canManage || !identification.trim()}
                     >
                       Agregar
                     </Button>
@@ -627,7 +640,7 @@ export default function PositionViewsPage() {
                                     aria-label={`Quitar a ${user.full_name}`}
                                     onClick={() => handleRemoveUser(user)}
                                     loading={removingIdentification === user.identification}
-                                    disabled={!isAdmin}
+                                    disabled={!canManage}
                                   >
                                     <IconTrash size={16} />
                                   </ActionIcon>
@@ -682,7 +695,7 @@ export default function PositionViewsPage() {
                           checked={allChecked}
                           indeterminate={checkedViews > 0 && !allChecked}
                           onChange={(event) => setLevelForAllViews(profile, event.currentTarget.checked)}
-                          disabled={!isAdmin}
+                          disabled={!canManage}
                         />
                       );
                     })}
@@ -692,7 +705,7 @@ export default function PositionViewsPage() {
                     color="red"
                     leftSection={<IconTrash size={16} />}
                     onClick={() => setSelectedPositionPermissions({})}
-                    disabled={!isAdmin}
+                    disabled={!canManage}
                   >
                     Limpiar
                   </Button>
@@ -730,7 +743,7 @@ export default function PositionViewsPage() {
                                       aria-label={`${profile} ${view.label}`}
                                       checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
                                       onChange={() => toggleViewPermission(view.key, profile)}
-                                      disabled={!isAdmin}
+                                      disabled={!canManage}
                                     />
                                   </Center>
                                 </Table.Td>
@@ -748,7 +761,7 @@ export default function PositionViewsPage() {
                     leftSection={<IconDeviceFloppy size={16} />}
                     onClick={handleSavePermissions}
                     loading={saving}
-                    disabled={!isAdmin || managedPositionNames.length === 0}
+                    disabled={!canManage || managedPositionNames.length === 0}
                   >
                     Guardar permisos
                   </Button>

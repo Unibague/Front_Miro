@@ -27,6 +27,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
 import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { modals } from "@mantine/modals";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Field {
   name: string;
@@ -784,6 +785,7 @@ const getTemplateWorksheets = (template: Template): TemplateWorksheet[] => {
 
 const AdminTemplatesPage = () => {
   const { selectedPeriodId } = usePeriod();
+  const { canManage } = useViewPermission("adminTemplates");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -1676,10 +1678,7 @@ const AdminTemplatesPage = () => {
               label="Editar plantilla"
               transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button
-                variant="outline"
-                onClick={() => router.push(`/templates/update/${template._id}`)}
-              >
+              <Button variant="outline" onClick={() => router.push(`/templates/update/${template._id}`)} disabled={!canManage}>
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
@@ -1704,7 +1703,7 @@ const AdminTemplatesPage = () => {
                   label="Borrar plantilla"
                   transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button color="red" variant="outline" onClick={() => handleDelete(template._id)}>
+              <Button color="red" variant="outline" onClick={() => handleDelete(template._id)} disabled={!canManage}>
                 <IconTrash size={16} />
               </Button>
             </Tooltip>
@@ -1756,10 +1755,7 @@ const AdminTemplatesPage = () => {
             <IconArrowLeft size={20} />
           </ActionIcon>
         </Tooltip>
-        <Button
-          onClick={() => router.push('/templates/create')}
-          leftSection={<IconCirclePlus/>}
-        >
+        <Button onClick={() => router.push('/templates/create')} leftSection={<IconCirclePlus/>} disabled={!canManage}>
           Crear Nueva Plantilla
         </Button>
         <Button
