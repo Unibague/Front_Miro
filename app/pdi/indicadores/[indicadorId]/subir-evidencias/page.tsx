@@ -904,7 +904,7 @@ export default function SubirEvidenciasPage() {
                             </Badge>
                           </Group>
                         </Group>
-                        {resp?.estado === "Enviado" && (
+                        {(resp?.estado === "Enviado" || resp?.estado_aval === "Rechazado") && (
                           <Paper
                             withBorder
                             radius="md"
