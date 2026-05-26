@@ -33,10 +33,10 @@ export const SUBTIPOS: Record<"RC" | "AV" | "AE" | "PM", string[]> = {
 };
 
 /** Valor persistido en BD/API: `Reforma curricular`. Texto solo para UI en selects y textos de una línea. */
-export const SUBTIPO_MODIFICACION_REFORMA_LABEL = "Modificacion/Reforma curricular";
+export const SUBTIPO_MODIFICACION_REFORMA_LABEL = "Modificación";
 
 /** Texto compacto en badges/tablas (una sola línea, al lado de RC/AV). */
-export const SUBTIPO_MODIFICACION_REFORMA_BADGE = "Mod./Reforma curricular";
+export const SUBTIPO_MODIFICACION_REFORMA_BADGE = "Modificación";
 
 /** Estilos de Badge/Text cuando el subtipo es largo (sin truncar con puntos suspensivos). */
 export const stylesSubtipoLargo = {
@@ -96,14 +96,19 @@ export function stylesSubtipoBadgeTabla(_subtipo?: string | null) {
 export function subtipoOpcionesConEtiquetas(opciones: string[]): { value: string; label: string }[] {
   return opciones.map((v) => ({
     value: v,
-    label: v === "Reforma curricular" ? SUBTIPO_MODIFICACION_REFORMA_LABEL : v,
+    label:
+      v === "Reforma curricular"
+        ? SUBTIPO_MODIFICACION_REFORMA_LABEL
+        : v === "Renovación + reforma"
+          ? "Renovación + modificación"
+          : v,
   }));
 }
 
 /** Texto corto en badges/tablas. El valor guardado en BD sigue siendo «Renovación + reforma». */
 export function etiquetaSubtipoCompacta(subtipo: string): string {
   if (subtipo === "Vigencia transitoria") return "Vigencia transitoria (archivo)";
-  if (subtipo === "Renovación + reforma") return "Renovacion+Mod./Reforma";
+  if (subtipo === "Renovación + reforma") return "Renovación + mod.";
   if (subtipo === "Registro calificado de oficio") return "RC de oficio";
   if (subtipo === "Reactivación") return "Reactivación";
   if (subtipo === "Reforma curricular") return SUBTIPO_MODIFICACION_REFORMA_BADGE;

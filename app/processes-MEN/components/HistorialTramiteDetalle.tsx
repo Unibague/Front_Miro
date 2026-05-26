@@ -262,7 +262,7 @@ export function HistorialFechasTramiteDetalle({ record }: { record: ProcessHisto
       )}
       {record.tipo_proceso === "RC" && esSubtipoReformaHistorial(record.subtipo) && (
         <Text size="xs" c="dimmed" mb="xs">
-          Reforma curricular: fechas gestionadas manualmente; lo relevante es la ficha y la constancia.
+          Modificación: fechas gestionadas manualmente; lo relevante es la ficha y la constancia.
         </Text>
       )}
       <Box style={{ overflow: "hidden" }}>
