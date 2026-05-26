@@ -750,7 +750,7 @@ const ProcessesMenPage = () => {
       return !r.estado_solicitud || r.estado_solicitud === "APROBADO";
     });
     const scoreFecha = (r: ProcessHistoryRecord) =>
-      new Date(r.fecha_resolucion || r.cerrado_en || r.createdAt || 0).getTime();
+      new Date(r.fecha_resolucion || r.cerrado_en || 0).getTime();
     for (const r of candidatos) {
       const key = String(r.program_code ?? "").trim();
       if (!key) continue;
