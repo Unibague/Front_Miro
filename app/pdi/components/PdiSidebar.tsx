@@ -1,15 +1,17 @@
 "use client";
 
+import React from "react";
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
   IconLayoutDashboard, IconGitPullRequest, IconForms, IconReportAnalytics,
-  IconCurrencyDollar,
+  IconCurrencyDollar, IconTarget,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 
-const SIDEBAR_LINKS = [
+// Links exclusivos para administrador
+const ADMIN_LINKS = [
   {
     section: "CONTROL",
     items: [
@@ -40,18 +42,32 @@ const SIDEBAR_LINKS = [
   },
 ];
 
+// Links para responsables (sin perfil o con permiso explícito)
+const RESPONSABLE_LINKS = [
+  {
+    section: "MI PDI",
+    items: [
+      { label: "Mi PDI", icon: IconTarget, path: "/pdi/mis-indicadores", permissionKey: "pdiMine", color: "violet", exact: true },
+    ],
+  },
+  {
+    section: "VISTAS",
+    items: [
+      { label: "Tablero de control", icon: IconLayoutDashboard, path: "/pdi/dashboard", permissionKey: "pdiDashboard", color: "blue", exact: true },
+    ],
+  },
+];
+
 export default function PdiSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const currentPath = pathname ?? "";
-  const { userRole, viewPermissions } = useRole();
+  const { userRole } = useRole();
 
-  const hasPermission = (key: string) => {
-    if (userRole === "Administrador") return true;
-    // Sin perfil asignado → acceso completo por rol
-    if (Object.keys(viewPermissions).length === 0) return true;
-    return Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
-  };
+  const isAdmin = userRole === "Administrador";
+
+  // Sin perfiles: admin ve todo, responsable ve Mi PDI + Tablero
+  const links = isAdmin ? ADMIN_LINKS : RESPONSABLE_LINKS;
 
   return (
     <Stack
@@ -72,15 +88,15 @@ export default function PdiSidebar() {
         <Text size="xs" fw={700} c="violet" mt={4}>Panel PDI</Text>
       </Stack>
 
-      {SIDEBAR_LINKS.map((group) => {
-        const visibleItems = group.items.filter((item) => hasPermission(item.permissionKey));
+      {links.map((group) => {
+        const visibleItems = group.items;
         if (visibleItems.length === 0) return null;
 
         return (
           <Stack key={group.section} gap={0}>
             <Divider />
             <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>{group.section}</Text>
-            {visibleItems.map((item) => (
+            {visibleItems.map((item: { path: string; label: string; icon: React.ElementType; exact: boolean; color: string }) => (
               <NavLink
                 key={item.path}
                 label={item.label}
