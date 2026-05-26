@@ -383,7 +383,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           { label: "Avance", value: `${avanceAccion}%` },
           { label: "Peso", value: `${Number(accion.peso).toFixed(2)}%` },
           { label: "Indicadores", value: loaded ? indicadores.length : (indicadoresCount ?? "—") },
-          { label: "Presupuesto", value: Number(accion.presupuesto) > 0 ? formatCOP(Number(accion.presupuesto)) : "Pendiente" },
+          { label: "Presupuesto", value: formatCOP(Number(accion.presupuesto)) },
           { label: "Causado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "10px 6px" }}>
@@ -682,7 +682,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           { label: "Avance", value: `${avanceProyecto}%` },
           { label: "Peso", value: `${Number(proyecto.peso).toFixed(2)}%` },
           { label: "Acciones", value: loaded ? acciones.length : (accionesCount ?? "—") },
-          { label: "Presupuesto", value: presupuestoProyecto > 0 ? formatCOP(presupuestoProyecto) : "Pendiente" },
+          { label: "Presupuesto", value: formatCOP(presupuestoProyecto) },
           { label: "Causado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "rgba(255,255,255,0.82)", border: "1px solid rgba(124,58,237,0.08)", borderRadius: 16, padding: "12px 8px" }}>

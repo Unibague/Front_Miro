@@ -520,6 +520,14 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 }
 
 // ── Stats cards ───────────────────────────────────────────────────────────
+interface CorteResumenPeriodo {
+  periodo: string;
+  sin_reporte: number;
+  con_reporte: number;
+  total_indicadores: number;
+  porcentaje_cobertura: number;
+}
+
 function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
@@ -528,6 +536,24 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   alertasActivas: number;
   resumen: DashboardResumen | null;
 }) {
+  const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
+
+  useEffect(() => {
+    const fetchCorte = (nombre: string) =>
+      axios.get<CorteResumenPeriodo>(PDI_ROUTES.dashboardCorte(nombre))
+        .then(r => setCorteActual(r.data))
+        .catch(() => {});
+
+    axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesActivos())
+      .then(({ data: activos }) => {
+        if (activos.length) { fetchCorte(activos[0].nombre); return; }
+        axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesVigentes())
+          .then(({ data: vigentes }) => { if (vigentes.length) fetchCorte(vigentes[0].nombre); })
+          .catch(() => {});
+      })
+      .catch(() => {});
+  }, []);
+
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
@@ -641,23 +667,24 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
             <Paper withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color={alertas > 0 ? "red" : "teal"} variant="light">
+                <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
                   <IconAlertTriangle size={20} />
                 </ThemeIcon>
-                <Badge color={alertas > 0 ? "red" : "teal"} variant="light" radius="xl">
-                  {alertas > 0 ? "Revisar" : "Controlado"}
+                <Badge color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
+                  {corteActual ? corteActual.periodo : "—"}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Indicadores de resultado</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>{alertas}</Text>
-              <Text size="xs" c="dimmed" mt={6}>
-                {alertas === 0 ? "Todos los indicadores han reportado" : "Sin reporte enviado"}
+              <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                {corteActual ? corteActual.sin_reporte : "—"}
               </Text>
-              {sinAvance > 0 && (
-                <Text size="xs" c="red" mt={6} fw={600}>
-                  {sinAvance} Macroproyecto{sinAvance !== 1 ? "s" : ""} sin avance registrado
-                </Text>
-              )}
+              <Text size="xs" c="dimmed" mt={6}>
+                {corteActual
+                  ? corteActual.sin_reporte === 0
+                    ? "Todos han reportado"
+                    : `Sin reporte en ${corteActual.periodo}`
+                  : "Cargando período..."}
+              </Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">

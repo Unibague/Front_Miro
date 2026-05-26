@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton, Collapse,
+  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton, Collapse, Skeleton,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
@@ -21,6 +21,7 @@ import { PDI_ROUTES } from "../api";
 import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio, RespuestaFormulario as RespuestaFormularioAval } from "../types";
 import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import PdiSidebar from "../components/PdiSidebar";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -1056,7 +1057,7 @@ function SolicitudCambioModal({
 
   useEffect(() => {
     if (!opened || !entity) return;
-    setTipoCambio(entity.metasPeriodo?.length ? "meta" : "presupuesto");
+    setTipoCambio("meta");
     setIndicadorSeleccionado(entity.metasPeriodo?.[0]?.indicadorId ?? null);
     setMetaSeleccionada(entity.metasPeriodo?.[0]?.value ?? null);
     setJustificacion("");
@@ -1174,7 +1175,7 @@ function SolicitudCambioModal({
               <Text size="xs" fw={700} c="violet" tt="uppercase">{entity.tipo}</Text>
               <Text fw={800} size="lg">{entity.codigo}:{entity.nombre}</Text>
               <Text size="sm" c="dimmed" mt={4}>
-                Puedes solicitar cambios de meta por periodo, presupuesto o fechas de un indicador.
+                Puedes solicitar cambios de meta por periodo o fechas de un indicador.
               </Text>
             </div>
             <Badge color="violet" variant="light" radius="xl">{solicitudes.length} solicitud{solicitudes.length === 1 ? "" : "es"}</Badge>
@@ -1187,12 +1188,11 @@ function SolicitudCambioModal({
             <Select
               label="Que deseas modificar"
               data={[
-                ...(entity.metasPeriodo?.length ? [{ value: "meta", label: TIPO_CAMBIO_LABEL.meta }] : []),
-                ...(entity.metasPeriodo?.length ? [{ value: "cronograma", label: "Fechas del indicador" }] : []),
-                { value: "presupuesto", label: TIPO_CAMBIO_LABEL.presupuesto },
+                { value: "meta", label: TIPO_CAMBIO_LABEL.meta },
+                { value: "cronograma", label: "Fechas del indicador" },
               ]}
               value={tipoCambio}
-              onChange={(v) => setTipoCambio((v as "meta" | "presupuesto" | "cronograma") ?? "presupuesto")}
+              onChange={(v) => setTipoCambio((v as "meta" | "cronograma") ?? "meta")}
             />
             {(tipoCambio === "meta" || tipoCambio === "cronograma") && (
               <Select
@@ -1555,7 +1555,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
             { label: "Avance", value: `${avanceProyecto}%` },
             { label: "Acciones", value: vista.acciones.length },
             { label: "Indicadores", value: indicadoresCount },
-            { label: "Presupuesto", value: vista.proyecto.presupuesto > 0 ? formatCOP(vista.proyecto.presupuesto) : "Pendiente" },
+            { label: "Presupuesto", value: formatCOP(vista.proyecto.presupuesto) },
           ].map((item) => (
             <Box
               key={item.label}
@@ -1773,7 +1773,8 @@ export default function MisIndicadoresPage() {
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
-      axios.get(PDI_ROUTES.cortesVigentes()),
+      axios.get(PDI_ROUTES.cortesVigentes())
+        .then(r => r.data.length ? r : axios.get(PDI_ROUTES.cortesActivos())),
     ])
       .then(([resMacros, resInd, resAcc, resProy, resUser, resCortes]) => {
         const todosMacros: Array<{ _id: string; codigo: string; nombre: string; lider?: string }> = resMacros.data;
@@ -1929,6 +1930,9 @@ export default function MisIndicadoresPage() {
   };
 
   return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <PdiSidebar />
+    <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
     <Container size="xl" py="xl">
       <Group mb="lg" justify="space-between">
         <Group gap={10}>
@@ -1939,7 +1943,7 @@ export default function MisIndicadoresPage() {
             <IconTarget size={22} />
           </ThemeIcon>
           <div>
-            <Title order={3}>{pageTitle}</Title>
+            {loading ? <Skeleton height={28} width={200} mb={6} /> : <Title order={3}>{pageTitle}</Title>}
             <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
@@ -1974,18 +1978,30 @@ export default function MisIndicadoresPage() {
 
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
-        {unifiedStatCards.map((s) => (
-          <Paper key={s.label} withBorder radius="lg" p="lg" shadow="xs">
-            <Group justify="space-between" align="flex-start" mb="sm">
-              <ThemeIcon size={48} radius="xl" color={s.color} variant="light">
-                {s.icon}
-              </ThemeIcon>
-              <Badge color={s.color} variant="light" size="sm" radius="xl">PDI</Badge>
-            </Group>
-            <Text size="xs" c="dimmed" mb={2}>{s.label}</Text>
-            <Text size="1.8rem" fw={800} lh={1}>{s.value}</Text>
-          </Paper>
-        ))}
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Paper key={i} withBorder radius="lg" p="lg" shadow="xs">
+                <Group justify="space-between" align="flex-start" mb="sm">
+                  <Skeleton height={48} width={48} radius="xl" />
+                  <Skeleton height={20} width={36} radius="xl" />
+                </Group>
+                <Skeleton height={12} width="60%" mb={8} />
+                <Skeleton height={36} width="40%" />
+              </Paper>
+            ))
+          : unifiedStatCards.map((s) => (
+              <Paper key={s.label} withBorder radius="lg" p="lg" shadow="xs">
+                <Group justify="space-between" align="flex-start" mb="sm">
+                  <ThemeIcon size={48} radius="xl" color={s.color} variant="light">
+                    {s.icon}
+                  </ThemeIcon>
+                  <Badge color={s.color} variant="light" size="sm" radius="xl">PDI</Badge>
+                </Group>
+                <Text size="xs" c="dimmed" mb={2}>{s.label}</Text>
+                <Text size="1.8rem" fw={800} lh={1}>{s.value}</Text>
+              </Paper>
+            ))
+        }
       </SimpleGrid>
 
       {cortesVigentes.length > 0 && (
@@ -2099,5 +2115,7 @@ export default function MisIndicadoresPage() {
         requesterEmail={requesterEmail}
       />
     </Container>
+    </div>
+    </div>
   );
 }

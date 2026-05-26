@@ -18,6 +18,8 @@ type PresupuestoRow = {
   proyecto: string;
   codificacion: string;
   presupuesto: number;
+  presupuestoGasto: number;
+  presupuestoInversion: number;
   comprometido: number;
   comprometidoGasto: number;
   comprometidoInversion: number;
@@ -31,6 +33,8 @@ type PresupuestoData = {
   rows: PresupuestoRow[];
   totals: {
     presupuesto: number;
+    presupuestoGasto: number;
+    presupuestoInversion: number;
     comprometido: number;
     comprometidoGasto: number;
     comprometidoInversion: number;
@@ -54,6 +58,10 @@ type MacroBudgetGroup = {
   causado: number;
 };
 
+type PdiPresupuestoProps = {
+  refreshSignal?: number;
+};
+
 function fmtCOP(n: number) {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
@@ -72,34 +80,48 @@ function macroKey(row: PresupuestoRow) {
 }
 
 function macroName(macro: string) {
-  return (macro || "Sin centro de costos").replace(/^\d+\./, "").trim();
+  return (macro || "Sin centro de costos").replace(/^M?\d+\s*[-.:]\s*/i, "").trim();
 }
 
 function macroCode(macro: string) {
+  const systemMatch = (macro || "").match(/^(M\d+)\b/i);
+  if (systemMatch) return systemMatch[1].toUpperCase();
   const match = (macro || "").match(/^(\d+)/);
   return match ? `M${match[1]}` : "Sin codigo";
 }
 
-function projectCode(row: PresupuestoRow) {
-  const raw = (row.codificacion || row.proyecto || "").trim();
-  return raw.replace(/-A(E)?\d+$/i, "").trim() || row.proyecto || "Sin proyecto";
+function projectLabel(row: PresupuestoRow) {
+  return row.codificacion?.trim() || "Sin codigo";
 }
 
-function actionCode(row: PresupuestoRow) {
-  return (row.codificacion || row.proyecto || "").trim() || "Sin accion";
+function compareBudgetCodes(a: string, b: string) {
+  const aParts = (a.match(/\d+/g) || []).map(Number);
+  const bParts = (b.match(/\d+/g) || []).map(Number);
+  const length = Math.max(aParts.length, bParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const diff = (aParts[index] ?? 0) - (bParts[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+
+  return a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
 }
 
 function sumRows(rows: PresupuestoRow[]) {
   return rows.reduce(
     (acc, row) => {
-      acc.presupuesto += row.presupuesto || 0;
-      acc.comprometidoGasto += row.comprometidoGasto;
+      acc.presupuesto          += row.presupuesto || 0;
+      acc.presupuestoGasto     += row.presupuestoGasto || 0;
+      acc.presupuestoInversion += row.presupuestoInversion || 0;
+      acc.comprometidoGasto    += row.comprometidoGasto;
       acc.comprometidoInversion += row.comprometidoInversion;
-      acc.comprometido += row.comprometido;
-      acc.causado += row.causado;
+      acc.comprometido         += row.comprometido;
+      acc.causado              += row.causado;
+      acc.causadoGasto         += row.causadoGasto || 0;
+      acc.causadoInversion     += row.causadoInversion || 0;
       return acc;
     },
-    { presupuesto: 0, comprometidoGasto: 0, comprometidoInversion: 0, comprometido: 0, causado: 0 }
+    { presupuesto: 0, presupuestoGasto: 0, presupuestoInversion: 0, comprometidoGasto: 0, comprometidoInversion: 0, comprometido: 0, causado: 0, causadoGasto: 0, causadoInversion: 0 }
   );
 }
 
@@ -128,7 +150,12 @@ function groupByMacro(rows: PresupuestoRow[]) {
       acc[key].causado += row.causado;
       return acc;
     }, {})
-  ).sort((a, b) => b.comprometido - a.comprometido);
+  )
+    .map((group) => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => compareBudgetCodes(projectLabel(a), projectLabel(b))),
+    }))
+    .sort((a, b) => compareBudgetCodes(a.code, b.code));
 }
 
 function KpiCard({ title, value, sub, color, icon }: {
@@ -150,7 +177,7 @@ function KpiCard({ title, value, sub, color, icon }: {
   );
 }
 
-export default function PdiPresupuesto() {
+export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProps) {
   const [data, setData] = useState<PresupuestoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,6 +204,10 @@ export default function PdiPresupuesto() {
   }, [fetchData]);
 
   useEffect(() => {
+    if (refreshSignal > 0) fetchData(true);
+  }, [fetchData, refreshSignal]);
+
+  useEffect(() => {
     if (!data || selectedMacro === "todos") return;
     const exists = data.rows.some((row) => macroKey(row) === selectedMacro);
     if (!exists) setSelectedMacro("todos");
@@ -197,8 +228,7 @@ export default function PdiPresupuesto() {
   }
   if (!data) return null;
 
-  const { totals, rows, updatedAt } = data;
-  const pctCausado = pct(totals.causado, totals.comprometido);
+  const { rows, updatedAt } = data;
   const macroGroups = groupByMacro(rows);
   const visibleGroups = selectedMacro === "todos"
     ? macroGroups
@@ -232,30 +262,62 @@ export default function PdiPresupuesto() {
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" mb="xl">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" mb="xl">
+        <KpiCard
+          title="Total presupuesto"
+          value={fmtCOP(visibleTotals.presupuesto)}
+          color="teal"
+          icon={<IconCurrencyDollar size={18} />}
+        />
+        <KpiCard
+          title="Presupuesto gasto"
+          value={fmtCOP(visibleTotals.presupuestoGasto)}
+          color="green"
+          icon={<IconCurrencyDollar size={18} />}
+        />
+        <KpiCard
+          title="Presupuesto inversión"
+          value={fmtCOP(visibleTotals.presupuestoInversion)}
+          color="indigo"
+          icon={<IconCurrencyDollar size={18} />}
+        />
         <KpiCard
           title="Total comprometido"
-          value={fmtCOP(totals.comprometido)}
+          value={fmtCOP(visibleTotals.comprometido)}
           color="violet"
           icon={<IconChartPie size={18} />}
         />
         <KpiCard
           title="Comprometido gasto"
-          value={fmtCOP(totals.comprometidoGasto)}
+          value={fmtCOP(visibleTotals.comprometidoGasto)}
           color="cyan"
           icon={<IconTrendingUp size={18} />}
         />
         <KpiCard
-          title="Comprometido inversion"
-          value={fmtCOP(totals.comprometidoInversion)}
+          title="Comprometido inversión"
+          value={fmtCOP(visibleTotals.comprometidoInversion)}
           color="blue"
           icon={<IconTrendingUp size={18} />}
         />
         <KpiCard
           title="Total causado"
-          value={fmtCOP(totals.causado)}
-          sub={totals.comprometido > 0 ? `${pctCausado}% del comprometido` : undefined}
-          color={pctCausado >= 80 ? "teal" : "orange"}
+          value={fmtCOP(visibleTotals.causado)}
+          sub={visibleTotals.comprometido > 0 ? `${pct(visibleTotals.causado, visibleTotals.comprometido)}% del comprometido` : undefined}
+          color={pct(visibleTotals.causado, visibleTotals.comprometido) >= 80 ? "teal" : "orange"}
+          icon={<IconCurrencyDollar size={18} />}
+        />
+        <KpiCard
+          title="Causado gasto"
+          value={fmtCOP(visibleTotals.causadoGasto)}
+          sub={visibleTotals.comprometidoGasto > 0 ? `${pct(visibleTotals.causadoGasto, visibleTotals.comprometidoGasto)}% del comprometido gasto` : undefined}
+          color="orange"
+          icon={<IconCurrencyDollar size={18} />}
+        />
+        <KpiCard
+          title="Causado inversión"
+          value={fmtCOP(visibleTotals.causadoInversion)}
+          sub={visibleTotals.comprometidoInversion > 0 ? `${pct(visibleTotals.causadoInversion, visibleTotals.comprometidoInversion)}% del comprometido inversión` : undefined}
+          color="grape"
           icon={<IconCurrencyDollar size={18} />}
         />
       </SimpleGrid>
@@ -266,7 +328,7 @@ export default function PdiPresupuesto() {
             <Box>
               <Text fw={700}>Ejecución presupuestal por macroproyecto y centro de costo</Text>
               <Text size="xs" c="dimmed">
-                Resumen de la macro y detalle de sus proyectos y acciones.
+                Resumen de la macro y detalle de sus proyectos.
               </Text>
             </Box>
             <Select
@@ -286,7 +348,6 @@ export default function PdiPresupuesto() {
                 <tr style={{ background: "#f8f9fa" }}>
                   <th style={thStyle}>Macroproyecto</th>
                   <th style={thStyle}>Proyecto</th>
-                  <th style={thStyle}>Acción</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Presupuesto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprometido gasto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprometido inversión</th>
@@ -306,7 +367,6 @@ export default function PdiPresupuesto() {
                           <Text size="xs" fw={800}>{group.name}</Text>
                         </Group>
                       </td>
-                      <td style={tdStyle} />
                       <td style={tdStyle} />
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(group.presupuesto)}</td>
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>{fmtCOP(group.comprometidoGasto)}</td>
@@ -333,10 +393,7 @@ export default function PdiPresupuesto() {
                           <Text size="xs" c="dimmed">{group.code}</Text>
                         </td>
                         <td style={tdStyle}>
-                          <Text size="xs" fw={700}>{projectCode(row)}</Text>
-                        </td>
-                        <td style={tdStyle}>
-                          <Text size="xs" fw={700}>{actionCode(row)}</Text>
+                          <Text size="xs" fw={700}>{projectLabel(row)}</Text>
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44" }}>{fmtCOP(row.presupuesto || 0)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>{fmtCOP(row.comprometidoGasto)}</td>

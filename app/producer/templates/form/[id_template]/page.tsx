@@ -23,13 +23,18 @@ import {
   Tabs,
   Alert,
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEye, IconCancel, IconSend2, IconLock, IconInfoCircle } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../components/Validators/ValidatorModal";
-import { buildValidatorOptions, getPreferredValidatorColumnName } from "../../../../utils/validatorOptions";
+import {
+  buildFieldDropdownOptions,
+  buildSelectOptionsFromStrings,
+  buildValidatorOptions,
+  getPreferredValidatorColumnName,
+} from "../../../../utils/validatorOptions";
 
 interface Field {
   name: string;
@@ -38,6 +43,8 @@ interface Field {
   validate_with?: { id: string, name: string } | string;
   comment?: string;
   multiple?: boolean;
+  dropdown_options?: string[];
+  excel_validation_options?: string[];
 }
 
 interface WorkbookSheet {
@@ -57,7 +64,18 @@ interface Template {
 
 interface QrDraftEntry {
   dependency: string;
-  filled_data: { field_name: string; values: any[] }[];
+  dependency_code?: string;
+  dependency_name?: string;
+  sender_name?: string;
+  sender_email?: string | null;
+  filled_data: { sheet_name?: string; sheet?: string; sheetName?: string; field_name: string; values: any[] }[];
+}
+
+interface QrRowSource {
+  dependencyCode: string;
+  dependencyName: string;
+  senderName?: string;
+  senderEmail?: string | null;
 }
 
 interface PublishedTemplateResponse {
@@ -89,6 +107,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [sheetRows, setSheetRows] = useState<Record<string, Record<string, any>[]>>({});
   // rows para plantillas sin hojas (legacy)
   const [rows, setRows] = useState<Record<string, any>[]>([{}]);
+  const [rowSources, setRowSources] = useState<(QrRowSource | null)[]>([]);
+  const [sheetRowSources, setSheetRowSources] = useState<Record<string, (QrRowSource | null)[]>>({});
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [validatorModalOpen, setValidatorModalOpen] = useState(false);
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
@@ -105,6 +125,46 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
 
+  const getDraftFieldSheetName = (fieldData: QrDraftEntry["filled_data"][number]) =>
+    fieldData.sheet_name || fieldData.sheet || fieldData.sheetName || null;
+
+  const getDraftRowSource = (draft: QrDraftEntry): QrRowSource => ({
+    dependencyCode: draft.dependency_code || draft.dependency,
+    dependencyName: draft.dependency_name || draft.dependency,
+    senderName: draft.sender_name,
+    senderEmail: draft.sender_email,
+  });
+
+  const isBlankQrValue = (value: any) => (
+    value === null || value === undefined || value === ""
+  );
+
+  const buildRowsFromFilledData = (filledData: QrDraftEntry["filled_data"]) => {
+    const maxLen = Math.max(...filledData.map((fieldData) => fieldData.values?.length || 0), 1);
+    return Array.from({ length: maxLen }, (_, rowIndex) => {
+      const row: Record<string, any> = {};
+      filledData.forEach((fieldData) => {
+        const nextValue = fieldData.values?.[rowIndex] ?? null;
+        const currentValue = row[fieldData.field_name];
+        if (isBlankQrValue(currentValue) || !isBlankQrValue(nextValue)) {
+          row[fieldData.field_name] = nextValue;
+        }
+      });
+      return row;
+    });
+  };
+
+  const buildRowsAndSourcesFromDraft = (
+    draft: QrDraftEntry,
+    filledData: QrDraftEntry["filled_data"] = draft.filled_data
+  ) => {
+    const draftRows = buildRowsFromFilledData(filledData);
+    return {
+      rows: draftRows,
+      sources: draftRows.map(() => getDraftRowSource(draft)),
+    };
+  };
+
   const fetchTemplate = async () => {
     try {
       const response = await axios.get<PublishedTemplateResponse>(
@@ -116,6 +176,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = response.data.template.workbook_sheets || [];
       const templateShared = response.data.template?.shared ?? false;
+      // Conjunto de hojas accesibles para este productor — usado también al cargar borradores
+      let editableSheetNames = new Set<string>();
+      // IDs de dependencias del usuario — usados para verificar si es productor encargado
+      let currentUserDepIds: string[] = [];
       if (wbSheets.length > 0) {
         setAllSheets(wbSheets);
         let editable: WorkbookSheet[] = wbSheets;
@@ -134,6 +198,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             const userDepIds: string[] = allDeps
               .filter((d: any) => allDepCodes.includes(d.dep_code))
               .map((d: any) => d._id?.toString());
+            currentUserDepIds = userDepIds;
             editable = wbSheets.filter((sheet: WorkbookSheet) => {
               if (!sheet.fields?.length) return false;
               if (!sheet.producers?.length) return true;
@@ -142,20 +207,45 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           }
         } catch { /* si falla, editable = todas las hojas */ }
 
+        editableSheetNames = new Set(editable.map((s: WorkbookSheet) => s.name));
         setAccessibleSheets(editable);
         setActiveSheet(wbSheets[0].name);
         const sharedData = response.data.shared_sheets_data || {};
         const initialRows: Record<string, Record<string, any>[]> = {};
-        editable.forEach((s: WorkbookSheet) => { initialRows[s.name] = [{}]; });
+        const initialSources: Record<string, (QrRowSource | null)[]> = {};
+        editable.forEach((s: WorkbookSheet) => {
+          initialRows[s.name] = [{}];
+          initialSources[s.name] = [null];
+        });
         // Si template.shared=true, hojas no editables muestran datos de otros productores
         if (templateShared) {
           wbSheets
             .filter((s: WorkbookSheet) => !editable.some((e: WorkbookSheet) => e.name === s.name))
             .forEach((s: WorkbookSheet) => {
-              initialRows[s.name] = sharedData[s.name]?.length ? sharedData[s.name] : [{}];
+              const rawRows: any[] = sharedData[s.name] || [];
+              if (rawRows.length) {
+                initialRows[s.name] = rawRows.map(({ __origin__, ...rest }) => rest);
+                initialSources[s.name] = rawRows.map((row) =>
+                  row.__origin__
+                    ? {
+                        dependencyCode: row.__origin__.code,
+                        dependencyName: row.__origin__.depName || row.__origin__.code,
+                        senderName: row.__origin__.senderName,
+                        senderEmail: row.__origin__.senderEmail,
+                      }
+                    : null
+                );
+              } else {
+                initialRows[s.name] = [{}];
+                initialSources[s.name] = [null];
+              }
             });
         }
         setSheetRows(initialRows);
+        setSheetRowSources(initialSources);
+      } else {
+        setRowSources([]);
+        setSheetRowSources({});
       }
       const periodId =
         typeof response.data.publishedTemplate?.period === "string"
@@ -172,36 +262,79 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           });
           const userDepCode: string = userRes.data?.dep_code || '';
           const allDepCodes: string[] = [userDepCode, ...(userRes.data?.additional_dependencies || [])].filter(Boolean);
-          const draft = qrDrafts.find((d: QrDraftEntry) => allDepCodes.includes(d.dependency));
-          if (draft?.filled_data?.length) {
-            const maxLen = Math.max(...draft.filled_data.map((f: any) => f.values?.length || 0), 1);
-            const preloadedRows: Record<string, any>[] = Array.from({ length: maxLen }, (_, i) => {
-              const row: Record<string, any> = {};
-              draft.filled_data.forEach((f: any) => { row[f.field_name] = f.values?.[i] ?? null; });
-              return row;
-            });
-            setRows(preloadedRows);
+          const matchingDrafts = qrDrafts.filter((draft: QrDraftEntry) =>
+            allDepCodes.includes(draft.dependency_code || draft.dependency)
+          );
+          const draftsWithData = matchingDrafts.filter((draft) => draft.filled_data?.length);
 
-            // Pre-cargar también por hojas si aplica
+          if (draftsWithData.length) {
             const wbSheets = response.data.template.workbook_sheets || [];
+
             if (wbSheets.length) {
               const draftSheetRows: Record<string, Record<string, any>[]> = {};
-              wbSheets.forEach((sheet: WorkbookSheet) => {
-                const sheetFieldNames = new Set(sheet.fields.map((f: Field) => f.name));
-                const sheetFilled = draft.filled_data.filter((f: any) => sheetFieldNames.has(f.field_name));
-                if (sheetFilled.length) {
-                  const sheetMaxLen = Math.max(...sheetFilled.map((f: any) => f.values?.length || 0), 1);
-                  draftSheetRows[sheet.name] = Array.from({ length: sheetMaxLen }, (_, i) => {
-                    const row: Record<string, any> = {};
-                    sheetFilled.forEach((f: any) => { row[f.field_name] = f.values?.[i] ?? null; });
-                    return row;
-                  });
-                }
+              const draftSheetSources: Record<string, (QrRowSource | null)[]> = {};
+              let firstDraftSheetName: string | null = null;
+
+              draftsWithData.forEach((draft) => {
+                const hasSheetTaggedFields = draft.filled_data.some((fieldData) => getDraftFieldSheetName(fieldData));
+                let legacyCursor = 0;
+
+                wbSheets.forEach((sheet: WorkbookSheet) => {
+                  // Solo aplicar datos del borrador a hojas que este productor puede editar
+                  const isAccessible = !editableSheetNames.size || editableSheetNames.has(sheet.name);
+                  const sheetFieldNames = new Set(sheet.fields.map((f: Field) => f.name));
+                  const sheetFilled = hasSheetTaggedFields
+                    ? draft.filled_data.filter((fieldData) => getDraftFieldSheetName(fieldData) === sheet.name)
+                    : draft.filled_data
+                        .slice(legacyCursor, legacyCursor + sheet.fields.length)
+                        .filter((fieldData) => sheetFieldNames.has(fieldData.field_name));
+
+                  // Avanzar cursor legacy siempre (incluso en hojas no accesibles)
+                  if (!hasSheetTaggedFields && sheetFilled.length) {
+                    legacyCursor += sheet.fields.length;
+                  }
+
+                  // Solo cargar filas de hojas accesibles; las hojas read-only usan shared_sheets_data
+                  if (isAccessible && sheetFilled.length) {
+                    const built = buildRowsAndSourcesFromDraft(draft, sheetFilled);
+                    draftSheetRows[sheet.name] = [...(draftSheetRows[sheet.name] || []), ...built.rows];
+                    draftSheetSources[sheet.name] = [...(draftSheetSources[sheet.name] || []), ...built.sources];
+                    if (!firstDraftSheetName) firstDraftSheetName = sheet.name;
+                  }
+                });
               });
-              if (Object.keys(draftSheetRows).length) setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
+
+              if (Object.keys(draftSheetRows).length) {
+                setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
+                setSheetRowSources(prev => ({ ...prev, ...draftSheetSources }));
+                setActiveSheet(firstDraftSheetName);
+              }
+            } else {
+              const draftRows: Record<string, any>[] = [];
+              const draftSources: (QrRowSource | null)[] = [];
+
+              draftsWithData.forEach((draft) => {
+                const built = buildRowsAndSourcesFromDraft(draft);
+                draftRows.push(...built.rows);
+                draftSources.push(...built.sources);
+              });
+
+              if (draftRows.length) {
+                setRows(draftRows);
+                setRowSources(draftSources);
+              }
             }
 
-            setHasQrDraft(true);
+            // Solo mostrar el banner "Datos enviados por QR" al productor encargado
+            const responsibleIds: string[] = (
+              (response.data.publishedTemplate as any)?.responsible_producers ||
+              (response.data.template as any)?.responsible_producers ||
+              []
+            ).map((id: any) => String(id));
+            const isResponsible =
+              responsibleIds.length === 0 ||
+              currentUserDepIds.some((id) => responsibleIds.includes(id));
+            if (isResponsible) setHasQrDraft(true);
           }
         } catch { /* ignorar error de pre-carga */ }
       }
@@ -218,7 +351,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             let validatorId = '';
             if (typeof field.validate_with === 'string') {
               const parts = field.validate_with.split(' - ');
-              validatorId = parts.length >= 2 ? parts[1].trim() : '';
+              validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
             } else {
               validatorId = (field.validate_with as any).id;
             }
@@ -240,10 +373,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       const validatorCheckResults = validatorChecks.reduce((acc, curr) => ({ ...acc, ...curr }), {});
       setValidatorExists(validatorCheckResults);
 
-      // Cargar opciones para campos con validador (tanto múltiples como simples)
+      // Cargar opciones para campos con validador o listas importadas desde Excel
       const allValidatorOptionsPromises = allTemplateFields
-      .filter(field => field.validate_with)
       .map(async (field) => {
+        const fieldDropdownOptions = buildFieldDropdownOptions(field);
+
+        if (!field.validate_with) {
+          return {
+            fieldName: field.name,
+            options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+            isMultiple: field.multiple,
+          };
+        }
+
         try {
           let validatorId = '';
           let validateWith = '';
@@ -251,16 +393,23 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           if (typeof field.validate_with === 'string') {
             const parts = field.validate_with.split(' - ');
             if (parts.length >= 2) {
-              validatorId = parts[1].trim();
+              validatorId = parts[parts.length - 1].trim();
               validateWith = field.validate_with;
+            } else if (field.validate_with.trim()) {
+              validatorId = field.validate_with.trim();
+              validateWith = field.validate_with.trim();
             }
-          } else if (field.validate_with?.id) {
-            validatorId = field.validate_with.id;
-            validateWith = field.validate_with.name || '';
+          } else if ((field.validate_with as any)?.id) {
+            validatorId = (field.validate_with as any).id;
+            validateWith = (field.validate_with as any).name || '';
           }
 
           if (!validatorId) {
-            return { fieldName: field.name, options: [], isMultiple: field.multiple };
+            return {
+              fieldName: field.name,
+              options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+              isMultiple: field.multiple,
+            };
           }
 
           const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
@@ -270,12 +419,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             vRes.data?.validator,
             getPreferredValidatorColumnName(validateWith)
           );
-          const options = optionStrings.map((v) => ({ value: v, label: v }));
+          const options = buildSelectOptionsFromStrings([...optionStrings, ...fieldDropdownOptions]);
 
           return { fieldName: field.name, options, isMultiple: field.multiple };
         } catch (error) {
           console.error(`Error obteniendo opciones para ${field.name}:`, error);
-          return { fieldName: field.name, options: [], isMultiple: field.multiple };
+          return {
+            fieldName: field.name,
+            options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+            isMultiple: field.multiple,
+          };
         }
       });
 
@@ -321,11 +474,52 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     });
   };
 
-  const addSheetRow = (sheetName: string) =>
+  const addSheetRow = (sheetName: string) => {
     setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), {}] }));
+    setSheetRowSources(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), null] }));
+  };
 
-  const removeSheetRow = (sheetName: string, idx: number) =>
-    setSheetRows(prev => ({ ...prev, [sheetName]: (prev[sheetName] || []).filter((_, i) => i !== idx) }));
+  const saveDraftRows = async (
+    updatedRows?: Record<string, any>[],
+    updatedSheetRows?: Record<string, Record<string, any>[]>
+  ) => {
+    try {
+      if (allSheets.length > 0) {
+        const currentSheetRows = updatedSheetRows ?? sheetRows;
+        // Solo enviar hojas accesibles (editables) — las hojas read-only pertenecen
+        // a otros productores y no deben incluirse en el borrador de este productor.
+        const sheetsPayload = accessibleSheets.map((sheet) => ({
+          name: sheet.name,
+          data: currentSheetRows[sheet.name] || [],
+        }));
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
+          email: session?.user?.email,
+          pubTem_id: id_template,
+          sheetsData: sheetsPayload,
+          asDraft: true,
+        });
+      } else {
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
+          email: session?.user?.email,
+          pubTem_id: id_template,
+          data: updatedRows ?? rows,
+          asDraft: true,
+        });
+      }
+    } catch (err) {
+      console.error('[saveDraftRows] Error al guardar borrador:', err);
+    }
+  };
+
+  const removeSheetRow = (sheetName: string, idx: number) => {
+    const updated = {
+      ...sheetRows,
+      [sheetName]: (sheetRows[sheetName] || []).filter((_, i) => i !== idx),
+    };
+    setSheetRows(updated);
+    setSheetRowSources(prev => ({ ...prev, [sheetName]: (prev[sheetName] || []).filter((_, i) => i !== idx) }));
+    saveDraftRows(undefined, updated);
+  };
 
   const handleInputChange = (rowIndex: number, fieldName: string, value: any) => {
     const updatedRows = [...rows];
@@ -352,6 +546,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const addRow = () => {
     const newRows = [...rows, {}];
     setRows(newRows);
+    setRowSources(prev => [...prev, null]);
     
     // Auto-seleccionar el primer campo con validador de la nueva fila
     const newRowIndex = newRows.length - 1;
@@ -364,24 +559,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const removeRow = (index: number) => {
-    setRows(rows.filter((_, i) => i !== index));
-  };
-
-  const validateFields = () => {
-    const newErrors: Record<string, string[]> = {};
-
-    rows.forEach((row, rowIndex) => {
-      template?.fields.forEach((field) => {
-        if (field.required && (row[field.name] === null || row[field.name] === undefined)) {          if (!newErrors[field.name]) {
-            newErrors[field.name] = [];
-          }
-          newErrors[field.name][rowIndex] = "Este campo es obligatorio.";
-        }
-      });
-    });
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const updated = rows.filter((_, i) => i !== index);
+    setRows(updated);
+    setRowSources(prev => prev.filter((_, i) => i !== index));
+    saveDraftRows(updated);
   };
 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
@@ -407,26 +588,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const handleSubmit = async () => {
-    if (!validateFields()) {
-      showNotification({
-        title: "Error de Validación",
-        message: "Por favor completa los campos obligatorios.",
-        color: "red",
-      });
-      return;
-    }
-
     try {
       setLoading(true);
-      const formattedRows = rows.map(row => {
+      const formatRows = (rowsToFormat: Record<string, any>[], fields: Field[]) => rowsToFormat.map(row => {
         const formattedRow: Record<string, any> = {};
-  
+
         Object.keys(row).forEach(fieldName => {
-          const field = template?.fields.find(f => f.name === fieldName);
-  
+          const field = fields.find(f => f.name === fieldName);
+
           if (field?.multiple && Array.isArray(row[fieldName])) {
             const isNumericField = multiSelectOptions[fieldName]?.every(v => !isNaN(Number(v)));
-            
+
             formattedRow[fieldName] = isNumericField
               ? row[fieldName].map((v: any) => Number(v))
               : row[fieldName];
@@ -434,24 +606,29 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             formattedRow[fieldName] = row[fieldName];
           }
         });
-  
+
         return formattedRow;
-      });  
-      console.log("Datos enviados al backend:", formattedRows);
-      console.log("Template fields con validate_with:", template?.fields.filter(f => f.validate_with));
+      });
+
+      const useSheetSubmission = allSheets.length > 0;
+      const formattedRows = formatRows(rows, template?.fields || []);
+      const sheetsData = accessibleSheets.map((sheet) => ({
+        name: sheet.name,
+        data: formatRows(sheetRows[sheet.name] || [{}], sheet.fields || []),
+      }));
 
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
         email: session?.user?.email,
         pubTem_id: id_template,
-        data: formattedRows,
-        edit: false,
+        data: useSheetSubmission ? undefined : formattedRows,
+        sheetsData: useSheetSubmission ? sheetsData : undefined,
+        asDraft: true,
       });
       showNotification({
-        title: "Éxito",
-        message: "Datos enviados exitosamente",
+        title: "Borrador guardado",
+        message: "Los datos se guardaron. Usa el botón 'Enviar al SNIES' en la lista de plantillas para enviar definitivamente.",
         color: "teal",
       });
-      router.push('/producer/templates');
     } catch (error) {
       console.error("Error submitting data:", error);
       if (axios.isAxiosError(error) && error.response?.status === 400) {
@@ -504,14 +681,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       disabled: readOnly,
     };
   
-    if (field.multiple && field.validate_with) {
+    const opts = selectOptions[field.name] || [];
+    const multiOptions = multiSelectOptions[field.name] || opts.map(opt => opt.value);
+    const hasDropdownOptions = opts.length > 0 || multiOptions.length > 0;
+
+    if (field.multiple && (field.validate_with || hasDropdownOptions)) {
       return wrapWithTooltip(
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => !readOnly && inputChange(rowIndex, field.name, value)}
-          data={Array.from(new Set(multiSelectOptions[field.name] || [])).map(value => ({ value: String(value), label: String(value) }))}
+          data={Array.from(new Set(multiOptions)).map(value => ({ value: String(value), label: String(value) }))}
           searchable
-          placeholder={field.comment || "Seleccione opciones"}
+          clearable
+          placeholder="Seleccione opciones"
           style={{ width: "100%" }}
           error={fieldError || undefined}
           disabled={readOnly}
@@ -520,8 +702,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
     
     // Si el campo tiene validador pero NO es múltiple, usar Select
-    if (field.validate_with && !field.multiple) {
-      const opts = selectOptions[field.name] || [];
+    if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
       const selectDisplayValue = displayValues[rowIndex]?.[field.name]
         ? opts.find(opt => opt.label === displayValues[rowIndex][field.name])?.value || row[field.name]
         : row[field.name];
@@ -540,7 +721,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           }}
           data={opts}
           searchable
-          placeholder={opts.length === 0 ? "Cargando opciones..." : (field.comment || "Seleccione una opción")}
+          clearable
+          placeholder={opts.length === 0 ? "Cargando opciones..." : "Seleccione una opcion"}
           nothingFoundMessage={opts.length === 0 ? "Cargando..." : "Sin resultados"}
         />
       );
@@ -685,6 +867,24 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
   };
 
+  const renderRowSource = (source?: QrRowSource | null) => {
+    if (!source) return <Text size="xs" c="dimmed">Manual</Text>;
+
+    const senderText = source.senderName || source.senderEmail;
+    const tooltipLabel = senderText
+      ? `Enviado por ${senderText}`
+      : `Codigo ${source.dependencyCode}`;
+
+    return (
+      <Tooltip label={tooltipLabel} withArrow>
+        <div>
+          <Text size="xs" fw={700}>{source.dependencyName}</Text>
+          <Text size="xs" c="dimmed">{source.dependencyCode}</Text>
+        </div>
+      </Tooltip>
+    );
+  };
+
   const renderSheetTable = (fields: Field[], sheetName?: string, readOnly = false) => {
     const isSheetMode = !!sheetName;
     const currentRows = isSheetMode ? (sheetRows[sheetName] || [{}]) : rows;
@@ -694,6 +894,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const onRemoveRow = isSheetMode
       ? (rowIndex: number) => removeSheetRow(sheetName, rowIndex)
       : removeRow;
+    const currentRowSources = isSheetMode ? (sheetRowSources[sheetName] || []) : rowSources;
+    const showQrSourceColumn = currentRowSources.some(Boolean);
 
     return (
       <ScrollArea viewportRef={scrollAreaRef}>
@@ -701,6 +903,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           <Table mb="xs" withTableBorder withColumnBorders withRowBorders>
             <Table.Thead>
               <Table.Tr>
+                {showQrSourceColumn && (
+                  <Table.Th style={{ minWidth: '220px' }}>Origen</Table.Th>
+                )}
                 {fields.map((field) => (
                   <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                     <Group>
@@ -714,6 +919,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             <Table.Tbody>
               {currentRows.map((row, rowIndex) => (
                 <Table.Tr key={rowIndex}>
+                  {showQrSourceColumn && (
+                    <Table.Td style={{ minWidth: '220px' }}>
+                      {renderRowSource(currentRowSources[rowIndex])}
+                    </Table.Td>
+                  )}
                   {fields.map((field) => (
                     <Table.Td key={field.name} style={{ minWidth: '250px' }}>
                       <Group align="center">
@@ -778,7 +988,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       {hasQrDraft && (
         <Alert icon={<IconInfoCircle size={16} />} color="yellow" mb="md" title="Datos enviados por QR">
-          Se han cargado datos enviados mediante el formulario QR. Revísalos y haz clic en <strong>Enviar</strong> para confirmarlos.
+          Se han cargado datos enviados mediante el formulario QR. Revisa y haz clic en <strong>Guardar</strong> para confirmar.
         </Alert>
       )}
 
@@ -856,10 +1066,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           </Button>
           <Button
             onClick={handleSubmit}
-            rightSection={<IconSend2/>}
+            rightSection={<IconDeviceFloppy size={16}/>}
             loading={loading}
           >
-            Enviar
+            Guardar
           </Button>
         </Group>
         

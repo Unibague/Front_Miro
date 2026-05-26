@@ -293,16 +293,27 @@ const getValidatorOptions = (
       );
     });
 
-    const idText = toOptionText(idValue);
-    if (!idText) return;
+    const rawIdText = toOptionText(idValue);
+    if (!rawIdText) return;
 
     const descValue = descKey ? resolveValueByKey(row, descKey) : undefined;
     const descText = toOptionText(descValue);
-    const displayLabel = descText ? `${idText} - ${descText}` : idText;
+    if (descKey && !descText) return;
 
-    if (seen.has(idText)) return;
-    seen.add(idText);
-    options.push({ value: idText, displayLabel });
+    // When there is no separate description column, detect "CODE description" in a single value
+    // e.g. "CC Cédula de ciudadanía" → storedValue = "CC"
+    // e.g. "1 Posdoctorado"         → storedValue = "1"
+    let storedValue = rawIdText;
+    if (!descKey) {
+      const codeMatch = /^([A-Z0-9]{1,6})\s+.+$/.exec(rawIdText);
+      if (codeMatch) storedValue = codeMatch[1];
+    }
+
+    const displayLabel = descText ? `${rawIdText} - ${descText}` : rawIdText;
+
+    if (seen.has(storedValue)) return;
+    seen.add(storedValue);
+    options.push({ value: storedValue, displayLabel });
   });
 
   return options;
@@ -319,7 +330,9 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
     const trimmed = line.trim();
 
     if (!trimmed) {
-      inValidSection = false;
+      if (inValidSection && options.length > 0) {
+        inValidSection = false;
+      }
       continue;
     }
 
@@ -329,9 +342,13 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
       .toUpperCase();
 
     // Detect "Los valores válidos/posibles/permitidos son:" marker (MUST end with ":")
+    const hasValueWord =
+      normalized.includes("VALORES") ||
+      normalized.includes("VALOSRES") ||
+      normalized.includes("VALOSR");
     if (
       normalized.endsWith(":") &&
-      normalized.includes("VALORES") &&
+      hasValueWord &&
       (normalized.includes("VALIDOS") || normalized.includes("POSIBLES") || normalized.includes("PERMITIDOS"))
     ) {
       inValidSection = true;
@@ -346,18 +363,26 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
   return [...new Set(options)].filter(Boolean);
 };
 
+const stripOptionPrefix = (value: string): string =>
+  value.replace(/^\s*(?:[-*•]|\d+[).:\-\s]+)\s*/, "").replace(/\s+/g, " ").trim();
+
+const normalizeOptionKey = (value: string): string => {
+  const stripped = stripOptionPrefix(value);
+  return normalizeToken(stripped || value);
+};
+
 const appendOptionTexts = (
   options: { value: string; displayLabel: string }[],
   optionTexts: string[]
 ): { value: string; displayLabel: string }[] => {
-  const seen = new Set(options.map((option) => normalizeToken(option.displayLabel)));
+  const seen = new Set(options.map((option) => normalizeOptionKey(option.displayLabel)));
   const merged = [...options];
 
   optionTexts.forEach((optionText) => {
     const displayLabel = String(optionText || "").trim();
     if (!displayLabel) return;
 
-    const key = normalizeToken(displayLabel);
+    const key = normalizeOptionKey(displayLabel);
     if (seen.has(key)) return;
 
     seen.add(key);
@@ -403,7 +428,6 @@ export const applyValidatorDropdowns = ({
         options = validator ? getValidatorOptions(validator, validatorColumnName) : [];
       }
     } else if (field.comment) {
-      // Comment present: only create dropdown if comment has numeric-prefixed lines
       const commentOptions = extractOptionsFromCommentValidators(field.comment);
       if (commentOptions.length === 0) {
         applyHeaderCommentNote(worksheet, field, fieldIndex, []);
@@ -411,7 +435,6 @@ export const applyValidatorDropdowns = ({
       }
       options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
     } else if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
-      // No comment — use stored options (manually created templates only)
       const seenStaticOptions = new Set<string>();
       options = field.dropdown_options
         .map((option) => String(option || "").trim())
@@ -426,12 +449,14 @@ export const applyValidatorDropdowns = ({
       return;
     }
 
-    if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
-      options = appendOptionTexts(options, field.dropdown_options);
-    }
+    if (!field.validate_with) {
+      if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+        options = appendOptionTexts(options, field.dropdown_options);
+      }
 
-    if (field.comment) {
-      options = appendOptionTexts(options, extractOptionsFromCommentValidators(field.comment));
+      if (field.comment) {
+        options = appendOptionTexts(options, extractOptionsFromCommentValidators(field.comment));
+      }
     }
 
     applyHeaderCommentNote(
@@ -443,9 +468,9 @@ export const applyValidatorDropdowns = ({
 
     if (options.length === 0) return;
 
-    // Store the full display label ("CC - Cédula de ciudadanía") in the dropdown list
+    // Always store the value (code/id only) so the cell never gets the combined "CC Cédula de..."
     options.forEach((option, optionIndex) => {
-      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.displayLabel;
+      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.value;
     });
 
     const colLetter = toColumnLetter(sourceCol);
@@ -500,6 +525,14 @@ export const applyWorkbookSheetDropdowns = ({
   originalCommentsBySheet?: Map<string, Map<string, string>>;
   endRow?: number;
 }): void => {
+  // Remove the existing _Listas sheet so it is rebuilt from scratch with code-only values.
+  // Without this, the original workbook's full-text options would remain in the sheet and
+  // sourceCol would start after them, leaving old cell references pointing to stale data.
+  const existingListasSheet = workbook.getWorksheet("_Listas");
+  if (existingListasSheet) {
+    workbook.removeWorksheet(existingListasSheet.id);
+  }
+
   workbookSheets.forEach((sheet) => {
     if (!Array.isArray(sheet.fields) || sheet.fields.length === 0) return;
 
@@ -570,3 +603,4 @@ export const applyFieldCommentNote = (
   if (!cleanComment) return;
   cell.note = wrapTextByLength(cleanComment, 52);
 };
+

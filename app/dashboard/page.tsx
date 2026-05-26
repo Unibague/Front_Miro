@@ -34,8 +34,10 @@ const DashboardPage = () => {
   const colorScheme = useColorScheme();
   const [pendingReports, setPendingReports] = useState<number>(0);
   const [pendingTemplates, setPendingTemplates] = useState<number>(0);
+  const [encargadoTemplatesCount, setEncargadoTemplatesCount] = useState<number>(0);
   const [nextReportDeadline, setNextReportDeadline] = useState<string | null>(null);
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
+  const [nextEncargadoDeadline, setNextEncargadoDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
@@ -144,12 +146,43 @@ const DashboardPage = () => {
                   ? templatesResponse.data.templates
                   : [];
                 const totalTemplates = templatesList.length;
+                const encargadoList = templatesList.filter((t: any) => t.isEncargado);
+                const regularList = templatesList.filter((t: any) => !t.isEncargado);
 
-                // Se establece el número total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
-                setNextTemplateDeadline(
-                    totalTemplates > 0 ? dayjs(templatesList[0].deadline).format("DD/MM/YYYY") : null
-                );
+                setEncargadoTemplatesCount(encargadoList.length);
+
+                // Fecha más próxima para productores regulares
+                const regularDeadlines = regularList
+                    .map((t: any) => {
+                        const raw = t.fecha_final_productores
+                            ?? t.template?.fecha_final_productores
+                            ?? t.fecha_final
+                            ?? t.template?.fecha_final
+                            ?? t.deadline;
+                        return raw ? new Date(raw) : null;
+                    })
+                    .filter((d: Date | null): d is Date => d !== null && !isNaN(d.getTime()));
+                const minRegular = regularDeadlines.length > 0
+                    ? new Date(Math.min(...regularDeadlines.map((d: Date) => d.getTime())))
+                    : null;
+                setNextTemplateDeadline(minRegular ? dayjs(minRegular).format("DD/MM/YYYY") : null);
+
+                // Fecha más próxima para el productor encargado
+                const encargadoDeadlines = encargadoList
+                    .map((t: any) => {
+                        const raw = t.fecha_final_responsables
+                            ?? t.template?.fecha_final_responsables
+                            ?? t.fecha_final_productores
+                            ?? t.template?.fecha_final_productores
+                            ?? t.deadline;
+                        return raw ? new Date(raw) : null;
+                    })
+                    .filter((d: Date | null): d is Date => d !== null && !isNaN(d.getTime()));
+                const minEncargado = encargadoDeadlines.length > 0
+                    ? new Date(Math.min(...encargadoDeadlines.map((d: Date) => d.getTime())))
+                    : null;
+                setNextEncargadoDeadline(minEncargado ? dayjs(minEncargado).format("DD/MM/YYYY") : null);
             } else {
                 setPendingTemplates(0);
                 setNextTemplateDeadline(null);
@@ -335,8 +368,8 @@ const DashboardPage = () => {
           )}
           {pendingTemplates > 0 && userRole !== "Responsable" && (
             <>
-              Tienes <strong>{pendingTemplates}</strong> plantillas pendientes.{" "}
-              {nextTemplateDeadline && `Fecha de vencimiento más próxima: ${nextTemplateDeadline}.`}
+              Tienes <strong>{pendingTemplates}</strong>{" "}
+              {pendingTemplates === 1 ? "plantilla pendiente" : "plantillas pendientes"}.
             </>
           )}
         </Badge>
@@ -773,20 +806,6 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-consulta-informacion">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
-              <Center><IconUsersGroup size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Consulta de Información</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta plantillas, informes e información SNIES.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
-                Abrir módulo
-              </Button>
-            </Card>
-          </Grid.Col>,
         );
         break;
       case "Productor":
@@ -844,20 +863,6 @@ const DashboardPage = () => {
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
                 Ir a Historial de Cambios
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-consulta-informacion">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/historico-docentes')} style={{ cursor: "pointer" }}>
-              <Center><IconUsersGroup size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Consulta de Información</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta plantillas, informes e información SNIES.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/historico-docentes')}>
-                Abrir módulo
               </Button>
             </Card>
           </Grid.Col>,

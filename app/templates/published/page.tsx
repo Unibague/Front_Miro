@@ -85,6 +85,10 @@ interface PublishedTemplate {
   loaded_data: any[];
   validators: Validator[];
   deadline: Date;
+  fecha_inicio?: Date;
+  fecha_final_productores?: Date;
+  fecha_final_responsables?: Date;
+  fecha_final?: Date;
 }
 
 interface TemplateStatusRow {
@@ -244,24 +248,29 @@ const PublishedTemplatesPage = () => {
     });
   }
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+              filterByUserScope: true, // Filtrar por ámbito del usuario
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
+      const data = dataResponse.data.data;
       const { template } = publishedTemplate;
+      const validators =
+        freshTemplateResponse.data.template?.validators ??
+        publishedTemplate.validators;
 
       // Campos de tipo fecha para formatear correctament
 const dateFields = new Set(
@@ -561,7 +570,7 @@ const dateFields = new Set(
         </Table.Td>
         <Table.Td>
           <Center>
-            {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+            {dateToGMT(publishedTemplate.fecha_final ?? publishedTemplate.deadline ?? publishedTemplate.period?.producer_end_date)}
           </Center>
         </Table.Td>
         <Table.Td>

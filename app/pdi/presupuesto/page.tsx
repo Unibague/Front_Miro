@@ -24,6 +24,7 @@ export default function PresupuestoPage() {
 
   const [executedFile, setExecutedFile] = useState<File | null>(null);
   const [uploadingExecuted, setUploadingExecuted] = useState(false);
+  const [budgetRefreshSignal, setBudgetRefreshSignal] = useState(0);
   const [executedImportResult, setExecutedImportResultState] = useState<ImportExecutedResponse | null>(() => {
     try { const s = localStorage.getItem("pdi_executed_import_result"); return s ? JSON.parse(s) : null; } catch { return null; }
   });
@@ -64,6 +65,7 @@ export default function PresupuestoPage() {
           color: "orange",
         });
       } else {
+        setBudgetRefreshSignal((value) => value + 1);
         showNotification({
           title: "Causado importado",
           message: `${res.data.acciones_actualizadas} acción(es) actualizadas — ${res.data.macro_detectado?.nombre ?? "búsqueda global"}`,
@@ -99,7 +101,7 @@ export default function PresupuestoPage() {
             <Text size="sm" c="dimmed" mb="md">
               Presupuesto asignado y comprometido por proyectos.
             </Text>
-            <PdiPresupuesto />
+            <PdiPresupuesto refreshSignal={budgetRefreshSignal} />
           </Paper>
 
           {admin && (
@@ -166,63 +168,77 @@ export default function PresupuestoPage() {
                     )}
 
                     {byProyecto.size > 0 && (
-                      <Stack gap="sm">
-                        {Array.from(byProyecto.entries()).map(([key, { nombre, acciones: accs }]) => {
-                          const totalGasto     = accs.reduce((s, a) => s + (a.gasto ?? 0), 0);
-                          const totalInversion = accs.reduce((s, a) => s + (a.inversion ?? 0), 0);
-                          const totalEjec      = accs.reduce((s, a) => s + a.presupuesto_ejecutado, 0);
-                          return (
-                            <Paper key={key} withBorder radius="lg" p="md">
-                              <Group justify="space-between" mb="xs" wrap="wrap">
-                                <Group gap={6}>
-                                  <Badge color="blue" variant="light" size="sm">{key}</Badge>
-                                  <Text size="sm" fw={700}>{nombre}</Text>
-                                </Group>
-                                <Group gap={12}>
-                                  <Text size="xs" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(totalGasto)}</b></Text>
-                                  <Text size="xs" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(totalInversion)}</b></Text>
-                                  <Text size="xs" fw={700}>Total: {formatCOP(totalEjec)}</Text>
-                                </Group>
-                              </Group>
-                              <Box style={{ overflowX: "auto" }}>
-                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                                  <thead>
-                                    <tr style={{ background: "#f8f9fa" }}>
-                                      <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057", width: 100 }}>Código</th>
-                                      <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#2563eb", width: 110 }}>Gasto</th>
-                                      <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#7c3aed", width: 110 }}>Inversión</th>
-                                      <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total causado</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {accs.map((a, idx) => (
-                                      <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f9fafb" }}>
-                                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", verticalAlign: "middle" }}>
-                                          <Group gap={6} wrap="nowrap">
-                                            {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">G</Badge>}
-                                            {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">I</Badge>}
-                                            {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">G+I</Badge>}
-                                            <Text size="xs" fw={700}>{a.codigo_accion ?? a.codigo ?? (a.nombre ?? a.nombre_accion)}</Text>
-                                          </Group>
-                                        </td>
-                                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400 }}>
-                                          {(a.gasto ?? 0) > 0 ? formatCOP(a.gasto!) : "—"}
-                                        </td>
-                                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#7c3aed", fontWeight: (a.inversion ?? 0) > 0 ? 700 : 400 }}>
-                                          {(a.inversion ?? 0) > 0 ? formatCOP(a.inversion!) : "—"}
-                                        </td>
-                                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", fontWeight: 700 }}>
-                                          {formatCOP(a.presupuesto_ejecutado)}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </Box>
-                            </Paper>
-                          );
-                        })}
-                      </Stack>
+                      <Box style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e9ecef", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: "#f1f3f5" }}>
+                              <th style={{ padding: "10px 14px", textAlign: "left",  borderBottom: "2px solid #dee2e6", fontWeight: 700, color: "#495057", minWidth: 160, whiteSpace: "nowrap" }}>Proyecto</th>
+                              <th style={{ padding: "10px 14px", textAlign: "left",  borderBottom: "2px solid #dee2e6", fontWeight: 700, color: "#495057", minWidth: 110, whiteSpace: "nowrap" }}>Acción</th>
+                              <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #dee2e6", fontWeight: 700, color: "#2563eb", minWidth: 130, whiteSpace: "nowrap" }}>Gasto</th>
+                              <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #dee2e6", fontWeight: 700, color: "#7c3aed", minWidth: 130, whiteSpace: "nowrap" }}>Inversión</th>
+                              <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #dee2e6", fontWeight: 700, color: "#374151", minWidth: 130, whiteSpace: "nowrap" }}>Total causado</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(byProyecto.entries()).flatMap(([key, { nombre, acciones: accs }]) => {
+                              const totalGasto     = accs.reduce((s, a) => s + (a.gasto ?? 0), 0);
+                              const totalInversion = accs.reduce((s, a) => s + (a.inversion ?? 0), 0);
+                              const totalEjec      = accs.reduce((s, a) => s + a.presupuesto_ejecutado, 0);
+                              return [
+                                <tr key={`hdr-${key}`} style={{ background: "#eef1f5", borderTop: "2px solid #dee2e6" }}>
+                                  <td colSpan={2} style={{ padding: "9px 14px", fontWeight: 800 }}>
+                                    <Group gap={8} wrap="nowrap">
+                                      <Badge color="blue" variant="filled" size="sm" radius="sm">{key}</Badge>
+                                      <Text size="sm" fw={800}>{nombre}</Text>
+                                    </Group>
+                                  </td>
+                                  <td style={{ padding: "9px 14px", textAlign: "right", color: "#2563eb", fontWeight: 800, whiteSpace: "nowrap" }}>{formatCOP(totalGasto)}</td>
+                                  <td style={{ padding: "9px 14px", textAlign: "right", color: "#7c3aed", fontWeight: 800, whiteSpace: "nowrap" }}>{formatCOP(totalInversion)}</td>
+                                  <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>{formatCOP(totalEjec)}</td>
+                                </tr>,
+                                ...accs.map((a, idx) => (
+                                  <tr key={`${key}-${idx}`} style={{ background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                    <td style={{ padding: "7px 14px 7px 28px", color: "#868e96", fontSize: 12 }}>
+                                      <Text size="xs" c="dimmed">{key}</Text>
+                                    </td>
+                                    <td style={{ padding: "7px 14px", verticalAlign: "middle" }}>
+                                      <Group gap={6} wrap="nowrap">
+                                        {a.tipo === "gasto"    && <Badge color="blue"   variant="light" size="xs">G</Badge>}
+                                        {a.tipo === "inversion"&& <Badge color="violet" variant="light" size="xs">I</Badge>}
+                                        {a.tipo === "mixto"    && <Badge color="grape"  variant="light" size="xs">G+I</Badge>}
+                                        <Text size="xs" fw={700}>{a.codigo_accion ?? a.codigo ?? a.nombre ?? a.nombre_accion}</Text>
+                                      </Group>
+                                    </td>
+                                    <td style={{ padding: "7px 14px", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400, whiteSpace: "nowrap" }}>
+                                      {(a.gasto ?? 0) > 0 ? formatCOP(a.gasto!) : "—"}
+                                    </td>
+                                    <td style={{ padding: "7px 14px", textAlign: "right", color: "#7c3aed", fontWeight: (a.inversion ?? 0) > 0 ? 700 : 400, whiteSpace: "nowrap" }}>
+                                      {(a.inversion ?? 0) > 0 ? formatCOP(a.inversion!) : "—"}
+                                    </td>
+                                    <td style={{ padding: "7px 14px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                      {formatCOP(a.presupuesto_ejecutado)}
+                                    </td>
+                                  </tr>
+                                )),
+                              ];
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ background: "#e9ecef", borderTop: "2px solid #ced4da" }}>
+                              <td colSpan={2} style={{ padding: "9px 14px", fontWeight: 800, fontSize: 13 }}>TOTAL IMPORTADO</td>
+                              <td style={{ padding: "9px 14px", textAlign: "right", color: "#2563eb", fontWeight: 800, whiteSpace: "nowrap" }}>
+                                {formatCOP(Array.from(byProyecto.values()).flatMap(p => p.acciones).reduce((s, a) => s + (a.gasto ?? 0), 0))}
+                              </td>
+                              <td style={{ padding: "9px 14px", textAlign: "right", color: "#7c3aed", fontWeight: 800, whiteSpace: "nowrap" }}>
+                                {formatCOP(Array.from(byProyecto.values()).flatMap(p => p.acciones).reduce((s, a) => s + (a.inversion ?? 0), 0))}
+                              </td>
+                              <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>
+                                {formatCOP(Array.from(byProyecto.values()).flatMap(p => p.acciones).reduce((s, a) => s + a.presupuesto_ejecutado, 0))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </Box>
                     )}
 
                     {detalle.length > 0 && (

@@ -4,14 +4,17 @@ import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
   IconLayoutDashboard, IconGitPullRequest, IconForms, IconReportAnalytics,
-  IconCurrencyDollar,
+  IconCurrencyDollar, IconTarget,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
+import { useRole } from "@/app/context/RoleContext";
 
 export default function PdiSidebar() {
-  const router   = useRouter();
-  const pathname = usePathname();
+  const router      = useRouter();
+  const pathname    = usePathname();
   const currentPath = pathname ?? "";
+  const { userRole } = useRole();
+  const isAdmin     = userRole === "Administrador";
 
   return (
     <Stack
@@ -34,51 +37,66 @@ export default function PdiSidebar() {
 
       <Divider />
 
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
+      {isAdmin && (
+        <>
+          <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>CONTROL</Text>
 
-      <NavLink
-        label="Dashboard"
-        leftSection={<IconChartBarPopular size={16} />}
-        active={currentPath === "/pdi"}
-        color="violet"
-        onClick={() => router.push("/pdi")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Dashboard"
+            leftSection={<IconChartBarPopular size={16} />}
+            active={currentPath === "/pdi"}
+            color="violet"
+            onClick={() => router.push("/pdi")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <NavLink
-        label="Gestión de cambios"
-        leftSection={<IconGitPullRequest size={16} />}
-        active={currentPath === "/pdi/cambios"}
-        color="violet"
-        onClick={() => router.push("/pdi/cambios")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Gestión de cambios"
+            leftSection={<IconGitPullRequest size={16} />}
+            active={currentPath === "/pdi/cambios"}
+            color="violet"
+            onClick={() => router.push("/pdi/cambios")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <NavLink
-        label="Presupuesto"
-        leftSection={<IconCurrencyDollar size={16} />}
-        active={currentPath === "/pdi/presupuesto"}
-        color="violet"
-        onClick={() => router.push("/pdi/presupuesto")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Presupuesto"
+            leftSection={<IconCurrencyDollar size={16} />}
+            active={currentPath === "/pdi/presupuesto"}
+            color="violet"
+            onClick={() => router.push("/pdi/presupuesto")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <Divider />
+          <Divider />
 
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>FORMULARIOS</Text>
+          <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>FORMULARIOS</Text>
 
-      <NavLink
-        label="Avances y evidencias"
-        leftSection={<IconForms size={16} />}
-        active={currentPath.startsWith("/pdi/formularios")}
-        color="teal"
-        onClick={() => router.push("/pdi/formularios")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Avances y evidencias"
+            leftSection={<IconForms size={16} />}
+            active={currentPath.startsWith("/pdi/formularios")}
+            color="teal"
+            onClick={() => router.push("/pdi/formularios")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <Divider />
+          <Divider />
 
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>VISTAS</Text>
+          <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>VISTAS</Text>
+        </>
+      )}
+
+      {!isAdmin && (
+        <NavLink
+          label="Mi PDI"
+          leftSection={<IconTarget size={16} />}
+          active={currentPath === "/pdi/mis-indicadores"}
+          color="violet"
+          onClick={() => router.push("/pdi/mis-indicadores")}
+          style={{ borderRadius: 8 }}
+        />
+      )}
 
       <NavLink
         label="Tablero de control"
@@ -89,36 +107,40 @@ export default function PdiSidebar() {
         style={{ borderRadius: 8 }}
       />
 
-      <NavLink
-        label="Historial PDI"
-        leftSection={<IconHistory size={16} />}
-        active={currentPath === "/pdi/historial" || currentPath === "/pdi/historial-cortes"}
-        color="blue"
-        onClick={() => router.push("/pdi/historial")}
-        style={{ borderRadius: 8 }}
-      />
+      {isAdmin && (
+        <>
+          <NavLink
+            label="Historial PDI"
+            leftSection={<IconHistory size={16} />}
+            active={currentPath === "/pdi/historial" || currentPath === "/pdi/historial-cortes"}
+            color="blue"
+            onClick={() => router.push("/pdi/historial")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <NavLink
-        label="Cortes PDI"
-        leftSection={<IconCalendarStats size={16} />}
-        active={currentPath === "/pdi/cortes"}
-        color="blue"
-        onClick={() => router.push("/pdi/cortes")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Cortes PDI"
+            leftSection={<IconCalendarStats size={16} />}
+            active={currentPath === "/pdi/cortes"}
+            color="blue"
+            onClick={() => router.push("/pdi/cortes")}
+            style={{ borderRadius: 8 }}
+          />
 
-      <Divider />
+          <Divider />
 
-      <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>INFORMES</Text>
+          <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>INFORMES</Text>
 
-      <NavLink
-        label="Informes de avance"
-        leftSection={<IconReportAnalytics size={16} />}
-        active={currentPath.startsWith("/pdi/informes")}
-        color="violet"
-        onClick={() => router.push("/pdi/informes")}
-        style={{ borderRadius: 8 }}
-      />
+          <NavLink
+            label="Informes de avance"
+            leftSection={<IconReportAnalytics size={16} />}
+            active={currentPath.startsWith("/pdi/informes")}
+            color="violet"
+            onClick={() => router.push("/pdi/informes")}
+            style={{ borderRadius: 8 }}
+          />
+        </>
+      )}
     </Stack>
   );
 }

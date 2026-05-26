@@ -19,6 +19,7 @@ import {
   Tooltip,
   rem,
   MultiSelect,
+  Select,
 } from "@mantine/core";
 import { IconTrash, IconEye, IconPlus, IconCancel, IconRefresh } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
@@ -26,6 +27,12 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../../components/Validators/ValidatorModal";
+import {
+  buildFieldDropdownOptions,
+  buildSelectOptionsFromStrings,
+  buildValidatorOptions,
+  getPreferredValidatorColumnName,
+} from "../../../../../utils/validatorOptions";
 import "dayjs/locale/es";
 
 interface Field {
@@ -35,6 +42,8 @@ interface Field {
   validate_with?: { id: string; name: string } | string;
   comment?: string;
   multiple?: boolean;
+  dropdown_options?: string[];
+  excel_validation_options?: string[];
 }
 
 interface Template {
@@ -80,6 +89,7 @@ const ProducerTemplateUpdatePage = ({
   const [loading, setLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
+  const [selectOptions, setSelectOptions] = useState<Record<string, Array<{value: string, label: string}>>>({});
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
@@ -125,11 +135,11 @@ const ProducerTemplateUpdatePage = ({
               let validatorId = '';
               if (typeof field.validate_with === 'string') {
                 const parts = field.validate_with.split(' - ');
-                validatorId = parts.length >= 2 ? parts[1].trim() : '';
+                validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
               } else {
                 validatorId = field.validate_with.id;
               }
-              
+
               if (validatorId) {
                 const validatorResponse = await axios.get(
                   `${process.env.NEXT_PUBLIC_API_URL}/validators/id`,
@@ -152,55 +162,77 @@ const ProducerTemplateUpdatePage = ({
       );
       setValidatorExists(validatorCheckResults);
 
-      const multiSelectOptionsPromises = templateResponse.data.template.fields
-      .filter(field => field.multiple && field.validate_with)
-      .map(async (field) => {
-        try {
-          let validatorId = '';
-          let columnToValidate = '';
-          
-          if (typeof field.validate_with === 'string') {
-            const parts = field.validate_with.split(' - ');
-            if (parts.length >= 2) {
-              validatorId = parts[1].trim();
-              columnToValidate = parts[1].trim().toLowerCase();
+      const allValidatorOptionsPromises = templateResponse.data.template.fields
+        .map(async (field) => {
+          const fieldDropdownOptions = buildFieldDropdownOptions(field);
+
+          if (!field.validate_with) {
+            return {
+              fieldName: field.name,
+              options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+              isMultiple: field.multiple,
+            };
+          }
+
+          try {
+            let validatorId = '';
+            let validateWith = '';
+
+            if (typeof field.validate_with === 'string') {
+              const parts = field.validate_with.split(' - ');
+              if (parts.length >= 2) {
+                validatorId = parts[parts.length - 1].trim();
+                validateWith = field.validate_with;
+              } else if (field.validate_with.trim()) {
+                validatorId = field.validate_with.trim();
+                validateWith = field.validate_with.trim();
+              }
+            } else if (field.validate_with?.id) {
+              validatorId = field.validate_with.id;
+              validateWith = field.validate_with.name || '';
             }
-          } else if (field.validate_with?.id) {
-            validatorId = field.validate_with.id;
-            columnToValidate = field.validate_with.name.split(" - ")[1]?.toLowerCase();
+
+            if (!validatorId) {
+              return {
+                fieldName: field.name,
+                options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+                isMultiple: field.multiple,
+              };
+            }
+
+            const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+              params: { id: validatorId, periodId },
+            });
+            const optionStrings = buildValidatorOptions(
+              vRes.data?.validator,
+              getPreferredValidatorColumnName(validateWith)
+            );
+            const options = buildSelectOptionsFromStrings([...optionStrings, ...fieldDropdownOptions]);
+            return { fieldName: field.name, options, isMultiple: field.multiple };
+          } catch (error) {
+            console.error(`Error obteniendo opciones para ${field.name}:`, error);
+            return {
+              fieldName: field.name,
+              options: buildSelectOptionsFromStrings(fieldDropdownOptions),
+              isMultiple: field.multiple,
+            };
           }
-          
-          if (!validatorId) {
-            return { [field.name]: [] };
-          }
-          
-          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-            params: { id: validatorId, periodId },
-          });
-          const validatorColumns = validatorResponse.data.validator.columns || [];
-          const validatorColumn = validatorColumns.find(
-            (col: { is_validator: boolean; name: string }) =>
-              col.is_validator && col.name.toLowerCase() === columnToValidate
-          );
-          if (validatorColumn) {
-            console.log("Columna encontrada para validación:", validatorColumn.name);
-          } else {
-            console.log("No se encontró una columna coincidente para:", columnToValidate);
-          }
-          const values = validatorColumn ? validatorColumn.values.map((v: any) => v.toString()) : [];
-          const uniqueValues = Array.from(new Set(values)) as string[];
-          return {
-            [field.name]: uniqueValues
-          };
-        } catch (error) {
-          console.error(`Error obteniendo opciones para ${field.name}:`, error);
-          return { [field.name]: [] };
+        });
+
+      const allValidatorOptions = await Promise.all(allValidatorOptionsPromises);
+      const multiSelectOpts: Record<string, string[]> = {};
+      const selectOpts: Record<string, Array<{value: string, label: string}>> = {};
+
+      allValidatorOptions.forEach(({ fieldName, options, isMultiple }) => {
+        if (isMultiple) {
+          multiSelectOpts[fieldName] = options.map(o => o.value);
+        } else {
+          selectOpts[fieldName] = options;
         }
       });
 
-    const multiSelectOptionsArray = await Promise.all(multiSelectOptionsPromises);
-    const multiSelectOptions = multiSelectOptionsArray.reduce((acc, curr) => ({ ...acc, ...curr }), {});
-    setMultiSelectOptions(multiSelectOptions);
+      setMultiSelectOptions(multiSelectOpts);
+      setSelectOptions(selectOpts);
     } catch (error) {
       console.error("Error fetching template or data:", error);
       showNotification({
@@ -555,14 +587,35 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
       error: Boolean(fieldError),
     };
 
-    if (field.multiple && field.validate_with) {
+    const opts = selectOptions[field.name] || [];
+    const multiOptions = multiSelectOptions[field.name] || opts.map(opt => opt.value);
+    const hasDropdownOptions = opts.length > 0 || multiOptions.length > 0;
+
+    if (field.multiple && (field.validate_with || hasDropdownOptions)) {
       return (
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
-          data={Array.from(new Set(multiSelectOptions[field.name] || [])).map(value => ({ value: String(value), label: String(value) }))}
+          data={Array.from(new Set(multiOptions)).map(value => ({ value: String(value), label: String(value) }))}
           searchable
-          placeholder={field.comment || "Seleccione opciones"}
+          clearable
+          placeholder="Seleccione opciones"
+          style={{ width: "100%" }}
+          error={fieldError ? fieldError : undefined}
+        />
+      );
+    }
+
+    if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
+      return (
+        <Select
+          value={row[field.name] !== null && row[field.name] !== undefined ? String(row[field.name]) : null}
+          onChange={(value) => handleInputChange(rowIndex, field.name, value)}
+          data={opts}
+          searchable
+          clearable
+          placeholder={opts.length === 0 ? "Cargando opciones..." : "Seleccione una opcion"}
+          nothingFoundMessage={opts.length === 0 ? "Cargando..." : "Sin resultados"}
           style={{ width: "100%" }}
           error={fieldError ? fieldError : undefined}
         />

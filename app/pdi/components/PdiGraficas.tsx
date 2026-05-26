@@ -32,6 +32,7 @@ const CHART_COLORS = [BLUE, TEAL, PURPLE, ORANGE, PINK, GREEN, YELLOW, RED];
 const SEMAFORO_COLOR: Record<string, string> = { verde: GREEN, amarillo: YELLOW, rojo: RED };
 const SEMAFORO_LABEL: Record<string, string> = { verde: "En cumplimiento", amarillo: "En riesgo", rojo: "Crítico" };
 const SEMAFORO_BADGE: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
+const FINAL_TARGET_YEAR = "2029";
 
 const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
 
@@ -93,6 +94,59 @@ function fmtValue(value: number | string | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+function cumplimientoPct(avance: number | null, meta: number | null) {
+  if (avance === null || meta === null || meta <= 0) return null;
+  return Math.round((avance / meta) * 100);
+}
+
+function semaforoFromPct(pct: number | null | undefined) {
+  const value = Number(pct) || 0;
+  if (value >= 90) return "verde";
+  if (value >= 60) return "amarillo";
+  return "rojo";
+}
+
+function resolvePeriodoActual(inds: Indicador[]) {
+  const currentYear = String(new Date().getFullYear());
+  const periodos = Array.from(new Set(
+    inds.flatMap((ind) => (ind.periodos ?? [])
+      .map((p) => String(p.periodo ?? "").trim())
+      .filter(Boolean))
+  ));
+  const delAnioActual = periodos.filter((periodo) => periodo.slice(0, 4) === currentYear);
+  const candidatos = delAnioActual.length ? delAnioActual : periodos;
+  const ordenados = [...candidatos].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+  return ordenados[ordenados.length - 1] ?? currentYear;
+}
+
+function metricasPeriodo(ind: Indicador, periodo: string) {
+  const metaPeriodo = absMetaEnCorte(ind, periodo);
+  const avancePeriodo = absAvanceHastaCorte(ind, periodo);
+  const pctPeriodo = cumplimientoPct(avancePeriodo, metaPeriodo) ?? 0;
+
+  return {
+    metaPeriodo,
+    avancePeriodo,
+    pctPeriodo,
+    semaforoPeriodo: semaforoFromPct(pctPeriodo),
+  };
+}
+
+function periodoByName(ind: Indicador, periodo: string) {
+  return (ind.periodos ?? []).find((p) => p.periodo === periodo);
+}
+
+function hasMetaEnPeriodo(ind: Indicador, periodo: string) {
+  const meta = periodoByName(ind, periodo)?.meta;
+  return meta !== null && meta !== undefined && String(meta).trim() !== "";
+}
+
+function isReportadoEnPeriodo(ind: Indicador, periodo: string) {
+  const periodoData = periodoByName(ind, periodo);
+  const estado = periodoData?.estado_reporte ?? "Borrador";
+  return Boolean(periodoData?.fecha_envio) || estado !== "Borrador";
+}
+
 function StatCard({ title, value, sub, color = "blue", icon }: {
   title: string; value: React.ReactNode; sub?: string; color?: string; icon: React.ReactNode;
 }) {
@@ -126,6 +180,7 @@ export default function PdiGraficas() {
     macros: Macroproyecto[]; proyectos: Proyecto[]; acciones: Accion[]; indicadores: Indicador[];
   } | null>(null);
   const [resumen, setResumen] = useState<DashboardResumen | null>(null);
+  const [corteActivo, setCorteActivo] = useState<string | null>(null);
 
   const [selectedMacro,    setSelectedMacro]    = useState<string | null>("todos");
   const [selectedProyecto, setSelectedProyecto] = useState<string | null>("todos");
@@ -138,9 +193,11 @@ export default function PdiGraficas() {
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.indicadores()),
-    ]).then(([rR, rM, rP, rA, rI]) => {
+      axios.get(PDI_ROUTES.cortesActivos()),
+    ]).then(([rR, rM, rP, rA, rI, rC]) => {
       setResumen(rR.data);
       setPdiData({ macros: rM.data, proyectos: rP.data, acciones: rA.data, indicadores: rI.data });
+      setCorteActivo(rC.data?.[0]?.nombre ?? null);
     }).catch(console.error);
   }, []);
 
@@ -256,11 +313,6 @@ export default function PdiGraficas() {
     return resumen?.avance_global ?? 0;
   }, [accionActual, proyectoActual, macroActual, verTodos, resumen]);
 
-  const reportesPendientes = useMemo(() => metricIndicators.filter((ind) => {
-    const avance = toNumberValue(ind.avance_total_real ?? ind.avance) ?? 0;
-    return avance === 0;
-  }).length, [metricIndicators]);
-
   const indicadoresConRetrasos = useMemo(() => metricIndicators.filter((ind) =>
     (ind.periodos ?? []).some((p) => String(p.justificacion_retrasos ?? "").trim() !== "")
   ).length, [metricIndicators]);
@@ -275,35 +327,41 @@ export default function PdiGraficas() {
     });
   }, [verTodos, indicadores, indsMacroAll, accionesFiltIds, selectedProyecto, selectedAccion]);
 
-  const indicadoresCriticosTop = useMemo(() => [...indsFiltradas]
-    .filter((ind) => ind.semaforo === "rojo")
+  const periodoActual = useMemo(
+    () => corteActivo || resolvePeriodoActual(indsFiltradas),
+    [corteActivo, indsFiltradas]
+  );
+
+  const indicadoresConMetaPeriodo = useMemo(
+    () => metricIndicators.filter((ind) => hasMetaEnPeriodo(ind, periodoActual)),
+    [metricIndicators, periodoActual]
+  );
+
+  const reportesPendientes = useMemo(
+    () => indicadoresConMetaPeriodo.filter((ind) => !isReportadoEnPeriodo(ind, periodoActual)).length,
+    [indicadoresConMetaPeriodo, periodoActual]
+  );
+
+  const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
+    .filter((ind) => hasMetaEnPeriodo(ind, periodoActual))
     .map((ind) => {
-      const periodosOrdenados = [...(ind.periodos ?? [])]
-        .filter((p) => p.avance !== null && p.avance !== "" && p.avance !== undefined)
-        .sort((a, b) => a.periodo.localeCompare(b.periodo));
-      const ultimoPeriodo = periodosOrdenados[periodosOrdenados.length - 1] ?? null;
-      const meta = ind.meta_final_2029;
-      const dato = ind.tipo_calculo === "ultimo_valor"
-        ? ultimoPeriodo?.avance ?? null
-        : periodosOrdenados.reduce((acc, p) => acc + (toNumberValue(p.avance) ?? 0), 0);
-      const metaNum = toNumberValue(meta);
-      const datoNum = toNumberValue(dato);
-      const pct = metaNum && metaNum > 0 && datoNum !== null
-        ? Math.round((datoNum / metaNum) * 100)
-        : Math.round(toNumberValue(ind.avance_total_real ?? ind.avance) ?? 0);
+      const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo } = metricasPeriodo(ind, periodoActual);
 
       return {
         id: ind._id,
         codigo: ind.codigo,
         nombre: ind.nombre,
-        meta,
-        dato,
-        pct,
-        semaforo: ind.semaforo,
+        metaFinal: ind.meta_final_2029,
+        metaPeriodo,
+        avancePeriodo,
+        pctPeriodo,
+        semaforoPeriodo,
       };
     })
-    .sort((a, b) => a.pct - b.pct || a.codigo.localeCompare(b.codigo))
-    .slice(0, 5), [indsFiltradas]);
+    .sort((a, b) => a.pctPeriodo - b.pctPeriodo || a.codigo.localeCompare(b.codigo))
+  , [indsFiltradas, periodoActual]);
+
+  const indicadoresCriticosTop = indicadoresCriticosPeriodo;
 
   // ── Mapas para vincular indicadores a su macro/proyecto ──────────────────
   const { indToMacro, indToProyecto } = useMemo(() => {
@@ -613,7 +671,7 @@ export default function PdiGraficas() {
                 icon={<IconBulb size={18} />}
                 title="Indicadores sin reporte"
                 value={reportesPendientes}
-                sub={`de ${metricIndicators.length} indicadores`}
+                sub={`de ${indicadoresConMetaPeriodo.length} con meta en ${periodoActual}`}
                 color="orange"
               />
             </SimpleGrid>
@@ -772,9 +830,9 @@ export default function PdiGraficas() {
             <Paper withBorder radius="xl" p="md" h="100%">
               <Group justify="space-between" mb="sm" align="flex-start">
                 <Box>
-                  <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
-                  <Text size="xs" c="red" fw={600}>
-                    {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
+                  <Text size="md" fw={700}>Indicadores del período</Text>
+                  <Text size="xs" c="dimmed" fw={600}>
+                    {indicadoresCriticosPeriodo.length} indicadores con meta en {periodoActual}
                   </Text>
                 </Box>
                 <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
@@ -785,17 +843,18 @@ export default function PdiGraficas() {
                     <tr>
                       <th style={thStyle}>Indicador</th>
                       <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
-                        Meta 2029
+                        Meta {FINAL_TARGET_YEAR}
                       </th>
-                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance</th>
-                      <th style={{ ...thStyle, width: 170 }}>% cumplimiento</th>
-                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado</th>
+                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {periodoActual}</th>
+                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {periodoActual}</th>
+                      <th style={{ ...thStyle, width: 150 }}>% cumpl. {periodoActual}</th>
+                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {periodoActual}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {indicadoresCriticosTop.length === 0 ? (
                       <tr>
-                        <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                        <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                           Sin indicadores críticos para mostrar
                         </td>
                       </tr>
@@ -807,17 +866,20 @@ export default function PdiGraficas() {
                             <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
+                            <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
+                            <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
                           </td>
-                          <td style={{ ...tdStyle, minWidth: 150 }}>
-                            <PctBar pct={row.pct} semaforo={row.semaforo} />
+                          <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                            <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                          </td>
+                          <td style={{ ...tdStyle, minWidth: 140 }}>
+                            <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                           </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
-                            <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
-                              {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
+                            <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                              {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
                             </Badge>
                           </td>
                         </tr>
@@ -847,7 +909,7 @@ export default function PdiGraficas() {
               </Stack>
               <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                 <Text size="sm" c="dimmed" lh={1.5}>
-                  El <b>% de cumplimiento</b> se calcula como el avance alcanzado dividido entre la meta definida para el indicador.
+                  La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance del periodo {periodoActual}.
                 </Text>
               </Box>
             </Paper>
@@ -1026,15 +1088,15 @@ export default function PdiGraficas() {
             })}
           </Stack>
 
-          {/* 6. Top 5 indicadores críticos del proyecto + Semaforización */}
+          {/* 6. Indicadores del período del proyecto + Semaforización */}
           <Grid gutter="sm">
             <Grid.Col span={{ base: 12, md: 9 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
                 <Group justify="space-between" mb="sm" align="flex-start">
                   <Box>
-                    <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
+                    <Text size="md" fw={700}>Indicadores del período</Text>
                     <Text size="xs" c="red" fw={600}>
-                      {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
+                      {indicadoresCriticosPeriodo.length} indicadores críticos encontrados
                     </Text>
                   </Box>
                   <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
@@ -1045,17 +1107,18 @@ export default function PdiGraficas() {
                       <tr>
                         <th style={thStyle}>Indicador</th>
                         <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
-                          Meta 2029
+                          Meta {FINAL_TARGET_YEAR}
                         </th>
-                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance</th>
-                        <th style={{ ...thStyle, width: 170 }}>% cumplimiento</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {periodoActual}</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {periodoActual}</th>
+                        <th style={{ ...thStyle, width: 150 }}>% cumpl. {periodoActual}</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {periodoActual}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {indicadoresCriticosTop.length === 0 ? (
                         <tr>
-                          <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                          <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                             Sin indicadores críticos para mostrar
                           </td>
                         </tr>
@@ -1067,17 +1130,20 @@ export default function PdiGraficas() {
                               <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
+                              <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
+                              <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
                             </td>
-                            <td style={{ ...tdStyle, minWidth: 150 }}>
-                              <PctBar pct={row.pct} semaforo={row.semaforo} />
+                            <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                              <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                            </td>
+                            <td style={{ ...tdStyle, minWidth: 140 }}>
+                              <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                             </td>
                             <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
-                                {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
+                              <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                                {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
                               </Badge>
                             </td>
                           </tr>
@@ -1107,7 +1173,7 @@ export default function PdiGraficas() {
                 </Stack>
                 <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                   <Text size="xs" c="dimmed" lh={1.5}>
-                    El <b>% de cumplimiento</b> se calcula como el avance alcanzado dividido entre la meta definida para el indicador.
+                    La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance del periodo {periodoActual}.
                   </Text>
                 </Box>
               </Paper>

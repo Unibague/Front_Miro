@@ -318,9 +318,13 @@ const extractExplicitListOptionsFromText = (value: string): string[] => {
 
     if (!inSection) {
       const normalizedMarker = normalizeMarkerText(trimmed);
+      const hasValueWord =
+        normalizedMarker.includes("VALORES") ||
+        normalizedMarker.includes("VALOSRES") ||
+        normalizedMarker.includes("VALOSR");
       if (
         normalizedMarker.endsWith(":") &&
-        normalizedMarker.includes("VALORES") &&
+        hasValueWord &&
         (
           normalizedMarker.includes("VALIDOS") ||
           normalizedMarker.includes("POSIBLES") ||
@@ -336,9 +340,13 @@ const extractExplicitListOptionsFromText = (value: string): string[] => {
         .toUpperCase();
       // Solo coincide con frases como "Los valores válidos son:", "Valores posibles:", etc.
       // La línea DEBE terminar con ":" y contener "VALORES" + "VALIDOS/POSIBLES/PERMITIDOS"
+      const hasFallbackValueWord =
+        n.includes("VALORES") ||
+        n.includes("VALOSRES") ||
+        n.includes("VALOSR");
       if (
         n.endsWith(":") &&
-        n.includes("VALORES") &&
+        hasFallbackValueWord &&
         (n.includes("VALIDOS") || n.includes("POSIBLES") || n.includes("PERMITIDOS"))
       ) {
         inSection = true;

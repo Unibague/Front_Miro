@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
+import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
@@ -98,6 +100,11 @@ const UpdateTemplatePage = () => {
   const [validators, setValidators] = useState<Validator[]>([]);
   const [shared, setShared] = useState(false);
   const [allowsQr, setAllowsQr] = useState(false);
+  const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
+  const [fechaFinalProductores, setFechaFinalProductores] = useState<Date | null>(null);
+  const [fechaFinalResponsables, setFechaFinalResponsables] = useState<Date | null>(null);
+  const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
+  const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -241,6 +248,11 @@ const UpdateTemplatePage = () => {
             setActive(response.data.active);
             setShared(response.data.shared ?? false);
             setAllowsQr(response.data.allows_qr ?? false);
+            setFechaInicio(response.data.fecha_inicio ? new Date(response.data.fecha_inicio) : null);
+            setFechaFinalProductores(response.data.fecha_final_productores ? new Date(response.data.fecha_final_productores) : null);
+            setFechaFinalResponsables(response.data.fecha_final_responsables ? new Date(response.data.fecha_final_responsables) : null);
+            setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
+            setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -477,6 +489,11 @@ const UpdateTemplatePage = () => {
       active,
       shared,
       allows_qr: allowsQr,
+      fecha_inicio: fechaInicio,
+      fecha_final_productores: fechaFinalProductores,
+      fecha_final_responsables: fechaFinalResponsables,
+      fecha_final: fechaFinal,
+      responsible_producers: responsibleProducers,
       dimensions: selectedDimensions,
       producers: derivedProducers,
       email: session?.user?.email,
@@ -922,17 +939,65 @@ router.back();
         }}
         mb="md"
       />
-              <Group>
-                <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleDownloadTemplate} 
-                  leftSection={<IconDownload />}
-                >
-                  Descargar Plantilla Actualizada
-                </Button>
-              </Group>
-
+      <Divider label="Fechas de la plantilla" labelPosition="left" mb="sm" />
+      <Group grow mb="xs">
+        <DateInput
+          label="Fecha inicial"
+          description="Desde cuándo pueden empezar a cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaInicio}
+          onChange={setFechaInicio}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final productores"
+          description="Hasta cuándo pueden cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalProductores}
+          onChange={setFechaFinalProductores}
+          minDate={fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Group grow mb="md">
+        <DateInput
+          label="Fecha final productor encargado"
+          description="Fecha límite para el productor encargado"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalResponsables}
+          onChange={setFechaFinalResponsables}
+          minDate={fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final administradores"
+          description="Fecha límite final visible para administradores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinal}
+          onChange={setFechaFinal}
+          minDate={fechaFinalResponsables ?? fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Select
+        mb="md"
+        label="Productor encargado"
+        description="Este productor será el encargado del envío final al SNIES. Si no se selecciona ninguno, todos los productores asignados pueden enviar."
+        placeholder="Seleccionar productor encargado"
+        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+        value={responsibleProducers[0] ?? null}
+        onChange={(val) => setResponsibleProducers(val ? [val] : [])}
+        searchable
+        clearable
+      />
       {hasWorkbookSheets && (
         <>
           <Text size="sm" c="dimmed" mt="md">
@@ -1252,6 +1317,9 @@ router.back();
       </DragDropContext>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
+        <Button variant="outline" onClick={handleDownloadTemplate} leftSection={<IconDownload />}>
+          Descargar Plantilla Actualizada
+        </Button>
         <Button variant="outline" onClick={() => router.back()}>
           Cancelar
         </Button>

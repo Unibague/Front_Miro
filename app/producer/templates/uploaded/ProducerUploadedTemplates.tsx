@@ -197,7 +197,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   }, [search]);
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
-    const { template, validators } = publishedTemplate;
+    const { template } = publishedTemplate;
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(template.name);
     // Campos de tipo fecha para formatear correctamente
@@ -207,9 +207,15 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         .map(f => f.name)
     );
 
-    // Obtener el dep_code del usuario actual desde la API
-    const userResp = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`);
+    // Obtener el dep_code del usuario y los validadores frescos en paralelo
+    const [userResp, freshTemplateResponse] = await Promise.all([
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`),
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
+    ]);
     const depCode = userResp.data.dep_code;
+    const validators =
+      freshTemplateResponse.data.template?.validators ??
+      publishedTemplate.validators;
 
     // Buscar en loaded_data el bloque correcto
     const filledData: any = publishedTemplate.loaded_data.find(
