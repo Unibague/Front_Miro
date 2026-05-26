@@ -1016,6 +1016,7 @@ const DashboardPage = () => {
           </Card>
         </Grid.Col>
 
+
         <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
             <Center>

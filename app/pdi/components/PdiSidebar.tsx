@@ -48,6 +48,8 @@ export default function PdiSidebar() {
 
   const hasPermission = (key: string) => {
     if (userRole === "Administrador") return true;
+    // Sin perfil asignado → acceso completo por rol
+    if (Object.keys(viewPermissions).length === 0) return true;
     return Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
   };
 

@@ -18,19 +18,23 @@ export function useViewPermission(viewKey: string) {
     return { canView: true, canManage: true };
   }
 
+  // Si el usuario no tiene ningún perfil asignado (viewPermissions vacío),
+  // usar acceso completo basado en el rol para no bloquear el sistema
+  const hasProfile = Object.keys(viewPermissions).length > 0;
+  if (!hasProfile) {
+    return { canView: true, canManage: true };
+  }
+
   const levels: string[] = Array.isArray(viewPermissions[viewKey])
     ? viewPermissions[viewKey]
     : [];
 
-  // Si tiene permisos configurados por cargo, usarlos
+  // Si tiene permisos configurados por cargo para esta vista, usarlos
   if (levels.length > 0) {
-    const canView = true;
     const canManage = levels.includes("Gestionar") || levels.includes("Administrar");
-    return { canView, canManage };
+    return { canView: true, canManage };
   }
 
-  // Sin permisos por cargo configurados: fallback por rol
-  // Responsable y Productor pueden ver y gestionar sus propias vistas
-  const roleCanManage = ["Responsable", "Productor"].includes(userRole);
-  return { canView: roleCanManage, canManage: roleCanManage };
+  // Tiene perfil pero sin permiso para esta vista específica → sin acceso
+  return { canView: false, canManage: false };
 }

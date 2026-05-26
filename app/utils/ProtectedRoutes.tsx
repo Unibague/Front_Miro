@@ -82,8 +82,14 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const matched = VIEW_PERMISSION_ROUTES.find(({ pattern }) => pattern.test(pathname));
 
     if (matched) {
-      // Administrador pasa en todas las rutas EXCEPTO perfiles (requiere permiso explícito)
-      if (role === "Administrador" && matched.key !== "profiles") {
+      // Administrador pasa en todas las rutas sin excepción
+      if (role === "Administrador") {
+        setIsVerifying(false);
+        return;
+      }
+
+      // Sin perfil asignado → acceso completo basado en el rol
+      if (Object.keys(viewPermissions).length === 0) {
         setIsVerifying(false);
         return;
       }
