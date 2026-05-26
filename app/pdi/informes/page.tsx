@@ -7,7 +7,7 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
-  IconArrowLeft, IconChevronDown, IconChevronRight,
+  IconArrowLeft, IconBrandGoogleDrive, IconChevronDown, IconChevronRight,
   IconFileWord, IconRefresh, IconReportAnalytics,
 } from "@tabler/icons-react";
 import axios from "axios";
@@ -21,6 +21,7 @@ interface ProyectoResumen {
   nombre: string;
   avance: number;
   responsable: string;
+  informe_drive_web_view_link: string | null;
   acciones: AccionResumen[];
 }
 
@@ -47,6 +48,7 @@ interface MacroResumen {
   nombre: string;
   avance: number;
   lider: string;
+  informe_drive_web_view_link: string | null;
   proyectos: ProyectoResumen[];
 }
 
@@ -180,15 +182,17 @@ function FilaAccion({ accion, corteGlobal }: { accion: AccionResumen; corteGloba
 function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; corteGlobal: string }) {
   const [abierto, setAbierto] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [driveLink, setDriveLink] = useState<string | null>(proyecto.informe_drive_web_view_link);
 
   const descargar = async () => {
     setLoading(true);
     try {
       const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
       const { data } = await axios.get(PDI_ROUTES.informeProyecto(proyecto._id), params);
-      window.open(data.url, "_blank");
+      setDriveLink(data.drive_web_view_link || data.url);
+      window.open(data.drive_web_view_link || data.url, "_blank");
       showNotification({
-        title: "Informe generado",
+        title: "Informe guardado en Drive",
         message: `${proyecto.nombre}${corteGlobal ? ` — ${corteGlobal}` : " — Todos los periodos"}`,
         color: "teal",
       });
@@ -223,17 +227,32 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
             <Progress value={proyecto.avance} color={semaforoColor(proyecto.avance)} size="xs" radius="xl" mt={6} />
           </Box>
         </Group>
-        <Button
-          size="xs"
-          variant="light"
-          color="violet"
-          radius="xl"
-          loading={loading}
-          leftSection={<IconFileWord size={13} />}
-          onClick={descargar}
-        >
-          Informe proyecto
-        </Button>
+        <Group gap={6} wrap="nowrap">
+          {driveLink && (
+            <ActionIcon
+              component="a"
+              href={driveLink}
+              target="_blank"
+              variant="subtle"
+              color="teal"
+              size="sm"
+              title="Ver informe en Drive"
+            >
+              <IconBrandGoogleDrive size={16} />
+            </ActionIcon>
+          )}
+          <Button
+            size="xs"
+            variant="light"
+            color="violet"
+            radius="xl"
+            loading={loading}
+            leftSection={<IconFileWord size={13} />}
+            onClick={descargar}
+          >
+            {driveLink ? "Regenerar informe" : "Generar informe"}
+          </Button>
+        </Group>
       </Group>
 
       <Collapse in={abierto}>
@@ -256,15 +275,17 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
 function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: string }) {
   const [abierto, setAbierto] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [driveLink, setDriveLink] = useState<string | null>(macro.informe_drive_web_view_link);
 
   const descargar = async () => {
     setLoading(true);
     try {
       const params = corteGlobal ? { params: { corte: corteGlobal } } : {};
       const { data } = await axios.get(PDI_ROUTES.informeMacro(macro._id), params);
-      window.open(data.url, "_blank");
+      setDriveLink(data.drive_web_view_link || data.url);
+      window.open(data.drive_web_view_link || data.url, "_blank");
       showNotification({
-        title: "Informe generado",
+        title: "Informe guardado en Drive",
         message: `${macro.nombre}${corteGlobal ? ` — ${corteGlobal}` : " — Todos los periodos"}`,
         color: "teal",
       });
@@ -295,17 +316,33 @@ function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: s
             <Progress value={macro.avance} color={semaforoColor(macro.avance)} size="sm" radius="xl" mt={6} />
           </Box>
         </Group>
-        <Button
-          size="sm"
-          variant="filled"
-          color="violet"
-          radius="xl"
-          loading={loading}
-          leftSection={<IconFileWord size={15} />}
-          onClick={descargar}
-        >
-          Informe completo
-        </Button>
+        <Group gap={8} wrap="nowrap">
+          {driveLink && (
+            <ActionIcon
+              component="a"
+              href={driveLink}
+              target="_blank"
+              variant="light"
+              color="teal"
+              size="lg"
+              radius="xl"
+              title="Ver informe en Drive"
+            >
+              <IconBrandGoogleDrive size={18} />
+            </ActionIcon>
+          )}
+          <Button
+            size="sm"
+            variant="filled"
+            color="violet"
+            radius="xl"
+            loading={loading}
+            leftSection={<IconFileWord size={15} />}
+            onClick={descargar}
+          >
+            {driveLink ? "Regenerar informe" : "Generar informe"}
+          </Button>
+        </Group>
       </Group>
 
       <Collapse in={abierto}>
