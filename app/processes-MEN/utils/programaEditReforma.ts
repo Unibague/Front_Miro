@@ -8,6 +8,7 @@ export type ProgramaEditReformaState = {
   nivel_academico: string;
   nivel_formacion: string;
   num_creditos: string | number;
+  periodos_duracion: string | number;
   num_semestres: string | number;
   admision_estudiantes: string;
   num_estudiantes_saces: string | number;
@@ -33,6 +34,7 @@ export const CAMPOS_REFORMA_UI: {
     opciones: ["Profesional", "Tecnológico", "Técnico", "Especialización", "Maestría", "Doctorado"],
   },
   { key: "num_creditos", label: "N° de créditos", tipo: "number" },
+  { key: "periodos_duracion", label: "Periodos de duración", tipo: "number" },
   { key: "num_semestres", label: "N° de semestres", tipo: "number" },
   { key: "admision_estudiantes", label: "Admisión de estudiantes", tipo: "text" },
   { key: "num_estudiantes_saces", label: "N° estudiantes SACES", tipo: "number" },
@@ -47,6 +49,7 @@ export function buildProgramaEditReforma(p: Program): ProgramaEditReformaState {
     nivel_academico: p.nivel_academico ?? "",
     nivel_formacion: p.nivel_formacion ?? "",
     num_creditos: p.num_creditos ?? "",
+    periodos_duracion: p.periodos_duracion ?? "",
     num_semestres: p.num_semestres ?? "",
     admision_estudiantes: p.admision_estudiantes ?? "",
     num_estudiantes_saces: p.num_estudiantes_saces ?? "",
@@ -80,6 +83,7 @@ export function buildProgramaNuevosValoresApi(pe: ProgramaEditReformaState): Rec
     nivel_academico: normTxtNull(pe.nivel_academico),
     nivel_formacion: normTxtNull(pe.nivel_formacion),
     num_creditos: normNumNull(pe.num_creditos),
+    periodos_duracion: normNumNull(pe.periodos_duracion),
     num_semestres: normNumNull(pe.num_semestres),
     admision_estudiantes: normTxtNull(pe.admision_estudiantes),
     num_estudiantes_saces: normNumNull(pe.num_estudiantes_saces),

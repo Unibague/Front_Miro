@@ -31,6 +31,7 @@ export default function HistorialReformaFicha({
         <FichaCampoLectura label="Nivel académico" value={ficha.nivel_academico} />
         <FichaCampoLectura label="Nivel de formación" value={ficha.nivel_formacion} />
         <FichaCampoLectura label="N° de créditos" value={ficha.num_creditos} />
+        <FichaCampoLectura label="Periodos de duración" value={ficha.periodos_duracion} />
         <FichaCampoLectura label="N° de semestres" value={ficha.num_semestres} />
         <FichaCampoLectura label="Admisión de estudiantes" value={ficha.admision_estudiantes} />
         <FichaCampoLectura label="N° estudiantes SACES" value={ficha.num_estudiantes_saces} />

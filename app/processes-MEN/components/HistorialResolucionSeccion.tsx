@@ -159,7 +159,7 @@ function BloqueVigenteReforma({
         <TarjetaDocumento
           doc={docVig}
           badge="Resolución vigente al momento del trámite"
-          titulo="RC que seguía vigente en la ficha (la reforma no lo sustituye)"
+          titulo="RC que seguía vigente en la ficha (la modificación no lo sustituye)"
           color="indigo"
         />
       ) : (
@@ -303,7 +303,7 @@ export default function HistorialResolucionSeccion({
             <TarjetaDocumento
               doc={docConstancia}
               badge="Constancia del cierre"
-              titulo="Aprobación del Ministerio — reforma curricular"
+              titulo="Aprobación del Ministerio — modificación"
               color="teal"
             />
           ) : (
@@ -314,10 +314,10 @@ export default function HistorialResolucionSeccion({
 
           {vigenteReforma ? (
             <>
-              <Divider label="Resolución vigente al momento de la reforma" labelPosition="left" />
+              <Divider label="Resolución vigente al momento de la modificación" labelPosition="left" />
               <BloqueVigenteReforma
                 vig={vigenteReforma}
-                nota="Referencia del RC que seguía vigente cuando se gestionó la reforma (código, fechas y PDF)."
+                nota="Referencia del RC que seguía vigente cuando se gestionó la modificación (código, fechas y PDF)."
               />
             </>
           ) : null}
@@ -343,7 +343,7 @@ export default function HistorialResolucionSeccion({
             <TarjetaDocumento
               doc={docConstancia}
               badge="Constancia del cierre"
-              titulo="Constancia de la reforma curricular"
+              titulo="Constancia de la modificación"
               color="teal"
             />
           ) : null}
@@ -362,13 +362,13 @@ export default function HistorialResolucionSeccion({
             <>
               <Divider label="Nueva resolución MEN (cierre)" labelPosition="left" />
               <Text size="xs" c="dimmed" mb="xs">
-                Resolución otorgada al cerrar la renovación con reforma; pasa a ser la vigente del programa.
+                Resolución otorgada al cerrar la renovación con modificación; pasa a ser la vigente del programa.
               </Text>
               {docPdfCierre ? (
                 <TarjetaDocumento
                   doc={docPdfCierre}
                   badge="Resolución del cierre"
-                  titulo="Documento MEN — renovación + reforma"
+                  titulo="Documento MEN — renovación + modificación"
                 />
               ) : null}
               <MetaResolucion
@@ -415,7 +415,7 @@ export default function HistorialResolucionSeccion({
           <TarjetaDocumento
             doc={docConstancia}
             badge="Documento del cierre"
-            titulo="Constancia / documento de la reforma"
+            titulo="Constancia / documento de la modificación"
             color="violet"
           />
         ) : puedeCambiarPdf ? (

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Title, Button, Text, Paper, Stack, Group, Loader, Modal, TextInput, Textarea, Select, SimpleGrid, Divider, Badge,
-  ActionIcon, Tooltip, Anchor,
+  ActionIcon, Tooltip, Anchor, Switch,
 } from "@mantine/core";
 import { useParams, useRouter } from "next/navigation";
 import { IconChevronLeft } from "@tabler/icons-react";
@@ -26,6 +26,7 @@ import {
 import { mismoId } from "../../utils/idMongoose";
 import { procesoRcActivoDePrograma } from "../../utils/procesoRcUnico";
 import { programCodeKey } from "../../utils/programCode";
+import { filterFacultadesMen, parseDependenciesAllResponse } from "../../utils/facultadesMen";
 import { processesMenRoutes } from "../../config/routes";
 import { ClasificacionCineNbcSection } from "../../components/ClasificacionCineNbcSection";
 import { FichaCampoLectura } from "../../components/FichaCampoLectura";
@@ -55,9 +56,11 @@ export default function ProgramaProcessesMenPage() {
   const [editando, setEditando] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Program>>({});
   const [saving, setSaving] = useState(false);
+  const [savingToggleKey, setSavingToggleKey] = useState<"activo_universidad" | "es_acreditable" | null>(null);
   const [gestionarInfoOpen, setGestionarInfoOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [fasesProg, setFasesProg] = useState<Phase[]>([]);
   const [loadingFasesProg, setLoadingFasesProg] = useState(false);
   const [historialRc, setHistorialRc] = useState<ProcessHistoryRecord[]>([]);
@@ -118,9 +121,7 @@ export default function ProgramaProcessesMenPage() {
         ]);
         if (cancelled) return;
 
-        const raw = deps.data;
-        const all: Dependency[] = Array.isArray(raw) ? raw : (raw?.dependencies ?? []);
-        setFacultades(all.filter((d) => (d.name ?? "").toUpperCase().includes("FACULTAD")));
+        setFacultades(filterFacultadesMen(parseDependenciesAllResponse(deps.data)));
 
         const plist = Array.isArray(procRes.data) ? (procRes.data as Process[]) : [];
         setProcesos(plist.filter((p) => p.program_code === code));
@@ -328,6 +329,31 @@ export default function ProgramaProcessesMenPage() {
     }
   };
 
+  const guardarBooleanPrograma = async (
+    key: "activo_universidad" | "es_acreditable",
+    value: boolean,
+  ) => {
+    if (!programa) return;
+    if (key === "activo_universidad" && programa.estado !== "Activo") return;
+    setToggleError(null);
+    setSavingToggleKey(key);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+      const res = await axios.put(`${base}/programs/${programa._id}`, { [key]: value });
+      setPrograma(res.data);
+    } catch (e) {
+      console.error(e);
+      let msg = "No se pudo actualizar el programa.";
+      if (isAxiosError(e)) {
+        const d = e.response?.data as { error?: string } | undefined;
+        if (d?.error) msg = String(d.error);
+      }
+      setToggleError(msg);
+    } finally {
+      setSavingToggleKey(null);
+    }
+  };
+
   const irGestionar = () => {
     if (!tieneProcesoGestionable) {
       setGestionarInfoOpen(true);
@@ -370,10 +396,13 @@ export default function ProgramaProcessesMenPage() {
   }
 
   const facName = facultades.find((f) => f.dep_code === programa.dep_code_facultad)?.name ?? programa.dep_code_facultad;
+  const estadoMenActivo = programa.estado === "Activo";
+  const activoUniversidad = estadoMenActivo ? (programa.activo_universidad ?? true) : false;
+  const esAcreditable = programa.es_acreditable ?? false;
 
   return (
     <Stack p="md" pt="xl" maw={960} mx="auto">
-      <Group justify="space-between" align="flex-start" wrap="wrap">
+      <Stack gap="sm">
         <div>
           <Tooltip label="Volver" withArrow>
             <ActionIcon
@@ -388,7 +417,17 @@ export default function ProgramaProcessesMenPage() {
           </Tooltip>
           <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
             <Title order={2} style={{ flex: "1 1 10rem", minWidth: 0 }}>{programa.nombre}</Title>
-            <Badge color={programa.estado === "Activo" ? "green" : "red"} variant="light" style={{ flexShrink: 0, alignSelf: "center" }}>{programa.estado}</Badge>
+            <Group gap={6} style={{ flexShrink: 0, alignSelf: "center" }}>
+              <Badge color={estadoMenActivo ? "green" : "red"} variant="light">
+                {estadoMenActivo ? "Activo ante MEN" : "Inactivo ante MEN"}
+              </Badge>
+              <Badge color={activoUniversidad && estadoMenActivo ? "teal" : "gray"} variant="light">
+                {activoUniversidad && estadoMenActivo ? "Activo en universidad" : "Inactivo en universidad"}
+              </Badge>
+              <Badge color={esAcreditable ? "blue" : "gray"} variant="light">
+                {esAcreditable ? "Acreditable" : "No acreditable"}
+              </Badge>
+            </Group>
           </Group>
           <Text size="sm" c="dimmed" mt={4}>
             <strong>Código del programa:</strong> {programa.dep_code_programa?.trim() || "—"}
@@ -400,8 +439,48 @@ export default function ProgramaProcessesMenPage() {
             ) : null}
           </Text>
         </div>
-        <Button onClick={irGestionar}>Gestionar procesos del programa</Button>
-      </Group>
+
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <Button onClick={irGestionar}>Gestionar procesos del programa</Button>
+
+          <Stack gap={6} style={{ minWidth: 320, marginLeft: "auto", alignItems: "flex-end" }}>
+            <Group gap="md" align="center" wrap="nowrap" justify="flex-end" style={{ marginLeft: "auto" }}>
+              <Switch
+                checked={activoUniversidad}
+                disabled={!estadoMenActivo || savingToggleKey === "activo_universidad"}
+                label="Activo en universidad"
+                styles={{
+                  body: { alignItems: "center" },
+                  label: { paddingTop: 0, lineHeight: 1.2 },
+                }}
+                onChange={(e) => {
+                  void guardarBooleanPrograma("activo_universidad", e.currentTarget.checked);
+                }}
+              />
+
+              <Switch
+                checked={esAcreditable}
+                disabled={savingToggleKey === "es_acreditable"}
+                label="Programa acreditable"
+                styles={{
+                  body: { alignItems: "center" },
+                  label: { paddingTop: 0, lineHeight: 1.2 },
+                }}
+                onChange={(e) => {
+                  void guardarBooleanPrograma("es_acreditable", e.currentTarget.checked);
+                }}
+              />
+            </Group>
+
+            {toggleError && <Text size="sm" c="red">{toggleError}</Text>}
+            {!estadoMenActivo && (
+              <Text size="xs" c="dimmed" ta="right">
+                El switch de universidad se bloquea cuando el programa está Inactivo ante MEN.
+              </Text>
+            )}
+          </Stack>
+        </Group>
+      </Stack>
 
       <Divider />
 
@@ -441,10 +520,14 @@ export default function ProgramaProcessesMenPage() {
               { label: "Código del programa", value: programa.dep_code_programa?.trim() || "—" },
               { label: "Código SNIES", value: programa.codigo_snies },
               { label: "Facultad", value: facName },
+              { label: "Estado ante MEN", value: programa.estado },
+              { label: "Activo en universidad", value: activoUniversidad ? "Sí" : "No" },
+              { label: "Programa acreditable", value: esAcreditable ? "Sí" : "No" },
               { label: "Modalidad", value: programa.modalidad },
               { label: "Nivel académico", value: programa.nivel_academico },
               { label: "Nivel de formación", value: programa.nivel_formacion },
               { label: "Créditos", value: programa.num_creditos },
+              { label: "Periodos de duración", value: programa.periodos_duracion },
               { label: "Semestres", value: programa.num_semestres },
               { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
               { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
