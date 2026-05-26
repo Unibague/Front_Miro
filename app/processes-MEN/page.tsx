@@ -1215,6 +1215,16 @@ const ProcessesMenPage = () => {
                     >
                       Comunicaciones MEN
                     </Button>
+                    <Button
+                      variant="subtle"
+                      color="violet"
+                      size="xs"
+                      fullWidth
+                      mt={2}
+                      onClick={() => router.push("/processes-MEN/tasks")}
+                    >
+                      Tareas asignadas
+                    </Button>
                   </Stack>
                 )}
 

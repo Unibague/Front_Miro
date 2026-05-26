@@ -35,10 +35,17 @@ const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
   { key: "pdi",                       pattern: /^\/pdi$/ },
   { key: "dateReviewProgram",          pattern: /^\/processes-MEN\/program/ },
   { key: "dateReviewAdmin",            pattern: /^\/processes-MEN\/admin/ },
+  { key: "dateReviewResponsible",      pattern: /^\/processes-MEN\/responsible/ },
+  { key: "dateReviewTasks",            pattern: /^\/processes-MEN\/tasks/ },
   { key: "dateReview",                 pattern: /^\/processes-MEN/ },
 ];
 
 const FREE_ROUTES = /^\/(|dashboard|logs|traceability|operations|historico-docentes)(\/|$)/;
+
+/** Rutas accesibles por rol sin necesitar permiso de cargo explícito */
+const ROLE_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [
+  { roles: ["Responsable", "Productor"], pattern: /^\/processes-MEN\/responsible/ },
+];
 
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
   const { userRole, viewPermissions, permissionsLoaded } = useRole();
@@ -60,6 +67,15 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     if (FREE_ROUTES.test(pathname)) {
       setIsVerifying(false);
       return;
+    }
+
+    // Rutas accesibles por rol sin permiso de cargo
+    const roleRoute = ROLE_ROUTES.find(({ pattern }) => pattern.test(pathname));
+    if (roleRoute) {
+      if (roleRoute.roles.includes(role)) {
+        setIsVerifying(false);
+        return;
+      }
     }
 
     // Buscar la clave más específica que haga match con la ruta actual
