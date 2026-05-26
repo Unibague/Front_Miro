@@ -18,6 +18,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Corte {
   _id: string;
@@ -141,6 +142,7 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
 
 export default function CortesPage() {
   const router = useRouter();
+  const { canManage } = useViewPermission("pdi");
   const [cortes, setCortes]   = useState<Corte[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
@@ -230,6 +232,7 @@ export default function CortesPage() {
               leftSection={<IconPlus size={15} />}
               color="violet"
               onClick={() => { setSelected(null); setModal(true); }}
+              disabled={!canManage}
             >
               Nuevo corte
             </Button>
@@ -310,17 +313,18 @@ export default function CortesPage() {
                       <Switch
                         size="sm"
                         checked={c.activo}
-                        onChange={() => handleToggle(c)}
+                        onChange={() => canManage && handleToggle(c)}
                         color="violet"
                         title={c.activo ? "Desactivar" : "Activar"}
+                        disabled={!canManage}
                       />
-                      <ActionIcon variant="subtle" color="blue" onClick={() => { setSelected(c); setModal(true); }}>
+                      <ActionIcon variant="subtle" color="blue" disabled={!canManage} onClick={() => { setSelected(c); setModal(true); }}>
                         <IconEdit size={15} />
                       </ActionIcon>
-                      <ActionIcon variant="subtle" color="violet" onClick={() => handleDuplicate(c)} title="Duplicar corte">
+                      <ActionIcon variant="subtle" color="violet" disabled={!canManage} onClick={() => handleDuplicate(c)} title="Duplicar corte">
                         <IconCopy size={15} />
                       </ActionIcon>
-                      <ActionIcon variant="subtle" color="red" onClick={() => handleDelete(c._id)}>
+                      <ActionIcon variant="subtle" color="red" disabled={!canManage} onClick={() => handleDelete(c._id)}>
                         <IconTrash size={15} />
                       </ActionIcon>
                     </Group>

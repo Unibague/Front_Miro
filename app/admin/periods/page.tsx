@@ -11,6 +11,7 @@ import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Period {
   _id: string;
@@ -23,6 +24,7 @@ interface Period {
 const AdminPeriodsPage = () => {
   const router = useRouter();
   const { refreshPeriods } = usePeriod();
+  const { canManage } = useViewPermission("periods");
   const [periods, setPeriods] = useState<Period[]>([]);
   const [opened, setOpened] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
@@ -151,21 +153,16 @@ const AdminPeriodsPage = () => {
       <Table.Td><Center>{dateToGMT(period.end_date, "DD MMM, YYYY")}</Center></Table.Td>
       <Table.Td>
         <Center>
-          <Switch
-            checked={period.is_active}
-            onChange={() => handleToggleActive(period._id, period.is_active)}
-            label={period.is_active ? "Activo" : "Inactivo"}
-            color="teal"
-          />
+          <Switch checked={period.is_active} onChange={() => canManage && handleToggleActive(period._id, period.is_active)} label={period.is_active ? "Activo" : "Inactivo"} color="teal" disabled={!canManage} />
         </Center>
       </Table.Td>
       <Table.Td>
         <Center>
           <Group gap={5}>
-            <Button variant="outline" onClick={() => handleEdit(period)}>
+            <Button variant="outline" onClick={() => handleEdit(period)} disabled={!canManage}>
               <IconEdit size={16} />
             </Button>
-            <Button color="red" variant="outline" onClick={() => handleDelete(period._id)}>
+            <Button color="red" variant="outline" onClick={() => handleDelete(period._id)} disabled={!canManage}>
               <IconTrash size={16} />
             </Button>
           </Group>
@@ -190,6 +187,7 @@ const AdminPeriodsPage = () => {
             setOpened(true);
           }}
           leftSection={<IconCirclePlus />}
+          disabled={!canManage}
         >
           Crear Nuevo Periodo
         </Button>

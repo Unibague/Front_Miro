@@ -7,6 +7,7 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSort } from "../../hooks/useSort";
 import { useSession } from "next-auth/react";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Dimension {
   _id: string;
@@ -25,6 +26,7 @@ interface Dependency {
 
 const AdminDimensionsPage = () => {
   const { data: session } = useSession();
+  const { canManage } = useViewPermission("dimensions");
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [opened, setOpened] = useState(false);
   const [confirmDeleteModalOpened, setConfirmDeleteModalOpened] = useState(false);
@@ -256,10 +258,10 @@ const AdminDimensionsPage = () => {
               >
                 {producerCount} dep.
               </Button>
-              <Button variant="outline" onClick={() => handleConfigureDimension(dimension)}>
+              <Button variant="outline" onClick={() => handleConfigureDimension(dimension)} disabled={!canManage}>
                 <IconSettings size={16} />
               </Button>
-              <Button color="red" variant="outline" onClick={() => openConfirmDeleteModal(dimension)}>
+              <Button color="red" variant="outline" onClick={() => openConfirmDeleteModal(dimension)} disabled={!canManage}>
                 <IconTrash size={16} />
               </Button>
             </Group>
@@ -313,11 +315,9 @@ const AdminDimensionsPage = () => {
       </Group>
       <Group>
         <Button
-          onClick={() => {
-            setSelectedDimension(null);
-            setOpened(true);
-          }}
+          onClick={() => { setSelectedDimension(null); setOpened(true); }}
           leftSection={<IconCirclePlus/>}
+          disabled={!canManage}
         >
           Crear Nuevo Ámbito
         </Button>

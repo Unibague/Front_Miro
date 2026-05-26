@@ -11,6 +11,7 @@ import { showNotification } from "@mantine/notifications";
 import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Dependency {
   _id: string;
@@ -40,6 +41,7 @@ interface DependencyOption {
 }
 
 const AdminDependenciesPage = () => {
+  const { canManage } = useViewPermission("dependencies");
   const { data: session } = useSession();
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const isAdmin = session?.user?.role === 'admin';

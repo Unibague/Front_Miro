@@ -89,7 +89,9 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 export default function ProfilesManagementPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { userRole } = useRole();
+  const { userRole, viewPermissions } = useRole();
+  const profilesPermission = viewPermissions["profiles"] || [];
+  const isAdmin = userRole === "Administrador" || profilesPermission.includes("Gestionar") || profilesPermission.includes("Administrar");
   const [positions, setPositions] = useState<PositionPermission[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [accessProfiles, setAccessProfiles] = useState<AccessProfile[]>([]);
@@ -102,7 +104,6 @@ export default function ProfilesManagementPage() {
   const [positionSearchValue, setPositionSearchValue] = useState("");
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  const isAdmin = userRole === "Administrador";
 
   const visiblePositions = useMemo(
     () => positions.filter((position) => isVisiblePosition(position.position)),

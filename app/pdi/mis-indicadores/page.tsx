@@ -22,6 +22,7 @@ import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio,
 import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import PdiSidebar from "../components/PdiSidebar";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -1328,7 +1329,7 @@ function SolicitudCambioModal({
   );
 }
 
-function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLider = false, esResponsable = true }: {
+function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLider = false, esResponsable = true, canManage = true }: {
   accion: Accion;
   indicadores: Indicador[];
   cortesVigentes: CorteVigente[];
@@ -1339,6 +1340,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   email: string;
   esLider?: boolean;
   esResponsable?: boolean;
+  canManage?: boolean;
 }) {
   const [openAccion, setOpenAccion] = useState(false);
   const avanceAccion = indicadores.length
@@ -1397,6 +1399,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           </div>
         </Group>
         <Group gap="sm" onClick={(e) => e.stopPropagation()}>
+          {canManage && (
           <Button
             variant="light"
             color="violet"
@@ -1426,6 +1429,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           >
             Solicitar cambio
           </Button>
+          )}
           <Badge color={SEMAFORO_COLOR[semaforoAccion]} variant="light" radius="xl">
             {SEMAFORO_LABEL[semaforoAccion]}
           </Badge>
@@ -1603,6 +1607,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
                 email={email}
                 esLider={esLiderProyecto}
                 esResponsable={esResponsableProyecto}
+                canManage={esLiderProyecto || esResponsableProyecto}
               />
             ))}
           </Stack>
@@ -1753,6 +1758,7 @@ export default function MisIndicadoresPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const { config } = usePdiConfig();
+  const { canManage: canManagePdi } = useViewPermission("pdi");
   const [proyectosVista, setProyectosVista] = useState<ProyectoResponsableView[]>([]);
   const [loading, setLoading] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
@@ -2098,8 +2104,8 @@ export default function MisIndicadoresPage() {
                     onUpdated={handleIndicadorUpdated}
                     onSolicitarCambio={handleSolicitarCambio}
                     email={requesterEmail}
-                    esLiderProyecto={esLiderProyecto}
-                    esResponsableProyecto={esResponsableProyecto}
+                    esLiderProyecto={canManagePdi && esLiderProyecto}
+                    esResponsableProyecto={canManagePdi && esResponsableProyecto}
                   />
                 );
               })}

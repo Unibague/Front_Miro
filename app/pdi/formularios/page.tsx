@@ -38,6 +38,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
 
@@ -330,10 +331,12 @@ function FormularioCard({
   form,
   onEdit,
   onDelete,
+  canManage,
 }: {
   form: Formulario;
   onEdit: () => void;
   onDelete: () => void;
+  canManage: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -359,8 +362,8 @@ function FormularioCard({
         </Group>
 
         <Group gap={6}>
-          <ActionIcon variant="subtle" color="blue" onClick={onEdit}><IconEdit size={15} /></ActionIcon>
-          <ActionIcon variant="subtle" color="red" onClick={onDelete}><IconTrash size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="blue" disabled={!canManage} onClick={onEdit}><IconEdit size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="red" disabled={!canManage} onClick={onDelete}><IconTrash size={15} /></ActionIcon>
           <ActionIcon variant="subtle" color="teal" onClick={() => setOpen(v => !v)}>
             {open ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
           </ActionIcon>
@@ -403,6 +406,7 @@ function FormularioCard({
 
 export default function FormulariosPage() {
   const router = useRouter();
+  const { canManage } = useViewPermission("pdiForms");
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -452,7 +456,7 @@ export default function FormulariosPage() {
                 <Text size="xs" c="dimmed">Crea un formulario general para todos los indicadores</Text>
               </div>
             </Group>
-            {formularios.length === 0 && (
+            {formularios.length === 0 && canManage && (
               <Button leftSection={<IconPlus size={15} />} color="teal"
                 onClick={() => { setSelected(null); setModal(true); }}>
                 Nuevo formulario
@@ -486,6 +490,7 @@ export default function FormulariosPage() {
                 <FormularioCard
                   key={formulario._id}
                   form={formulario}
+                  canManage={canManage}
                   onEdit={() => { setSelected(formulario); setModal(true); }}
                   onDelete={() => handleDelete(formulario._id)}
                 />
