@@ -97,7 +97,10 @@ export default function PresupuestoPage() {
 
           <Paper withBorder radius="lg" p="md"
             style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.05), rgba(255,255,255,0.98) 58%)" }}>
-            <Text fw={700} mb={4}>Presupuesto PDI</Text>
+            <Group gap={8} mb={4}>
+              <Text fw={700}>Presupuesto PDI</Text>
+              <Badge color="violet" variant="light" radius="sm">{new Date().getFullYear()}</Badge>
+            </Group>
             <Text size="sm" c="dimmed" mb="md">
               Presupuesto asignado y comprometido por proyectos.
             </Text>

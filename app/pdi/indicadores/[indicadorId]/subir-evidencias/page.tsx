@@ -116,9 +116,9 @@ function formatFechaCorta(fecha?: string | null) {
 
 const MAX_DOC_SIZE = 10 * 1024 * 1024;
 const EVIDENCE_HELP_TEXT =
-  "Adjunte uno o varios archivos en formato PDF que permitan soportar el resultado alcanzado frente al indicador. Las evidencias pueden corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan verificar el avance reportado frente a la meta o línea base.";
+  "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
 const EVIDENCE_HELP_TEXT_2 =
-  "Lo importante es que la evidencia cargada permita comprobar el avance reportado del indicador de resultado y no corresponda únicamente a información general sin relación directa con el resultado.";
+  "La evidencia cargada debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o información que no guarde relación directa con el resultado reportado.";
 
 function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvidencia[] {
   if (!resp) return [];
@@ -1102,7 +1102,7 @@ export default function SubirEvidenciasPage() {
                                         )}
                                       </Group>
                                     ) : !bloqueado ? (
-                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf,.pdf">
+                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png">
                                         {props => (
                                           <Button size="sm" variant="light" color="teal"
                                             leftSection={<IconUpload size={14} />}
@@ -1152,7 +1152,7 @@ export default function SubirEvidenciasPage() {
                                 <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT}</Text>
                                 <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_2}</Text>
                                 <Text size="xs" c="dimmed">
-                                  Formato permitido: <b>PDF</b> · Tamaño máximo: <b>10 MB por archivo</b>
+                                  Formatos permitidos: <b>PDF, Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png)</b> · Tamaño máximo: <b>10 MB por archivo</b>
                                 </Text>
                               </Stack>
                             </div>
@@ -1225,7 +1225,7 @@ export default function SubirEvidenciasPage() {
                                 <FileButton
                                   multiple
                                   onChange={files => handleUploadDocumento(form, files)}
-                                  accept="application/pdf,.pdf"
+                                  accept="application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png"
                                 >
                                   {props => (
                                     <Button
