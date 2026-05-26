@@ -403,6 +403,7 @@ export default function ProcessesMenResponsiblePage() {
   // ── Render ─────────────────────────────────────────────────────────────────
   const toggleTask = async (task: Task) => {
     setSavingTask(task._id);
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "";
     try {
       const res = await axios.put(`${base}/task-assignments/${task._id}`, {
         completada: !task.completada,
@@ -418,6 +419,7 @@ export default function ProcessesMenResponsiblePage() {
 
   const guardarRespuesta = async (task: Task) => {
     setSavingTask(task._id);
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "";
     try {
       const res = await axios.put(`${base}/task-assignments/${task._id}`, {
         observacion_respuesta: respuestas[task._id] ?? "",
