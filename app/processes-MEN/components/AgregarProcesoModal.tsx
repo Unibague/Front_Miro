@@ -17,6 +17,10 @@ import {
 import { procesoRcActivoDePrograma } from "../utils/procesoRcUnico";
 import { getResolucionRcParaAltaProceso } from "../utils/resolucionVigentePrograma";
 import { programCodeKey } from "../utils/programCode";
+import {
+  programaConNombreDuplicado,
+  MENSAJE_NOMBRE_PROGRAMA_DUPLICADO,
+} from "../utils/nombreProgramaUnico";
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -37,7 +41,7 @@ const SUBTIPOS_RC = [
   },
   {
     key: "Renovación + reforma",
-    titulo: "Renovación + reforma",
+    titulo: "Renovación + modificación",
     desc: "Como la renovación normal, con resolución y auto-cálculo de fechas.",
   },
   {
@@ -165,6 +169,7 @@ export default function AgregarProcesoModal({
   const [nivelAcad, setNivelAcad]     = useState<string | null>(null);
   const [nivelForm, setNivelForm]     = useState<string | null>(null);
   const [numCreditos, setNumCreditos] = useState("");
+  const [periodosDuracion, setPeriodosDuracion] = useState("");
   const [numSemestres, setNumSemestres] = useState("");
   const [admision, setAdmision]       = useState<string | null>(null);
   const [numEstud, setNumEstud]       = useState("");
@@ -271,7 +276,7 @@ export default function AgregarProcesoModal({
   const reset = () => {
     setStep(1); setTipo(null); setSubtipo(null); setProgramaId(null);
     setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
-    setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setNumSemestres("");
+    setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
     setAdmision(null); setNumEstud("");
     setCineCampoAmplio(""); setCineCampoEspecifico(""); setCineCampoDetallado("");
     setNbcArea(""); setNbcValor("");
@@ -357,7 +362,7 @@ export default function AgregarProcesoModal({
         setStep(2);
       }
       setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
-      setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setNumSemestres("");
+      setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
       setAdmision(null); setNumEstud("");
       setCineCampoAmplio(""); setCineCampoEspecifico(""); setCineCampoDetallado("");
       setNbcArea(""); setNbcValor("");
@@ -418,6 +423,10 @@ export default function AgregarProcesoModal({
     setError(null);
     if (!nombre.trim()) { setError("El nombre del programa es obligatorio."); return; }
     if (!facultad)       { setError("La facultad es obligatoria."); return; }
+    if (programaConNombreDuplicado(programas, nombre)) {
+      setError(MENSAJE_NOMBRE_PROGRAMA_DUPLICADO);
+      return;
+    }
     setSaving(true);
     try {
       const facultadObj = facultades.find(f => f.dep_code === facultad);
@@ -430,6 +439,7 @@ export default function AgregarProcesoModal({
         nivel_academico: nivelAcad,
         nivel_formacion: nivelForm,
         num_creditos: numCreditos ? parseInt(numCreditos) : null,
+        periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
         num_semestres: numSemestres ? parseInt(numSemestres) : null,
         admision_estudiantes: admision,
         num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -469,7 +479,7 @@ export default function AgregarProcesoModal({
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { error?: string } } };
       const msg = ax.response?.data?.error;
-      if (ax.response?.status === 409) setError(msg || "Ese código de programa ya existe.");
+      if (ax.response?.status === 409) setError(msg || "Conflicto al crear el programa (código o nombre duplicado).");
       else setError(msg || "Error al crear el programa.");
     } finally {
       setSaving(false);
@@ -490,6 +500,10 @@ export default function AgregarProcesoModal({
     if (inlineCrearPrograma) {
       if (!nombre.trim()) { setError("El nombre del programa es obligatorio."); return; }
       if (!facultad)       { setError("La facultad es obligatoria."); return; }
+      if (programaConNombreDuplicado(programas, nombre)) {
+        setError(MENSAJE_NOMBRE_PROGRAMA_DUPLICADO);
+        return;
+      }
     } else {
       if (!programaId)     { setError("Debes seleccionar un programa."); return; }
     }
@@ -497,7 +511,7 @@ export default function AgregarProcesoModal({
     if (tipo === "RC" && subtipo === "Reactivación") {
       const progReac = programas.find((p) => p._id === programaId);
       if (progReac?.estado === "Activo") {
-        setError("La reactivación no aplica a programas Activos. Solo tras no renovación (programa Inactivo).");
+        setError("La reactivación no aplica a programas Activos ante MEN. Solo tras no renovación (programa Inactivo ante MEN).");
         return;
       }
     }
@@ -533,7 +547,7 @@ export default function AgregarProcesoModal({
       const tieneResProg = progSel ? !!getResolucionRcParaAltaProceso(progSel) : false;
       if (!tieneAlertaRc && !tieneResProg && !(fechaRes && codigoRes && duracionRes)) {
         setError(
-          "Renovación + reforma solo puede crearse si hay una alerta de RC o resolución vigente en el programa (fecha, código y años).",
+          "Renovación + modificación solo puede crearse si hay una alerta de RC o resolución vigente en el programa (fecha, código y años).",
         );
         return;
       }
@@ -603,7 +617,7 @@ export default function AgregarProcesoModal({
         if (yaExiste) {
           setError(
             tipo === "RC"
-              ? "Este programa ya tiene un proceso de Registro Calificado activo (cualquier subtipo). Ciérralo antes de crear otro, incluida Modificacion/Reforma curricular."
+              ? "Este programa ya tiene un proceso de Registro Calificado activo (cualquier subtipo). Ciérralo antes de crear otro, incluida Modificación."
               : `Este programa ya tiene un proceso de ${tipo} activo. Ciérralo antes de crear uno nuevo.`,
           );
           return;
@@ -633,6 +647,7 @@ export default function AgregarProcesoModal({
           nivel_academico:    nivelAcad,
           nivel_formacion:    nivelForm,
           num_creditos:       numCreditos ? parseInt(numCreditos) : null,
+          periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
           num_semestres:      numSemestres ? parseInt(numSemestres) : null,
           admision_estudiantes: admision,
           num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -855,6 +870,8 @@ export default function AgregarProcesoModal({
               />
               <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                 value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
+              <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+                value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
               <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                 value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
               <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"
@@ -1029,6 +1046,8 @@ export default function AgregarProcesoModal({
                   />
                   <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                     value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
+                  <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+                    value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
                   <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                     value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
                   <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"

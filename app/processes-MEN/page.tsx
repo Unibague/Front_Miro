@@ -43,6 +43,16 @@ import { nivelSemaforoAlerta } from "./utils/alertaSemaforo";
 import { mismoId } from "./utils/idMongoose";
 import { procesoRcActivoDePrograma } from "./utils/procesoRcUnico";
 import { findProgramByCode, programCodeKey } from "./utils/programCode";
+import {
+  filterFacultadesMen,
+  filterProgramasMen,
+  filterProcesosMen,
+  parseDependenciesAllResponse,
+} from "./utils/facultadesMen";
+import {
+  buildOpcionesProgramaSelect,
+  programaDesdeFiltroId,
+} from "./utils/opcionesSelectPrograma";
 import { lineasAuxPrograma } from "./utils/programDisplay";
 import { historialEsResolucionVigentePrograma } from "./utils/historialResolucionVigente";
 import {
@@ -74,6 +84,20 @@ import {
   PROCESSES_MEN_RESET_EVENT,
   PROCESSES_MEN_BASE,
 } from "./config/routes";
+
+function normSubtipoStats(s: string | null | undefined): string {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ");
+}
+
+function esSubtipoReformaProceso(subtipo: string | null | undefined): boolean {
+  const s = normSubtipoStats(subtipo);
+  return s === "reforma curricular" || s === "renovacion + reforma";
+}
 
 /* ── Helper: renderiza la fecha subida de un doc ── */
 const fmtFecha = (iso?: string | null) =>
@@ -373,11 +397,7 @@ const ProcessesMenPage = () => {
   useEffect(() => {
     axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, { params: { limit: 1000 } })
       .then((res) => {
-        const raw = res.data;
-        let all: Dependency[] = [];
-        if (Array.isArray(raw)) { all = raw; }
-        else if (raw && typeof raw === "object" && Array.isArray(raw.dependencies)) { all = raw.dependencies; }
-        setFacultades(all.filter((d) => d.name.toUpperCase().includes("FACULTAD")));
+        setFacultades(filterFacultadesMen(parseDependenciesAllResponse(res.data)));
       })
       .catch((err) => console.error("Error cargando facultades:", err))
       .finally(() => setLoadingFacultades(false));
@@ -396,6 +416,17 @@ const ProcessesMenPage = () => {
       .catch((err) => console.error("Error cargando procesos:", err))
       .finally(() => setLoadingProcesos(false));
   }, []);
+
+  /** Solo facultades «FACULTAD DE …» y programas/procesos de esas facultades. */
+  const programasDelModulo = useMemo(
+    () => filterProgramasMen(programas, facultades),
+    [programas, facultades],
+  );
+
+  const procesosDelModulo = useMemo(
+    () => filterProcesosMen(procesos, programas, facultades),
+    [procesos, programas, facultades],
+  );
 
   useEffect(() => {
     const onReset = () => {
@@ -448,7 +479,7 @@ const ProcessesMenPage = () => {
 
     const fac = facultades.find((f) => f.dep_code === pr.dep_code_facultad);
     if (fac) setFacultad(fac.name);
-    setPrograma(pr.nombre);
+    setPrograma(pr._id);
     setNivelAcademico("Todos");
     setSubtipoFiltro("Todos");
     setActiveSection("main");
@@ -479,7 +510,7 @@ const ProcessesMenPage = () => {
     if (userRole !== "Administrador" || activeSection !== "alertas") return;
     setLoadingReminders(true);
     const fac = remFacultad !== "Todos" ? facultades.find((f) => f.name === remFacultad) : null;
-    const prog = remPrograma !== "Todos" ? programas.find((p) => p.nombre === remPrograma) : null;
+    const prog = programaDesdeFiltroId(programas, remPrograma);
     const params: Record<string, string> = {};
     if (fac) params.dep_code_facultad = fac.dep_code;
     if (prog) params.program_code = programCodeKey(prog);
@@ -501,7 +532,7 @@ const ProcessesMenPage = () => {
    *  evita `loadingFases` → Loader que desmonta ProcesoDetalleCard y borra los borradores de la ficha en reforma. */
   const fasesReloadKey = useMemo(() => {
     if (programa === "Todos") return "";
-    const prog = programas.find((p) => p.nombre === programa);
+    const prog = programaDesdeFiltroId(programas, programa);
     if (!prog) return "";
     return procesos
       .filter((p) => p.program_code === programCodeKey(prog))
@@ -513,7 +544,7 @@ const ProcessesMenPage = () => {
   useEffect(() => {
     if (programa === "Todos") { setFases([]); return; }
     if (!fasesReloadKey) return;
-    const prog = programas.find((p) => p.nombre === programa);
+    const prog = programaDesdeFiltroId(programas, programa);
     if (!prog) return;
     const ids = fasesReloadKey.split("|").filter(Boolean);
     if (ids.length === 0) return;
@@ -553,13 +584,13 @@ const ProcessesMenPage = () => {
   };
 
   /** Desde filtros del tablero: ir a la ficha del programa (no a la vista de procesos en esta página). */
-  const navegarAFichaProgramaDesdeFiltro = (nombrePrograma: string | null) => {
-    const n = nombrePrograma ?? "Todos";
-    if (n === "Todos") {
+  const navegarAFichaProgramaDesdeFiltro = (programaFiltro: string | null) => {
+    const id = programaFiltro ?? "Todos";
+    if (id === "Todos") {
       setPrograma("Todos");
       return;
     }
-    const p = programas.find((x) => x.nombre === n);
+    const p = programaDesdeFiltroId(programas, id);
     if (!p) return;
     const fac = facultades.find((f) => f.dep_code === p.dep_code_facultad);
     if (fac) setFacultad(fac.name);
@@ -573,12 +604,15 @@ const ProcessesMenPage = () => {
   };
 
   const facultadRemSel = facultades.find((f) => f.name === remFacultad);
-  const programasFiltradosRem =
-    remFacultad === "Todos" ? programas : programas.filter((p) => p.dep_code_facultad === facultadRemSel?.dep_code);
-  const opcionesRemPrograma = useMemo(() => {
-    const nombres = programasFiltradosRem.map((p) => p.nombre).sort((a, b) => a.localeCompare(b, "es"));
-    return ["Todos", ...nombres];
-  }, [programasFiltradosRem]);
+  const programasFiltradosRem = useMemo(() => {
+    if (remFacultad === "Todos") return programasDelModulo;
+    if (!facultadRemSel) return [];
+    return programasDelModulo.filter((p) => p.dep_code_facultad === facultadRemSel.dep_code);
+  }, [remFacultad, programasDelModulo, facultadRemSel]);
+  const opcionesRemPrograma = useMemo(
+    () => buildOpcionesProgramaSelect(programasFiltradosRem),
+    [programasFiltradosRem],
+  );
 
   const opcionesRemSubtipo = useMemo(
     () => subtipoOpcionesFiltro(remTipoProceso as "Todos" | "Registro calificado" | "Acreditación voluntaria" | "Autoevaluación"),
@@ -590,16 +624,16 @@ const ProcessesMenPage = () => {
   );
 
   const programasFiltrados = useMemo(() => {
-    if (facultad === "Todos") return programas;
+    if (facultad === "Todos") return programasDelModulo;
     const fac = facultades.find((f) => f.name === facultad);
     if (!fac) return [];
-    return programas.filter((p) => p.dep_code_facultad === fac.dep_code);
-  }, [facultad, programas, facultades]);
+    return programasDelModulo.filter((p) => p.dep_code_facultad === fac.dep_code);
+  }, [facultad, programasDelModulo, facultades]);
 
   const getProceso = (prog: Program, tipo: "RC" | "AV" | "AE" | "PM"): Process | undefined => {
     const code = programCodeKey(prog);
-    if (tipo === "RC") return procesoRcActivoDePrograma(procesos, code);
-    return procesos.find((p) => p.program_code === code && p.tipo_proceso === tipo);
+    if (tipo === "RC") return procesoRcActivoDePrograma(procesosDelModulo, code);
+    return procesosDelModulo.find((p) => p.program_code === code && p.tipo_proceso === tipo);
   };
 
   const opcionesFacultad = useMemo(
@@ -608,7 +642,7 @@ const ProcessesMenPage = () => {
   );
   /** Programas acotados por facultad; si Facultad = Todos, se listan todos (ordenados). */
   const opcionesPrograma = useMemo(
-    () => ["Todos", ...programasFiltrados.map((p) => p.nombre).sort((a, b) => a.localeCompare(b, "es"))],
+    () => buildOpcionesProgramaSelect(programasFiltrados),
     [programasFiltrados],
   );
   const opcionesNivelAcademico = useMemo(
@@ -647,12 +681,12 @@ const ProcessesMenPage = () => {
 
   const programasFiltradosCompleto = useMemo(() => {
     let list = programasFiltrados
-      .filter((p) => programa === "Todos" || p.nombre === programa)
+      .filter((p) => programa === "Todos" || p._id === programa)
       .filter((p) => nivelAcademico === "Todos" || p.nivel_academico === nivelAcademico);
     if (subtipoFiltro !== "Todos") {
       list = list.filter((p) => {
-        const rc = procesoRcActivoDePrograma(procesos, programCodeKey(p));
-        const av = procesos.find((x) => x.program_code === programCodeKey(p) && x.tipo_proceso === "AV");
+        const rc = procesoRcActivoDePrograma(procesosDelModulo, programCodeKey(p));
+        const av = procesosDelModulo.find((x) => x.program_code === programCodeKey(p) && x.tipo_proceso === "AV");
         if (tipoProceso === "Registro calificado") {
           return procesoCumpleSubtipoFiltro(rc?.subtipo, "RC", subtipoFiltro, tipoProceso);
         }
@@ -666,66 +700,103 @@ const ProcessesMenPage = () => {
       });
     }
     return list;
-  }, [programasFiltrados, programa, nivelAcademico, tipoProceso, subtipoFiltro, procesos]);
+  }, [programasFiltrados, programa, nivelAcademico, tipoProceso, subtipoFiltro, procesosDelModulo]);
 
   const codigosProgramasFiltrados = useMemo(
     () => new Set(programasFiltradosCompleto.map((p) => programCodeKey(p))),
     [programasFiltradosCompleto],
   );
 
-  const listaActivos = useMemo(
-    () => programasFiltradosCompleto.filter((p) => p.estado === "Activo"),
+  const listaRcVigente = useMemo(
+    () => programasFiltradosCompleto.filter((p) => !!p.tiene_rc_vigente),
     [programasFiltradosCompleto],
   );
-  const listaInactivos = useMemo(
-    () => programasFiltradosCompleto.filter((p) => p.estado === "Inactivo"),
+  const listaSinRcVigente = useMemo(
+    () => programasFiltradosCompleto.filter((p) => !p.tiene_rc_vigente),
+    [programasFiltradosCompleto],
+    );
+  const listaAvVigente = useMemo(
+    () => programasFiltradosCompleto.filter((p) => !!p.tiene_av_vigente),
     [programasFiltradosCompleto],
   );
-  const listaConRc = useMemo(
-    () => programasFiltradosCompleto.filter((p) => p.fecha_resolucion_rc),
+  const listaAcreditables = useMemo(
+    () => programasFiltradosCompleto.filter((p) => !!p.es_acreditable),
     [programasFiltradosCompleto],
   );
-  const listaConAv = useMemo(
-    () => programasFiltradosCompleto.filter((p) => p.fecha_resolucion_av),
+  const listaNoAcreditados = useMemo(
+    () => programasFiltradosCompleto.filter((p) => !p.tiene_av_vigente),
     [programasFiltradosCompleto],
   );
-
-  const totalActivos = listaActivos.length;
-  const totalInactivos = listaInactivos.length;
-  const conRegistro = listaConRc.length;
-  const conAcreditacion = listaConAv.length;
-  const totalProgramas = programasFiltradosCompleto.length;
-  const pctConRC = totalProgramas > 0 ? Math.round((conRegistro / totalProgramas) * 100) : 0;
-  const pctConAV = totalProgramas > 0 ? Math.round((conAcreditacion / totalProgramas) * 100) : 0;
-
-  const listaProgRcOficio = useMemo(() => {
+  const listaProgEnReforma = useMemo(() => {
     const codes = new Set(
-      procesos
+      procesosDelModulo
         .filter(
           (pr) =>
-            pr.tipo_proceso === "ALERTA"
-            && pr.alert_para_tipo === "RC"
+            pr.tipo_proceso === "RC"
+            && esSubtipoReformaProceso(pr.subtipo)
             && codigosProgramasFiltrados.has(pr.program_code),
         )
         .map((pr) => pr.program_code),
     );
     return programasFiltradosCompleto.filter((p) => codes.has(programCodeKey(p)));
-  }, [procesos, programasFiltradosCompleto, codigosProgramasFiltrados]);
+  }, [procesosDelModulo, programasFiltradosCompleto, codigosProgramasFiltrados]);
+
+  const ultimoRcAprobadoPorPrograma = useMemo(() => {
+    const byCode = new Map<string, ProcessHistoryRecord>();
+    const candidatos = historialRecords.filter((r) => {
+      if (r.tipo_proceso !== "RC") return false;
+      const subtipoNorm = normSubtipoStats(r.subtipo);
+      if (subtipoNorm === "vigencia transitoria") return false;
+      return !r.estado_solicitud || r.estado_solicitud === "APROBADO";
+    });
+    const scoreFecha = (r: ProcessHistoryRecord) =>
+      new Date(r.fecha_resolucion || r.cerrado_en || r.createdAt || 0).getTime();
+    for (const r of candidatos) {
+      const key = String(r.program_code ?? "").trim();
+      if (!key) continue;
+      const previo = byCode.get(key);
+      if (!previo || scoreFecha(r) >= scoreFecha(previo)) byCode.set(key, r);
+    }
+    return byCode;
+  }, [historialRecords]);
+
+  const listaProgRcOficio = useMemo(() => {
+    return programasFiltradosCompleto.filter((p) => {
+      if (!p.tiene_rc_vigente) return false;
+      const ultimoRc = ultimoRcAprobadoPorPrograma.get(programCodeKey(p));
+      return normSubtipoStats(ultimoRc?.subtipo) === "registro calificado de oficio";
+    });
+  }, [programasFiltradosCompleto, ultimoRcAprobadoPorPrograma]);
+
+  const totalVigentes = listaRcVigente.length;
+  const totalSinRcVigente = listaSinRcVigente.length;
+  const totalAcreditados = listaAvVigente.length;
+  const totalAcreditables = listaAcreditables.length;
+  const totalNoAcreditados = listaNoAcreditados.length;
+  const totalProgramas = programasFiltradosCompleto.length;
+  const pctAcreditados = totalProgramas > 0 ? Math.round((totalAcreditados / totalProgramas) * 100) : 0;
+  const pctAcreditables = totalProgramas > 0 ? Math.round((totalAcreditables / totalProgramas) * 100) : 0;
 
   const totalProgRCOficio = listaProgRcOficio.length;
 
   const listaProgConPm = useMemo(() => {
-    const codes = new Set(procesos.filter((p) => p.tipo_proceso === "PM").map((p) => p.program_code));
+    const codes = new Set(procesosDelModulo.filter((p) => p.tipo_proceso === "PM").map((p) => p.program_code));
     return programasFiltradosCompleto.filter((p) => codes.has(programCodeKey(p)));
-  }, [procesos, programasFiltradosCompleto]);
+  }, [procesosDelModulo, programasFiltradosCompleto]);
 
   const totalProgConPm = listaProgConPm.length;
+  const listaMinimoAcreditacion = useMemo(() => {
+    const map = new Map<string, Program>();
+    [...listaAvVigente, ...listaAcreditables].forEach((p) => map.set(p._id, p));
+    return [...map.values()];
+  }, [listaAvVigente, listaAcreditables]);
+  const minimoProgramasAcreditacion = Math.ceil((totalAcreditados + totalAcreditables) * 0.3);
 
   const barRegistro = useMemo(() => {
     const tipo: "RC" = "RC";
     const grupos: Record<string, BarRow> = {};
     facultades.forEach((f) => {
-      if (programas.some((p) => p.dep_code_facultad === f.dep_code)) {
+      if (programasDelModulo.some((p) => p.dep_code_facultad === f.dep_code)) {
         grupos[f.dep_code] = {
           nombre: f.name,
           dep_code: f.dep_code,
@@ -746,13 +817,13 @@ const ProcessesMenPage = () => {
       }
     });
     return Object.values(grupos);
-  }, [facultades, programas, programasFiltradosCompleto, procesos]);
+  }, [facultades, programasDelModulo, programasFiltradosCompleto, procesosDelModulo]);
 
   const barAcreditacion = useMemo(() => {
     const tipo: "AV" = "AV";
     const grupos: Record<string, BarRow> = {};
     facultades.forEach((f) => {
-      if (programas.some((p) => p.dep_code_facultad === f.dep_code)) {
+      if (programasDelModulo.some((p) => p.dep_code_facultad === f.dep_code)) {
         grupos[f.dep_code] = {
           nombre: f.name,
           dep_code: f.dep_code,
@@ -779,7 +850,7 @@ const ProcessesMenPage = () => {
       if (pmProc) grupos[p.dep_code_facultad].fase_pm += 1;
     });
     return Object.values(grupos);
-  }, [facultades, programas, programasFiltradosCompleto, procesos]);
+  }, [facultades, programasDelModulo, programasFiltradosCompleto, procesosDelModulo]);
 
   const remindersFiltradosTipo = useMemo(() => {
     return reminders.filter((r) => {
@@ -792,15 +863,15 @@ const ProcessesMenPage = () => {
 
   /** RC, AV y AE activos que cumplen filtros de alertas. */
   const filasProcesosActivosRcAv = useMemo(() => {
-    return procesos
+    return procesosDelModulo
       .filter((p) => p.tipo_proceso === "RC" || p.tipo_proceso === "AV" || p.tipo_proceso === "AE")
       .filter((p) => {
         if (p.tipo_proceso !== "RC") return true;
-        const canon = procesoRcActivoDePrograma(procesos, p.program_code);
+        const canon = procesoRcActivoDePrograma(procesosDelModulo, p.program_code);
         return !!canon && canon._id === p._id;
       })
       .map((proc) => {
-        const prog = findProgramByCode(programas, proc.program_code);
+        const prog = findProgramByCode(programasDelModulo, proc.program_code);
         return prog ? { proc, prog } : null;
       })
       .filter((x): x is { proc: Process; prog: Program } => x != null)
@@ -813,7 +884,7 @@ const ProcessesMenPage = () => {
           const f = facultades.find((x) => x.name === remFacultad);
           if (!f || prog.dep_code_facultad !== f.dep_code) return false;
         }
-        if (remPrograma !== "Todos" && prog.nombre !== remPrograma) return false;
+        if (remPrograma !== "Todos" && prog._id !== remPrograma) return false;
         if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
         return true;
       })
@@ -823,14 +894,14 @@ const ProcessesMenPage = () => {
         const orden: Record<string, number> = { RC: 0, AV: 1, AE: 2 };
         return (orden[a.proc.tipo_proceso] ?? 9) - (orden[b.proc.tipo_proceso] ?? 9);
       });
-  }, [procesos, programas, remFacultad, remPrograma, remNivel, remTipoProceso, remSubtipo, facultades]);
+  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remTipoProceso, remSubtipo, facultades]);
 
   /** Planes de Mejoramiento activos (PM) que cumplen filtros de alertas. */
   const filasActivasPM = useMemo(() => {
-    return procesos
+    return procesosDelModulo
       .filter((p) => p.tipo_proceso === "PM")
       .map((proc) => {
-        const prog = findProgramByCode(programas, proc.program_code);
+        const prog = findProgramByCode(programasDelModulo, proc.program_code);
         return prog ? { proc, prog } : null;
       })
       .filter((x): x is { proc: Process; prog: Program } => x != null)
@@ -839,21 +910,21 @@ const ProcessesMenPage = () => {
           const f = facultades.find((x) => x.name === remFacultad);
           if (!f || prog.dep_code_facultad !== f.dep_code) return false;
         }
-        if (remPrograma !== "Todos" && prog.nombre !== remPrograma) return false;
+        if (remPrograma !== "Todos" && prog._id !== remPrograma) return false;
         if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
         return true;
       })
       .sort((a, b) => a.prog.nombre.localeCompare(b.prog.nombre, "es"));
-  }, [procesos, programas, remFacultad, remPrograma, remNivel, facultades]);
+  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, facultades]);
 
   /** Alertas por cierre (RC/AV/AE): solo si aún no hay un proceso activo del mismo tipo en ese programa. */
   const remindersSinActivoMismoTipo = useMemo(() => {
     return remindersFiltradosTipo.filter((r) => {
       if (r.tipo_proceso === "PM") return false; // PM se maneja aparte en remindersActivosPM
       if (!procesoCumpleSubtipoFiltro(r.subtipo, r.tipo_proceso, remSubtipo, remTipoProceso)) return false;
-      return !procesos.some((p) => p.program_code === r.program_code && p.tipo_proceso === r.tipo_proceso);
+      return !procesosDelModulo.some((p) => p.program_code === r.program_code && p.tipo_proceso === r.tipo_proceso);
     });
-  }, [remindersFiltradosTipo, procesos, remSubtipo]);
+  }, [remindersFiltradosTipo, procesosDelModulo, remSubtipo]);
 
   /** Alertas activas del Plan de Mejoramiento (siempre visibles mientras el PM esté activo). */
   const remindersActivosPM = useMemo(() => {
@@ -862,17 +933,17 @@ const ProcessesMenPage = () => {
       .filter((r) => {
         if (remFacultad !== "Todos") {
           const f = facultades.find((x) => x.name === remFacultad);
-          const prog = findProgramByCode(programas, r.program_code);
+          const prog = findProgramByCode(programasDelModulo, r.program_code);
           if (!f || prog?.dep_code_facultad !== f.dep_code) return false;
         }
         if (remPrograma !== "Todos") {
-          const prog = findProgramByCode(programas, r.program_code);
-          if (prog?.nombre !== remPrograma) return false;
+          const prog = findProgramByCode(programasDelModulo, r.program_code);
+          if (prog?._id !== remPrograma) return false;
         }
         return true;
       })
       .sort((a, b) => (a.nombre_programa ?? "").localeCompare(b.nombre_programa ?? "", "es"));
-  }, [reminders, remFacultad, remPrograma, facultades, programas]);
+  }, [reminders, remFacultad, remPrograma, facultades, programasDelModulo]);
 
   /** Alertas de cierre: más recientes primero (última creada/modificada). */
   const remindersOrdenados = useMemo(
@@ -911,7 +982,7 @@ const ProcessesMenPage = () => {
       const procAV = getProceso(p, "AV");
       const faseRC = tablePhases.find((f) => mismoId(f.proceso_id, procRC?._id) && f.numero === procRC?.fase_actual);
       const faseAV = tablePhases.find((f) => mismoId(f.proceso_id, procAV?._id) && f.numero === procAV?.fase_actual);
-      const allPMs = procesos.filter((pr) => pr.program_code === programCodeKey(p) && pr.tipo_proceso === "PM" && pr.parent_process_id != null);
+      const allPMs = procesosDelModulo.filter((pr) => pr.program_code === programCodeKey(p) && pr.tipo_proceso === "PM" && pr.parent_process_id != null);
       const pmProc = allPMs[0] ?? null;
       const parentTipo = pmProc?.parent_tipo_proceso ?? null;
       return {
@@ -925,7 +996,7 @@ const ProcessesMenPage = () => {
         actividadAv: primeraActividadEnFase(faseAV),
       };
     });
-  }, [programasFiltradosCompleto, procesos, tablePhases]);
+  }, [programasFiltradosCompleto, procesosDelModulo, tablePhases]);
 
   useEffect(() => {
     if (userRole !== "Administrador" || activeSection !== "main") return;
@@ -942,8 +1013,8 @@ const ProcessesMenPage = () => {
     /** Solo fase actual por proceso (misma info que usa la tabla); reduce peso de la respuesta. */
     const pairStrs = progsInFac.flatMap((p) => {
       const row: string[] = [];
-      const rc = procesoRcActivoDePrograma(procesos, programCodeKey(p));
-      const av = procesos.find((x) => x.program_code === programCodeKey(p) && x.tipo_proceso === "AV");
+      const rc = procesoRcActivoDePrograma(procesosDelModulo, programCodeKey(p));
+      const av = procesosDelModulo.find((x) => x.program_code === programCodeKey(p) && x.tipo_proceso === "AV");
       if (rc) row.push(`${rc._id}:${Number(rc.fase_actual) || 0}`);
       if (av) row.push(`${av._id}:${Number(av.fase_actual) || 0}`);
       return row;
@@ -970,7 +1041,7 @@ const ProcessesMenPage = () => {
     )
       .then((results) => setTablePhases(results.flat()))
       .finally(() => setLoadingTablePhases(false));
-  }, [userRole, activeSection, programa, facultad, procesos, facultades, programasFiltradosCompleto]);
+  }, [userRole, activeSection, programa, facultad, procesosDelModulo, facultades, programasFiltradosCompleto]);
 
   const tituloTabla = `Fase de procesos de programas de ${facultad}`;
 
@@ -1035,7 +1106,7 @@ const ProcessesMenPage = () => {
       ?? (progObj ? facultades.find((f) => f.dep_code === progObj.dep_code_facultad) : null);
 
     if (facObj) setFacultad(facObj.name);
-    setPrograma(progObj?.nombre ?? args.nombrePrograma);
+    setPrograma(progObj?._id ?? "Todos");
     setNivelAcademico("Todos");
     setTipoProceso(
       args.tipo === "RC" ? "Registro calificado" :
@@ -1076,10 +1147,11 @@ const ProcessesMenPage = () => {
     }
 
     const rcOficioPostAvGracia = tipo === "RC" && !!prog.av_rc_oficio_pendiente;
+  const excluirNuevoDesdeAlerta = r.subtipo !== "Nuevo";
     setAgregarProcesoPrefill({
       programId: prog._id,
       tipo: tipo as "RC" | "AV" | "AE",
-      excluirNuevo: true,
+    excluirNuevo: excluirNuevoDesdeAlerta,
       reminderRowId: r._id,
       rcOficioPostAvGracia: rcOficioPostAvGracia || undefined,
       documentos_pdf_resolucion: rcOficioPostAvGracia ? undefined : (docPdfInfo.length > 0 ? docPdfInfo : undefined),
@@ -1460,7 +1532,7 @@ const ProcessesMenPage = () => {
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Programa</Table.Th>
-                  <Table.Th w={120}>Estado</Table.Th>
+                  <Table.Th w={120}>Estado MEN</Table.Th>
                   <Table.Th w={100} />
                 </Table.Tr>
               </Table.Thead>
@@ -1474,7 +1546,7 @@ const ProcessesMenPage = () => {
                       ))}
                     </Table.Td>
                     <Table.Td>
-                      <Text size="xs">{p.estado ?? "—"}</Text>
+                      <Text size="xs">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
                     </Table.Td>
                     <Table.Td>
                       <Button
@@ -1604,31 +1676,26 @@ const ProcessesMenPage = () => {
             {programa === "Todos" && <Title ta="center" mb="lg">Estadísticas generales</Title>}
 
             {programa === "Todos" && (
-              <Paper radius="md" p="md" mb="lg" style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
-                <Stack gap="sm">
-                  {([
-                    [
-                      { label: "Total de programas académicos activos", valor: totalActivos, lista: listaActivos, titulo: "Programas activos" },
-                      { label: "Total de programas inactivos", valor: totalInactivos, lista: listaInactivos, titulo: "Programas inactivos" },
-                    ],
-                    [
-                      { label: "Porcentaje de programas con Registro Calificado", valor: `${pctConRC}%`, lista: listaConRc, titulo: "Programas con RC vigente" },
-                      { label: "Porcentaje de programas con Acreditación voluntaria", valor: `${pctConAV}%`, lista: listaConAv, titulo: "Programas con AV vigente" },
-                    ],
-                    [
-                      { label: "Total de programas con Registro Calificado vigente", valor: conRegistro, lista: listaConRc, titulo: "Programas con RC vigente" },
-                      { label: "Total de programas con Acreditación voluntaria vigente", valor: conAcreditacion, lista: listaConAv, titulo: "Programas con AV vigente" },
-                    ],
-                    [
-                      { label: "Total de programas con RC de oficio vigente", valor: totalProgRCOficio, lista: listaProgRcOficio, titulo: "Programas con RC de oficio (alerta)" },
-                      { label: "Total de programas con plan de mejoramiento", valor: totalProgConPm, lista: listaProgConPm, titulo: "Programas con plan de mejoramiento" },
-                    ],
-                  ] as const).map((row, ri) => (
-                    <SimpleGrid key={ri} cols={{ base: 1, sm: 2 }} spacing="sm">
-                      {row.map((c, ci) => (
+              <Stack gap="lg" mb="lg">
+                <Paper
+                  radius="xl"
+                  p="md"
+                  style={{
+                    backgroundColor: "#eef9fd",
+                    border: "2px solid #a5d8ff",
+                  }}
+                >
+                  <Stack gap="sm">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                      {[
+                        { label: "Programas vigentes", valor: totalVigentes, lista: listaRcVigente, titulo: "Programas con RC vigente" },
+                        { label: "Programas inactivos", valor: totalSinRcVigente, lista: listaSinRcVigente, titulo: "Programas sin RC vigente" },
+                        { label: "Programas en modificación", valor: listaProgEnReforma.length, lista: listaProgEnReforma, titulo: "Programas en proceso de modificación" },
+                        { label: "Programas con RC oficio", valor: totalProgRCOficio, lista: listaProgRcOficio, titulo: "Programas con RC de oficio vigente" },
+                      ].map((c) => (
                         <Paper
-                          key={ci}
-                          radius="md"
+                          key={c.label}
+                          radius="lg"
                           p="md"
                           style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
                           tabIndex={0}
@@ -1641,36 +1708,100 @@ const ProcessesMenPage = () => {
                             }
                           }}
                         >
-                          <Text size="sm" fw={600} c="var(--mantine-color-blue-light-color)" td="underline">{c.label}</Text>
+                          <Text size="sm" fw={600} c="#1971c2" td="underline">{c.label}</Text>
                           <Text size="xl" fw={700} c="#228be6" mt={4}>{c.valor}</Text>
                         </Paper>
                       ))}
                     </SimpleGrid>
-                  ))}
-                  <Paper
-                    radius="md"
-                    p="md"
-                    style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
-                    tabIndex={0}
-                    role="button"
-                    onClick={() => setModalListaProgramas({ titulo: "Programas del filtro actual", lista: programasFiltradosCompleto })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setModalListaProgramas({ titulo: "Programas del filtro actual", lista: programasFiltradosCompleto });
-                      }
-                    }}
-                  >
-                    <Text size="sm" fw={600} c="var(--mantine-color-blue-light-color)" td="underline">Total de programas registrados (filtro actual)</Text>
-                    <Text size="xl" fw={700} c="#228be6" mt={4}>{totalProgramas}</Text>
-                  </Paper>
-                </Stack>
-              </Paper>
+
+                    <Paper
+                      radius="lg"
+                      p="md"
+                      style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setModalListaProgramas({ titulo: "Programas registrados", lista: programasFiltradosCompleto })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setModalListaProgramas({ titulo: "Programas registrados", lista: programasFiltradosCompleto });
+                        }
+                      }}
+                    >
+                      <Text size="sm" fw={600} c="#1971c2" td="underline">Total de programas registrados</Text>
+                      <Text size="xl" fw={700} c="#228be6" mt={4}>{totalProgramas}</Text>
+                    </Paper>
+                  </Stack>
+                </Paper>
+
+                <Paper
+                  radius="xl"
+                  p="md"
+                  style={{
+                    backgroundColor: "#faf0ff",
+                    border: "2px solid #d0bfff",
+                  }}
+                >
+                  <Stack gap="sm">
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                      {[
+                        { label: "Acreditados", valor: totalAcreditados, lista: listaAvVigente, titulo: "Programas con AV vigente" },
+                        { label: "% acreditados", valor: `${pctAcreditados}%`, lista: listaAvVigente, titulo: "Programas con AV vigente" },
+                        { label: "Acreditables", valor: totalAcreditables, lista: listaAcreditables, titulo: "Programas marcados como acreditables" },
+                        { label: "% acreditables", valor: `${pctAcreditables}%`, lista: listaAcreditables, titulo: "Programas marcados como acreditables" },
+                        { label: "Programas no acreditados", valor: totalNoAcreditados, lista: listaNoAcreditados, titulo: "Programas sin AV vigente" },
+                        { label: "Programas en PM", valor: totalProgConPm, lista: listaProgConPm, titulo: "Programas con plan de mejoramiento activo" },
+                      ].map((c) => (
+                        <Paper
+                          key={c.label}
+                          radius="lg"
+                          p="md"
+                          style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
+                          tabIndex={0}
+                          role="button"
+                          onClick={() => setModalListaProgramas({ titulo: c.titulo, lista: c.lista })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setModalListaProgramas({ titulo: c.titulo, lista: c.lista });
+                            }
+                          }}
+                        >
+                          <Text size="sm" fw={600} c="#9c36b5" td="underline">{c.label}</Text>
+                          <Text size="xl" fw={700} c="#ae3ec9" mt={4}>{c.valor}</Text>
+                        </Paper>
+                      ))}
+                    </SimpleGrid>
+
+                    <Paper
+                      radius="lg"
+                      p="md"
+                      style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
+                      tabIndex={0}
+                      role="button"
+                      onClick={() => setModalListaProgramas({ titulo: "Programas base para mínimo de acreditación", lista: listaMinimoAcreditacion })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setModalListaProgramas({ titulo: "Programas base para mínimo de acreditación", lista: listaMinimoAcreditacion });
+                        }
+                      }}
+                    >
+                      <Text size="sm" fw={600} c="#9c36b5" td="underline">Mínimo programas para acreditación de la U</Text>
+                      <Text size="xl" fw={700} c="#ae3ec9" mt={4}>{minimoProgramasAcreditacion}</Text>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Fórmula: ({totalAcreditados} acreditados + {totalAcreditables} acreditables) x 30%
+                      </Text>
+                    </Paper>
+                  </Stack>
+                </Paper>
+
+              </Stack>
             )}
 
             {/* Vista por programa */}
             {programa !== "Todos" && (() => {
-              const progObj = programas.find(p => p.nombre === programa);
+              const progObj = programaDesdeFiltroId(programas, programa);
               if (!progObj) return null;
               const progCode = programCodeKey(progObj);
               const procesosDelProg = procesos.filter(p => p.program_code === progCode);
@@ -1712,7 +1843,7 @@ const ProcessesMenPage = () => {
                               </Badge>
                             ) : null}
                             <Badge size="lg" color={progObj.estado === "Activo" ? "teal" : "gray"} variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
-                              {progObj.estado === "Activo" ? "ACTIVO" : "INACTIVO"}
+                              {progObj.estado === "Activo" ? "ACTIVO MEN" : "INACTIVO MEN"}
                             </Badge>
                             {rcActivoEncabezado?.subtipo ? (
                               <Badge
@@ -2441,12 +2572,12 @@ const ProcessesMenPage = () => {
             )}
             {historialDetalle.tipo_proceso === "RC" && esSubtipoReformaCurricularSoloHistorial(historialDetalle.subtipo) && (
               <Text size="xs" c="dimmed">
-                <strong>Reforma curricular</strong>: no genera resolución MEN ni alerta. La constancia y la ficha quedan en este cierre.
+                <strong>Modificación</strong>: no genera resolución MEN ni alerta. La constancia y la ficha quedan en este cierre.
               </Text>
             )}
             {historialDetalle.tipo_proceso === "RC" && esSubtipoRenovacionReformaHistorial(historialDetalle.subtipo) && (
               <Text size="xs" c="dimmed">
-                <strong>Renovación + reforma</strong>: actualiza vigencia y genera alerta. Un mismo PDF del cierre figura como resolución y constancia.
+                <strong>Renovación + modificación</strong>: actualiza vigencia y genera alerta. Un mismo PDF del cierre figura como resolución y constancia.
               </Text>
             )}
             {historialDetalle.tipo_proceso === "RC" && historialDetalle.subtipo === "Registro calificado de oficio" && (

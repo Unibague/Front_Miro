@@ -772,7 +772,8 @@ const ProcesoDetalleCard = ({
             nombre: "Nombre del programa", codigo_snies: "Código SNIES",
             modalidad: "Modalidad", nivel_academico: "Nivel académico",
             nivel_formacion: "Nivel de formación", num_creditos: "N° de créditos",
-            num_semestres: "N° de semestres", admision_estudiantes: "Admisión de estudiantes",
+            periodos_duracion: "Periodos de duración", num_semestres: "N° de semestres",
+            admision_estudiantes: "Admisión de estudiantes",
             num_estudiantes_saces: "N° estudiantes SACES",
           };
           const LABELS_CINE = {
@@ -2425,7 +2426,7 @@ const ProcesoDetalleCard = ({
                 </Text>
                 <Text size="xs" c="dimmed" mb="xs">
                   {esRenovacionReforma
-                    ? "Un solo archivo: en el historial se mostrará como resolución y como constancia de la reforma."
+                    ? "Un solo archivo: en el historial se mostrará como resolución y como constancia de la modificación."
                     : "Este archivo se aplicará al programa al confirmar el cierre. La resolución vigente del registro no cambia hasta entonces."}
                 </Text>
                 {actoAdminMenDoc && !cierreResolucionDoc && (
@@ -2449,7 +2450,7 @@ const ProcesoDetalleCard = ({
                           </Anchor>
                         </Group>
                         <Group gap="xs" wrap="wrap">
-                          <Text size="xs" fw={600}>Constancia de la reforma:</Text>
+                          <Text size="xs" fw={600}>Constancia de la modificación:</Text>
                           <Anchor size="xs" href={cierreResolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
                             📄 {cierreResolucionDoc.name}
                           </Anchor>
@@ -2549,7 +2550,7 @@ const ProcesoDetalleCard = ({
         <>
           <Divider label="Constancia o confirmación del proceso" labelPosition="left" my="sm" />
           <Text size="xs" c="dimmed" mb="xs">
-            Documento interno de la reforma (no es resolución MEN). Obligatorio para cerrar como aprobado.
+            Documento interno de la modificación (no es resolución MEN). Obligatorio para cerrar como aprobado.
           </Text>
           {constanciaReformaDoc && (
             <Group gap="xs" align="center" wrap="wrap" mb="xs">

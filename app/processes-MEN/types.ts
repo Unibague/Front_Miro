@@ -36,10 +36,16 @@ export type Program = {
   nivel_academico: string | null;
   nivel_formacion: string | null;
   num_creditos: number | null;
+  periodos_duracion: number | null;
   num_semestres: number | null;
   admision_estudiantes?: string | null;
   num_estudiantes_saces?: number | null;
+  /** Estado regulatorio ante MEN (lo cambian no renovación / reactivación). */
   estado: string;
+  /** Estado interno de oferta/operación en la Universidad. */
+  activo_universidad?: boolean;
+  /** Elegibilidad interna para acreditación / estadísticas. */
+  es_acreditable?: boolean;
   // Clasificaciones
   cine_f?: CineF | null;
   nbc?: Nbc | null;
@@ -414,6 +420,7 @@ export type ProcessHistoryRecord = {
     nivel_academico?: string | null;
     nivel_formacion?: string | null;
     num_creditos?: number | null;
+    periodos_duracion?: number | null;
     num_semestres?: number | null;
     admision_estudiantes?: string | null;
     num_estudiantes_saces?: number | null;
