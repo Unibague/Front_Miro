@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton, Collapse, Skeleton,
+  Divider, TextInput, Modal, Tabs, Select, MultiSelect, Textarea, FileButton, Collapse, Skeleton,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
@@ -1622,8 +1622,11 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
   const [avales, setAvales] = useState<RespuestaFormularioAval[]>([]);
   const [loading, setLoading] = useState(true);
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [razonesSeleccionadas, setRazonesSeleccionadas] = useState<Record<string, string[]>>({});
+  const [otrosCuales, setOtrosCuales] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [razonesDisponibles, setRazonesDisponibles] = useState<{ value: string; label: string }[]>([]);
 
   useEffect(() => {
     if (!liderEmail) return;
@@ -1632,18 +1635,40 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
       .then((r) => setAvales(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then(r => setRazonesDisponibles([
+        ...r.data.map((x: any) => ({ value: x.texto, label: x.texto })),
+        { value: "Otro", label: "Otro ¿Cuál?" },
+      ]))
+      .catch(() => {});
   }, [liderEmail]);
 
   const handleAval = async (respuesta: RespuestaFormularioAval, estado_aval: "Aprobado" | "Rechazado") => {
     const formId = typeof respuesta.formulario_id === "string"
       ? respuesta.formulario_id
       : (respuesta.formulario_id as any)._id;
+
+    if (estado_aval === "Rechazado") {
+      const razones = razonesSeleccionadas[respuesta._id] ?? [];
+      if (razones.length === 0) {
+        showNotification({ title: "Falta información", message: "Selecciona al menos una razón de rechazo", color: "orange" });
+        return;
+      }
+      if (razones.includes("Otro") && !(otrosCuales[respuesta._id] ?? "").trim()) {
+        showNotification({ title: "Falta información", message: "Especifica el campo \"Otro ¿Cuál?\"", color: "orange" });
+        return;
+      }
+    }
+
     setSavingId(respuesta._id);
     try {
+      const razones = razonesSeleccionadas[respuesta._id] ?? [];
       await axios.put(PDI_ROUTES.formularioAval(formId, respuesta._id), {
         estado_aval,
         aval_por: liderEmail,
         aval_comentario: comentarios[respuesta._id] ?? "",
+        aval_razones: razones,
+        aval_otro_cual: razones.includes("Otro") ? (otrosCuales[respuesta._id] ?? "") : "",
       });
       setAvales((prev) => prev.filter((a) => a._id !== respuesta._id));
       showNotification({ title: estado_aval, message: `Formulario ${estado_aval.toLowerCase()} correctamente`, color: estado_aval === "Aprobado" ? "teal" : "red" });
@@ -1723,8 +1748,32 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
                 </Stack>
               )}
 
+              {razonesDisponibles.length > 1 && (
+                <Stack gap={6} mb="sm">
+                  <MultiSelect
+                    size="xs"
+                    label="Razones de rechazo"
+                    placeholder="Selecciona una o varias razones..."
+                    data={razonesDisponibles}
+                    value={razonesSeleccionadas[r._id] ?? []}
+                    onChange={vals => {
+                      setRazonesSeleccionadas(prev => ({ ...prev, [r._id]: vals }));
+                      if (!vals.includes("Otro")) setOtrosCuales(prev => ({ ...prev, [r._id]: "" }));
+                    }}
+                    clearable
+                  />
+                  {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
+                    <TextInput
+                      size="xs"
+                      placeholder="Especifica..."
+                      value={otrosCuales[r._id] ?? ""}
+                      onChange={e => setOtrosCuales(prev => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                    />
+                  )}
+                </Stack>
+              )}
               <Textarea
-                placeholder="Comentario para el responsable (opcional)..."
+                placeholder="Comentario adicional para el responsable (opcional)..."
                 value={comentarios[r._id] ?? ""}
                 onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
                 rows={2}

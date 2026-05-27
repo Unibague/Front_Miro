@@ -25,12 +25,14 @@ import {
 } from "@mantine/core";
 import {
   IconArrowLeft,
+  IconCheck,
   IconChevronDown,
   IconChevronUp,
   IconEdit,
   IconForms,
   IconPlus,
   IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -408,6 +410,12 @@ function FormularioCard({
   );
 }
 
+interface RazonRechazo {
+  _id: string;
+  texto: string;
+  activo: boolean;
+}
+
 export default function FormulariosPage() {
   const router = useRouter();
   const { canManage } = useViewPermission("pdiForms");
@@ -416,13 +424,63 @@ export default function FormulariosPage() {
   const [modal, setModal] = useState(false);
   const [selected, setSelected] = useState<Formulario | null>(null);
 
+  // Razones de rechazo
+  const [razones, setRazones] = useState<RazonRechazo[]>([]);
+  const [nuevaRazon, setNuevaRazon] = useState("");
+  const [savingRazon, setSavingRazon] = useState(false);
+  const [editingRazonId, setEditingRazonId] = useState<string | null>(null);
+  const [editingRazonTexto, setEditingRazonTexto] = useState("");
+
   useEffect(() => {
     axios
       .get(PDI_ROUTES.formularios())
       .then(r => setFormularios(r.data))
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
+    axios.get(PDI_ROUTES.razonesRechazo()).then(r => setRazones(r.data)).catch(() => {});
   }, []);
+
+  const handleAddRazon = async () => {
+    if (!nuevaRazon.trim()) return;
+    setSavingRazon(true);
+    try {
+      const res = await axios.post(PDI_ROUTES.razonesRechazo(), { texto: nuevaRazon.trim() });
+      setRazones(prev => [...prev, res.data]);
+      setNuevaRazon("");
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo agregar la razón", color: "red" });
+    } finally {
+      setSavingRazon(false);
+    }
+  };
+
+  const handleSaveEditRazon = async (id: string) => {
+    if (!editingRazonTexto.trim()) return;
+    try {
+      const res = await axios.put(PDI_ROUTES.razonRechazo(id), { texto: editingRazonTexto.trim() });
+      setRazones(prev => prev.map(r => r._id === id ? res.data : r));
+      setEditingRazonId(null);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo guardar", color: "red" });
+    }
+  };
+
+  const handleDeleteRazon = (id: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar razón de rechazo",
+      children: <Text size="sm">Esta razón ya no estará disponible al rechazar formularios.</Text>,
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.razonRechazo(id));
+          setRazones(prev => prev.filter(r => r._id !== id));
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
+      },
+    });
+  };
 
   const handleDelete = (id: string) => {
     modals.openConfirmModal({
@@ -447,6 +505,7 @@ export default function FormulariosPage() {
       <PdiSidebar />
       <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
         <Container size="lg" py="xl">
+
           <Group mb="lg" justify="space-between">
             <Group gap={10}>
               <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
@@ -456,8 +515,8 @@ export default function FormulariosPage() {
                 <IconForms size={22} />
               </ThemeIcon>
               <div>
-                <Title order={3}>Formulario PDI</Title>
-                <Text size="xs" c="dimmed">Crea un formulario general para todos los indicadores</Text>
+                <Title order={3}>Campos PDI</Title>
+                <Text size="xs" c="dimmed">Configura los campos del formulario y las razones de rechazo</Text>
               </div>
             </Group>
             {formularios.length === 0 && canManage && (
@@ -501,6 +560,81 @@ export default function FormulariosPage() {
               ))}
             </Stack>
           )}
+
+          {/* Razones de rechazo */}
+          <Paper withBorder radius="lg" p="lg" shadow="xs" mt="xl"
+            style={{ borderLeft: "4px solid #fa5252" }}>
+            <Group gap={10} mb="md">
+              <ThemeIcon size={36} radius="xl" color="red" variant="light">
+                <IconX size={18} />
+              </ThemeIcon>
+              <div>
+                <Title order={5}>Razones de rechazo</Title>
+                <Text size="xs" c="dimmed">Opciones que verá el líder al rechazar un formulario</Text>
+              </div>
+            </Group>
+
+          <Stack gap="xs">
+            {razones.length === 0 && (
+              <Text size="sm" c="dimmed" ta="center" py="xs">Sin razones configuradas</Text>
+            )}
+            {razones.map(r => (
+              <Paper key={r._id} withBorder radius="md" p="sm">
+                {editingRazonId === r._id ? (
+                  <Group gap={6}>
+                    <TextInput
+                      size="xs"
+                      value={editingRazonTexto}
+                      onChange={e => setEditingRazonTexto(e.currentTarget.value)}
+                      style={{ flex: 1 }}
+                      onKeyDown={e => e.key === "Enter" && handleSaveEditRazon(r._id)}
+                      autoFocus
+                    />
+                    <ActionIcon size="sm" color="teal" variant="light" onClick={() => handleSaveEditRazon(r._id)}>
+                      <IconCheck size={13} />
+                    </ActionIcon>
+                    <ActionIcon size="sm" color="gray" variant="subtle" onClick={() => setEditingRazonId(null)}>
+                      <IconX size={13} />
+                    </ActionIcon>
+                  </Group>
+                ) : (
+                  <Group justify="space-between">
+                    <Text size="sm">{r.texto}</Text>
+                    {canManage && (
+                      <Group gap={4}>
+                        <ActionIcon size="sm" variant="subtle" color="blue"
+                          onClick={() => { setEditingRazonId(r._id); setEditingRazonTexto(r.texto); }}>
+                          <IconEdit size={13} />
+                        </ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteRazon(r._id)}>
+                          <IconTrash size={13} />
+                        </ActionIcon>
+                      </Group>
+                    )}
+                  </Group>
+                )}
+              </Paper>
+            ))}
+
+            {canManage && (
+              <Group gap={6} mt={4}>
+                <TextInput
+                  size="xs"
+                  placeholder="Nueva razón de rechazo..."
+                  value={nuevaRazon}
+                  onChange={e => setNuevaRazon(e.currentTarget.value)}
+                  onKeyDown={e => e.key === "Enter" && handleAddRazon()}
+                  style={{ flex: 1 }}
+                />
+                <Button size="xs" color="red" variant="light" loading={savingRazon}
+                  leftSection={<IconPlus size={12} />} onClick={handleAddRazon}>
+                  Agregar
+                </Button>
+              </Group>
+            )}
+          </Stack>
+          </Paper>
+
         </Container>
       </div>
 

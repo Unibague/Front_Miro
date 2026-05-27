@@ -482,7 +482,8 @@ export default function FormulariosIndicadorPanel({
                         />
                         {getTexto(form._id, campo._id) === "Otro" && (
                           <TextInput
-                            placeholder="Especifica..."
+                            label='Especifica "Otro ¿Cuál?"'
+                            placeholder="Escribe aquí..."
                             value={getOtroTexto(form._id, campo._id)}
                             onChange={e => setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                             disabled={enviado}
@@ -522,7 +523,8 @@ export default function FormulariosIndicadorPanel({
                         />
                         {getSelectValues(form._id, campo._id).includes("Otro") && (
                           <TextInput
-                            placeholder="Especifica..."
+                            label='Especifica "Otro ¿Cuál?"'
+                            placeholder="Escribe aquí..."
                             value={getOtroTexto(form._id, campo._id)}
                             onChange={e => setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                             disabled={enviado}

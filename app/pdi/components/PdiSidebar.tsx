@@ -23,7 +23,7 @@ const ADMIN_LINKS = [
   {
     section: "FORMULARIOS",
     items: [
-      { label: "Avances y evidencias", icon: IconForms, path: "/pdi/formularios", permissionKey: "pdiForms", color: "teal", exact: false },
+      { label: "Campos PDI", icon: IconForms, path: "/pdi/formularios", permissionKey: "pdiForms", color: "teal", exact: false },
     ],
   },
   {

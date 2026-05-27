@@ -194,7 +194,21 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
         </Group>
       </Group>
       <Text size="sm" fw={600} mb={4}>{ind.nombre}</Text>
-      {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={6}>{ind.indicador_resultado}</Text>}
+      {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={4}>{ind.indicador_resultado}</Text>}
+      {admin && (() => {
+        const estados = ind.periodos.map(p => p.estado_reporte).filter(Boolean);
+        const tieneAprobado  = estados.some(e => e === "Aprobado");
+        const tieneEnviado   = estados.some(e => e === "Enviado");
+        const tieneRechazado = estados.some(e => e === "Rechazado");
+        if (!tieneAprobado && !tieneEnviado && !tieneRechazado) return null;
+        return (
+          <Group gap={6} mb={6} wrap="wrap">
+            {tieneAprobado  && <Badge size="xs" color="teal"   variant="filled" radius="xl">✓ Listo para Planeación</Badge>}
+            {tieneEnviado   && <Badge size="xs" color="yellow" variant="filled" radius="xl">⏳ Pendiente evaluación líder</Badge>}
+            {tieneRechazado && <Badge size="xs" color="red"    variant="light"  radius="xl">↩ Devuelto al responsable</Badge>}
+          </Group>
+        );
+      })()}
       <AvanceBar avance={avanceMostrado} semaforo={ind.semaforo} />
       <Group gap={12} mt={4} wrap="wrap">
         <Text size="xs" c="dimmed">Avance total: <b>{avanceMostrado}%</b></Text>

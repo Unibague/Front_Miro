@@ -75,6 +75,8 @@ interface RespuestaFormulario {
   lider_email_aval?: string;
   aval_por?: string;
   aval_comentario?: string;
+  aval_razones?: string[];
+  aval_otro_cual?: string;
   aval_fecha?: string | null;
 }
 
@@ -211,6 +213,7 @@ export default function SubirEvidenciasPage() {
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
+  const [razonesRechazoLabels, setRazonesRechazoLabels] = useState<Record<string, string>>({});
 
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -256,6 +259,10 @@ export default function SubirEvidenciasPage() {
   const getJustificacion = (formId: string, campoId: string) => justificaciones[`${formId}-${campoId}`] ?? "";
   const setJustificacion = (formId: string, campoId: string, val: string) =>
     setJustificaciones(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const formatRazonRechazo = (razon: string, otroCual?: string) => {
+    const label = razonesRechazoLabels[razon] ?? razon;
+    return label === "Otro" && otroCual ? `Otro: ${otroCual}` : label;
+  };
 
   // ── Calcular si ya está todo enviado ──────────────────────────────────────
   const todosEnviados =
@@ -290,6 +297,21 @@ export default function SubirEvidenciasPage() {
       .then(r => setCortesVigentes(r.data))
       .catch(() => {});
   }, [indicadorId]);
+
+  useEffect(() => {
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then((r) => {
+        const labels: Record<string, string> = { Otro: "Otro" };
+        (r.data as { _id?: string; texto?: string }[]).forEach((razon) => {
+          const texto = String(razon.texto ?? "").trim();
+          if (!texto) return;
+          if (razon._id) labels[razon._id] = texto;
+          labels[texto] = texto;
+        });
+        setRazonesRechazoLabels(labels);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!indicadorId || !email) return;
@@ -1069,6 +1091,16 @@ export default function SubirEvidenciasPage() {
                                   </Button>
                                 )}
                               </Group>
+                              {estadoAval === "Rechazado" && resp?.aval_razones && resp.aval_razones.length > 0 && (
+                                <Stack gap={4}>
+                                  <Text size="xs" fw={700} c="red">Razones de rechazo:</Text>
+                                  {resp.aval_razones.map((razon, i) => (
+                                    <Text key={i} size="sm" c="red">
+                                      • {formatRazonRechazo(razon, resp.aval_otro_cual)}
+                                    </Text>
+                                  ))}
+                                </Stack>
+                              )}
                               {resp?.aval_comentario && (
                                 <Text size="sm">{resp.aval_comentario}</Text>
                               )}
@@ -1179,7 +1211,8 @@ export default function SubirEvidenciasPage() {
                                     />
                                     {getTexto(form._id, campo._id) === "Otro" && (
                                       <TextInput
-                                        placeholder="Especifica..."
+                                        label='Especifica "Otro ¿Cuál?"'
+                                        placeholder="Escribe aquí..."
                                         value={getOtroTexto(form._id, campo._id)}
                                         onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                                         disabled={bloqueado}
@@ -1241,7 +1274,8 @@ export default function SubirEvidenciasPage() {
                                     />
                                     {selectedValues.includes("Otro") && (
                                       <TextInput
-                                        placeholder="Especifica..."
+                                        label='Especifica "Otro ¿Cuál?"'
+                                        placeholder="Escribe aquí..."
                                         value={getOtroTexto(form._id, campo._id)}
                                         onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                                         disabled={bloqueado}

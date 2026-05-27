@@ -70,7 +70,13 @@ export interface RespuestaFormulario {
   lider_email_aval: string;
   aval_por: string;
   aval_comentario: string;
+  aval_razones?: string[];
+  aval_otro_cual?: string;
   aval_fecha: string | null;
+  aval_planeacion?: "Pendiente" | "Validado" | "Devuelto" | null;
+  aval_planeacion_por?: string;
+  aval_planeacion_comentario?: string;
+  aval_planeacion_fecha?: string | null;
   createdAt: string;
 }
 

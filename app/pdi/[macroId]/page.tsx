@@ -35,11 +35,12 @@ interface CorteVigente {
 function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
   return indicadores.flatMap((ind) =>
     (ind.periodos ?? [])
-      .filter((p) => (p.estado_reporte ?? "") === "Enviado")
+      .filter((p) => (p.estado_reporte ?? "") === "Enviado" || (p.estado_reporte ?? "") === "Aprobado")
       .map((p) => ({
         indicadorId: ind._id,
         indicadorCodigo: ind.codigo,
         corte: p.periodo,
+        tipo: (p.estado_reporte ?? "") === "Aprobado" ? "planeacion" : "lider",
       }))
   );
 }
@@ -351,12 +352,14 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                 <Badge
                   key={`${r.indicadorId}-${r.corte}`}
                   size="sm"
-                  color="teal"
+                  color={r.tipo === "planeacion" ? "teal" : "yellow"}
                   variant="filled"
                   radius="xl"
                   leftSection={<IconFlag size={10} />}
                 >
-                  Evaluar · {r.indicadorCodigo} · {r.corte}
+                  {r.tipo === "planeacion"
+                    ? `Revisar Planeación · ${r.indicadorCodigo} · ${r.corte}`
+                    : `Pendiente líder · ${r.indicadorCodigo} · ${r.corte}`}
                 </Badge>
               ))}
             </Group>
