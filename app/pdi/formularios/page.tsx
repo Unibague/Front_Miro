@@ -70,8 +70,7 @@ interface Formulario {
 }
 
 const TIPO_OPTIONS = [
-  { value: "texto_largo", label: "Texto largo" },
-  { value: "texto_corto", label: "Texto corto" },
+  { value: "texto_largo", label: "Texto" },
   { value: "select", label: "Selección única" },
   { value: "select_con_otro", label: "Selección única con Otro" },
   { value: "select_multiple", label: "Selección múltiple" },
@@ -80,8 +79,8 @@ const TIPO_OPTIONS = [
 ];
 
 const TIPO_LABELS: Record<TipoCampo, string> = {
-  texto_largo: "Texto largo",
-  texto_corto: "Texto corto",
+  texto_largo: "Texto",
+  texto_corto: "Texto",
   archivo_pdf: "Archivo PDF",
   select: "Selección única",
   select_con_otro: "Selección única con Otro",
@@ -265,16 +264,28 @@ function FormularioModal({
               </Group>
 
               {tieneTexto(campo.tipo) && (
-                <NumberInput
-                  size="xs"
-                  label="Máximo de caracteres (dejar vacío = sin máximo)"
-                  placeholder="Ej: 500"
-                  value={campo.max_caracteres ?? ""}
-                  onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
-                  min={1}
-                  max={5000}
-                  allowDecimal={false}
-                />
+                <Group gap="md" grow>
+                  <NumberInput
+                    size="xs"
+                    label="Mínimo de caracteres"
+                    placeholder="Sin mínimo"
+                    value={campo.min_caracteres ?? ""}
+                    onChange={v => updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null)}
+                    min={1}
+                    max={5000}
+                    allowDecimal={false}
+                  />
+                  <NumberInput
+                    size="xs"
+                    label="Máximo de caracteres"
+                    placeholder="Sin máximo"
+                    value={campo.max_caracteres ?? ""}
+                    onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
+                    min={1}
+                    max={5000}
+                    allowDecimal={false}
+                  />
+                </Group>
               )}
 
               {tieneOpciones(campo.tipo) && (

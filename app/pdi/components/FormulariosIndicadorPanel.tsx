@@ -409,6 +409,7 @@ export default function FormulariosIndicadorPanel({
                 if (!shouldShowCampo(form, campo)) return null;
                 const archivoCampo = getRespuestaCampo(form._id, campo._id);
                 const maxChars = campo.max_caracteres ?? null;
+                const minChars = campo.min_caracteres ?? null;
                 const currentLen = getTexto(form._id, campo._id).length;
                 return (
                   <Paper key={campo._id} withBorder radius="md" p="md"
@@ -444,12 +445,29 @@ export default function FormulariosIndicadorPanel({
                     )}
 
                     {campo.tipo === "texto_corto" && (
-                      <TextInput
-                        placeholder={enviado ? "" : "Escribe aquí..."}
-                        value={getTexto(form._id, campo._id)}
-                        onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
-                        disabled={enviado}
-                      />
+                      <Stack gap={4}>
+                        <TextInput
+                          placeholder={enviado ? "" : "Escribe aquí..."}
+                          value={getTexto(form._id, campo._id)}
+                          onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
+                          disabled={enviado}
+                          minLength={minChars ?? undefined}
+                          maxLength={maxChars ?? undefined}
+                        />
+                        {(minChars || maxChars) && (
+                          <Text size="xs" ta="right" c={
+                            (maxChars && currentLen > maxChars) ? "red" :
+                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" :
+                            (maxChars && currentLen >= maxChars * 0.9) ? "orange" : "dimmed"
+                          }>
+                            {minChars && currentLen < minChars
+                              ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                              : maxChars
+                              ? `${currentLen} / ${maxChars}`
+                              : `${currentLen} caracteres`}
+                          </Text>
+                        )}
+                      </Stack>
                     )}
 
                     {campo.tipo === "select" && (
