@@ -22,6 +22,7 @@ import {
   programaConNombreDuplicado,
   MENSAJE_NOMBRE_PROGRAMA_DUPLICADO,
 } from "../utils/nombreProgramaUnico";
+import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -274,6 +275,20 @@ export default function AgregarProcesoModal({
     return t || null;
   };
 
+  const asignarPdfResolucion = (files: File[]) => {
+    const f = files[0];
+    if (!f) return;
+    const esPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    if (!esPdf) {
+      setError("Solo se permite archivo PDF.");
+      return;
+    }
+    setPdfFile(f);
+    setOmitirPdfCopiaAlerta(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setError(null);
+  };
+
   const reset = () => {
     setStep(1); setTipo(null); setSubtipo(null); setProgramaId(null);
     setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
@@ -521,7 +536,7 @@ export default function AgregarProcesoModal({
     if (necesitaRes) {
       fechaResISO = inputFechaAISO(fechaRes);
       if (!fechaResISO) {
-        setError("La fecha de resolución es obligatoria. Use dd/mm/aaaa, dd-mm-aaaa o yyyy-mm-dd.");
+        setError("La fecha de resolución es obligatoria o no es válida.");
         return;
       }
       if (!codigoRes)    { setError("El código de resolución es obligatorio."); return; }
@@ -1148,18 +1163,15 @@ export default function AgregarProcesoModal({
                   </Text>
                 )}
                 <SimpleGrid cols={3} spacing="sm">
-                  <div>
-                    <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
-                    <DateInput
-                      value={fechaRes ? (dateParserEspanol(fechaRes) ?? new Date(`${fechaRes.slice(0, 10)}T12:00:00`)) : null}
-                      onChange={(val) => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
-                      valueFormat="DD/MM/YYYY"
-                      placeholder="dd/mm/aaaa"
-                      clearable
-                      dateParser={dateParserEspanol}
-                      description="Escriba la fecha o use el calendario"
-                    />
-                  </div>
+                  <DateInput
+                    label="Fecha de resolución"
+                    value={fechaRes ? (dateParserEspanol(fechaRes) ?? new Date(`${fechaRes.slice(0, 10)}T12:00:00`)) : null}
+                    onChange={(val) => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
+                    valueFormat="DD/MM/YYYY"
+                    placeholder="dd/mm/aaaa"
+                    clearable
+                    dateParser={dateParserEspanol}
+                  />
                   <TextInput label="Código de resolución" placeholder="Ej: 12345"
                     value={codigoRes} onChange={e => setCodigoRes(e.currentTarget.value)} />
                   {subtipo === "Registro calificado de oficio" ? (
@@ -1198,7 +1210,8 @@ export default function AgregarProcesoModal({
                       if (f) setOmitirPdfCopiaAlerta(false);
                     }}
                   />
-                  <Paper withBorder radius="sm" p="sm" bg="gray.0">
+                  {(pdfFile || muestraDocAlerta) && (
+                  <Paper withBorder radius="sm" p="sm" bg="gray.0" mb="xs">
                     {pdfFile ? (
                       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
@@ -1231,19 +1244,19 @@ export default function AgregarProcesoModal({
                           <Button size="xs" variant="subtle" color="red" onClick={quitarPdf}>Quitar</Button>
                         </Group>
                       </Group>
-                    ) : (
-                      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                        <Text size="xs" c="dimmed" style={{ flex: 1 }}>
-                          {subtipo === "Registro calificado de oficio"
-                            ? "Obligatorio: el mismo PDF se copiará a la alerta de renovación junto con fecha y código."
-                            : prefillDesdeRecordatorio?.reminderRowId
-                              ? "Sin PDF en la alerta. Puedes adjuntar uno o crear el proceso sin documento."
-                              : "Opcional. Si no adjuntas archivo, el proceso se crea sin PDF de resolución."}
-                        </Text>
-                        <Button size="xs" variant="light" onClick={abrirSelectorPdf}>Adjuntar PDF</Button>
-                      </Group>
-                    )}
+                    ) : null}
                   </Paper>
+                  )}
+                  <DropzoneCustomComponent
+                    text={
+                      pdfFile
+                        ? "Arrastra otro PDF para reemplazar"
+                        : muestraDocAlerta
+                          ? "Arrastra el PDF para reemplazar el de la alerta"
+                          : "Arrastra el PDF de resolución o haz clic"
+                    }
+                    onDrop={asignarPdfResolucion}
+                  />
                 </div>
                   );
                 })()}
