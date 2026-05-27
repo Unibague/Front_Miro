@@ -2,16 +2,35 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActionIcon, Alert, Badge, Box, Center, Group, Loader, Paper,
-  Select, SimpleGrid, Text, ThemeIcon, Tooltip,
+  ActionIcon, Alert, Anchor, Badge, Box, Button, Center, Group, HoverCard,
+  Loader, Paper, ScrollArea, Select, SimpleGrid, Text, ThemeIcon, Tooltip,
 } from "@mantine/core";
 import {
-  IconChartPie, IconCurrencyDollar, IconRefresh, IconTrendingUp,
+  IconChartPie, IconCurrencyDollar, IconDownload, IconRefresh, IconTrendingUp,
 } from "@tabler/icons-react";
 import axios from "axios";
+import * as XLSX from "xlsx";
 import { PDI_ROUTES } from "../api";
 
 const POLL_INTERVAL_MS = 60_000;
+
+type BudgetDetail = {
+  rowIndex?: number;
+  autorizacion?: string;
+  proyecto?: string;
+  proyectoCodigo?: string;
+  codificacion?: string;
+  accionEstrategica?: string;
+  tipo?: string;
+  tercero?: string;
+  descripcion?: string;
+  responsableActivo?: string;
+  documentos?: string;
+  valor: number;
+  causadoGasto: number;
+  causadoInversion: number;
+  causado: number;
+};
 
 type PresupuestoRow = {
   macroproyecto: string;
@@ -27,6 +46,7 @@ type PresupuestoRow = {
   causadoGasto: number;
   causadoInversion: number;
   autorizaciones: number;
+  detalles?: BudgetDetail[];
 };
 
 type PresupuestoData = {
@@ -60,6 +80,10 @@ type MacroBudgetGroup = {
 
 type PdiPresupuestoProps = {
   refreshSignal?: number;
+  /** Pre-selecciona el primer macro que coincida (líder ve todos, solo se le marca el suyo) */
+  defaultMacroCodes?: string[];
+  /** Restringe el dropdown y la tabla a solo estos códigos (responsable de proyecto, no líder) */
+  restrictToCodes?: string[];
 };
 
 function fmtCOP(n: number) {
@@ -73,6 +97,61 @@ function fmtCOP(n: number) {
 function pct(value: number, total: number) {
   if (!total) return 0;
   return Math.min(Math.round((value / total) * 100), 100);
+}
+
+type BudgetMetric = "comprometidoGasto" | "comprometidoInversion" | "comprometido" | "causado";
+
+const metricLabels: Record<BudgetMetric, string> = {
+  comprometidoGasto: "Detalle comprometido gasto",
+  comprometidoInversion: "Detalle comprometido inversion",
+  comprometido: "Detalle total comprometido",
+  causado: "Detalle total causado",
+};
+
+function normalizeBudgetText(value?: string) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function detailAmount(detail: BudgetDetail, metric: BudgetMetric) {
+  const tipo = normalizeBudgetText(detail.tipo);
+  const valor = Number(detail.valor) || 0;
+  const causado = Number(detail.causado) || (Number(detail.causadoGasto) || 0) + (Number(detail.causadoInversion) || 0);
+
+  if (metric === "comprometido") return valor;
+  if (metric === "causado") return causado;
+  if (metric === "comprometidoInversion") return tipo.includes("inversion") ? valor : 0;
+  return !tipo.includes("inversion") ? valor : 0;
+}
+
+function uniqueDetails(details: BudgetDetail[]) {
+  const seen = new Set<string>();
+  return details.filter((detail) => {
+    const key = String(detail.rowIndex ?? `${detail.autorizacion}-${detail.codificacion}-${detail.valor}`);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function collectDetails(rows: PresupuestoRow[]) {
+  return uniqueDetails(rows.flatMap((row) => row.detalles ?? []));
+}
+
+function detailsForMetric(details: BudgetDetail[], metric: BudgetMetric) {
+  return uniqueDetails(details)
+    .map((detail) => ({ detail, amount: detailAmount(detail, metric) }))
+    .filter(({ amount }) => amount > 0);
+}
+
+function extractLinks(value?: string) {
+  return (value || "")
+    .split(/\s+/)
+    .map((part) => part.trim().replace(/[),.;]+$/, ""))
+    .filter((part) => /^https?:\/\//i.test(part));
 }
 
 function macroKey(row: PresupuestoRow) {
@@ -158,6 +237,118 @@ function groupByMacro(rows: PresupuestoRow[]) {
     .sort((a, b) => compareBudgetCodes(a.code, b.code));
 }
 
+function BudgetDetailHover({
+  value,
+  details,
+  metric,
+  color,
+  fw = 700,
+}: {
+  value: string;
+  details: BudgetDetail[];
+  metric: BudgetMetric;
+  color?: string;
+  fw?: number;
+}) {
+  const rows = detailsForMetric(details, metric);
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+
+  if (rows.length === 0) {
+    return (
+      <Text component="span" size="xs" fw={fw} style={{ color }}>
+        {value}
+      </Text>
+    );
+  }
+
+  return (
+    <HoverCard width={760} shadow="md" withArrow withinPortal openDelay={150} closeDelay={120}>
+      <HoverCard.Target>
+        <Text
+          component="span"
+          size="xs"
+          fw={fw}
+          style={{
+            color,
+            cursor: "help",
+            textDecoration: "underline dotted",
+            textUnderlineOffset: 3,
+          }}
+        >
+          {value}
+        </Text>
+      </HoverCard.Target>
+      <HoverCard.Dropdown p={0} style={{ maxWidth: "min(760px, calc(100vw - 32px))" }}>
+        <Box p="sm" style={{ borderBottom: "1px solid #e9ecef" }}>
+          <Group justify="space-between" gap="sm" wrap="nowrap">
+            <Text size="sm" fw={800}>{metricLabels[metric]}</Text>
+            <Badge size="sm" variant="light" color={metric === "causado" ? "orange" : "violet"}>
+              {fmtCOP(total)}
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {rows.length} {rows.length === 1 ? "registro" : "registros"} con descripcion, documentos y accion estrategica.
+          </Text>
+        </Box>
+        <ScrollArea.Autosize mah={360} type="auto">
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#f8f9fa" }}>
+                <th style={popupThStyle}>Accion estrategica</th>
+                <th style={popupThStyle}>Descripcion</th>
+                <th style={popupThStyle}>Documentos</th>
+                <th style={{ ...popupThStyle, textAlign: "right" }}>
+                  {metric === "causado" ? "Causado" : "Valor"}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ detail, amount }) => {
+                const links = extractLinks(detail.documentos);
+                return (
+                  <tr key={`${detail.rowIndex}-${detail.codificacion}-${amount}`}>
+                    <td style={{ ...popupTdStyle, minWidth: 190 }}>
+                      <Text size="xs" fw={700} lineClamp={4}>
+                        {detail.accionEstrategica || detail.codificacion || "-"}
+                      </Text>
+                    </td>
+                    <td style={{ ...popupTdStyle, minWidth: 250 }}>
+                      <Text size="xs" lineClamp={5}>
+                        {detail.descripcion || "-"}
+                      </Text>
+                    </td>
+                    <td style={{ ...popupTdStyle, minWidth: 120 }}>
+                      {links.length > 0 ? (
+                        <Box>
+                          {links.slice(0, 2).map((link, index) => (
+                            <Anchor key={`${link}-${index}`} href={link} target="_blank" rel="noreferrer" size="xs" style={{ display: "block" }}>
+                              Documento {index + 1}
+                            </Anchor>
+                          ))}
+                          {links.length > 2 && (
+                            <Text size="xs" c="dimmed">+{links.length - 2} mas</Text>
+                          )}
+                        </Box>
+                      ) : (
+                        <Text size="xs" c="dimmed" lineClamp={3}>
+                          {detail.documentos || "N/A"}
+                        </Text>
+                      )}
+                    </td>
+                    <td style={{ ...popupTdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <Text size="xs" fw={800}>{fmtCOP(amount)}</Text>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </ScrollArea.Autosize>
+      </HoverCard.Dropdown>
+    </HoverCard>
+  );
+}
+
 function KpiCard({ title, value, sub, color, icon }: {
   title: string;
   value: string;
@@ -177,7 +368,7 @@ function KpiCard({ title, value, sub, color, icon }: {
   );
 }
 
-export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProps) {
+export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, restrictToCodes }: PdiPresupuestoProps) {
   const [data, setData] = useState<PresupuestoData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -213,9 +404,78 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
     if (!exists) setSelectedMacro("todos");
   }, [data, selectedMacro]);
 
+  // Pre-seleccionar el macro del usuario cuando llegan los datos
+  useEffect(() => {
+    if (!data || !defaultMacroCodes?.length) return;
+    const allGroups = groupByMacro(data.rows);
+    const match = allGroups.find((g) =>
+      defaultMacroCodes.some((code) => g.code.toUpperCase() === code.toUpperCase())
+    );
+    if (match) setSelectedMacro(match.macro);
+  }, [data, defaultMacroCodes]);
+
   const handleRefresh = () => {
     setLoading(true);
     fetchData(true);
+  };
+
+  const handleDownloadExcel = (
+    groups: MacroBudgetGroup[],
+    totals: ReturnType<typeof sumRows>,
+    macroSel: string,
+  ) => {
+    const headers = [
+      "Macroproyecto", "Código", "Proyecto",
+      "Presupuesto", "Presupuesto gasto", "Presupuesto inversión",
+      "Comprometido gasto", "Comprometido inversión", "Total comprometido",
+      "Total causado", "Causado gasto", "Causado inversión", "% causado",
+    ];
+    const aoa: (string | number)[][] = [headers];
+
+    for (const group of groups) {
+      const macroPc = group.comprometido > 0
+        ? Math.min(Math.round((group.causado / group.comprometido) * 100), 100) : 0;
+      const macroSums = sumRows(group.rows);
+      aoa.push([
+        group.name, group.code, "",
+        macroSums.presupuesto, macroSums.presupuestoGasto, macroSums.presupuestoInversion,
+        macroSums.comprometidoGasto, macroSums.comprometidoInversion, macroSums.comprometido,
+        macroSums.causado, macroSums.causadoGasto, macroSums.causadoInversion,
+        `${macroPc}%`,
+      ]);
+      for (const row of group.rows) {
+        const pc = row.comprometido > 0
+          ? Math.min(Math.round((row.causado / row.comprometido) * 100), 100) : 0;
+        aoa.push([
+          "", group.code, projectLabel(row),
+          row.presupuesto || 0, row.presupuestoGasto || 0, row.presupuestoInversion || 0,
+          row.comprometidoGasto, row.comprometidoInversion, row.comprometido,
+          row.causado, row.causadoGasto || 0, row.causadoInversion || 0,
+          `${pc}%`,
+        ]);
+      }
+    }
+
+    const totalPc = totals.comprometido > 0
+      ? Math.min(Math.round((totals.causado / totals.comprometido) * 100), 100) : 0;
+    aoa.push([
+      macroSel === "todos" ? "TOTAL" : "TOTAL MACRO FILTRADA", "", "",
+      totals.presupuesto, totals.presupuestoGasto, totals.presupuestoInversion,
+      totals.comprometidoGasto, totals.comprometidoInversion, totals.comprometido,
+      totals.causado, totals.causadoGasto, totals.causadoInversion,
+      `${totalPc}%`,
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [
+      { wch: 45 }, { wch: 8 }, { wch: 18 },
+      { wch: 18 }, { wch: 20 }, { wch: 22 },
+      { wch: 22 }, { wch: 24 }, { wch: 22 },
+      { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 10 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Presupuesto PDI");
+    XLSX.writeFile(wb, `Presupuesto_PDI_${new Date().getFullYear()}.xlsx`);
   };
 
   if (loading) return <Center py="xl"><Loader color="violet" /></Center>;
@@ -229,14 +489,23 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
   if (!data) return null;
 
   const { rows, updatedAt } = data;
-  const macroGroups = groupByMacro(rows);
+  const allMacroGroups = groupByMacro(rows);
+  const macroGroups = restrictToCodes?.length
+    ? allMacroGroups.filter((g) =>
+        restrictToCodes.some((c) => g.code.toUpperCase() === c.toUpperCase())
+      )
+    : allMacroGroups;
   const visibleGroups = selectedMacro === "todos"
     ? macroGroups
     : macroGroups.filter((group) => group.macro === selectedMacro);
   const visibleRows = visibleGroups.flatMap((group) => group.rows);
   const visibleTotals = sumRows(visibleRows);
+  const visibleDetails = collectDetails(visibleRows);
+  const todosLabel = restrictToCodes?.length
+    ? "Todos mis macroproyectos"
+    : "Todos los macroproyectos";
   const macroOptions = [
-    { value: "todos", label: "Todos los macroproyectos" },
+    { value: "todos", label: todosLabel },
     ...macroGroups.map((group) => ({
       value: group.macro,
       label: `${group.code} - ${group.name}`,
@@ -322,7 +591,7 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
         />
       </SimpleGrid>
 
-      {rows.length > 0 && (
+      {macroGroups.length > 0 && (
         <Box mb="xl">
           <Group justify="space-between" align="end" mb="xs" gap="sm">
             <Box>
@@ -331,16 +600,29 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
                 Resumen de la macro y detalle de sus proyectos.
               </Text>
             </Box>
-            <Select
-              label="Filtrar macroproyecto"
-              size="xs"
-              value={selectedMacro}
-              onChange={(value) => setSelectedMacro(value || "todos")}
-              data={macroOptions}
-              searchable
-              clearable={false}
-              style={{ minWidth: 260 }}
-            />
+            <Group gap={8} align="end">
+              <Select
+                label="Filtrar macroproyecto"
+                size="xs"
+                value={selectedMacro}
+                onChange={(value) => setSelectedMacro(value || "todos")}
+                data={macroOptions}
+                searchable
+                clearable={false}
+                style={{ minWidth: 260 }}
+              />
+              <Tooltip label="Descargar Excel" withArrow>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="teal"
+                  leftSection={<IconDownload size={14} />}
+                  onClick={() => handleDownloadExcel(visibleGroups, visibleTotals, selectedMacro)}
+                >
+                  Excel
+                </Button>
+              </Tooltip>
+            </Group>
           </Group>
           <Box style={{ overflowX: "auto", border: "1px solid #f1f3f5", borderRadius: 8 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -359,6 +641,7 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
               <tbody>
                 {visibleGroups.flatMap((group, groupIndex) => {
                   const macroPc = pct(group.causado, group.comprometido);
+                  const groupDetails = collectDetails(group.rows);
                   const macroRow = (
                     <tr key={`macro-${group.macro}`} style={{ background: "#eef1f5" }}>
                       <td style={{ ...tdStyle, fontWeight: 800 }}>
@@ -369,10 +652,18 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
                       </td>
                       <td style={tdStyle} />
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(group.presupuesto)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>{fmtCOP(group.comprometidoGasto)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8", fontWeight: 800 }}>{fmtCOP(group.comprometidoInversion)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(group.comprometido)}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(group.causado)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>
+                        <BudgetDetailHover value={fmtCOP(group.comprometidoGasto)} details={groupDetails} metric="comprometidoGasto" color="#0b7285" fw={800} />
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8", fontWeight: 800 }}>
+                        <BudgetDetailHover value={fmtCOP(group.comprometidoInversion)} details={groupDetails} metric="comprometidoInversion" color="#7048e8" fw={800} />
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
+                        <BudgetDetailHover value={fmtCOP(group.comprometido)} details={groupDetails} metric="comprometido" fw={800} />
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
+                        <BudgetDetailHover value={fmtCOP(group.causado)} details={groupDetails} metric="causado" fw={800} />
+                      </td>
                       <td style={{ ...tdStyle, minWidth: 100 }}>
                         <Group gap={4} wrap="nowrap">
                           <Box style={{ flex: 1, height: 6, background: "#dee2e6", borderRadius: 3, overflow: "hidden" }}>
@@ -387,6 +678,7 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
                   const detailRows = group.rows.map((row, rowIndex) => {
                     const pc = pct(row.causado, row.comprometido);
                     const background = (groupIndex + rowIndex) % 2 === 0 ? "#fff" : "#f8f9ff";
+                    const rowDetails = row.detalles ?? [];
                     return (
                       <tr key={`${group.macro}-${row.codificacion || row.proyecto}-${rowIndex}`} style={{ background }}>
                         <td style={tdStyle}>
@@ -396,10 +688,18 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
                           <Text size="xs" fw={700}>{projectLabel(row)}</Text>
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44" }}>{fmtCOP(row.presupuesto || 0)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>{fmtCOP(row.comprometidoGasto)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8" }}>{fmtCOP(row.comprometidoInversion)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(row.comprometido)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{fmtCOP(row.causado)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>
+                          <BudgetDetailHover value={fmtCOP(row.comprometidoGasto)} details={rowDetails} metric="comprometidoGasto" color="#0b7285" />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8" }}>
+                          <BudgetDetailHover value={fmtCOP(row.comprometidoInversion)} details={rowDetails} metric="comprometidoInversion" color="#7048e8" />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
+                          <BudgetDetailHover value={fmtCOP(row.comprometido)} details={rowDetails} metric="comprometido" fw={800} />
+                        </td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                          <BudgetDetailHover value={fmtCOP(row.causado)} details={rowDetails} metric="causado" />
+                        </td>
                         <td style={{ ...tdStyle, minWidth: 100 }}>
                           <Group gap={4} wrap="nowrap">
                             <Box style={{ flex: 1, height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
@@ -417,14 +717,22 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
               </tbody>
               <tfoot>
                 <tr style={{ background: "#f1f3f5", fontWeight: 800 }}>
-                  <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={3}>
+                  <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={2}>
                     {selectedMacro === "todos" ? "Total" : "Total macro filtrada"}
                   </td>
                   <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(visibleTotals.presupuesto)}</td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>{fmtCOP(visibleTotals.comprometidoGasto)}</td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8", fontWeight: 800 }}>{fmtCOP(visibleTotals.comprometidoInversion)}</td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(visibleTotals.comprometido)}</td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{fmtCOP(visibleTotals.causado)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>
+                    <BudgetDetailHover value={fmtCOP(visibleTotals.comprometidoGasto)} details={visibleDetails} metric="comprometidoGasto" color="#0b7285" fw={800} />
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8", fontWeight: 800 }}>
+                    <BudgetDetailHover value={fmtCOP(visibleTotals.comprometidoInversion)} details={visibleDetails} metric="comprometidoInversion" color="#7048e8" fw={800} />
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
+                    <BudgetDetailHover value={fmtCOP(visibleTotals.comprometido)} details={visibleDetails} metric="comprometido" fw={800} />
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
+                    <BudgetDetailHover value={fmtCOP(visibleTotals.causado)} details={visibleDetails} metric="causado" fw={800} />
+                  </td>
                   <td style={tdStyle} />
                 </tr>
               </tfoot>
@@ -433,9 +741,9 @@ export default function PdiPresupuesto({ refreshSignal = 0 }: PdiPresupuestoProp
         </Box>
       )}
 
-      {rows.length === 0 && (
+      {macroGroups.length === 0 && (
         <Text c="dimmed" size="sm" ta="center" py="md">
-          No se encontraron filas en la hoja de presupuesto.
+          No se encontraron datos de presupuesto.
         </Text>
       )}
     </Box>
@@ -456,5 +764,22 @@ const tdStyle: React.CSSProperties = {
   padding: "8px 12px",
   borderBottom: "1px solid #f1f3f5",
   verticalAlign: "middle",
+  fontSize: 12,
+};
+
+const popupThStyle: React.CSSProperties = {
+  padding: "8px 10px",
+  textAlign: "left",
+  borderBottom: "1px solid #e9ecef",
+  fontWeight: 800,
+  fontSize: 11,
+  color: "#495057",
+  whiteSpace: "nowrap",
+};
+
+const popupTdStyle: React.CSSProperties = {
+  padding: "8px 10px",
+  borderBottom: "1px solid #f1f3f5",
+  verticalAlign: "top",
   fontSize: 12,
 };

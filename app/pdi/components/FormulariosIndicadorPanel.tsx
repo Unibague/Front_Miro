@@ -150,18 +150,18 @@ export default function FormulariosIndicadorPanel({
 
   const handleGuardar = async (form: FormularioPDI, enviar = false) => {
     if (enviar) {
-      const camposConMinimoIncompleto = form.campos.filter(c => {
+      const camposConMaximoExcedido = form.campos.filter(c => {
         if (c.tipo !== "texto_largo" && c.tipo !== "texto_corto") return false;
         if (!shouldShowCampo(form, c)) return false;
-        const minChars = c.min_caracteres ?? c.max_caracteres ?? null;
+        const maxChars = c.max_caracteres ?? null;
         const texto = buildValorTexto(form, c).trim();
-        return Boolean(minChars && texto && texto.length < minChars);
+        return Boolean(maxChars && texto && texto.length > maxChars);
       });
-      if (camposConMinimoIncompleto.length > 0) {
+      if (camposConMaximoExcedido.length > 0) {
         showNotification({
-          title: "Mínimo de caracteres",
-          message: camposConMinimoIncompleto
-            .map(c => `"${c.etiqueta}" requiere mínimo ${c.min_caracteres ?? c.max_caracteres} caracteres.`)
+          title: "Máximo de caracteres excedido",
+          message: camposConMaximoExcedido
+            .map(c => `"${c.etiqueta}" supera el máximo de ${c.max_caracteres} caracteres.`)
             .join(" "),
           color: "red",
         });
@@ -385,7 +385,7 @@ export default function FormulariosIndicadorPanel({
               {form.campos.map(campo => {
                 if (!shouldShowCampo(form, campo)) return null;
                 const archivoCampo = getRespuestaCampo(form._id, campo._id);
-                const minChars = campo.min_caracteres ?? campo.max_caracteres ?? null;
+                const maxChars = campo.max_caracteres ?? null;
                 const currentLen = getTexto(form._id, campo._id).length;
                 return (
                   <Paper key={campo._id} withBorder radius="md" p="md"
@@ -410,11 +410,11 @@ export default function FormulariosIndicadorPanel({
                           disabled={enviado}
                           autosize
                           minRows={3}
-                          minLength={minChars ?? undefined}
+                          maxLength={maxChars ?? undefined}
                         />
-                        {minChars && (
-                          <Text size="xs" ta="right" c={currentLen > 0 && currentLen < minChars ? "red" : currentLen >= minChars ? "teal" : "dimmed"}>
-                            {currentLen} / mínimo {minChars}
+                        {maxChars && (
+                          <Text size="xs" ta="right" c={currentLen > maxChars ? "red" : currentLen >= maxChars * 0.9 ? "orange" : "dimmed"}>
+                            {currentLen} / {maxChars}
                           </Text>
                         )}
                       </Stack>

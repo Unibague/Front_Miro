@@ -1413,7 +1413,7 @@ const DashboardPage = () => {
             )}
 
 
-            {canSee("responsibleReports", ["Administrador", "Responsable"]) && (
+            {canSee("responsibleReports", ["Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"

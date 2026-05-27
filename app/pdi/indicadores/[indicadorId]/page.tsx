@@ -770,6 +770,7 @@ function LiderRevisionPanelV2({
   const handleAval = async (r: RespuestaFormulario) => {
     const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
     const estadoSeleccionado = estadosSeleccionados[r._id] ?? "Pendiente";
+    const comentarioAval = estadoSeleccionado === "Rechazado" ? (comentarios[r._id] ?? "").trim() : "";
 
     if (estadoSeleccionado === "Pendiente") {
       return;
@@ -780,7 +781,7 @@ function LiderRevisionPanelV2({
       await axios.put(PDI_ROUTES.formularioAval(formId, r._id), {
         estado_aval: estadoSeleccionado,
         aval_por: liderEmail,
-        aval_comentario: comentarios[r._id] ?? "",
+        aval_comentario: comentarioAval,
       });
       load();
       showNotification({
@@ -992,8 +993,8 @@ function LiderRevisionPanelV2({
                 <Title order={5} mb="sm">{readOnly ? "Aprobación del líder" : "Evaluación del líder"}</Title>
                 <Text size="sm" c="dimmed" mb="md">
                   {readOnly
-                    ? "Vista de solo lectura del estado aprobado por el líder y sus observaciones."
-                    : "Define el estado del formulario y registra observaciones para el responsable."}
+                    ? "Vista de solo lectura del estado definido por el líder."
+                    : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte."}
                 </Text>
 
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
@@ -1027,16 +1028,18 @@ function LiderRevisionPanelV2({
                   </Box>
                 </SimpleGrid>
 
-                <Textarea
-                  label="Observaciones"
-                  placeholder="Escribe aquí las observaciones para el responsable..."
-                  value={comentarios[r._id] ?? r.aval_comentario ?? ""}
-                  onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
-                  rows={4}
-                  radius="md"
-                  disabled={readOnly || !puedoAval}
-                  mb="md"
-                />
+                {estadoSeleccionado === "Rechazado" && (
+                  <Textarea
+                    label="Observaciones del rechazo"
+                    placeholder="Escribe aquí el motivo del rechazo para el responsable..."
+                    value={comentarios[r._id] ?? r.aval_comentario ?? ""}
+                    onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
+                    rows={4}
+                    radius="md"
+                    disabled={readOnly || !puedoAval}
+                    mb="md"
+                  />
+                )}
 
                 {!puedoAval && (
                   <Paper withBorder radius="md" p="sm" mb="md" style={{ background: "var(--mantine-color-default-hover)" }}>

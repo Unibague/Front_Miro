@@ -115,6 +115,18 @@ function formatFechaCorta(fecha?: string | null) {
 }
 
 const MAX_DOC_SIZE = 10 * 1024 * 1024;
+const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png"];
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/x-pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "image/jpeg",
+  "image/png",
+]);
+const EVIDENCE_ACCEPT =
+  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png";
+const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls) e imagenes (.jpg, .jpeg, .png)";
 const EVIDENCE_HELP_TEXT =
   "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
 const EVIDENCE_HELP_TEXT_2 =
@@ -141,8 +153,10 @@ function formatFileSize(size?: number) {
   return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(size / 1024)} KB`;
 }
 
-function isPdfFile(file: File) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+function isAllowedEvidenceFile(file: File) {
+  const fileName = file.name.toLowerCase();
+  return ALLOWED_EVIDENCE_MIME_TYPES.has(file.type) ||
+    ALLOWED_EVIDENCE_EXTENSIONS.some(ext => fileName.endsWith(ext));
 }
 
 // ── Página ───────────────────────────────────────────────────────────────────
@@ -172,6 +186,7 @@ export default function SubirEvidenciasPage() {
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaFormulario | null>>({});
   const [textos, setTextos] = useState<Record<string, string>>({});
   const [otrosTextos, setOtrosTextos] = useState<Record<string, string>>({});
+  const [justificaciones, setJustificaciones] = useState<Record<string, string>>({});
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
@@ -195,21 +210,31 @@ export default function SubirEvidenciasPage() {
   const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
-  const superoMeta = avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
-    ? avanceCorteNum >= metaCorteNum
-    : null;
+  const estadoCumplimientoMeta =
+    avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
+      ? avanceCorteNum > metaCorteNum
+        ? "supero"
+        : avanceCorteNum < metaCorteNum
+          ? "no_supero"
+          : "cumplio"
+      : null;
 
   const shouldShowCampo = (campo: CampoFormulario): boolean => {
     if (!campo.condicional_valor) return true;
-    if (superoMeta === null) return true;
-    if (campo.condicional_valor === "supero_meta") return superoMeta === true;
-    if (campo.condicional_valor === "no_supero_meta") return superoMeta === false;
+    if (estadoCumplimientoMeta === null) return true;
+    if (estadoCumplimientoMeta === "cumplio") return false;
+    if (campo.condicional_valor === "supero_meta") return estadoCumplimientoMeta === "supero";
+    if (campo.condicional_valor === "no_supero_meta") return estadoCumplimientoMeta === "no_supero";
     return true;
   };
 
   const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
   const setOtroTexto = (formId: string, campoId: string, val: string) =>
     setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+
+  const getJustificacion = (formId: string, campoId: string) => justificaciones[`${formId}-${campoId}`] ?? "";
+  const setJustificacion = (formId: string, campoId: string, val: string) =>
+    setJustificaciones(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
 
   // ── Calcular si ya está todo enviado ──────────────────────────────────────
   const todosEnviados =
@@ -276,14 +301,14 @@ export default function SubirEvidenciasPage() {
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
   const formTieneDocumento = (formId: string) => getDocumentosEvidencia(respuestas[formId]).length > 0;
-  const getMinCaracteres = (campo: CampoFormulario) => campo.min_caracteres ?? campo.max_caracteres ?? null;
+  const getMaxCaracteres = (campo: CampoFormulario) => campo.max_caracteres ?? null;
   const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
     if (!shouldShowCampo(campo)) return true;
     if (campo.tipo === "texto_largo" || campo.tipo === "texto_corto") {
       const texto = getTexto(formId, campo._id).trim();
-      const minChars = getMinCaracteres(campo);
+      const maxChars = getMaxCaracteres(campo);
       if (campo.requerido && !texto) return false;
-      return !texto || !minChars || texto.length >= minChars;
+      return !texto || !maxChars || texto.length <= maxChars;
     }
     if (!campo.requerido) return true;
     if (["select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
@@ -372,23 +397,31 @@ export default function SubirEvidenciasPage() {
   // ── Guardar respuesta formulario ──────────────────────────────────────────
   const buildValorTexto = (form: FormularioPDI, c: CampoFormulario): string => {
     if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
-    if (c.tipo === "select") return getTexto(form._id, c._id);
+    if (c.tipo === "select") {
+      const sel = getTexto(form._id, c._id);
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${sel}\nJustificación: ${just}` : sel;
+    }
     if (c.tipo === "select_con_otro") {
       const sel = getTexto(form._id, c._id);
-      return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+      const base = sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${base}\nJustificación: ${just}` : base;
     }
     if (c.tipo === "checkbox") return getTexto(form._id, c._id) || "false";
     return "";
   };
 
   const guardarFormulario = async (form: FormularioPDI, enviar: boolean) => {
-    const respuestasPayload = form.campos.map(c => ({
-      campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
-      valor_texto: buildValorTexto(form, c),
-      nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
-      filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
-      url: getRespuestaCampo(form._id, c._id)?.url ?? "",
-    }));
+    const respuestasPayload = form.campos
+      .filter(shouldShowCampo)
+      .map(c => ({
+        campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
+        valor_texto: buildValorTexto(form, c),
+        nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
+        filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
+        url: getRespuestaCampo(form._id, c._id)?.url ?? "",
+      }));
     const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
       respondido_por: email, corte: corteActivo,
       indicador_id: indicadorId,
@@ -399,9 +432,25 @@ export default function SubirEvidenciasPage() {
     return res.data;
   };
 
-  // ── Subir PDF ─────────────────────────────────────────────────────────────
+  // ── Subir archivo ─────────────────────────────────────────────────────────
   const handleUploadPDF = async (form: FormularioPDI, campo: CampoFormulario, file: File | null) => {
     if (!file) return;
+    if (!isAllowedEvidenceFile(file)) {
+      showNotification({
+        title: "Formato inválido",
+        message: `El archivo "${file.name}" no tiene un formato permitido. Solo se permiten ${EVIDENCE_FORMATS_TEXT}.`,
+        color: "red",
+      });
+      return;
+    }
+    if (file.size > MAX_DOC_SIZE) {
+      showNotification({
+        title: "Archivo demasiado grande",
+        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
+        color: "red",
+      });
+      return;
+    }
     let respActual = respuestas[form._id];
     if (!respActual) {
       try {
@@ -434,7 +483,7 @@ export default function SubirEvidenciasPage() {
         else updated.push({ campo_id: campo._id, etiqueta: campo.etiqueta, tipo: campo.tipo, valor_texto: "", ...res.data });
         return { ...prev, [form._id]: { ...r, respuestas: updated } };
       });
-      showNotification({ title: "Subido", message: "PDF subido correctamente", color: "teal" });
+      showNotification({ title: "Subido", message: "Archivo subido correctamente", color: "teal" });
     } catch {
       showNotification({ title: "Error", message: "No se pudo subir el archivo", color: "red" });
     } finally {
@@ -472,11 +521,11 @@ export default function SubirEvidenciasPage() {
   const handleUploadDocumento = async (form: FormularioPDI, selectedFiles: File[] | File | null) => {
     const files = Array.isArray(selectedFiles) ? selectedFiles : selectedFiles ? [selectedFiles] : [];
     if (files.length === 0) return;
-    const invalidFile = files.find(file => !isPdfFile(file));
+    const invalidFile = files.find(file => !isAllowedEvidenceFile(file));
     if (invalidFile) {
       showNotification({
         title: "Formato inválido",
-        message: `El archivo "${invalidFile.name}" no es PDF. Solo se permiten archivos PDF.`,
+        message: `El archivo "${invalidFile.name}" no tiene un formato permitido. Solo se permiten ${EVIDENCE_FORMATS_TEXT}.`,
         color: "red",
       });
       return;
@@ -536,7 +585,7 @@ export default function SubirEvidenciasPage() {
         color: "teal",
       });
     } catch (e: any) {
-      showNotification({ title: "Error", message: e.response?.data?.error ?? "Solo se permiten archivos PDF", color: "red" });
+      showNotification({ title: "Error", message: e.response?.data?.error ?? `Solo se permiten ${EVIDENCE_FORMATS_TEXT}`, color: "red" });
     } finally {
       setUploadingDocumento(prev => ({ ...prev, [form._id]: false }));
     }
@@ -591,7 +640,7 @@ export default function SubirEvidenciasPage() {
         errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
       }
       if (formulariosSinDocumento.length > 0) {
-        errores.push(`Debes adjuntar al menos una evidencia PDF del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
+        errores.push(`Debes adjuntar al menos una evidencia del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -926,18 +975,36 @@ export default function SubirEvidenciasPage() {
                             }}
                           >
                             <Stack gap={6}>
-                              <Text size="sm" fw={700}>
-                                {estadoAval === "Aprobado"
-                                  ? "Evaluación del líder: Aprobado"
-                                  : estadoAval === "Rechazado"
-                                    ? "Evaluación del líder: Rechazado"
-                                    : "Evaluación del líder: En revisión"}
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                {fechaEnvio ? `Enviado el ${fechaEnvio}. ` : ""}
-                                {resp?.aval_por ? `Evaluado por ${resp.aval_por}` : resp?.lider_email_aval ? `Líder asignado: ${resp.lider_email_aval}` : ""}
-                                {fechaAval ? ` · ${fechaAval}` : ""}
-                              </Text>
+                              <Group justify="space-between" align="flex-start" gap="md" wrap="wrap">
+                                <Stack gap={6} style={{ flex: 1, minWidth: 220 }}>
+                                  <Text size="sm" fw={700}>
+                                    {estadoAval === "Aprobado"
+                                      ? "Evaluación del líder: Aprobado"
+                                      : estadoAval === "Rechazado"
+                                        ? "Evaluación del líder: Rechazado"
+                                        : "Evaluación del líder: En revisión"}
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {fechaEnvio ? `Enviado el ${fechaEnvio}. ` : ""}
+                                    {resp?.aval_por ? `Evaluado por ${resp.aval_por}` : resp?.lider_email_aval ? `Líder asignado: ${resp.lider_email_aval}` : ""}
+                                    {fechaAval ? ` · ${fechaAval}` : ""}
+                                  </Text>
+                                </Stack>
+                                {estadoAval === "Aprobado" && resp.word_url && (
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="blue"
+                                    component="a"
+                                    href={resp.word_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ flexShrink: 0 }}
+                                  >
+                                    Descargar Word aprobado
+                                  </Button>
+                                )}
+                              </Group>
                               {resp?.aval_comentario && (
                                 <Text size="sm">{resp.aval_comentario}</Text>
                               )}
@@ -946,38 +1013,6 @@ export default function SubirEvidenciasPage() {
                                   El líder rechazó este envío. Corrige el formulario y sube nuevas evidencias — los archivos anteriores serán reemplazados automáticamente al subir nuevos.
                                 </Text>
                               )}
-                              {estadoAval === "Aprobado" && resp.word_url && (
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="blue"
-                                  component="a"
-                                  href={resp.word_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ alignSelf: "flex-start" }}
-                                >
-                                  Descargar Word aprobado
-                                </Button>
-                              )}
-                              {estadoAval === "Aprobado" && documentosAdjuntos.length > 0 && (
-                                <Group gap="xs" wrap="wrap">
-                                  {documentosAdjuntos.filter(doc => !!doc.url).map((doc, index) => (
-                                    <Button
-                                      key={doc._id ?? `${doc.url}-${index}`}
-                                      size="xs"
-                                      variant="light"
-                                      color="violet"
-                                      component="a"
-                                      href={doc.url!}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      {documentosAdjuntos.length > 1 ? `Ver evidencia ${index + 1}` : "Ver evidencia aprobada"}
-                                    </Button>
-                                  ))}
-                                </Group>
-                              )}
                             </Stack>
                           </Paper>
                         )}
@@ -985,7 +1020,7 @@ export default function SubirEvidenciasPage() {
                           {form.campos.map(campo => {
                             if (!shouldShowCampo(campo)) return null;
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
-                            const minChars = getMinCaracteres(campo);
+                            const maxChars = getMaxCaracteres(campo);
                             const currentLen = getTexto(form._id, campo._id).length;
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
@@ -1009,19 +1044,19 @@ export default function SubirEvidenciasPage() {
                                       value={getTexto(form._id, campo._id)}
                                       onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
                                       rows={4} disabled={bloqueado} autosize minRows={3}
-                                      minLength={minChars ?? undefined}
+                                      maxLength={maxChars ?? undefined}
                                       error={
                                         !bloqueado && campo.requerido && currentLen === 0
                                           ? "Este campo es obligatorio"
-                                          : !bloqueado && minChars && currentLen > 0 && currentLen < minChars
-                                          ? `Faltan ${minChars - currentLen} caracteres para cumplir el mínimo de ${minChars}`
+                                          : !bloqueado && maxChars && currentLen > maxChars
+                                          ? `Has superado el máximo de ${maxChars} caracteres`
                                           : undefined
                                       }
                                     />
-                                    {minChars && (
+                                    {maxChars && (
                                       <Text size="xs" ta="right"
-                                        c={currentLen > 0 && currentLen < minChars ? "red" : currentLen >= minChars ? "teal" : "dimmed"}>
-                                        {currentLen} / mínimo {minChars}
+                                        c={currentLen > maxChars ? "red" : currentLen >= maxChars * 0.9 ? "orange" : "dimmed"}>
+                                        {currentLen} / {maxChars}
                                       </Text>
                                     )}
                                   </Stack>
@@ -1033,18 +1068,31 @@ export default function SubirEvidenciasPage() {
                                     value={getTexto(form._id, campo._id)}
                                     onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
                                     disabled={bloqueado}
-                                    minLength={minChars ?? undefined}
+                                    maxLength={maxChars ?? undefined}
                                   />
                                 )}
 
                                 {campo.tipo === "select" && (
-                                  <Select
-                                    placeholder="Selecciona una opción..."
-                                    value={getTexto(form._id, campo._id) || null}
-                                    onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
-                                    data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
-                                    disabled={bloqueado} clearable
-                                  />
+                                  <Stack gap={6}>
+                                    <Select
+                                      placeholder="Selecciona una opción..."
+                                      value={getTexto(form._id, campo._id) || null}
+                                      onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
+                                      data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {getTexto(form._id, campo._id) && (
+                                      <Textarea
+                                        placeholder="Justifica tu respuesta..."
+                                        label="Justificación"
+                                        value={getJustificacion(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        minRows={2}
+                                        autosize
+                                      />
+                                    )}
+                                  </Stack>
                                 )}
 
                                 {campo.tipo === "select_con_otro" && (
@@ -1072,6 +1120,17 @@ export default function SubirEvidenciasPage() {
                                         disabled={bloqueado}
                                       />
                                     )}
+                                    {getTexto(form._id, campo._id) && (
+                                      <Textarea
+                                        placeholder="Justifica tu respuesta..."
+                                        label="Justificación"
+                                        value={getJustificacion(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        minRows={2}
+                                        autosize
+                                      />
+                                    )}
                                   </Stack>
                                 )}
 
@@ -1092,7 +1151,7 @@ export default function SubirEvidenciasPage() {
                                         <Button size="sm" variant="light" color="blue"
                                           leftSection={<IconExternalLink size={14} />}
                                           component="a" href={archivoCampo.url} target="_blank">
-                                          {archivoCampo.nombre_original || "Ver PDF"}
+                                          {archivoCampo.nombre_original || "Ver archivo"}
                                         </Button>
                                         {!bloqueado && (
                                           <ActionIcon size="md" variant="subtle" color="red"
@@ -1102,13 +1161,13 @@ export default function SubirEvidenciasPage() {
                                         )}
                                       </Group>
                                     ) : !bloqueado ? (
-                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png">
+                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept={EVIDENCE_ACCEPT}>
                                         {props => (
                                           <Button size="sm" variant="light" color="teal"
                                             leftSection={<IconUpload size={14} />}
                                             loading={uploading[`${form._id}-${campo._id}`]}
                                             {...props}>
-                                            Subir PDF
+                                            Subir archivo
                                           </Button>
                                         )}
                                       </FileButton>
@@ -1130,7 +1189,7 @@ export default function SubirEvidenciasPage() {
                           </ThemeIcon>
                           <div>
                             <Title order={5}>Evidencias</Title>
-                            <Text size="xs" c="dimmed">Uno o varios archivos PDF para revisión</Text>
+                            <Text size="xs" c="dimmed">Uno o varios archivos para revisión</Text>
                           </div>
                         </Group>
                         <Paper
@@ -1182,7 +1241,7 @@ export default function SubirEvidenciasPage() {
                                             {doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
                                           </Text>
                                           <Text size="xs" c="dimmed">
-                                            {formatFileSize(doc.size) || "PDF"}
+                                            {formatFileSize(doc.size) || "Archivo"}
                                             {doc.url && doc.url.includes("drive.google") ? " · Drive" : ""}
                                           </Text>
                                         </Stack>
@@ -1225,7 +1284,7 @@ export default function SubirEvidenciasPage() {
                                 <FileButton
                                   multiple
                                   onChange={files => handleUploadDocumento(form, files)}
-                                  accept="application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png"
+                                  accept={EVIDENCE_ACCEPT}
                                 >
                                   {props => (
                                     <Button
@@ -1238,7 +1297,7 @@ export default function SubirEvidenciasPage() {
                                       fullWidth
                                       {...props}
                                     >
-                                      Subir PDF
+                                      Subir evidencia
                                     </Button>
                                   )}
                                 </FileButton>
@@ -1279,17 +1338,23 @@ export default function SubirEvidenciasPage() {
                   formularios.forEach(form => {
                     form.campos.forEach(campo => {
                       if (!shouldShowCampo(campo)) return;
-                      const minChars = getMinCaracteres(campo);
+                      const maxChars = getMaxCaracteres(campo);
                       const currentLen = getTexto(form._id, campo._id).trim().length;
                       if (campo.requerido && currentLen === 0) {
                         erroresDetalle.push(`"${campo.etiqueta}" está vacío (obligatorio).`);
-                      } else if (minChars && currentLen > 0 && currentLen < minChars) {
-                        erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, se requieren mínimo ${minChars}.`);
+                      } else if (maxChars && currentLen > maxChars) {
+                        erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, el máximo permitido es ${maxChars}.`);
+                      }
+                      if (campo.tipo === "select" || campo.tipo === "select_con_otro") {
+                        const sel = getTexto(form._id, campo._id);
+                        if (sel && !getJustificacion(form._id, campo._id).trim()) {
+                          erroresDetalle.push(`"${campo.etiqueta}": debes justificar tu respuesta.`);
+                        }
                       }
                     });
                   });
                   formulariosSinDocumento.forEach((form: FormularioPDI) => {
-                    erroresDetalle.push(`Adjunta al menos una evidencia PDF en "${form.nombre}".`);
+                    erroresDetalle.push(`Adjunta al menos una evidencia en "${form.nombre}".`);
                   });
                   return (
                     <Paper
@@ -1339,3 +1404,4 @@ export default function SubirEvidenciasPage() {
     </div>
   );
 }
+

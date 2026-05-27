@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Container, Text, Paper, Group, Button, Stack, Box, Badge,
 } from "@mantine/core";
 import { IconFolderOpen, IconUpload } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import type { ImportExecutedResponse } from "../types";
 import { PDI_ROUTES } from "../api";
@@ -21,6 +22,15 @@ const isAdmin = (role: string) => role === "Administrador";
 export default function PresupuestoPage() {
   const { userRole } = useRole();
   const admin = isAdmin(userRole);
+  const { data: session } = useSession();
+  const [userMacroInfo, setUserMacroInfo] = useState<{ codes: string[]; isLider: boolean } | null>(null);
+
+  useEffect(() => {
+    if (admin || !session?.user?.email) return;
+    axios.get<{ codes: string[]; isLider: boolean }>(PDI_ROUTES.presupuestoUserMacros(session.user.email))
+      .then((res) => setUserMacroInfo({ codes: res.data.codes, isLider: res.data.isLider }))
+      .catch(() => setUserMacroInfo({ codes: [], isLider: false }));
+  }, [admin, session?.user?.email]);
 
   const [executedFile, setExecutedFile] = useState<File | null>(null);
   const [uploadingExecuted, setUploadingExecuted] = useState(false);
@@ -95,16 +105,27 @@ export default function PresupuestoPage() {
       <div style={{ flex: 1, overflow: "auto" }}>
         <Container size="xl" py="xl">
 
+          <Group gap={10} mb="xl" align="center">
+            <Text fw={900} size="2rem" lh={1}>Presupuesto PDI</Text>
+            <Badge color="violet" variant="filled" radius="sm" size="xl" style={{ fontSize: 18, padding: "4px 14px" }}>
+              {new Date().getFullYear()}
+            </Badge>
+          </Group>
           <Paper withBorder radius="lg" p="md"
             style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.05), rgba(255,255,255,0.98) 58%)" }}>
-            <Group gap={8} mb={4}>
-              <Text fw={700}>Presupuesto PDI</Text>
-              <Badge color="violet" variant="light" radius="sm">{new Date().getFullYear()}</Badge>
-            </Group>
-            <Text size="sm" c="dimmed" mb="md">
-              Presupuesto asignado y comprometido por proyectos.
-            </Text>
-            <PdiPresupuesto refreshSignal={budgetRefreshSignal} />
+            <PdiPresupuesto
+              refreshSignal={budgetRefreshSignal}
+              defaultMacroCodes={
+                !admin && userMacroInfo?.isLider
+                  ? userMacroInfo.codes
+                  : undefined
+              }
+              restrictToCodes={
+                !admin && userMacroInfo !== null && !userMacroInfo.isLider
+                  ? userMacroInfo.codes
+                  : undefined
+              }
+            />
           </Paper>
 
           {admin && (

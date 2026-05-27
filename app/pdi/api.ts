@@ -56,6 +56,7 @@ export const PDI_ROUTES = {
 
   // Presupuesto desde Google Sheets
   presupuestoData:                 (refresh?: boolean) => `${BASE()}/pdi/presupuesto/data${refresh ? "?refresh=true" : ""}`,
+  presupuestoUserMacros:           (email: string)    => `${BASE()}/pdi/presupuesto/user-macros?email=${encodeURIComponent(email)}`,
 
   // Informes consolidados (admin)
   informesLista:                   () => `${BASE()}/pdi/informes/lista`,

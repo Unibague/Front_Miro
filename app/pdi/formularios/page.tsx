@@ -261,10 +261,10 @@ function FormularioModal({
               {tieneTexto(campo.tipo) && (
                 <NumberInput
                   size="xs"
-                  label="Mínimo de caracteres (dejar vacío = sin mínimo)"
-                  placeholder="Ej: 50"
-                  value={campo.min_caracteres ?? ""}
-                  onChange={v => updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null)}
+                  label="Máximo de caracteres (dejar vacío = sin máximo)"
+                  placeholder="Ej: 500"
+                  value={campo.max_caracteres ?? ""}
+                  onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
                   min={1}
                   max={5000}
                   allowDecimal={false}
@@ -384,8 +384,8 @@ function FormularioCard({
                   <Badge size="xs" variant="outline" color="gray">
                     {TIPO_LABELS[campo.tipo as TipoCampo] ?? campo.tipo}
                   </Badge>
-                  {campo.min_caracteres && (
-                    <Badge size="xs" variant="light" color="blue">min {campo.min_caracteres}</Badge>
+                  {campo.max_caracteres && (
+                    <Badge size="xs" variant="light" color="blue">máx {campo.max_caracteres}</Badge>
                   )}
                   {campo.condicional_valor === "supero_meta" && (
                     <Badge size="xs" variant="light" color="green">si superó meta</Badge>

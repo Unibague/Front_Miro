@@ -15,7 +15,7 @@ const ADMIN_LINKS = [
   {
     section: "CONTROL",
     items: [
-      { label: "Dashboard", icon: IconChartBarPopular, path: "/pdi", permissionKey: "pdi", color: "violet", exact: true },
+      { label: "Gestión PDI", icon: IconChartBarPopular, path: "/pdi", permissionKey: "pdi", color: "violet", exact: true },
       { label: "Gestión de cambios", icon: IconGitPullRequest, path: "/pdi/cambios", permissionKey: "pdi", color: "violet", exact: true },
       { label: "Presupuesto", icon: IconCurrencyDollar, path: "/pdi/presupuesto", permissionKey: "pdi", color: "violet", exact: true },
     ],
@@ -54,6 +54,8 @@ const RESPONSABLE_LINKS = [
     section: "VISTAS",
     items: [
       { label: "Tablero de control", icon: IconLayoutDashboard, path: "/pdi/dashboard", permissionKey: "pdiDashboard", color: "blue", exact: true },
+      { label: "Historial PDI", icon: IconHistory, path: "/pdi/historial", permissionKey: "pdi", color: "blue", exact: false },
+      { label: "Presupuesto", icon: IconCurrencyDollar, path: "/pdi/presupuesto", permissionKey: "pdi", color: "violet", exact: true },
     ],
   },
 ];

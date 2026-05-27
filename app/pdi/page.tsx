@@ -9,7 +9,7 @@ import {
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
-  IconFlag, IconAlertTriangle,
+  IconFlag, IconAlertTriangle, IconCurrencyDollar,
   IconListCheck, IconExternalLink, IconSettings,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
@@ -538,6 +538,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   resumen: DashboardResumen | null;
 }) {
   const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
+  const [presupuestoAnio, setPresupuestoAnio] = useState<{ total: number; causado: number } | null>(null);
 
   useEffect(() => {
     const fetchCorte = (nombre: string) =>
@@ -551,6 +552,15 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
         axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesVigentes())
           .then(({ data: vigentes }) => { if (vigentes.length) fetchCorte(vigentes[0].nombre); })
           .catch(() => {});
+      })
+      .catch(() => {});
+
+    axios.get<{ rows: { presupuesto: number; causado: number }[] }>(PDI_ROUTES.presupuestoData())
+      .then(({ data }) => {
+        const rows = data.rows ?? [];
+        const total = rows.reduce((s, r) => s + (Number(r.presupuesto) || 0), 0);
+        const causado = rows.reduce((s, r) => s + (Number(r.causado) || 0), 0);
+        setPresupuestoAnio({ total, causado });
       })
       .catch(() => {});
   }, []);
@@ -569,12 +579,21 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const alertas = alertasActivas;
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Crítico";
-  const avanceFinanciero = resumen?.presupuesto?.porcentaje_ejecucion ?? 0;
-  const presupuestoTotal = resumen?.presupuesto?.total ?? 0;
-  const presupuestoEjecutado = resumen?.presupuesto?.ejecutado ?? 0;
+  const presupuestoTotal = resumen?.presupuesto.total
+    ?? macros.reduce((s, m) => s + (Number(m.presupuesto) || 0), 0);
+  const presupuestoEjecutado = resumen?.presupuesto.ejecutado
+    ?? macros.reduce((s, m) => s + (Number(m.presupuesto_ejecutado) || 0), 0);
+  const avanceFinanciero = presupuestoTotal > 0
+    ? Math.min(Math.round((presupuestoEjecutado / presupuestoTotal) * 100), 100)
+    : 0;
   const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
   const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
-  const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
+  const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
+  const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
+  const avanceFinancieroAnio = presupuestoAnioTotal > 0
+    ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
+    : 0;
+  const finColorAnio = avanceFinancieroAnio >= 70 ? "teal" : avanceFinancieroAnio >= 40 ? "blue" : "orange";
   const estructuraResumen = [
     { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
@@ -702,18 +721,27 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
             <Paper withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color="grape" variant="light">
-                  <IconTrendingUp size={20} />
+                <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                  <IconCurrencyDollar size={20} />
                 </ThemeIcon>
-                <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
+                <Badge color={finColorAnio} variant="light" radius="xl">
+                  {new Date().getFullYear()}
+                </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macroproyectos con mayor avance</Text>
-              <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
-                {macroLider?.codigo ?? "Sin datos"}
+              <Text size="xs" c="dimmed">Presupuesto del año vs causado</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                {avanceFinancieroAnio}%
               </Text>
-              <Text size="xs" c="dimmed" mt={6}>
-                {macroLider ? `${macroLider.avance}% consolidado` : "Aun no hay avance registrado"}
-              </Text>
+              <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
+                <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
+              </Box>
+              {presupuestoAnioTotal > 0 ? (
+                <Text size="xs" c="dimmed">
+                  {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                </Text>
+              ) : (
+                <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
+              )}
             </Paper>
           </SimpleGrid>
         </SimpleGrid>
