@@ -6,6 +6,7 @@ import {
   SimpleGrid, Notification, Badge, Divider, Box, Anchor,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
+import { dateParserEspanol, inputFechaAISO } from "../utils/parseFlexibleDate";
 import axios from "axios";
 import type { Dependency, Program, Process } from "../types";
 import {
@@ -439,7 +440,7 @@ export default function AgregarProcesoModal({
         nivel_academico: nivelAcad,
         nivel_formacion: nivelForm,
         num_creditos: numCreditos ? parseInt(numCreditos) : null,
-        periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
+        periodos_duracion: periodosDuracion.trim() || null,
         num_semestres: numSemestres ? parseInt(numSemestres) : null,
         admision_estudiantes: admision,
         num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -516,8 +517,13 @@ export default function AgregarProcesoModal({
       }
     }
 
+    let fechaResISO: string | null = null;
     if (necesitaRes) {
-      if (!fechaRes)     { setError("La fecha de resolución es obligatoria."); return; }
+      fechaResISO = inputFechaAISO(fechaRes);
+      if (!fechaResISO) {
+        setError("La fecha de resolución es obligatoria. Use dd/mm/aaaa, dd-mm-aaaa o yyyy-mm-dd.");
+        return;
+      }
       if (!codigoRes)    { setError("El código de resolución es obligatorio."); return; }
       if (!duracionRes && subtipo !== "Registro calificado de oficio")  { setError("La duración de la resolución es obligatoria."); return; }
     }
@@ -647,7 +653,7 @@ export default function AgregarProcesoModal({
           nivel_academico:    nivelAcad,
           nivel_formacion:    nivelForm,
           num_creditos:       numCreditos ? parseInt(numCreditos) : null,
-          periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
+          periodos_duracion: periodosDuracion.trim() || null,
           num_semestres:      numSemestres ? parseInt(numSemestres) : null,
           admision_estudiantes: admision,
           num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -657,8 +663,8 @@ export default function AgregarProcesoModal({
         body.program_code = progSel ? programCodeKey(progSel) : undefined;
       }
 
-      if (necesitaRes) {
-        body.fecha_resolucion    = fechaRes;
+      if (necesitaRes && fechaResISO) {
+        body.fecha_resolucion    = fechaResISO;
         body.codigo_resolucion   = codigoRes;
         body.duracion_resolucion = subtipo === "Registro calificado de oficio" ? 7 : parseInt(duracionRes, 10);
         if (
@@ -870,7 +876,7 @@ export default function AgregarProcesoModal({
               />
               <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                 value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-              <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+              <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
                 value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
               <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                 value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
@@ -1046,7 +1052,7 @@ export default function AgregarProcesoModal({
                   />
                   <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                     value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-                  <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+                  <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
                     value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
                   <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                     value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
@@ -1145,11 +1151,13 @@ export default function AgregarProcesoModal({
                   <div>
                     <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
                     <DateInput
-                      value={fechaRes ? new Date(fechaRes + "T12:00:00") : null}
-                      onChange={val => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
-                      valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
-                      onKeyDown={e => e.preventDefault()}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                      value={fechaRes ? (dateParserEspanol(fechaRes) ?? new Date(`${fechaRes.slice(0, 10)}T12:00:00`)) : null}
+                      onChange={(val) => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
+                      valueFormat="DD/MM/YYYY"
+                      placeholder="dd/mm/aaaa"
+                      clearable
+                      dateParser={dateParserEspanol}
+                      description="Escriba la fecha o use el calendario"
                     />
                   </div>
                   <TextInput label="Código de resolución" placeholder="Ej: 12345"
