@@ -449,7 +449,6 @@ export default function FormulariosIndicadorPanel({
                         value={getTexto(form._id, campo._id)}
                         onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
                         disabled={enviado}
-                        minLength={minChars ?? undefined}
                       />
                     )}
 
