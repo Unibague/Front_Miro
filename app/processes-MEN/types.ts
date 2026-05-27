@@ -36,7 +36,7 @@ export type Program = {
   nivel_academico: string | null;
   nivel_formacion: string | null;
   num_creditos: number | null;
-  periodos_duracion: number | null;
+  periodos_duracion: string | null;
   num_semestres: number | null;
   admision_estudiantes?: string | null;
   num_estudiantes_saces?: number | null;
@@ -420,7 +420,7 @@ export type ProcessHistoryRecord = {
     nivel_academico?: string | null;
     nivel_formacion?: string | null;
     num_creditos?: number | null;
-    periodos_duracion?: number | null;
+    periodos_duracion?: string | null;
     num_semestres?: number | null;
     admision_estudiantes?: string | null;
     num_estudiantes_saces?: number | null;
