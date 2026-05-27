@@ -20,6 +20,7 @@ interface CampoFormulario {
   requerido?: boolean;
   min_caracteres?: number | null;
   max_caracteres?: number | null;
+  justificacion_descripcion?: string;
   opciones?: string[];
   condicional_campo_id?: string | null;
   condicional_valor?: string | null;

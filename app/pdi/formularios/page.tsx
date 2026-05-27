@@ -53,6 +53,7 @@ interface Campo {
   orden: number;
   min_caracteres: number | null;
   max_caracteres?: number | null;
+  justificacion_descripcion?: string;
   justificacion_min_caracteres?: number | null;
   justificacion_max_caracteres?: number | null;
   opciones: string[];
@@ -116,6 +117,7 @@ function FormularioModal({
         ...c,
         min_caracteres: c.min_caracteres ?? c.max_caracteres ?? null,
         opciones: c.opciones ?? [],
+        justificacion_descripcion: c.justificacion_descripcion ?? "",
         condicional_valor: (c.condicional_valor === "supero_meta" || c.condicional_valor === "no_supero_meta")
           ? c.condicional_valor : null,
       })));
@@ -129,7 +131,7 @@ function FormularioModal({
   const addCampo = () =>
     setCampos(prev => [
       ...prev,
-      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, max_caracteres: null, justificacion_min_caracteres: null, justificacion_max_caracteres: null, opciones: [], condicional_valor: null },
+      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, max_caracteres: null, justificacion_descripcion: "", justificacion_min_caracteres: null, justificacion_max_caracteres: null, opciones: [], condicional_valor: null },
     ]);
 
   const removeCampo = (idx: number) =>
@@ -169,6 +171,7 @@ function FormularioModal({
           orden: index,
           min_caracteres: c.min_caracteres,
           max_caracteres: c.max_caracteres ?? null,
+          justificacion_descripcion: c.justificacion_descripcion ?? "",
           justificacion_min_caracteres: c.justificacion_min_caracteres ?? null,
           justificacion_max_caracteres: c.justificacion_max_caracteres ?? null,
           opciones: c.opciones,
@@ -323,7 +326,14 @@ function FormularioModal({
               {tieneOpciones(campo.tipo) && (
                 <Stack gap={4}>
                   <Text size="xs" fw={600}>Justificación (siempre visible)</Text>
-                  <Text size="xs" c="dimmed">El responsable debe justificar su selección. Define los límites de caracteres.</Text>
+                  <Text size="xs" c="dimmed">El responsable debe justificar su selección.</Text>
+                  <TextInput
+                    size="xs"
+                    label="Descripción o ayuda de la justificación"
+                    placeholder="Ej: Explica brevemente por qué seleccionaste esa opción"
+                    value={campo.justificacion_descripcion ?? ""}
+                    onChange={e => updateCampo(idx, "justificacion_descripcion", e.currentTarget.value)}
+                  />
                   <Group gap="md" grow>
                     <NumberInput
                       size="xs"

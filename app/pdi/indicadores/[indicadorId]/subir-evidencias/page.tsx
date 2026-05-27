@@ -31,6 +31,7 @@ interface CampoFormulario {
   requerido?: boolean;
   min_caracteres?: number | null;
   max_caracteres?: number | null;
+  justificacion_descripcion?: string;
   justificacion_min_caracteres?: number | null;
   justificacion_max_caracteres?: number | null;
   opciones?: string[];
@@ -1221,6 +1222,7 @@ export default function SubirEvidenciasPage() {
                                           <Textarea
                                             placeholder="Justifica tu respuesta..."
                                             label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
                                             value={getJustificacion(form._id, campo._id)}
                                             onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
                                             disabled={bloqueado}
@@ -1281,6 +1283,7 @@ export default function SubirEvidenciasPage() {
                                           <Textarea
                                             placeholder="Justifica tu respuesta..."
                                             label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
                                             value={getJustificacion(form._id, campo._id)}
                                             onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
                                             disabled={bloqueado}
@@ -1324,6 +1327,7 @@ export default function SubirEvidenciasPage() {
                                           <Textarea
                                             placeholder="Justifica tu respuesta..."
                                             label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
                                             value={getJustificacion(form._id, campo._id)}
                                             onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
                                             disabled={bloqueado}
@@ -1384,6 +1388,7 @@ export default function SubirEvidenciasPage() {
                                           <Textarea
                                             placeholder="Justifica tu respuesta..."
                                             label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
                                             value={getJustificacion(form._id, campo._id)}
                                             onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
                                             disabled={bloqueado}
