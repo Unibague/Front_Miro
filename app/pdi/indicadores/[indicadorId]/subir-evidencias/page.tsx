@@ -1136,40 +1136,72 @@ export default function SubirEvidenciasPage() {
                                   </>
                                 )}
 
-                                {campo.tipo === "texto_largo" && (
-                                  <Stack gap={4}>
-                                    <Textarea
-                                      placeholder={bloqueado ? "" : "Escribe aquí..."}
-                                      value={getTexto(form._id, campo._id)}
-                                      onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                      rows={4} disabled={bloqueado} autosize minRows={3}
-                                      maxLength={maxChars ?? undefined}
-                                      error={
-                                        !bloqueado && campo.requerido && currentLen === 0
-                                          ? "Este campo es obligatorio"
-                                          : !bloqueado && maxChars && currentLen > maxChars
-                                          ? `Has superado el máximo de ${maxChars} caracteres`
-                                          : undefined
-                                      }
-                                    />
-                                    {maxChars && (
-                                      <Text size="xs" ta="right"
-                                        c={currentLen > maxChars ? "red" : currentLen >= maxChars * 0.9 ? "orange" : "dimmed"}>
-                                        {currentLen} / {maxChars}
-                                      </Text>
-                                    )}
-                                  </Stack>
-                                )}
+                                {campo.tipo === "texto_largo" && (() => {
+                                  const minChars = campo.min_caracteres ?? null;
+                                  return (
+                                    <Stack gap={4}>
+                                      <Textarea
+                                        placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                        value={getTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                        rows={4} disabled={bloqueado} autosize minRows={3}
+                                        maxLength={maxChars ?? undefined}
+                                        error={
+                                          !bloqueado && campo.requerido && currentLen === 0
+                                            ? "Este campo es obligatorio"
+                                            : !bloqueado && maxChars && currentLen > maxChars
+                                            ? `Has superado el máximo de ${maxChars} caracteres`
+                                            : undefined
+                                        }
+                                      />
+                                      {(minChars || maxChars) && (
+                                        <Text size="xs" ta="right"
+                                          c={
+                                            (maxChars && currentLen > maxChars) ? "red" :
+                                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" : "dimmed"
+                                          }>
+                                          {minChars && currentLen < minChars
+                                            ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                                            : minChars && maxChars
+                                            ? `${currentLen} / ${maxChars} (mín: ${minChars})`
+                                            : maxChars
+                                            ? `${currentLen} / ${maxChars}`
+                                            : `${currentLen} caracteres`}
+                                        </Text>
+                                      )}
+                                    </Stack>
+                                  );
+                                })()}
 
-                                {campo.tipo === "texto_corto" && (
-                                  <TextInput
-                                    placeholder={bloqueado ? "" : "Escribe aquí..."}
-                                    value={getTexto(form._id, campo._id)}
-                                    onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                    disabled={bloqueado}
-                                    maxLength={maxChars ?? undefined}
-                                  />
-                                )}
+                                {campo.tipo === "texto_corto" && (() => {
+                                  const minChars = campo.min_caracteres ?? null;
+                                  return (
+                                    <Stack gap={4}>
+                                      <TextInput
+                                        placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                        value={getTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        maxLength={maxChars ?? undefined}
+                                      />
+                                      {(minChars || maxChars) && (
+                                        <Text size="xs" ta="right"
+                                          c={
+                                            (maxChars && currentLen > maxChars) ? "red" :
+                                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" : "dimmed"
+                                          }>
+                                          {minChars && currentLen < minChars
+                                            ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                                            : minChars && maxChars
+                                            ? `${currentLen} / ${maxChars} (mín: ${minChars})`
+                                            : maxChars
+                                            ? `${currentLen} / ${maxChars}`
+                                            : `${currentLen} caracteres`}
+                                        </Text>
+                                      )}
+                                    </Stack>
+                                  );
+                                })()}
 
                                 {campo.tipo === "select" && (
                                   <Stack gap={6}>
@@ -1199,7 +1231,13 @@ export default function SubirEvidenciasPage() {
                                           />
                                           {(jMin || jMax) && (
                                             <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
-                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
                                             </Text>
                                           )}
                                         </Stack>
@@ -1253,7 +1291,13 @@ export default function SubirEvidenciasPage() {
                                           />
                                           {(jMin || jMax) && (
                                             <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
-                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
                                             </Text>
                                           )}
                                         </Stack>
@@ -1290,7 +1334,13 @@ export default function SubirEvidenciasPage() {
                                           />
                                           {(jMin || jMax) && (
                                             <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
-                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
                                             </Text>
                                           )}
                                         </Stack>
@@ -1344,7 +1394,13 @@ export default function SubirEvidenciasPage() {
                                           />
                                           {(jMin || jMax) && (
                                             <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
-                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
                                             </Text>
                                           )}
                                         </Stack>
