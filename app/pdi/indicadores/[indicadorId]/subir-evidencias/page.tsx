@@ -31,6 +31,8 @@ interface CampoFormulario {
   requerido?: boolean;
   min_caracteres?: number | null;
   max_caracteres?: number | null;
+  justificacion_min_caracteres?: number | null;
+  justificacion_max_caracteres?: number | null;
   opciones?: string[];
   condicional_valor?: "supero_meta" | "no_supero_meta" | null;
 }
@@ -1178,17 +1180,31 @@ export default function SubirEvidenciasPage() {
                                       data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
                                       disabled={bloqueado} clearable
                                     />
-                                    {getTexto(form._id, campo._id) && (
-                                      <Textarea
-                                        placeholder="Justifica tu respuesta..."
-                                        label="Justificación"
-                                        value={getJustificacion(form._id, campo._id)}
-                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
-                                        disabled={bloqueado}
-                                        minRows={2}
-                                        autosize
-                                      />
-                                    )}
+                                    {getTexto(form._id, campo._id) && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Stack>
                                 )}
 
@@ -1218,17 +1234,31 @@ export default function SubirEvidenciasPage() {
                                         disabled={bloqueado}
                                       />
                                     )}
-                                    {getTexto(form._id, campo._id) && (
-                                      <Textarea
-                                        placeholder="Justifica tu respuesta..."
-                                        label="Justificación"
-                                        value={getJustificacion(form._id, campo._id)}
-                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
-                                        disabled={bloqueado}
-                                        minRows={2}
-                                        autosize
-                                      />
-                                    )}
+                                    {getTexto(form._id, campo._id) && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Stack>
                                 )}
 
@@ -1241,17 +1271,31 @@ export default function SubirEvidenciasPage() {
                                       data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
                                       disabled={bloqueado} clearable
                                     />
-                                    {selectedValues.length > 0 && (
-                                      <Textarea
-                                        placeholder="Justifica tu respuesta..."
-                                        label="Justificación"
-                                        value={getJustificacion(form._id, campo._id)}
-                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
-                                        disabled={bloqueado}
-                                        minRows={2}
-                                        autosize
-                                      />
-                                    )}
+                                    {selectedValues.length > 0 && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Stack>
                                 )}
 
@@ -1281,17 +1325,31 @@ export default function SubirEvidenciasPage() {
                                         disabled={bloqueado}
                                       />
                                     )}
-                                    {selectedValues.length > 0 && (
-                                      <Textarea
-                                        placeholder="Justifica tu respuesta..."
-                                        label="Justificación"
-                                        value={getJustificacion(form._id, campo._id)}
-                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
-                                        disabled={bloqueado}
-                                        minRows={2}
-                                        autosize
-                                      />
-                                    )}
+                                    {selectedValues.length > 0 && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin ? `Mínimo ${jMin} caracteres · ${jLen} escritos` : jMax ? `${jLen} / ${jMax}` : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Stack>
                                 )}
 

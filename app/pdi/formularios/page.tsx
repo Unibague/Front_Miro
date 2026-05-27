@@ -53,6 +53,8 @@ interface Campo {
   orden: number;
   min_caracteres: number | null;
   max_caracteres?: number | null;
+  justificacion_min_caracteres?: number | null;
+  justificacion_max_caracteres?: number | null;
   opciones: string[];
   condicional_valor: "supero_meta" | "no_supero_meta" | null;
 }
@@ -127,7 +129,7 @@ function FormularioModal({
   const addCampo = () =>
     setCampos(prev => [
       ...prev,
-      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, opciones: [], condicional_valor: null },
+      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, max_caracteres: null, justificacion_min_caracteres: null, justificacion_max_caracteres: null, opciones: [], condicional_valor: null },
     ]);
 
   const removeCampo = (idx: number) =>
@@ -166,6 +168,9 @@ function FormularioModal({
           descripcion: c.descripcion,
           orden: index,
           min_caracteres: c.min_caracteres,
+          max_caracteres: c.max_caracteres ?? null,
+          justificacion_min_caracteres: c.justificacion_min_caracteres ?? null,
+          justificacion_max_caracteres: c.justificacion_max_caracteres ?? null,
           opciones: c.opciones,
           condicional_valor: c.condicional_valor,
         })),
@@ -312,6 +317,35 @@ function FormularioModal({
                   {(campo.tipo === "select_con_otro" || campo.tipo === "select_multiple_con_otro") && (
                     <Text size="xs" c="dimmed">&quot;Otro ¿Cuál?&quot; se agrega automáticamente al final</Text>
                   )}
+                </Stack>
+              )}
+
+              {tieneOpciones(campo.tipo) && (
+                <Stack gap={4}>
+                  <Text size="xs" fw={600}>Justificación (siempre visible)</Text>
+                  <Text size="xs" c="dimmed">El responsable debe justificar su selección. Define los límites de caracteres.</Text>
+                  <Group gap="md" grow>
+                    <NumberInput
+                      size="xs"
+                      label="Mínimo de caracteres"
+                      placeholder="Sin mínimo"
+                      value={campo.justificacion_min_caracteres ?? ""}
+                      onChange={v => updateCampo(idx, "justificacion_min_caracteres", typeof v === "number" ? v : null)}
+                      min={1}
+                      max={5000}
+                      allowDecimal={false}
+                    />
+                    <NumberInput
+                      size="xs"
+                      label="Máximo de caracteres"
+                      placeholder="Sin máximo"
+                      value={campo.justificacion_max_caracteres ?? ""}
+                      onChange={v => updateCampo(idx, "justificacion_max_caracteres", typeof v === "number" ? v : null)}
+                      min={1}
+                      max={5000}
+                      allowDecimal={false}
+                    />
+                  </Group>
                 </Stack>
               )}
 

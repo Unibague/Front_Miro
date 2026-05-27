@@ -1554,28 +1554,39 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
       </Group>
 
       <Collapse in={openProyecto}>
-        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="lg">
-          {[
+        {(() => {
+          const anioActual = new Date().getFullYear().toString();
+          const presupuestoAnioActual = vista.acciones.reduce((sum, item) => {
+            const val = item.accion.presupuesto_por_anio?.[anioActual] ?? 0;
+            return sum + Number(val);
+          }, 0);
+          const stats = [
             { label: "Avance", value: `${avanceProyecto}%` },
             { label: "Acciones", value: vista.acciones.length },
             { label: "Indicadores", value: indicadoresCount },
-            { label: "Presupuesto", value: formatCOP(vista.proyecto.presupuesto) },
-          ].map((item) => (
-            <Box
-              key={item.label}
-              style={{
-                textAlign: "center",
-                background: "rgba(255,255,255,0.82)",
-                border: "1px solid rgba(124,58,237,0.08)",
-                borderRadius: 16,
-                padding: "12px 8px",
-              }}
-            >
-              <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
-              <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
-            </Box>
-          ))}
-        </SimpleGrid>
+            { label: "Presupuesto 2026–2029", value: formatCOP(vista.proyecto.presupuesto) },
+            ...(presupuestoAnioActual > 0 ? [{ label: `Presupuesto ${anioActual}`, value: formatCOP(presupuestoAnioActual) }] : []),
+          ];
+          return (
+            <SimpleGrid cols={{ base: 2, sm: Math.min(stats.length, 5) as 2|3|4|5 }} spacing="sm" mb="lg">
+              {stats.map((item) => (
+                <Box
+                  key={item.label}
+                  style={{
+                    textAlign: "center",
+                    background: "rgba(255,255,255,0.82)",
+                    border: "1px solid rgba(124,58,237,0.08)",
+                    borderRadius: 16,
+                    padding: "12px 8px",
+                  }}
+                >
+                  <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+                </Box>
+              ))}
+            </SimpleGrid>
+          );
+        })()}
 
         <Box mb="lg">
           <Group justify="space-between" mb={6}>
@@ -1922,7 +1933,13 @@ export default function MisIndicadoresPage() {
 
   const indicadores = proyectosVista.flatMap((proyecto) => proyecto.acciones.flatMap((accion) => accion.indicadores));
   const acciones = proyectosVista.flatMap((proyecto) => proyecto.acciones.map((accion) => accion.accion));
-  const alertas = indicadores.filter((indicador) => indicador.semaforo === "rojo" || indicador.semaforo === "amarillo").length;
+  const cortesVigentesNombres = new Set(cortesVigentes.map(c => c.nombre.trim().toUpperCase()));
+  const alertas = indicadores.filter((indicador) => {
+    const tieneCorteActivo = (indicador.periodos ?? []).some(
+      p => cortesVigentesNombres.has((p.periodo ?? "").trim().toUpperCase())
+    );
+    return tieneCorteActivo && (indicador.semaforo === "rojo" || indicador.semaforo === "amarillo");
+  }).length;
   const requesterName =
     (session?.user as { full_name?: string } | undefined)?.full_name ||
     session?.user?.name ||
