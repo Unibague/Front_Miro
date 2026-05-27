@@ -143,6 +143,20 @@ const tdFechaTablaAlertas = {
   verticalAlign: "middle" as const,
 };
 
+/** Orden por vencimiento: más cercano arriba; sin fecha al final. */
+function timestampVencimiento(fecha: string | null | undefined): number {
+  if (!fecha || !String(fecha).trim()) return Number.POSITIVE_INFINITY;
+  const t = new Date(`${String(fecha).slice(0, 10)}T12:00:00`).getTime();
+  return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+}
+
+function compararPorFechaVencimiento(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  return timestampVencimiento(a) - timestampVencimiento(b);
+}
+
 /* ── Componente expandible para el historial de fases ── */
 type HistFase = ProcessHistoryRecord["fases"][number];
 const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
@@ -889,10 +903,9 @@ const ProcessesMenPage = () => {
         return true;
       })
       .sort((a, b) => {
-        const n = a.prog.nombre.localeCompare(b.prog.nombre, "es");
-        if (n !== 0) return n;
-        const orden: Record<string, number> = { RC: 0, AV: 1, AE: 2 };
-        return (orden[a.proc.tipo_proceso] ?? 9) - (orden[b.proc.tipo_proceso] ?? 9);
+        const porVenc = compararPorFechaVencimiento(a.proc.fecha_vencimiento, b.proc.fecha_vencimiento);
+        if (porVenc !== 0) return porVenc;
+        return (a.prog.nombre ?? "").localeCompare(b.prog.nombre ?? "", "es");
       });
   }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remTipoProceso, remSubtipo, facultades]);
 
@@ -914,7 +927,11 @@ const ProcessesMenPage = () => {
         if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
         return true;
       })
-      .sort((a, b) => a.prog.nombre.localeCompare(b.prog.nombre, "es"));
+      .sort((a, b) => {
+        const porVenc = compararPorFechaVencimiento(a.proc.fecha_vencimiento, b.proc.fecha_vencimiento);
+        if (porVenc !== 0) return porVenc;
+        return (a.prog.nombre ?? "").localeCompare(b.prog.nombre ?? "", "es");
+      });
   }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, facultades]);
 
   /** Alertas por cierre (RC/AV/AE): solo si aún no hay un proceso activo del mismo tipo en ese programa. */
@@ -945,13 +962,13 @@ const ProcessesMenPage = () => {
       .sort((a, b) => (a.nombre_programa ?? "").localeCompare(b.nombre_programa ?? "", "es"));
   }, [reminders, remFacultad, remPrograma, facultades, programasDelModulo]);
 
-  /** Alertas de cierre: más recientes primero (última creada/modificada). */
+  /** Alertas de cierre: vencimiento más cercano arriba (gestiones activas van aparte, arriba). */
   const remindersOrdenados = useMemo(
     () =>
       [...remindersSinActivoMismoTipo].sort((a, b) => {
-        const ta = new Date(a.updatedAt || a.createdAt || 0).getTime();
-        const tb = new Date(b.updatedAt || b.createdAt || 0).getTime();
-        return tb - ta;
+        const porVenc = compararPorFechaVencimiento(a.fecha_vencimiento, b.fecha_vencimiento);
+        if (porVenc !== 0) return porVenc;
+        return (a.nombre_programa ?? "").localeCompare(b.nombre_programa ?? "", "es");
       }),
     [remindersSinActivoMismoTipo],
   );
@@ -2128,7 +2145,6 @@ const ProcessesMenPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {/* ── Procesos RC / AV / AE activos ── */}
                             {filasProcesosActivosRcAv.map(({ proc, prog }) => {
                               const codigoActo =
                                 proc.tipo_proceso === "RC" ? (prog.codigo_resolucion_rc ?? "—")
@@ -2142,53 +2158,51 @@ const ProcessesMenPage = () => {
                               const badgeColor = proc.tipo_proceso === "RC" ? "blue" : proc.tipo_proceso === "AV" ? "violet" : "teal";
                               return (
                                 <tr key={`act-${proc._id}`} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
-                                    <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
-                                      {prog.nombre}
-                                    </Anchor>
-                                  </td>
-                                  <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
-                                    <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
-                                      <Badge size="sm" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
-                                      {proc.subtipo && (
-                                        <Badge size="sm" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(proc.subtipo)} style={{ flexShrink: 0 }}>
-                                          {etiquetaSubtipoCompacta(proc.subtipo)}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle" }}>
-                                    <Stack gap={2}>
-                                      <Text size="sm" ff="monospace">{codigoActo}</Text>
-                                      {fechaActo && <Text size="sm" c="dimmed">{formatFechaDDMMYY(fechaActo)}</Text>}
-                                    </Stack>
-                                  </td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_vencimiento)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_inicio)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_digitacion_saces)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicado_men)}</td>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
-                                  <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle" }}>
-                                    <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
-                                      nombrePrograma: prog.nombre,
-                                      tipo: proc.tipo_proceso as "RC" | "AV" | "AE",
-                                      dep_code_programa: prog.dep_code_programa ?? undefined,
-                                      dep_code_facultad: prog.dep_code_facultad ?? undefined,
-                                    })}>
-                                      Gestionar
-                                    </Button>
-                                  </td>
-                                </tr>
+                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                      <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
+                                        {prog.nombre}
+                                      </Anchor>
+                                    </td>
+                                    <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
+                                      <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
+                                        <Badge size="sm" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
+                                        {proc.subtipo && (
+                                          <Badge size="sm" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(proc.subtipo)} style={{ flexShrink: 0 }}>
+                                            {etiquetaSubtipoCompacta(proc.subtipo)}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle" }}>
+                                      <Stack gap={2}>
+                                        <Text size="sm" ff="monospace">{codigoActo}</Text>
+                                        {fechaActo && <Text size="sm" c="dimmed">{formatFechaDDMMYY(fechaActo)}</Text>}
+                                      </Stack>
+                                    </td>
+                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_vencimiento)}</td>
+                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_inicio)}</td>
+                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_digitacion_saces)}</td>
+                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicado_men)}</td>
+                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
+                                    <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle" }}>
+                                      <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
+                                        nombrePrograma: prog.nombre,
+                                        tipo: proc.tipo_proceso as "RC" | "AV" | "AE",
+                                        dep_code_programa: prog.dep_code_programa ?? undefined,
+                                        dep_code_facultad: prog.dep_code_facultad ?? undefined,
+                                      })}>
+                                        Gestionar
+                                      </Button>
+                                    </td>
+                                  </tr>
                               );
                             })}
 
-                            {/* ── Alertas por cierre de RC / AV / AE ── */}
                             {remindersOrdenados.map((r) => {
                               const prog = findProgramByCode(programas, r.program_code);
                               const rowBg = ROW_BG_PROCESO[r.tipo_proceso] ?? "#fafbff";
                               const badgeTipoColor = r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : r.tipo_proceso === "PM" ? "grape" : "teal";
-                              const sema = nivelSemaforoAlerta(r);
-                              const mantineSemaAlerta = sema;
+                              const mantineSemaAlerta = nivelSemaforoAlerta(r);
                               return (
                                 <tr key={r._id} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
                                   <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
