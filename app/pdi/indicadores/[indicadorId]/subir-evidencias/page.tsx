@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
-  FileButton, Group, Loader, Paper, Progress, Select, Stack,
+  FileButton, Group, Loader, MultiSelect, Paper, Progress, Select, Stack,
   Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -26,7 +26,7 @@ interface CorteVigente { _id: string; nombre: string; }
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
   min_caracteres?: number | null;
@@ -127,6 +127,7 @@ const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
 const EVIDENCE_ACCEPT =
   "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png";
 const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls) e imagenes (.jpg, .jpeg, .png)";
+const SELECT_VALUE_SEPARATOR = " | ";
 const EVIDENCE_HELP_TEXT =
   "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
 const EVIDENCE_HELP_TEXT_2 =
@@ -157,6 +158,26 @@ function isAllowedEvidenceFile(file: File) {
   const fileName = file.name.toLowerCase();
   return ALLOWED_EVIDENCE_MIME_TYPES.has(file.type) ||
     ALLOWED_EVIDENCE_EXTENSIONS.some(ext => fileName.endsWith(ext));
+}
+
+function splitSavedValueAndJustification(value: string) {
+  const [answer, ...justificationParts] = value.split(/\nJustificaci[oó]n:\s*/);
+  return {
+    answer: answer.trim(),
+    justification: justificationParts.join("\nJustificación: ").trim(),
+  };
+}
+
+function splitSelectValues(value: string) {
+  const { answer } = splitSavedValueAndJustification(value);
+  return answer
+    .split(SELECT_VALUE_SEPARATOR)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function formatSelectValues(values: string[]) {
+  return values.map(item => item.trim()).filter(Boolean).join(SELECT_VALUE_SEPARATOR);
 }
 
 // ── Página ───────────────────────────────────────────────────────────────────
@@ -298,6 +319,9 @@ export default function SubirEvidenciasPage() {
   const getTexto = (formId: string, campoId: string) => textos[`${formId}-${campoId}`] ?? "";
   const setTexto = (formId: string, campoId: string, val: string) =>
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const getSelectValues = (formId: string, campoId: string) => splitSelectValues(getTexto(formId, campoId));
+  const setSelectValues = (formId: string, campoId: string, values: string[]) =>
+    setTexto(formId, campoId, formatSelectValues(values));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
   const formTieneDocumento = (formId: string) => getDocumentosEvidencia(respuestas[formId]).length > 0;
@@ -311,7 +335,21 @@ export default function SubirEvidenciasPage() {
       return !texto || !maxChars || texto.length <= maxChars;
     }
     if (!campo.requerido) return true;
-    if (["select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
+    if (campo.tipo === "select") {
+      return Boolean(getTexto(formId, campo._id).trim());
+    }
+    if (campo.tipo === "select_con_otro") {
+      const val = getTexto(formId, campo._id).trim();
+      return Boolean(val) && (val !== "Otro" || Boolean(getOtroTexto(formId, campo._id).trim()));
+    }
+    if (campo.tipo === "select_multiple") {
+      return getSelectValues(formId, campo._id).length > 0;
+    }
+    if (campo.tipo === "select_multiple_con_otro") {
+      const values = getSelectValues(formId, campo._id);
+      return values.length > 0 && (!values.includes("Otro") || Boolean(getOtroTexto(formId, campo._id).trim()));
+    }
+    if (campo.tipo === "checkbox") {
       return Boolean(getTexto(formId, campo._id).trim());
     }
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
@@ -330,6 +368,7 @@ export default function SubirEvidenciasPage() {
     if (!indicadorId || !email || !corteActivo || formsToLoad.length === 0) return;
     const respMap: Record<string, RespuestaFormulario | null> = {};
     const textMap: Record<string, string> = {};
+    const justMap: Record<string, string> = {};
 
     await Promise.all(formsToLoad.map(async (f) => {
       try {
@@ -341,15 +380,26 @@ export default function SubirEvidenciasPage() {
         if (resp) {
           const otroMap: Record<string, string> = {};
           resp.respuestas.forEach((r) => {
+            const key = `${f._id}-${r.campo_id}`;
+            const { answer, justification } = splitSavedValueAndJustification(r.valor_texto ?? "");
+            if (justification) justMap[key] = justification;
             if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
-              textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
-            } else if (r.tipo === "select_con_otro" && r.valor_texto) {
-              if (r.valor_texto.startsWith("Otro: ")) {
-                textMap[`${f._id}-${r.campo_id}`] = "Otro";
-                otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+              textMap[key] = answer;
+            } else if (r.tipo === "select_con_otro" && answer) {
+              if (answer.startsWith("Otro: ")) {
+                textMap[key] = "Otro";
+                otroMap[key] = answer.slice(6);
               } else {
-                textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+                textMap[key] = answer;
               }
+            } else if (r.tipo === "select_multiple" && answer) {
+              textMap[key] = answer;
+            } else if (r.tipo === "select_multiple_con_otro" && answer) {
+              const rawValues = splitSelectValues(answer);
+              const selectedValues = rawValues.map(value => value.startsWith("Otro: ") ? "Otro" : value);
+              const otroValue = rawValues.find(value => value.startsWith("Otro: "));
+              textMap[key] = formatSelectValues(selectedValues);
+              if (otroValue) otroMap[key] = otroValue.slice(6);
             }
           });
           setOtrosTextos(prev => ({ ...prev, ...otroMap }));
@@ -361,6 +411,7 @@ export default function SubirEvidenciasPage() {
 
     setRespuestas(respMap);
     setTextos(textMap);
+    setJustificaciones(justMap);
   };
 
   // ── Guardar avances ───────────────────────────────────────────────────────
@@ -398,13 +449,26 @@ export default function SubirEvidenciasPage() {
   const buildValorTexto = (form: FormularioPDI, c: CampoFormulario): string => {
     if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
     if (c.tipo === "select") {
-      const sel = getTexto(form._id, c._id);
+      const sel = getTexto(form._id, c._id).trim();
       const just = getJustificacion(form._id, c._id);
       return just ? `${sel}\nJustificación: ${just}` : sel;
     }
     if (c.tipo === "select_con_otro") {
-      const sel = getTexto(form._id, c._id);
-      const base = sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+      const val = getTexto(form._id, c._id).trim();
+      const base = val === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : val;
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${base}\nJustificación: ${just}` : base;
+    }
+    if (c.tipo === "select_multiple") {
+      const sel = formatSelectValues(getSelectValues(form._id, c._id));
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${sel}\nJustificación: ${just}` : sel;
+    }
+    if (c.tipo === "select_multiple_con_otro") {
+      const values = getSelectValues(form._id, c._id).map(value =>
+        value === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : value
+      );
+      const base = formatSelectValues(values);
       const just = getJustificacion(form._id, c._id);
       return just ? `${base}\nJustificación: ${just}` : base;
     }
@@ -1022,6 +1086,7 @@ export default function SubirEvidenciasPage() {
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
                             const maxChars = getMaxCaracteres(campo);
                             const currentLen = getTexto(form._id, campo._id).length;
+                            const selectedValues = getSelectValues(form._id, campo._id);
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
                                 style={{ background: bloqueado ? "rgba(248,250,252,0.8)" : "#fff" }}>
@@ -1077,7 +1142,7 @@ export default function SubirEvidenciasPage() {
                                     <Select
                                       placeholder="Selecciona una opción..."
                                       value={getTexto(form._id, campo._id) || null}
-                                      onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
+                                      onChange={val => !bloqueado && setTexto(form._id, campo._id, val ?? "")}
                                       data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
                                       disabled={bloqueado} clearable
                                     />
@@ -1100,10 +1165,10 @@ export default function SubirEvidenciasPage() {
                                     <Select
                                       placeholder="Selecciona una opción..."
                                       value={getTexto(form._id, campo._id) || null}
-                                      onChange={v => {
+                                      onChange={val => {
                                         if (!bloqueado) {
-                                          setTexto(form._id, campo._id, v ?? "");
-                                          if (v !== "Otro") setOtroTexto(form._id, campo._id, "");
+                                          setTexto(form._id, campo._id, val ?? "");
+                                          if (val !== "Otro") setOtroTexto(form._id, campo._id, "");
                                         }
                                       }}
                                       data={[
@@ -1121,6 +1186,68 @@ export default function SubirEvidenciasPage() {
                                       />
                                     )}
                                     {getTexto(form._id, campo._id) && (
+                                      <Textarea
+                                        placeholder="Justifica tu respuesta..."
+                                        label="Justificación"
+                                        value={getJustificacion(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        minRows={2}
+                                        autosize
+                                      />
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "select_multiple" && (
+                                  <Stack gap={6}>
+                                    <MultiSelect
+                                      placeholder="Selecciona una o varias opciones..."
+                                      value={selectedValues}
+                                      onChange={values => !bloqueado && setSelectValues(form._id, campo._id, values)}
+                                      data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {selectedValues.length > 0 && (
+                                      <Textarea
+                                        placeholder="Justifica tu respuesta..."
+                                        label="Justificación"
+                                        value={getJustificacion(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        minRows={2}
+                                        autosize
+                                      />
+                                    )}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "select_multiple_con_otro" && (
+                                  <Stack gap={6}>
+                                    <MultiSelect
+                                      placeholder="Selecciona una o varias opciones..."
+                                      value={selectedValues}
+                                      onChange={values => {
+                                        if (!bloqueado) {
+                                          setSelectValues(form._id, campo._id, values);
+                                          if (!values.includes("Otro")) setOtroTexto(form._id, campo._id, "");
+                                        }
+                                      }}
+                                      data={[
+                                        ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                                        { value: "Otro", label: "Otro ¿Cuál?" },
+                                      ]}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {selectedValues.includes("Otro") && (
+                                      <TextInput
+                                        placeholder="Especifica..."
+                                        value={getOtroTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                      />
+                                    )}
+                                    {selectedValues.length > 0 && (
                                       <Textarea
                                         placeholder="Justifica tu respuesta..."
                                         label="Justificación"
@@ -1345,7 +1472,7 @@ export default function SubirEvidenciasPage() {
                       } else if (maxChars && currentLen > maxChars) {
                         erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, el máximo permitido es ${maxChars}.`);
                       }
-                      if (campo.tipo === "select" || campo.tipo === "select_con_otro") {
+                      if (["select", "select_con_otro", "select_multiple", "select_multiple_con_otro"].includes(campo.tipo)) {
                         const sel = getTexto(form._id, campo._id);
                         if (sel && !getJustificacion(form._id, campo._id).trim()) {
                           erroresDetalle.push(`"${campo.etiqueta}": debes justificar tu respuesta.`);

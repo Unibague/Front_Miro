@@ -40,7 +40,7 @@ import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
 
-type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
 
 interface Campo {
   _id?: string;
@@ -71,7 +71,9 @@ const TIPO_OPTIONS = [
   { value: "texto_largo", label: "Texto largo" },
   { value: "texto_corto", label: "Texto corto" },
   { value: "select", label: "Selección única" },
-  { value: "select_con_otro", label: "Selección con Otro" },
+  { value: "select_con_otro", label: "Selección única con Otro" },
+  { value: "select_multiple", label: "Selección múltiple" },
+  { value: "select_multiple_con_otro", label: "Selección múltiple con Otro" },
   { value: "checkbox", label: "Casilla de verificación" },
 ];
 
@@ -80,7 +82,9 @@ const TIPO_LABELS: Record<TipoCampo, string> = {
   texto_corto: "Texto corto",
   archivo_pdf: "Archivo PDF",
   select: "Selección única",
-  select_con_otro: "Selección con Otro",
+  select_con_otro: "Selección única con Otro",
+  select_multiple: "Selección múltiple",
+  select_multiple_con_otro: "Selección múltiple con Otro",
   checkbox: "Casilla",
 };
 
@@ -179,7 +183,7 @@ function FormularioModal({
   };
 
   const tieneTexto = (t: TipoCampo) => t === "texto_largo" || t === "texto_corto";
-  const tieneOpciones = (t: TipoCampo) => t === "select" || t === "select_con_otro";
+  const tieneOpciones = (t: TipoCampo) => t === "select" || t === "select_con_otro" || t === "select_multiple" || t === "select_multiple_con_otro";
 
   return (
     <Modal
@@ -292,7 +296,7 @@ function FormularioModal({
                     onClick={() => addOpcion(idx)}>
                     Agregar opción
                   </Button>
-                  {campo.tipo === "select_con_otro" && (
+                  {(campo.tipo === "select_con_otro" || campo.tipo === "select_multiple_con_otro") && (
                     <Text size="xs" c="dimmed">&quot;Otro ¿Cuál?&quot; se agrega automáticamente al final</Text>
                   )}
                 </Stack>

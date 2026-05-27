@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Stack, Paper, Group, Badge, ThemeIcon, Text, Textarea, TextInput,
-  Button, ActionIcon, FileButton, Center, Loader, Select, Checkbox,
+  Button, ActionIcon, FileButton, Center, Loader, Select, MultiSelect, Checkbox,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -15,7 +15,7 @@ import { PDI_ROUTES } from "../api";
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
   min_caracteres?: number | null;
@@ -98,15 +98,25 @@ export default function FormulariosIndicadorPanel({
             respMap[f._id] = resp;
             if (resp) {
               resp.respuestas.forEach(r => {
+                const key = `${f._id}-${r.campo_id}`;
                 if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
-                  textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
+                  textMap[key] = r.valor_texto ?? "";
                 } else if (r.tipo === "select_con_otro" && r.valor_texto) {
                   if (r.valor_texto.startsWith("Otro: ")) {
-                    textMap[`${f._id}-${r.campo_id}`] = "Otro";
-                    otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+                    textMap[key] = "Otro";
+                    otroMap[key] = r.valor_texto.slice(6);
                   } else {
-                    textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+                    textMap[key] = r.valor_texto;
                   }
+                } else if (r.tipo === "select_multiple" && r.valor_texto) {
+                  textMap[key] = r.valor_texto;
+                } else if (r.tipo === "select_multiple_con_otro" && r.valor_texto) {
+                  const SEP = " | ";
+                  const rawValues = r.valor_texto.split(SEP).map((v: string) => v.trim()).filter(Boolean);
+                  const selectedValues = rawValues.map((v: string) => v.startsWith("Otro: ") ? "Otro" : v);
+                  const otroValue = rawValues.find((v: string) => v.startsWith("Otro: "));
+                  textMap[key] = selectedValues.join(SEP);
+                  if (otroValue) otroMap[key] = otroValue.slice(6);
                 }
               });
             }
@@ -120,12 +130,19 @@ export default function FormulariosIndicadorPanel({
       .finally(() => setLoading(false));
   }, [indicadorId, email, corteActivo]);
 
+  const SEP = " | ";
   const getTexto = (formId: string, campoId: string) => textos[`${formId}-${campoId}`] ?? "";
   const setTexto = (formId: string, campoId: string, val: string) =>
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
   const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
   const setOtroTexto = (formId: string, campoId: string, val: string) =>
     setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const getSelectValues = (formId: string, campoId: string) => {
+    const val = getTexto(formId, campoId);
+    return val ? val.split(SEP).map(v => v.trim()).filter(Boolean) : [];
+  };
+  const setSelectValues = (formId: string, campoId: string, values: string[]) =>
+    setTexto(formId, campoId, values.join(SEP));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
 
@@ -143,6 +160,12 @@ export default function FormulariosIndicadorPanel({
     if (campo.tipo === "select_con_otro") {
       const sel = getTexto(form._id, campo._id);
       return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, campo._id)}` : sel;
+    }
+    if (campo.tipo === "select_multiple") return getTexto(form._id, campo._id);
+    if (campo.tipo === "select_multiple_con_otro") {
+      return getSelectValues(form._id, campo._id)
+        .map(v => v === "Otro" ? `Otro: ${getOtroTexto(form._id, campo._id)}` : v)
+        .join(SEP);
     }
     if (campo.tipo === "checkbox") return getTexto(form._id, campo._id) || "false";
     return "";
@@ -458,6 +481,46 @@ export default function FormulariosIndicadorPanel({
                           clearable
                         />
                         {getTexto(form._id, campo._id) === "Otro" && (
+                          <TextInput
+                            placeholder="Especifica..."
+                            value={getOtroTexto(form._id, campo._id)}
+                            onChange={e => setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                            disabled={enviado}
+                          />
+                        )}
+                      </Stack>
+                    )}
+
+                    {campo.tipo === "select_multiple" && (
+                      <MultiSelect
+                        placeholder="Selecciona una o varias opciones..."
+                        value={getSelectValues(form._id, campo._id)}
+                        onChange={values => !enviado && setSelectValues(form._id, campo._id, values)}
+                        data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                        disabled={enviado}
+                        clearable
+                      />
+                    )}
+
+                    {campo.tipo === "select_multiple_con_otro" && (
+                      <Stack gap={6}>
+                        <MultiSelect
+                          placeholder="Selecciona una o varias opciones..."
+                          value={getSelectValues(form._id, campo._id)}
+                          onChange={values => {
+                            if (!enviado) {
+                              setSelectValues(form._id, campo._id, values);
+                              if (!values.includes("Otro")) setOtroTexto(form._id, campo._id, "");
+                            }
+                          }}
+                          data={[
+                            ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                            { value: "Otro", label: "Otro ¿Cuál?" },
+                          ]}
+                          disabled={enviado}
+                          clearable
+                        />
+                        {getSelectValues(form._id, campo._id).includes("Otro") && (
                           <TextInput
                             placeholder="Especifica..."
                             value={getOtroTexto(form._id, campo._id)}
