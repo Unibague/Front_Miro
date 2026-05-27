@@ -50,7 +50,7 @@ type ProgramaOmitidoRow = {
 };
 
 type ProgramaActualizadoRow = ProgramaCreadoRow & {
-  periodos_duracion?: number | null;
+  periodos_duracion?: string | null;
 };
 
 type ImportProgramasResult = {
