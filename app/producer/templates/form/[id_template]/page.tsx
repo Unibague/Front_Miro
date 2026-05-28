@@ -82,7 +82,7 @@ interface PublishedTemplateResponse {
   name: string;
   template: Template;
   publishedTemplate?: {
-    period?: string | { _id: string };
+    period?: string | { _id: string; name?: string };
   };
   qr_draft_data?: QrDraftEntry[];
   shared_sheets_data?: Record<string, Record<string, any>[]>;
@@ -176,6 +176,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = response.data.template.workbook_sheets || [];
       const templateShared = response.data.template?.shared ?? false;
+
+      const periodObj = response.data.publishedTemplate?.period;
+      const periodName = typeof periodObj === "object" ? (periodObj?.name || "") : "";
+      const periodMatch = periodName.match(/(\d{4})[_\-\s]*([AB])/i);
+      const prefilledYear = periodMatch ? parseInt(periodMatch[1]) : null;
+      const prefilledSemester = periodMatch ? (periodMatch[2].toUpperCase() === 'A' ? 1 : 2) : null;
+
       // Conjunto de hojas accesibles para este productor — usado también al cargar borradores
       let editableSheetNames = new Set<string>();
       // IDs de dependencias del usuario — usados para verificar si es productor encargado
@@ -214,7 +221,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         const initialRows: Record<string, Record<string, any>[]> = {};
         const initialSources: Record<string, (QrRowSource | null)[]> = {};
         editable.forEach((s: WorkbookSheet) => {
-          initialRows[s.name] = [{}];
+          const prefilled: Record<string, any> = {};
+          if (prefilledYear !== null && s.fields?.some((f: Field) => f.name.toUpperCase() === 'AÑO'))
+            prefilled['AÑO'] = prefilledYear;
+          if (prefilledSemester !== null && s.fields?.some((f: Field) => f.name.toUpperCase() === 'SEMESTRE'))
+            prefilled['SEMESTRE'] = prefilledSemester;
+          initialRows[s.name] = [prefilled];
           initialSources[s.name] = [null];
         });
         // Si template.shared=true, hojas no editables muestran datos de otros productores
@@ -305,6 +317,20 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               });
 
               if (Object.keys(draftSheetRows).length) {
+                if (prefilledYear !== null || prefilledSemester !== null) {
+                  Object.entries(draftSheetRows).forEach(([sheetName, rows]) => {
+                    const sheet = wbSheets.find((s: WorkbookSheet) => s.name === sheetName);
+                    if (!sheet) return;
+                    draftSheetRows[sheetName] = rows.map(row => {
+                      const updated = { ...row };
+                      if (prefilledYear !== null && sheet.fields?.some((f: Field) => f.name.toUpperCase() === 'AÑO') && (updated['AÑO'] === null || updated['AÑO'] === undefined))
+                        updated['AÑO'] = prefilledYear;
+                      if (prefilledSemester !== null && sheet.fields?.some((f: Field) => f.name.toUpperCase() === 'SEMESTRE') && (updated['SEMESTRE'] === null || updated['SEMESTRE'] === undefined))
+                        updated['SEMESTRE'] = prefilledSemester;
+                      return updated;
+                    });
+                  });
+                }
                 setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
                 setSheetRowSources(prev => ({ ...prev, ...draftSheetSources }));
                 setActiveSheet(firstDraftSheetName);

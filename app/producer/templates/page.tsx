@@ -420,6 +420,24 @@ const ProducerTemplatesPage = () => {
       ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
     };
 
+    const periodMatch = (publishedTemplate.period?.name || "").match(/(\d{4})[_\-\s]*([AB])/i);
+    const prefilledYear = periodMatch ? parseInt(periodMatch[1]) : null;
+    const prefilledSemester = periodMatch ? (periodMatch[2].toUpperCase() === 'A' ? 1 : 2) : null;
+    const applyPeriodPrefill = (ws: ExcelJS.Worksheet, fields: Field[]) => {
+      fields.forEach((field, idx) => {
+        const col = (Number.isFinite(Number(field.column)) && Number(field.column) > 0) ? Number(field.column) : idx + 1;
+        const dataRow = (Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0) ? Number(field.header_row) + 1 : 2;
+        if (field.name.toUpperCase() === 'AÑO' && prefilledYear !== null) {
+          const cell = ws.getCell(dataRow, col);
+          if (!cell.value) cell.value = prefilledYear;
+        }
+        if (field.name.toUpperCase() === 'SEMESTRE' && prefilledSemester !== null) {
+          const cell = ws.getCell(dataRow, col);
+          if (!cell.value) cell.value = prefilledSemester;
+        }
+      });
+    };
+
 
     if (template.original_workbook_base64) {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
@@ -451,6 +469,13 @@ const ProducerTemplatesPage = () => {
         validators,
         originalCommentsBySheet,
       });
+
+      // Pre-llenar AÑO y SEMESTRE en hojas editables
+      for (const sheet of workbookSheets) {
+        if (!canUserEditSheet(sheet)) continue;
+        const ws = workbook.getWorksheet(sheet.name);
+        if (ws && sheet.fields?.length) applyPeriodPrefill(ws, sheet.fields);
+      }
 
       // Aplicar color de pestaña y proteger hojas según permisos
       for (const sheet of workbookSheets) {
@@ -540,6 +565,8 @@ const ProducerTemplatesPage = () => {
           startRow: 2,
           endRow: 1000,
         });
+
+        if (canUserEditSheet(sheet)) applyPeriodPrefill(worksheet, sheet.fields);
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos

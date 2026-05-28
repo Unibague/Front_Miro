@@ -147,7 +147,7 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       <Group justify="space-between" align="flex-start" mb="xs">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={() => router.push(`/pdi/indicadores/${ind._id}`)}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{ind.codigo}</Text>
+            <Text size="xl" fw={800}>{ind.codigo}</Text>
             <Badge color={SEMAFORO_COLOR[ind.semaforo]} variant="light" size="sm" radius="xl">
               {SEMAFORO_LABEL[ind.semaforo]}
             </Badge>
@@ -342,7 +342,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={toggleIndicadores}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{accion.codigo}</Text>
+            <Text size="xl" fw={800}>{accion.codigo}</Text>
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
           <Text size="md" lh={1.35}>{accion.nombre}</Text>
@@ -648,7 +648,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={() => setOpen(v => !v)}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{proyecto.codigo}</Text>
+            <Text size="xl" fw={800}>{proyecto.codigo}</Text>
             <Badge color={estadoProyectoColorReal} variant="light" radius="xl">
               {semaforoProyecto === "verde" ? "En cumplimiento" : semaforoProyecto === "amarillo" ? "En riesgo" : "Crítico"}
             </Badge>

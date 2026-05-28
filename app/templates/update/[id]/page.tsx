@@ -960,7 +960,7 @@ router.back();
       />
       <Switch
         label="Permite generación de código QR"
-        description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla. También habilita la configuración de campos obligatorios."
+        description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla."
         checked={allowsQr}
         onChange={(e) => {
           const checked = e.currentTarget.checked;
@@ -1112,24 +1112,6 @@ router.back();
             <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
               Campos base
             </Text>
-            {allowsQr && (
-              <Group gap="xs" align="center">
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  color="blue"
-                  onClick={() => {
-                    const allRequired = baseFields.every(f => f.required);
-                    baseFields.forEach(f => toggleBaseFieldRequired(f.name, !allRequired));
-                  }}
-                >
-                  {baseFields.every(f => f.required) ? "Desmarcar todos" : "Marcar todos"}
-                </Button>
-                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-                  ¿Obligatorio?
-                </Text>
-              </Group>
-            )}
           </Group>
           {/* Filas */}
           {baseFields.map((field, i) => (
@@ -1159,23 +1141,12 @@ router.back();
                 </Text>
                 <Text
                   size="sm"
-                  fw={allowsQr && field.required ? 600 : 400}
-                  c={allowsQr && field.required ? "dark" : "dimmed"}
+                  fw={400}
+                  c="dimmed"
                 >
                   {field.name}
                 </Text>
               </Group>
-              {allowsQr && (
-                <Tooltip label={field.required ? "Obligatorio" : "Opcional"} withArrow position="left">
-                  <Checkbox
-                    size="sm"
-                    checked={field.required}
-                    color={field.required ? "blue" : "gray"}
-                    onChange={(e) => toggleBaseFieldRequired(field.name, e.currentTarget.checked)}
-                    aria-label={`${field.name} obligatorio`}
-                  />
-                </Tooltip>
-              )}
             </Group>
           ))}
         </Box>
