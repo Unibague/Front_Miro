@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { IconArrowLeft } from "@tabler/icons-react";
 import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 const GoBackButton = () => {
   const router = useRouter();
   const pathname = usePathname();
+  const { confirmNavigation } = useUnsavedChanges();
 
   if (pathname === "/" || pathname === "/dashboard") return null;
   /* En processes-MEN el botón vive en el Navbar */
@@ -19,7 +21,7 @@ const GoBackButton = () => {
   if (pathname?.startsWith("/historico-docentes")) return null;
 
   const handleVolver = () => {
-    router.back();
+    confirmNavigation(() => router.back());
   };
 
   return (

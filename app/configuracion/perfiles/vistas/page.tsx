@@ -13,14 +13,17 @@ import {
   Center,
   Checkbox,
   Container,
+  Divider,
   Group,
   Loader,
+  MultiSelect,
   ScrollArea,
   SimpleGrid,
   Stack,
   Table,
   Text,
   TextInput,
+  ThemeIcon,
   Title,
   Tooltip,
 } from "@mantine/core";
@@ -29,14 +32,18 @@ import {
   IconAlertCircle,
   IconArrowLeft,
   IconBriefcase,
+  IconBuilding,
   IconDeviceFloppy,
   IconId,
+  IconLock,
   IconShield,
+  IconTemplate,
   IconTrash,
   IconUserPlus,
   IconUsersGroup,
 } from "@tabler/icons-react";
 import { useRole } from "@/app/context/RoleContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface ViewOption {
   key: string;
@@ -61,8 +68,16 @@ interface PositionPermission {
   usersCount: number;
   users?: PositionUser[];
   permissions: Record<string, string[]>;
+  allowed_dimensions?: string[];
+  allowed_dependencies?: string[];
   updatedBy?: string | null;
   updatedAt?: string | null;
+}
+
+interface SimpleItem {
+  _id: string;
+  name: string;
+  dep_code?: string;
 }
 
 interface AccessProfile {
@@ -126,6 +141,7 @@ export default function PositionViewsPage() {
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   const isAdmin = userRole === "Administrador";
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const profilesPermission = viewPermissions["profiles"] || [];
   const canManage = isAdmin || profilesPermission.includes("Gestionar") || profilesPermission.includes("Administrar");
   const profileId = searchParams?.get("perfil")?.trim() || "";
@@ -137,6 +153,10 @@ export default function PositionViewsPage() {
   const [selectedProfile, setSelectedProfile] = useState<AccessProfile | null>(null);
   const [selectedPositions, setSelectedPositions] = useState<PositionPermission[]>([]);
   const [selectedPositionPermissions, setSelectedPositionPermissions] = useState<Record<string, string[]>>({});
+  const [allDimensions, setAllDimensions] = useState<SimpleItem[]>([]);
+  const [allDependencies, setAllDependencies] = useState<SimpleItem[]>([]);
+  const [allowedDimensions, setAllowedDimensions] = useState<string[]>([]);
+  const [allowedDependencies, setAllowedDependencies] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addingUser, setAddingUser] = useState(false);
@@ -221,8 +241,14 @@ export default function PositionViewsPage() {
       setPermissionLevels(DEFAULT_PROFILES);
       setViews(response.data?.views || []);
       setSelectedProfile(response.data?.profile || null);
+      setAllDimensions(response.data?.allDimensions || []);
+      setAllDependencies(response.data?.allDependencies || []);
       setSelectedPositions(fallbackPositions);
       setSelectedPositionPermissions(mergePositionPermissions(fallbackPositions));
+      // Cargar restricciones guardadas del primer cargo
+      const firstPos = fallbackPositions[0];
+      setAllowedDimensions(firstPos?.allowed_dimensions || []);
+      setAllowedDependencies(firstPos?.allowed_dependencies || []);
     } catch (error) {
       console.error("Error fetching position permissions:", error);
       showNotification({
@@ -242,6 +268,7 @@ export default function PositionViewsPage() {
   }, [fetchPositionPermissions]);
 
   const toggleViewPermission = (viewKey: string, profile: string) => {
+    setHasChanges(true);
     setSelectedPositionPermissions((current) => {
       const currentProfiles = current[viewKey] || [];
       const nextProfiles = currentProfiles.includes(profile)
@@ -260,6 +287,7 @@ export default function PositionViewsPage() {
   };
 
   const setLevelForAllViews = (profile: string, checked: boolean) => {
+    setHasChanges(true);
     setSelectedPositionPermissions((current) => {
       const nextPermissions = { ...current };
 
@@ -301,6 +329,8 @@ export default function PositionViewsPage() {
         {
           ...(isProfileMode ? { profileId } : { position: managedPositionNames[0] }),
           permissions: selectedPositionPermissions,
+          allowed_dimensions: allowedDimensions,
+          allowed_dependencies: allowedDependencies,
           adminEmail: session.user.email,
         },
         {
@@ -323,6 +353,7 @@ export default function PositionViewsPage() {
           };
         })
       );
+      setHasChanges(false);
       showNotification({
         title: "Permisos actualizados",
         message: isProfileMode
@@ -442,7 +473,7 @@ export default function PositionViewsPage() {
     return (
       <Container size="xl" py="xl">
         <Stack gap="md">
-          <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => router.push("/configuracion/perfiles")}>
+          <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => confirmNavigation(() => router.push("/configuracion/perfiles"))}>
             Volver a perfiles
           </Button>
           <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
@@ -458,7 +489,7 @@ export default function PositionViewsPage() {
       <Stack gap="lg">
         <div>
           <Group gap={6} align="center">
-            <ActionIcon variant="subtle" color="blue" size="md" onClick={() => router.push("/configuracion/perfiles")}>
+            <ActionIcon variant="subtle" color="blue" size="md" onClick={() => confirmNavigation(() => router.push("/configuracion/perfiles"))}>
               <IconArrowLeft size={18} />
             </ActionIcon>
             <Title order={2}>Gestionar vistas</Title>
@@ -656,6 +687,78 @@ export default function PositionViewsPage() {
               </Stack>
             </Card>
 
+            {/* ── Restricciones de ámbitos y dependencias ── */}
+            <Card withBorder radius="md" p="md">
+              <Stack gap="md">
+                <Group gap={8} align="center">
+                  <ThemeIcon size="md" radius="md" color="orange" variant="light">
+                    <IconLock size={16} />
+                  </ThemeIcon>
+                  <div>
+                    <Title order={4}>Restricciones de acceso</Title>
+                    <Text size="sm" c="dimmed">
+                      Si seleccionas ámbitos o dependencias, el perfil solo verá esos. Si dejas vacío, verá todos.
+                    </Text>
+                  </div>
+                </Group>
+
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  <div>
+                    <Group gap={6} mb={6}>
+                      <ThemeIcon size="sm" color="blue" variant="light">
+                        <IconTemplate size={12} />
+                      </ThemeIcon>
+                      <Text size="sm" fw={600}>Ámbitos permitidos</Text>
+                      {allowedDimensions.length > 0 && (
+                        <Badge size="xs" color="blue" variant="filled">{allowedDimensions.length}</Badge>
+                      )}
+                    </Group>
+                    <MultiSelect
+                      placeholder="Todos los ámbitos (sin restricción)"
+                      data={allDimensions.map((d) => ({ value: d._id, label: d.name }))}
+                      value={allowedDimensions}
+                      onChange={(v) => { setAllowedDimensions(v); setHasChanges(true); }}
+                      searchable
+                      clearable
+                      disabled={!canManage}
+                      maxDropdownHeight={240}
+                    />
+                  </div>
+
+                  <div>
+                    <Group gap={6} mb={6}>
+                      <ThemeIcon size="sm" color="violet" variant="light">
+                        <IconBuilding size={12} />
+                      </ThemeIcon>
+                      <Text size="sm" fw={600}>Dependencias permitidas</Text>
+                      {allowedDependencies.length > 0 && (
+                        <Badge size="xs" color="violet" variant="filled">{allowedDependencies.length}</Badge>
+                      )}
+                    </Group>
+                    <MultiSelect
+                      placeholder="Todas las dependencias (sin restricción)"
+                      data={allDependencies.map((d) => ({ value: d._id, label: d.name }))}
+                      value={allowedDependencies}
+                      onChange={(v) => { setAllowedDependencies(v); setHasChanges(true); }}
+                      searchable
+                      clearable
+                      disabled={!canManage}
+                      maxDropdownHeight={240}
+                    />
+                  </div>
+                </SimpleGrid>
+
+                {(allowedDimensions.length > 0 || allowedDependencies.length > 0) && (
+                  <Alert color="orange" icon={<IconAlertCircle size={16} />}>
+                    Este perfil tiene restricciones activas: solo verá
+                    {allowedDimensions.length > 0 && ` ${allowedDimensions.length} ámbito(s)`}
+                    {allowedDimensions.length > 0 && allowedDependencies.length > 0 && " y"}
+                    {allowedDependencies.length > 0 && ` ${allowedDependencies.length} dependencia(s)`} específicos.
+                  </Alert>
+                )}
+              </Stack>
+            </Card>
+
             <Card withBorder radius="md" p="md">
               <Stack gap="md">
                 <Group justify="space-between">
@@ -704,7 +807,7 @@ export default function PositionViewsPage() {
                     variant="light"
                     color="red"
                     leftSection={<IconTrash size={16} />}
-                    onClick={() => setSelectedPositionPermissions({})}
+                    onClick={() => { setSelectedPositionPermissions({}); setHasChanges(true); }}
                     disabled={!canManage}
                   >
                     Limpiar
