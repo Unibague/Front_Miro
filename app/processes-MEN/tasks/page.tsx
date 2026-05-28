@@ -9,6 +9,7 @@ import { IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle } from "@tab
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import type { Dependency } from "../types";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 
 type Task = {
@@ -38,6 +39,7 @@ const EMPTY_FORM = {
 export default function TasksAdminPage() {
   const { data: session } = useSession();
   const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+  const { setHasChanges } = useUnsavedChanges();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [deps, setDeps] = useState<Dependency[]>([]);
@@ -92,6 +94,7 @@ export default function TasksAdminPage() {
     setEditTask(null);
     setForm(EMPTY_FORM);
     setError(null);
+    setHasChanges(false);
     setModalOpen(true);
   };
 
@@ -106,6 +109,7 @@ export default function TasksAdminPage() {
       fecha_limite: t.fecha_limite ?? "",
     });
     setError(null);
+    setHasChanges(false);
     setModalOpen(true);
   };
 
@@ -140,6 +144,7 @@ export default function TasksAdminPage() {
         const res = await axios.post(`${base}/task-assignments`, payload);
         setTasks((prev) => [res.data, ...prev]);
       }
+      setHasChanges(false);
       setModalOpen(false);
     } catch (e: any) {
       setError(e?.response?.data?.error ?? "Error al guardar.");
@@ -241,7 +246,7 @@ export default function TasksAdminPage() {
       {/* Modal crear/editar */}
       <Modal
         opened={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setHasChanges(false); setModalOpen(false); }}
         title={editTask ? "Editar tarea" : "Asignar nueva tarea"}
         centered
         size="md"
@@ -252,14 +257,14 @@ export default function TasksAdminPage() {
             placeholder="Ej: Actualizar documentos fase 3"
             required
             value={form.titulo}
-            onChange={(e) => setForm((f) => ({ ...f, titulo: e.currentTarget.value }))}
+            onChange={(e) => { setForm((f) => ({ ...f, titulo: e.currentTarget.value })); setHasChanges(true); }}
           />
           <Textarea
             label="Descripción"
             placeholder="Detalle de la tarea..."
             rows={3}
             value={form.descripcion}
-            onChange={(e) => setForm((f) => ({ ...f, descripcion: e.currentTarget.value }))}
+            onChange={(e) => { setForm((f) => ({ ...f, descripcion: e.currentTarget.value })); setHasChanges(true); }}
           />
           <Select
             label="Dependencia destino"
@@ -274,17 +279,17 @@ export default function TasksAdminPage() {
             label="Email responsable (opcional)"
             placeholder="responsable@unibague.edu.co"
             value={form.email_responsable}
-            onChange={(e) => setForm((f) => ({ ...f, email_responsable: e.currentTarget.value }))}
+            onChange={(e) => { setForm((f) => ({ ...f, email_responsable: e.currentTarget.value })); setHasChanges(true); }}
           />
           <TextInput
             label="Fecha límite (opcional)"
             type="date"
             value={form.fecha_limite}
-            onChange={(e) => setForm((f) => ({ ...f, fecha_limite: e.currentTarget.value }))}
+            onChange={(e) => { setForm((f) => ({ ...f, fecha_limite: e.currentTarget.value })); setHasChanges(true); }}
           />
           {error && <Text size="sm" c="red">{error}</Text>}
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setModalOpen(false)}>Cancelar</Button>
+            <Button variant="default" onClick={() => { setHasChanges(false); setModalOpen(false); }}>Cancelar</Button>
             <Button loading={saving} onClick={guardar}>Guardar</Button>
           </Group>
         </Stack>

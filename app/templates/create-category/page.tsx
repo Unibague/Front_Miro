@@ -8,6 +8,7 @@ import { showNotification } from "@mantine/notifications";
 import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Template {
   _id: string;
@@ -20,6 +21,7 @@ const CreateCategoryPage = () => {
   const [fields, setFields] = useState<any[]>([{ templateId: "", sequence: 1 }]);
   const { data: session } = useSession();
   const router = useRouter();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     // Fetch templates for the category
@@ -35,6 +37,7 @@ const CreateCategoryPage = () => {
   }, []);
 
   const handleFieldChange = (index: number, field: string, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
     setFields(updatedFields);
@@ -72,6 +75,7 @@ const CreateCategoryPage = () => {
         color: "teal",
       });
 
+      setHasChanges(false);
       router.push("/templates/categories"); // Redirigir después de guardar
     } catch (error) {
       console.error("Error saving category:", error);
@@ -89,7 +93,7 @@ const CreateCategoryPage = () => {
       <TextInput
         label="Nombre de la Categoría"
         value={categoryName}
-        onChange={(e) => setCategoryName(e.currentTarget.value)}
+        onChange={(e) => { setCategoryName(e.currentTarget.value); setHasChanges(true); }}
         placeholder="Ingrese el nombre de la categoría"
         mb="md"
         required
@@ -163,7 +167,7 @@ const CreateCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back())}
           color="red"
         >
           Cancelar

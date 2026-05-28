@@ -24,6 +24,7 @@ import {
 } from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Field {
   name: string;
@@ -117,6 +118,7 @@ const UpdateTemplatePage = () => {
   const { data: session } = useSession();
   const { userRole } = useRole();
   const { selectedPeriodId } = usePeriod();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   const createEmptyField = (): Field => ({
     name: "",
@@ -344,6 +346,7 @@ const UpdateTemplatePage = () => {
   }, [id, session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
 
@@ -454,6 +457,7 @@ const UpdateTemplatePage = () => {
   };
 
   const handleSave = async () => {
+    setHasChanges(false);
     const fieldsToSave = hasWorkbookSheets ? flattenWorkbookSheets(workbookSheets) : fields;
 
     const derivedProducers = hasWorkbookSheets
@@ -874,21 +878,21 @@ router.back();
         label="Nombre"
         placeholder="Nombre de la plantilla"
         value={name}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onChange={(event) => { setName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Nombre del Archivo"
         placeholder="Nombre del archivo"
         value={fileName}
-        onChange={(event) => setFileName(event.currentTarget.value)}
+        onChange={(event) => { setFileName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Descripción del Archivo"
         placeholder="Descripción del archivo"
         value={fileDescription}
-        onChange={(event) => setFileDescription(event.currentTarget.value)}
+        onChange={(event) => { setFileDescription(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       {userRole === "Administrador" && (
@@ -903,15 +907,40 @@ router.back();
       />
       )}
       {!hasWorkbookSheets && (
-        <MultiSelect
-          mb={'xl'}
-          label="Productores"
-          placeholder="Seleccionar productores"
-          data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-          onChange={setSelectedDependencies}
-          value={selectedDependencies}
-          searchable
-        />
+        <>
+          <Group justify="space-between" align="flex-end" mb={4}>
+            <Text size="sm" fw={500}>Productores</Text>
+            <Group gap="xs">
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="blue"
+                onClick={() => setSelectedDependencies(dependencies.map((d) => d._id))}
+                disabled={selectedDependencies.length === dependencies.length}
+              >
+                Seleccionar todos
+              </Button>
+              {selectedDependencies.length > 0 && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="red"
+                  onClick={() => setSelectedDependencies([])}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </Group>
+          </Group>
+          <MultiSelect
+            mb="xl"
+            placeholder="Seleccionar productores"
+            data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+            onChange={(v) => { setSelectedDependencies(v); setHasChanges(true); }}
+            value={selectedDependencies}
+            searchable
+          />
+        </>
       )}
       <Switch
         label="Activo"
@@ -1021,8 +1050,40 @@ router.back();
           </Tabs>
           {activeSheet && (
             <>
+              <Group justify="space-between" align="flex-end" mb={4}>
+                <Text size="sm" fw={500}>Productores para la hoja &quot;{activeSheet}&quot;</Text>
+                <Group gap="xs">
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    color="blue"
+                    onClick={() => {
+                      const allIds = dependencies.map((d) => d._id);
+                      setWorkbookSheets(prev => prev.map(s =>
+                        s.name === activeSheet ? { ...s, producers: allIds } : s
+                      ));
+                    }}
+                    disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
+                  >
+                    Seleccionar todos
+                  </Button>
+                  {(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length > 0 && (
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        setWorkbookSheets(prev => prev.map(s =>
+                          s.name === activeSheet ? { ...s, producers: [] } : s
+                        ));
+                      }}
+                    >
+                      Limpiar
+                    </Button>
+                  )}
+                </Group>
+              </Group>
               <MultiSelect
-                label={`Productores para la hoja "${activeSheet}"`}
                 placeholder="Asignar productores a esta hoja"
                 data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
                 value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
@@ -1320,7 +1381,7 @@ router.back();
         <Button variant="outline" onClick={handleDownloadTemplate} leftSection={<IconDownload />}>
           Descargar Plantilla Actualizada
         </Button>
-        <Button variant="outline" onClick={() => router.back()}>
+        <Button variant="outline" onClick={() => confirmNavigation(() => router.back())}>
           Cancelar
         </Button>
       </Group>

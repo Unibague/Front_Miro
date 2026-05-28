@@ -33,6 +33,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useRole } from "@/app/context/RoleContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface PositionPermission {
   position: string;
@@ -90,6 +91,7 @@ export default function ProfilesManagementPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const { userRole, viewPermissions } = useRole();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const profilesPermission = viewPermissions["profiles"] || [];
   const isAdmin = userRole === "Administrador" || profilesPermission.includes("Gestionar") || profilesPermission.includes("Administrar");
   const [positions, setPositions] = useState<PositionPermission[]>([]);
@@ -169,6 +171,7 @@ export default function ProfilesManagementPage() {
     setProfileName("");
     setProfilePositions([]);
     setPositionSearchValue("");
+    setHasChanges(false);
   };
 
   const startProfileEdit = (profile: AccessProfile) => {
@@ -219,6 +222,7 @@ export default function ProfilesManagementPage() {
       }
 
       await fetchAccessProfiles();
+      setHasChanges(false);
       resetProfileForm();
       showNotification({
         title: editingProfileId ? "Perfil actualizado" : "Perfil creado",
@@ -276,7 +280,7 @@ export default function ProfilesManagementPage() {
     <Container size="xl" py="xl">
       <Stack gap="lg">
         <Group align="flex-start" gap="sm">
-          <ActionIcon variant="subtle" color="blue" size="lg" mt={4} onClick={() => router.push("/configuracion")}>
+          <ActionIcon variant="subtle" color="blue" size="lg" mt={4} onClick={() => confirmNavigation(() => router.push("/configuracion"))}>
             <IconArrowLeft size={18} />
           </ActionIcon>
           <div>
@@ -314,7 +318,7 @@ export default function ProfilesManagementPage() {
                 label="Nombre del perfil"
                 placeholder="Ej: Comité académico"
                 value={profileName}
-                onChange={(event) => setProfileName(event.currentTarget.value)}
+                onChange={(event) => { setProfileName(event.currentTarget.value); setHasChanges(true); }}
                 disabled={!isAdmin}
               />
               <MultiSelect
@@ -327,6 +331,7 @@ export default function ProfilesManagementPage() {
                 onChange={(value) => {
                   const currentSearch = positionSearchValue;
                   setProfilePositions(value);
+                  setHasChanges(true);
                   window.setTimeout(() => setPositionSearchValue(currentSearch), 0);
                 }}
                 searchable

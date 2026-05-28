@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
-import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle } from "@tabler/icons-react";
+import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle, IconFileSpreadsheet } from "@tabler/icons-react";
 import { modals } from '@mantine/modals';
 import axios from "../config/axios";
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,8 @@ import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 interface Dependency {
   _id: string;
@@ -67,6 +69,35 @@ const AdminDependenciesPage = () => {
   const [userFilterSearch, setUserFilterSearch] = useState("");
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadExcel = async () => {
+    setIsDownloading(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, {
+        params: { limit: 100000 },
+      });
+      const allDeps: Dependency[] = response.data.dependencies || [];
+
+      const data = allDeps.map((dep) => ({
+        "Código": dep.dep_code,
+        "Nombre": dep.name,
+        "Líder(es)": dep.responsible || "No definido",
+        "Dependencia Padre": dep.dep_father || "",
+        "Número de miembros": dep.members?.length ?? 0,
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Dependencias");
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      saveAs(new Blob([buf], { type: "application/octet-stream" }), "dependencias.xlsx");
+    } catch (error) {
+      showNotification({ title: "Error", message: "No se pudo descargar el Excel", color: "red" });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
   
 
 
@@ -537,6 +568,15 @@ const AdminDependenciesPage = () => {
           onClick={handleUserStatusModal}
         >
           Estado de usuarios
+        </Button>
+        <Button
+          variant="outline"
+          color="teal"
+          leftSection={<IconFileSpreadsheet size={16} />}
+          onClick={handleDownloadExcel}
+          loading={isDownloading}
+        >
+          Descargar Excel
         </Button>
         <Button
           variant="light"

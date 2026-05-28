@@ -13,6 +13,7 @@ import { AppInitializer } from "./context/AppInitializer";
 import ClientLayout from "./ClientLayout";
 import { PeriodProvider } from "./context/PeriodContext";
 import { ModalsProvider } from "@mantine/modals";
+import { UnsavedChangesProvider } from "./context/UnsavedChangesContext";
 
 
 export const metadata: Metadata = {
@@ -37,7 +38,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
                 <PeriodProvider>
                   <AppInitializer>
                     <Notifications />
-                    <ClientLayout>{children}</ClientLayout>
+                    <UnsavedChangesProvider>
+                      <ClientLayout>{children}</ClientLayout>
+                    </UnsavedChangesProvider>
                   </AppInitializer>
                 </PeriodProvider>
               </RoleProvider>

@@ -13,6 +13,7 @@ import {
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import PdiSidebar from "../components/PdiSidebar";
 import type { SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio } from "../types";
 
@@ -74,6 +75,7 @@ function NuevaSolicitudModal({
   const [solicitadoPor, setSolicitadoPor] = useState("");
   const [periodo, setPeriodo]           = useState("");
   const [loading, setLoading]           = useState(false);
+  const { setHasChanges } = useUnsavedChanges();
 
   useEffect(() => {
     if (!opened) {
@@ -81,6 +83,7 @@ function NuevaSolicitudModal({
       setTipoCambio(null); setCampoAfectado(""); setDescripcion("");
       setJustificacion(""); setValorAnterior(""); setValorPropuesto("");
       setSolicitadoPor(""); setPeriodo("");
+      setHasChanges(false);
     }
   }, [opened]);
 
@@ -105,6 +108,7 @@ function NuevaSolicitudModal({
         periodo:         periodo.trim(),
       });
       showNotification({ title: "Solicitud creada", message: "La solicitud fue registrada exitosamente", color: "teal" });
+      setHasChanges(false);
       onCreated(res.data);
       onClose();
     } catch (e: any) {
@@ -123,31 +127,31 @@ function NuevaSolicitudModal({
             placeholder="Selecciona"
             data={Object.entries(TIPO_ENTIDAD_LABEL).map(([v, l]) => ({ value: v, label: l }))}
             value={entidadTipo}
-            onChange={(v) => setEntidadTipo(v as TipoEntidad)}
+            onChange={(v) => { setEntidadTipo(v as TipoEntidad); setHasChanges(true); }}
           />
           <Select
             label="Tipo de cambio"
             placeholder="Selecciona"
             data={Object.entries(TIPO_CAMBIO_LABEL).map(([v, l]) => ({ value: v, label: l }))}
             value={tipoCambio}
-            onChange={(v) => setTipoCambio(v as TipoCambio)}
+            onChange={(v) => { setTipoCambio(v as TipoCambio); setHasChanges(true); }}
           />
         </Group>
         <Group grow>
-          <TextInput label="Código de la entidad" placeholder="Ej: 1.2.3" value={entidadCodigo} onChange={(e) => setEntidadCodigo(e.currentTarget.value)} />
-          <TextInput label="Nombre de la entidad" placeholder="Nombre del proyecto/acción..." value={entidadNombre} onChange={(e) => setEntidadNombre(e.currentTarget.value)} />
+          <TextInput label="Código de la entidad" placeholder="Ej: 1.2.3" value={entidadCodigo} onChange={(e) => { setEntidadCodigo(e.currentTarget.value); setHasChanges(true); }} />
+          <TextInput label="Nombre de la entidad" placeholder="Nombre del proyecto/acción..." value={entidadNombre} onChange={(e) => { setEntidadNombre(e.currentTarget.value); setHasChanges(true); }} />
         </Group>
         <Group grow>
-          <TextInput label="Campo afectado" placeholder="Ej: fecha_fin, presupuesto..." value={campoAfectado} onChange={(e) => setCampoAfectado(e.currentTarget.value)} />
-          <TextInput label="Periodo (opcional)" placeholder="Ej: 2026A" value={periodo} onChange={(e) => setPeriodo(e.currentTarget.value)} />
+          <TextInput label="Campo afectado" placeholder="Ej: fecha_fin, presupuesto..." value={campoAfectado} onChange={(e) => { setCampoAfectado(e.currentTarget.value); setHasChanges(true); }} />
+          <TextInput label="Periodo (opcional)" placeholder="Ej: 2026A" value={periodo} onChange={(e) => { setPeriodo(e.currentTarget.value); setHasChanges(true); }} />
         </Group>
-        <Textarea label="Descripción del cambio" placeholder="Describa detalladamente el cambio solicitado..." value={descripcion} onChange={(e) => setDescripcion(e.currentTarget.value)} rows={3} required />
-        <Textarea label="Justificación" placeholder="¿Por qué se solicita este cambio?" value={justificacion} onChange={(e) => setJustificacion(e.currentTarget.value)} rows={2} />
+        <Textarea label="Descripción del cambio" placeholder="Describa detalladamente el cambio solicitado..." value={descripcion} onChange={(e) => { setDescripcion(e.currentTarget.value); setHasChanges(true); }} rows={3} required />
+        <Textarea label="Justificación" placeholder="¿Por qué se solicita este cambio?" value={justificacion} onChange={(e) => { setJustificacion(e.currentTarget.value); setHasChanges(true); }} rows={2} />
         <Group grow>
-          <TextInput label="Valor anterior" placeholder="Valor actual" value={valorAnterior} onChange={(e) => setValorAnterior(e.currentTarget.value)} />
-          <TextInput label="Valor propuesto" placeholder="Nuevo valor" value={valorPropuesto} onChange={(e) => setValorPropuesto(e.currentTarget.value)} />
+          <TextInput label="Valor anterior" placeholder="Valor actual" value={valorAnterior} onChange={(e) => { setValorAnterior(e.currentTarget.value); setHasChanges(true); }} />
+          <TextInput label="Valor propuesto" placeholder="Nuevo valor" value={valorPropuesto} onChange={(e) => { setValorPropuesto(e.currentTarget.value); setHasChanges(true); }} />
         </Group>
-        <TextInput label="Solicitado por" placeholder="Nombre del solicitante" value={solicitadoPor} onChange={(e) => setSolicitadoPor(e.currentTarget.value)} required />
+        <TextInput label="Solicitado por" placeholder="Nombre del solicitante" value={solicitadoPor} onChange={(e) => { setSolicitadoPor(e.currentTarget.value); setHasChanges(true); }} required />
         <Group justify="flex-end" mt="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
           <Button loading={loading} onClick={handleSave}>Enviar solicitud</Button>
@@ -169,8 +173,9 @@ function RevisionModal({
 }) {
   const [comentario, setComentario] = useState("");
   const [loading, setLoading]       = useState(false);
+  const { setHasChanges } = useUnsavedChanges();
 
-  useEffect(() => { if (!opened) { setComentario(""); } }, [opened]);
+  useEffect(() => { if (!opened) { setComentario(""); setHasChanges(false); } }, [opened]);
 
   const handleRevision = async (estado: "Aprobado" | "Rechazado") => {
     if (!solicitud) return;
@@ -221,7 +226,7 @@ function RevisionModal({
           )}
           <Text size="xs" c="dimmed" mt={6}>Solicitado por: {solicitud.solicitado_por}</Text>
         </Paper>
-        <Textarea label="Comentario de revisión (opcional)" placeholder="Justificación de la decisión..." value={comentario} onChange={(e) => setComentario(e.currentTarget.value)} rows={3} />
+        <Textarea label="Comentario de revisión (opcional)" placeholder="Justificación de la decisión..." value={comentario} onChange={(e) => { setComentario(e.currentTarget.value); setHasChanges(true); }} rows={3} />
         <Group justify="flex-end" mt="sm" gap="sm">
           <Button variant="default" onClick={onClose}>Cancelar</Button>
           <Button color="red" variant="light" leftSection={<IconX size={14} />} loading={loading} onClick={() => handleRevision("Rechazado")}>
@@ -240,6 +245,7 @@ function RevisionModal({
 
 export default function CambiosPage() {
   const router = useRouter();
+  const { confirmNavigation } = useUnsavedChanges();
 
   const [solicitudes, setSolicitudes] = useState<SolicitudCambio[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -269,7 +275,7 @@ export default function CambiosPage() {
           {/* Header */}
           <Group justify="space-between" mb="xl">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+              <ActionIcon variant="subtle" onClick={() => confirmNavigation(() => router.push("/pdi"))}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={42} radius="xl" color="violet" variant="light">

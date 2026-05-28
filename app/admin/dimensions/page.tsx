@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Stack } from "@mantine/core";
-import { IconSettings, IconTrash, IconCirclePlus, IconDeviceFloppy, IconCancel, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconChevronDown, IconChevronUp } from "@tabler/icons-react";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Stack, Loader, ScrollArea, Tooltip } from "@mantine/core";
+import { IconSettings, IconTrash, IconCirclePlus, IconDeviceFloppy, IconCancel, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconChevronDown, IconChevronUp, IconTemplate } from "@tabler/icons-react";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSort } from "../../hooks/useSort";
 import { useSession } from "next-auth/react";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { useRouter } from "next/navigation";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Dimension {
   _id: string;
@@ -24,9 +26,22 @@ interface Dependency {
   visualizers?: string[]
 }
 
+interface TemplateInfo {
+  _id: string;
+  name: string;
+  producers: { _id: string; dep_code: string; name: string }[];
+  responsible_producers: { _id: string; dep_code: string; name: string }[];
+  fecha_final?: string | null;
+  loaded_dep_codes?: string[];
+  loaded_data?: { dependency: string; send_by?: { full_name: string }; loaded_date?: string }[];
+}
+
 const AdminDimensionsPage = () => {
   const { data: session } = useSession();
   const { canManage } = useViewPermission("dimensions");
+  const router = useRouter();
+  const { selectedPeriodId, availablePeriods } = usePeriod();
+  const [modalPeriodId, setModalPeriodId] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [opened, setOpened] = useState(false);
   const [confirmDeleteModalOpened, setConfirmDeleteModalOpened] = useState(false);
@@ -37,6 +52,10 @@ const AdminDimensionsPage = () => {
   const [responsible, setResponsible] = useState<Dependency | null>(null);
   const [selectedProducers, setSelectedProducers] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [templatesModalOpened, setTemplatesModalOpened] = useState(false);
+  const [templatesModalDimension, setTemplatesModalDimension] = useState<Dimension | null>(null);
+  const [dimensionTemplates, setDimensionTemplates] = useState<TemplateInfo[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
@@ -225,6 +244,57 @@ const AdminDimensionsPage = () => {
     });
   };
 
+  const handleOpenTemplatesModal = async (dimension: Dimension, periodId?: string | null) => {
+    setTemplatesModalDimension(dimension);
+    setTemplatesModalOpened(true);
+    setLoadingTemplates(true);
+    const usePeriodId = periodId !== undefined ? periodId : (modalPeriodId ?? selectedPeriodId);
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, {
+        params: { limit: 1000 },
+      });
+      const all = res.data.templates || [];
+      const filtered = all.filter((t: any) =>
+        (t.dimensions || []).some((d: any) =>
+          (typeof d === "string" ? d : d._id) === dimension._id
+        )
+      );
+
+      const depsRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, { params: { limit: 100000 } });
+      const allDeps: any[] = depsRes.data.dependencies || [];
+      const depsById = new Map(allDeps.map((d: any) => [String(d._id), d]));
+      const depsByCode = new Map(allDeps.map((d: any) => [String(d.dep_code), d]));
+
+      const populated = filtered.map((t: any) => ({
+        ...t,
+        producers: (t.producers || []).map((id: any) => depsById.get(String(id)) || depsByCode.get(String(id))).filter(Boolean),
+        responsible_producers: (t.responsible_producers || []).map((id: any) => depsById.get(String(id)) || depsByCode.get(String(id))).filter(Boolean),
+      }));
+
+      const withStatus = await Promise.all(
+        populated.map(async (t: any) => {
+          try {
+            const pubRes = await axios.get(
+              `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/by-template/${t._id}`,
+              { params: usePeriodId ? { periodId: usePeriodId } : {} }
+            );
+            const loadedData = pubRes.data?.loaded_data || [];
+            const loadedDepCodes: string[] = loadedData.map((ld: any) => ld.dependency);
+            return { ...t, loaded_dep_codes: loadedDepCodes, loaded_data: loadedData };
+          } catch {
+            return { ...t, loaded_dep_codes: [], loaded_data: [] };
+          }
+        })
+      );
+      setDimensionTemplates(withStatus);
+    } catch (error) {
+      showNotification({ title: "Error", message: "No se pudieron cargar las plantillas", color: "red" });
+      setDimensionTemplates([]);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
   const rows = sortedDimensions.flatMap((dimension: Dimension) => {
     const isExpanded = expandedRows.has(dimension._id);
     const producerCount = (dimension.producers || []).length;
@@ -258,6 +328,17 @@ const AdminDimensionsPage = () => {
               >
                 {producerCount} dep.
               </Button>
+              <Tooltip label="Ver plantillas del ámbito" withArrow>
+                <Button
+                  variant="subtle"
+                  color="teal"
+                  size="xs"
+                  onClick={() => router.push(`/admin/dimensions/${dimension._id}/templates`)}
+                  leftSection={<IconTemplate size={14} />}
+                >
+                  Plantillas
+                </Button>
+              </Tooltip>
               <Button variant="outline" onClick={() => handleConfigureDimension(dimension)} disabled={!canManage}>
                 <IconSettings size={16} />
               </Button>
@@ -450,6 +531,117 @@ const AdminDimensionsPage = () => {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+      <Modal
+        opened={templatesModalOpened}
+        onClose={() => { setTemplatesModalOpened(false); setDimensionTemplates([]); }}
+        title={`Plantillas del ámbito: ${templatesModalDimension?.name ?? ""}`}
+        size="90%"
+        centered
+      >
+        {/* Selector de periodo */}
+        <Group mb="md" gap="sm">
+          <Select
+            placeholder="Seleccionar periodo"
+            clearable
+            value={modalPeriodId ?? selectedPeriodId}
+            onChange={(v) => {
+              setModalPeriodId(v);
+              if (templatesModalDimension) handleOpenTemplatesModal(templatesModalDimension, v);
+            }}
+            data={availablePeriods.map((p) => ({ value: p._id, label: p.name }))}
+            style={{ minWidth: 220 }}
+          />
+        </Group>
+
+        {loadingTemplates ? (
+          <Center py="xl"><Loader /></Center>
+        ) : dimensionTemplates.length === 0 ? (
+          <Text c="dimmed" ta="center" py="xl">No hay plantillas asignadas a este ámbito.</Text>
+        ) : (
+          <ScrollArea>
+            <Table striped withTableBorder verticalSpacing="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Plantilla</Table.Th>
+                  <Table.Th>Responsables</Table.Th>
+                  <Table.Th>Productores</Table.Th>
+                  <Table.Th>Fecha límite</Table.Th>
+                  <Table.Th><Center>Estado (responsables y productores)</Center></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {dimensionTemplates.map((t) => (
+                  <Table.Tr key={t._id}>
+                    <Table.Td>
+                      <Text fw={600}>{t.name}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {(t.responsible_producers || []).length > 0 ? (
+                        <Stack gap={4}>
+                          {t.responsible_producers.map((r) => (
+                            <Badge key={r._id} variant="light" color="violet" size="sm">{r.name}</Badge>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Text size="sm" c="dimmed">Sin responsables</Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {(t.producers || []).length > 0 ? (
+                        <Stack gap={4}>
+                          {t.producers.map((p) => (
+                            <Badge key={p._id} variant="light" color="gray" size="sm">{p.name}</Badge>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Text size="sm" c="dimmed">Sin productores</Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">
+                        {t.fecha_final ? new Date(t.fecha_final).toLocaleDateString("es-CO") : "Sin fecha"}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Stack gap={4}>
+                        {/* Estado responsables */}
+                        {(t.responsible_producers || []).map((r) => {
+                          const cargada = (t.loaded_dep_codes || []).includes(r.dep_code);
+                          return (
+                            <Group key={r._id} gap={6}>
+                              <Badge size="sm" color={cargada ? "teal" : "violet"} variant="filled">
+                                {cargada ? "✓ Cargada" : "⏳ Pendiente"}
+                              </Badge>
+                              <Text size="xs" fw={600}>{r.name}</Text>
+                              <Badge size="xs" variant="outline" color="violet">resp.</Badge>
+                            </Group>
+                          );
+                        })}
+                        {/* Estado productores */}
+                        {(t.producers || []).length === 0 && (t.responsible_producers || []).length === 0 ? (
+                          <Text size="sm" c="dimmed">Sin participantes</Text>
+                        ) : (
+                          t.producers.map((p) => {
+                            const cargada = (t.loaded_dep_codes || []).includes(p.dep_code);
+                            return (
+                              <Group key={p._id} gap={6}>
+                                <Badge size="sm" color={cargada ? "teal" : "orange"} variant="filled">
+                                  {cargada ? "✓ Cargada" : "⏳ Pendiente"}
+                                </Badge>
+                                <Text size="xs">{p.name}</Text>
+                              </Group>
+                            );
+                          })
+                        )}
+                      </Stack>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        )}
       </Modal>
     </Container>
   );
