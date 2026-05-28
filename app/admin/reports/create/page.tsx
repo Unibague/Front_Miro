@@ -7,6 +7,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Dimension {
   _id: string;
@@ -16,6 +17,7 @@ interface Dimension {
 const ReportCreatePage = () => {
   const { data: session } = useSession();
   const router = useRouter();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   const [name, setName] = useState<string>("");
   const [description, setDescription] = useState<string>("");
@@ -89,6 +91,7 @@ const ReportCreatePage = () => {
         message: "Informe creado exitosamente",
         color: "green",
       });
+      setHasChanges(false);
       router.back();
     } catch (error) {
 
@@ -129,6 +132,7 @@ const ReportCreatePage = () => {
         onChange={(event) => {
           setName(event.currentTarget.value);
           setErrors((prev) => ({ ...prev, name: false }));
+          setHasChanges(true);
         }}
         error={errors.name && "Este campo es requerido"}
         required
@@ -145,6 +149,7 @@ const ReportCreatePage = () => {
         onChange={(event) => {
           setDescription(event.currentTarget.value);
           setErrors((prev) => ({ ...prev, description: false }));
+          setHasChanges(true);
         }}
         error={errors.description && "Este campo es requerido"}
         required
@@ -158,6 +163,7 @@ const ReportCreatePage = () => {
         onChange={(value) => {
           setFile(value ?? undefined);
           setErrors((prev) => ({ ...prev, file: false }));
+          setHasChanges(true);
         }}
         error={errors.file && "Este campo es requerido"}
         required
@@ -171,6 +177,7 @@ const ReportCreatePage = () => {
         onChange={(event) => {
           setFileName(event.currentTarget.value);
           setErrors((prev) => ({ ...prev, fileName: false }));
+          setHasChanges(true);
         }}
         error={errors.fileName && "Este campo es requerido"}
         required
@@ -186,6 +193,7 @@ const ReportCreatePage = () => {
           const dims = dimensions.filter((dim) => value.includes(dim._id));
           setSelectedDimensions(dims);
           setErrors((prev) => ({ ...prev, selectedDimensions: dims.length === 0 }));
+          setHasChanges(true);
         }}
         error={errors.dimensions && "Este campo es requerido"}
         searchable
@@ -195,9 +203,10 @@ const ReportCreatePage = () => {
         <Text size="sm" fw={700}>¿Requiere Anexos?</Text>
         <Switch
           checked={requiresAttachment}
-          onChange={(event) =>
-            setRequiresAttachment(event.currentTarget.checked)
-          }
+          onChange={(event) => {
+            setRequiresAttachment(event.currentTarget.checked);
+            setHasChanges(true);
+          }}
           color="rgba(25, 113, 194, 1)"
           size="md"
           thumbIcon={
@@ -223,7 +232,7 @@ const ReportCreatePage = () => {
           variant="light"
           color="red"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back())}
         >
           Cancelar
         </Button>

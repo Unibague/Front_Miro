@@ -39,6 +39,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
 
@@ -103,13 +104,14 @@ function FormularioModal({
   selected: Formulario | null;
   onSaved: (f: Formulario) => void;
 }) {
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [campos, setCampos] = useState<Campo[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
     if (selected) {
       setNombre(selected.nombre);
       setDescripcion(selected.descripcion);
@@ -126,28 +128,40 @@ function FormularioModal({
     setNombre("");
     setDescripcion("");
     setCampos([]);
-  }, [opened, selected]);
+  }, [opened, selected, setHasChanges]);
 
-  const addCampo = () =>
+  const addCampo = () => {
     setCampos(prev => [
       ...prev,
       { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, max_caracteres: null, justificacion_descripcion: "", justificacion_min_caracteres: null, justificacion_max_caracteres: null, opciones: [], condicional_valor: null },
     ]);
+    setHasChanges(true);
+  };
 
-  const removeCampo = (idx: number) =>
+  const removeCampo = (idx: number) => {
     setCampos(prev => prev.filter((_, i) => i !== idx));
+    setHasChanges(true);
+  };
 
-  const updateCampo = (idx: number, key: keyof Campo, value: Campo[keyof Campo]) =>
+  const updateCampo = (idx: number, key: keyof Campo, value: Campo[keyof Campo]) => {
     setCampos(prev => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
+    setHasChanges(true);
+  };
 
-  const addOpcion = (campoIdx: number) =>
+  const addOpcion = (campoIdx: number) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: [...c.opciones, ""] } : c));
+    setHasChanges(true);
+  };
 
-  const removeOpcion = (campoIdx: number, opIdx: number) =>
+  const removeOpcion = (campoIdx: number, opIdx: number) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: c.opciones.filter((_, oi) => oi !== opIdx) } : c));
+    setHasChanges(true);
+  };
 
-  const updateOpcion = (campoIdx: number, opIdx: number, value: string) =>
+  const updateOpcion = (campoIdx: number, opIdx: number, value: string) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: c.opciones.map((op, oi) => oi === opIdx ? value : op) } : c));
+    setHasChanges(true);
+  };
 
   const handleSave = async () => {
     if (!nombre.trim()) {
@@ -182,6 +196,7 @@ function FormularioModal({
         ? await axios.put(PDI_ROUTES.formulario(selected._id), payload)
         : await axios.post(PDI_ROUTES.formularios(), payload);
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Formulario guardado", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -197,7 +212,7 @@ function FormularioModal({
   return (
     <Modal
       opened={opened}
-      onClose={onClose}
+      onClose={() => confirmNavigation(onClose)}
       title={selected ? "Editar formulario" : "Nuevo formulario PDI"}
       centered
       size="xl"
@@ -207,13 +222,13 @@ function FormularioModal({
           label="Nombre del formulario"
           placeholder="Ej: Reporte semestral del indicador"
           value={nombre}
-          onChange={e => setNombre(e.currentTarget.value)}
+          onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }}
         />
         <Textarea
           label="Descripción"
           placeholder="Instrucciones para el responsable"
           value={descripcion}
-          onChange={e => setDescripcion(e.currentTarget.value)}
+          onChange={e => { setDescripcion(e.currentTarget.value); setHasChanges(true); }}
           rows={2}
         />
 
@@ -380,7 +395,7 @@ function FormularioModal({
         </Button>
 
         <Group justify="flex-end" mt="sm">
-          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
           <Button loading={loading} onClick={handleSave} color="teal">Guardar</Button>
         </Group>
       </Stack>
@@ -474,6 +489,7 @@ interface RazonRechazo {
 export default function FormulariosPage() {
   const router = useRouter();
   const { canManage } = useViewPermission("pdiForms");
+  const { confirmNavigation } = useUnsavedChanges();
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
@@ -563,7 +579,7 @@ export default function FormulariosPage() {
 
           <Group mb="lg" justify="space-between">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+              <ActionIcon variant="subtle" onClick={() => confirmNavigation(() => router.push("/pdi"))}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={40} radius="xl" color="teal" variant="light">

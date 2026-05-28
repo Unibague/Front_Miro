@@ -14,6 +14,7 @@ import { useSession } from "next-auth/react";
 import type { Indicador } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Props {
   opened: boolean;
@@ -34,6 +35,7 @@ interface PeriodoForm {
 export default function IndicadorModal({ opened, onClose, selected, defaultAccionId, onSaved }: Props) {
   const { config } = usePdiConfig();
   const { data: session } = useSession();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
   const [entregable, setEntregable] = useState("");
@@ -69,7 +71,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   }, []);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
 
     if (selected) {
       setCodigo(selected.codigo);
@@ -107,7 +109,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setFechaInicio(null);
     setFechaFin(null);
     setPeriodos(cortesData.map((c) => ({ periodo: c.nombre, meta: "", avanceInicial: 0, fechaInicio: null, fechaFin: null })));
-  }, [opened, selected, cortesData]);
+  }, [opened, selected, cortesData, setHasChanges]);
 
   useEffect(() => {
     if (!opened || selected || cortesData.length === 0 || periodos.length > 0) return;
@@ -234,6 +236,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         : await axios.post(PDI_ROUTES.indicadores(), payload);
 
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Indicador guardado", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -244,7 +247,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Indicador" : "Nuevo Indicador"} centered size="lg">
+    <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Indicador" : "Nuevo Indicador"} centered size="lg">
       <Tabs defaultValue="general">
         <Tabs.List mb="sm">
           <Tabs.Tab value="general">General</Tabs.Tab>
@@ -255,14 +258,14 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         <Tabs.Panel value="general">
           <Stack gap="sm">
             <Group grow>
-              <TextInput label="Código" placeholder="Ej: 1.1.1.1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
+              <TextInput label="Código" placeholder="Ej: 1.1.1.1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
               <TextInput label="Peso (%)" value={String(pesoAuto)} readOnly styles={{ input: { color: "gray" } }} />
             </Group>
-            <TextInput label="Nombre" placeholder="Nombre del indicador" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+            <TextInput label="Nombre" placeholder="Nombre del indicador" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
             <Textarea
               label="Entregable / Evidencia verificable"
               value={entregable}
-              onChange={(e) => setEntregable(e.currentTarget.value)}
+              onChange={(e) => { setEntregable(e.currentTarget.value); setHasChanges(true); }}
               rows={2}
             />
             <Group grow>
@@ -270,7 +273,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
                 label="Fecha de inicio"
                 placeholder="dd/mm/aaaa"
                 value={fechaInicio}
-                onChange={setFechaInicio}
+                onChange={(v) => { setFechaInicio(v); setHasChanges(true); }}
                 locale="es"
                 valueFormat="DD/MM/YYYY"
                 clearable
@@ -279,7 +282,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
                 label="Fecha de finalización"
                 placeholder="dd/mm/aaaa"
                 value={fechaFin}
-                onChange={setFechaFin}
+                onChange={(v) => { setFechaFin(v); setHasChanges(true); }}
                 locale="es"
                 valueFormat="DD/MM/YYYY"
                 clearable
@@ -300,7 +303,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
                 label: c.descripcion ? `${c.nombre} — ${c.descripcion}` : c.nombre,
               }))}
               value={cortesSegimiento}
-              onChange={setCortesSegimiento}
+              onChange={(v) => { setCortesSegimiento(v); setHasChanges(true); }}
               searchable
               clearable
               nothingFoundMessage="Sin cortes activos — crea uno en Cortes PDI"
@@ -314,13 +317,13 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
                 { value: "ultimo_valor", label: "Último valor" },
               ]}
               value={tipoCalculo}
-              onChange={(v) => setTipoCalculo(v ?? "promedio")}
+              onChange={(v) => { setTipoCalculo(v ?? "promedio"); setHasChanges(true); }}
             />
             <TextInput
               label={`Meta final ${config.anio_fin}`}
               placeholder="Ej: 100 o 'Implementado'"
               value={metaFinal}
-              onChange={(e) => setMetaFinal(e.currentTarget.value)}
+              onChange={(e) => { setMetaFinal(e.currentTarget.value); setHasChanges(true); }}
             />
           </Stack>
         </Tabs.Panel>
@@ -363,7 +366,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       </Tabs>
 
       <Group justify="flex-end" mt="lg">
-        <Button variant="default" onClick={onClose}>Cancelar</Button>
+        <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
         <Button loading={loading} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>

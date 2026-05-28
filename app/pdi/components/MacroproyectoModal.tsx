@@ -7,6 +7,7 @@ import axios from "axios";
 import type { Macroproyecto } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Props {
   opened: boolean;
@@ -17,6 +18,7 @@ interface Props {
 
 export default function MacroproyectoModal({ opened, onClose, selected, onSaved }: Props) {
   const { config } = usePdiConfig();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo]               = useState("");
   const [nombre, setNombre]               = useState("");
   const [lider, setLider]                 = useState("");
@@ -45,7 +47,7 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
   }, []);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
@@ -58,6 +60,7 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
   }, [opened]);
 
   const handleLiderChange = (name: string) => {
+    setHasChanges(true);
     setLider(name);
     const found = usuarios.find((u) => u.name === name);
     if (found) setLiderEmail(found.email);
@@ -87,6 +90,7 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
         ? await axios.put(PDI_ROUTES.macroproyecto(selected._id), payload)
         : await axios.post(PDI_ROUTES.macroproyectos(), payload);
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Macroproyecto guardado", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -97,10 +101,10 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Macroproyecto" : "Nuevo Macroproyecto"} centered>
+    <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Macroproyecto" : "Nuevo Macroproyecto"} centered>
       <Stack gap="sm">
-        <TextInput label="Código" placeholder="Ej: 1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
-        <TextInput label="Nombre" placeholder="Nombre del macroproyecto" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <TextInput label="Código" placeholder="Ej: 1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
+        <TextInput label="Nombre" placeholder="Nombre del macroproyecto" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
         <Autocomplete
           label="Líder"
           placeholder="Buscar usuario..."
@@ -117,13 +121,13 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
           description="El peso de cada proyecto se calculará como 100 / n"
           placeholder="Ej: 3"
           value={numProyectos}
-          onChange={setNumProyectos}
+          onChange={(v) => { setNumProyectos(v); setHasChanges(true); }}
           min={0}
           step={1}
           allowDecimal={false}
         />
         <Group justify="flex-end" mt="sm">
-          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
           <Button loading={loading} onClick={handleSave}>Guardar</Button>
         </Group>
       </Stack>
