@@ -6,6 +6,7 @@ import {
   SimpleGrid, Notification, Badge, Divider, Box, Anchor,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
+import { dateParserEspanol, inputFechaAISO } from "../utils/parseFlexibleDate";
 import axios from "axios";
 import type { Dependency, Program, Process } from "../types";
 import {
@@ -21,6 +22,7 @@ import {
   programaConNombreDuplicado,
   MENSAJE_NOMBRE_PROGRAMA_DUPLICADO,
 } from "../utils/nombreProgramaUnico";
+import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -273,6 +275,20 @@ export default function AgregarProcesoModal({
     return t || null;
   };
 
+  const asignarPdfResolucion = (files: File[]) => {
+    const f = files[0];
+    if (!f) return;
+    const esPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+    if (!esPdf) {
+      setError("Solo se permite archivo PDF.");
+      return;
+    }
+    setPdfFile(f);
+    setOmitirPdfCopiaAlerta(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setError(null);
+  };
+
   const reset = () => {
     setStep(1); setTipo(null); setSubtipo(null); setProgramaId(null);
     setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
@@ -439,7 +455,7 @@ export default function AgregarProcesoModal({
         nivel_academico: nivelAcad,
         nivel_formacion: nivelForm,
         num_creditos: numCreditos ? parseInt(numCreditos) : null,
-        periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
+        periodos_duracion: periodosDuracion.trim() || null,
         num_semestres: numSemestres ? parseInt(numSemestres) : null,
         admision_estudiantes: admision,
         num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -516,8 +532,13 @@ export default function AgregarProcesoModal({
       }
     }
 
+    let fechaResISO: string | null = null;
     if (necesitaRes) {
-      if (!fechaRes)     { setError("La fecha de resolución es obligatoria."); return; }
+      fechaResISO = inputFechaAISO(fechaRes);
+      if (!fechaResISO) {
+        setError("La fecha de resolución es obligatoria o no es válida.");
+        return;
+      }
       if (!codigoRes)    { setError("El código de resolución es obligatorio."); return; }
       if (!duracionRes && subtipo !== "Registro calificado de oficio")  { setError("La duración de la resolución es obligatoria."); return; }
     }
@@ -647,7 +668,7 @@ export default function AgregarProcesoModal({
           nivel_academico:    nivelAcad,
           nivel_formacion:    nivelForm,
           num_creditos:       numCreditos ? parseInt(numCreditos) : null,
-          periodos_duracion: periodosDuracion ? parseInt(periodosDuracion) : null,
+          periodos_duracion: periodosDuracion.trim() || null,
           num_semestres:      numSemestres ? parseInt(numSemestres) : null,
           admision_estudiantes: admision,
           num_estudiantes_saces: numEstud ? parseInt(numEstud) : null,
@@ -657,8 +678,8 @@ export default function AgregarProcesoModal({
         body.program_code = progSel ? programCodeKey(progSel) : undefined;
       }
 
-      if (necesitaRes) {
-        body.fecha_resolucion    = fechaRes;
+      if (necesitaRes && fechaResISO) {
+        body.fecha_resolucion    = fechaResISO;
         body.codigo_resolucion   = codigoRes;
         body.duracion_resolucion = subtipo === "Registro calificado de oficio" ? 7 : parseInt(duracionRes, 10);
         if (
@@ -870,7 +891,7 @@ export default function AgregarProcesoModal({
               />
               <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                 value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-              <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+              <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
                 value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
               <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                 value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
@@ -1046,7 +1067,7 @@ export default function AgregarProcesoModal({
                   />
                   <TextInput label="Créditos" type="number" placeholder="Ej: 173"
                     value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-                  <TextInput label="Periodos de duración" type="number" placeholder="Ej: 10"
+                  <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
                     value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
                   <TextInput label="Semestres" type="number" placeholder="Ej: 10"
                     value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
@@ -1142,16 +1163,15 @@ export default function AgregarProcesoModal({
                   </Text>
                 )}
                 <SimpleGrid cols={3} spacing="sm">
-                  <div>
-                    <Text size="sm" fw={500} mb={4}>Fecha de resolución</Text>
-                    <DateInput
-                      value={fechaRes ? new Date(fechaRes + "T12:00:00") : null}
-                      onChange={val => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
-                      valueFormat="YYYY-MM-DD" placeholder="YYYY-MM-DD" clearable
-                      onKeyDown={e => e.preventDefault()}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
-                    />
-                  </div>
+                  <DateInput
+                    label="Fecha de resolución"
+                    value={fechaRes ? (dateParserEspanol(fechaRes) ?? new Date(`${fechaRes.slice(0, 10)}T12:00:00`)) : null}
+                    onChange={(val) => setFechaRes(val ? val.toISOString().slice(0, 10) : "")}
+                    valueFormat="DD/MM/YYYY"
+                    placeholder="dd/mm/aaaa"
+                    clearable
+                    dateParser={dateParserEspanol}
+                  />
                   <TextInput label="Código de resolución" placeholder="Ej: 12345"
                     value={codigoRes} onChange={e => setCodigoRes(e.currentTarget.value)} />
                   {subtipo === "Registro calificado de oficio" ? (
@@ -1190,7 +1210,8 @@ export default function AgregarProcesoModal({
                       if (f) setOmitirPdfCopiaAlerta(false);
                     }}
                   />
-                  <Paper withBorder radius="sm" p="sm" bg="gray.0">
+                  {(pdfFile || muestraDocAlerta) && (
+                  <Paper withBorder radius="sm" p="sm" bg="gray.0" mb="xs">
                     {pdfFile ? (
                       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
@@ -1223,19 +1244,19 @@ export default function AgregarProcesoModal({
                           <Button size="xs" variant="subtle" color="red" onClick={quitarPdf}>Quitar</Button>
                         </Group>
                       </Group>
-                    ) : (
-                      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                        <Text size="xs" c="dimmed" style={{ flex: 1 }}>
-                          {subtipo === "Registro calificado de oficio"
-                            ? "Obligatorio: el mismo PDF se copiará a la alerta de renovación junto con fecha y código."
-                            : prefillDesdeRecordatorio?.reminderRowId
-                              ? "Sin PDF en la alerta. Puedes adjuntar uno o crear el proceso sin documento."
-                              : "Opcional. Si no adjuntas archivo, el proceso se crea sin PDF de resolución."}
-                        </Text>
-                        <Button size="xs" variant="light" onClick={abrirSelectorPdf}>Adjuntar PDF</Button>
-                      </Group>
-                    )}
+                    ) : null}
                   </Paper>
+                  )}
+                  <DropzoneCustomComponent
+                    text={
+                      pdfFile
+                        ? "Arrastra otro PDF para reemplazar"
+                        : muestraDocAlerta
+                          ? "Arrastra el PDF para reemplazar el de la alerta"
+                          : "Arrastra el PDF de resolución o haz clic"
+                    }
+                    onDrop={asignarPdfResolucion}
+                  />
                 </div>
                   );
                 })()}
