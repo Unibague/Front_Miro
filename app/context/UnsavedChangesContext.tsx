@@ -80,7 +80,8 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
         centered
         size="sm"
         radius="lg"
-        overlayProps={{ backgroundOpacity: 0.4, blur: 3 }}
+        zIndex={1000}
+        overlayProps={{ backgroundOpacity: 0.4, blur: 3, zIndex: 999 }}
       >
         <Stack align="center" gap="md" py="xs">
           <ThemeIcon size={52} radius="xl" color="orange" variant="light">
