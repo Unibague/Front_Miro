@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { Modal, Button, Group, Text, ThemeIcon, Stack } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 
@@ -28,6 +28,34 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
     }
     pendingCallback.current = onConfirm;
     setModalOpen(true);
+  }, [hasChanges]);
+
+  // Interceptar flecha "atrás" del navegador
+  useEffect(() => {
+    if (!hasChanges) return;
+
+    window.history.pushState(null, "", window.location.href);
+
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      pendingCallback.current = () => window.history.go(-2);
+      setModalOpen(true);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [hasChanges]);
+
+  // Interceptar cierre/refresco de pestaña
+  useEffect(() => {
+    if (!hasChanges) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasChanges]);
 
   const handleConfirm = () => {
