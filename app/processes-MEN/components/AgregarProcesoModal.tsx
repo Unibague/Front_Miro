@@ -23,6 +23,7 @@ import {
   MENSAJE_NOMBRE_PROGRAMA_DUPLICADO,
 } from "../utils/nombreProgramaUnico";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -198,6 +199,7 @@ export default function AgregarProcesoModal({
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [excluirSubtipoNuevo, setExcluirSubtipoNuevo] = useState(false);
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   const snapKey = (() => {
     const s = prefillDesdeRecordatorio?.resolucionDesdeAlerta;
@@ -290,6 +292,7 @@ export default function AgregarProcesoModal({
   };
 
   const reset = () => {
+    setHasChanges(false);
     setStep(1); setTipo(null); setSubtipo(null); setProgramaId(null);
     setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
     setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
@@ -837,7 +840,7 @@ export default function AgregarProcesoModal({
   return (
     <Modal
       opened={opened}
-      onClose={handleClose}
+      onClose={() => confirmNavigation(handleClose)}
       title={
         <Group gap="sm">
           <Text fw={700} size="lg">{tituloModal}</Text>
@@ -862,7 +865,7 @@ export default function AgregarProcesoModal({
             </Text>
             <Divider label="Datos del programa" labelPosition="left" />
             <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
-              value={nombre} onChange={e => setNombre(e.currentTarget.value)} required />
+              value={nombre} onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }} required />
             <TextInput label="Código del programa" placeholder="Ej: 22 (opcional)"
               description="Opcional. Si no lo indicas, el programa queda sin código visible (como el SNIES)."
               value={depCodePrograma} onChange={e => setDepCodePrograma(e.currentTarget.value)} />
@@ -901,7 +904,7 @@ export default function AgregarProcesoModal({
             {camposClasificacionEnAlta}
             {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
             <Group justify="space-between" mt="sm">
-              <Button variant="default" size="sm" onClick={handleClose}>Cancelar</Button>
+              <Button variant="default" size="sm" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
               <Button size="sm" loading={saving} onClick={() => void handleCrearSoloPrograma()}>Crear programa</Button>
             </Group>
           </>
@@ -927,7 +930,7 @@ export default function AgregarProcesoModal({
             )}
             {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
             <Group justify="space-between" mt="sm">
-              <Button variant="default" size="sm" onClick={handleClose}>Cancelar</Button>
+              <Button variant="default" size="sm" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
               <Button size="sm" loading={saving} onClick={() => void handleCrear()}>Crear proceso</Button>
             </Group>
           </>
@@ -1038,7 +1041,7 @@ export default function AgregarProcesoModal({
               <>
                 <Divider label="Datos del programa" labelPosition="left" />
                 <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
-                  value={nombre} onChange={e => setNombre(e.currentTarget.value)} required />
+                  value={nombre} onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }} required />
                 <TextInput label="Código del programa" placeholder="Ej: 22 (opcional)"
                   description="Opcional. Si no lo indicas, el programa queda sin código visible (como el SNIES)."
                   value={depCodePrograma} onChange={e => setDepCodePrograma(e.currentTarget.value)} />
