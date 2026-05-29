@@ -147,12 +147,12 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       <Group justify="space-between" align="flex-start" mb="xs">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={() => router.push(`/pdi/indicadores/${ind._id}`)}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{ind.codigo}</Text>
+            <Text size="xxl" fw={900} c="dark">{ind.codigo}</Text>
             <Badge color={SEMAFORO_COLOR[ind.semaforo]} variant="light" size="sm" radius="xl">
               {SEMAFORO_LABEL[ind.semaforo]}
             </Badge>
           </Group>
-          <Text size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
+          <Text size="xl" fw={800} style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
         </div>
         <Group gap={4}>
           {admin && <>
@@ -342,10 +342,10 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={toggleIndicadores}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{accion.codigo}</Text>
+            <Text size="xxl" fw={900} c="dark">{accion.codigo}</Text>
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
-          <Text size="md" lh={1.35}>{accion.nombre}</Text>
+          <Text size="xl" fw={700} lh={1.35}>{accion.nombre}</Text>
           {pendientesBadges.length > 0 && (
             <Group gap={4} mt={8} wrap="wrap">
               {pendientesBadges.map((r) => (
