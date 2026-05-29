@@ -41,18 +41,19 @@ export const CAMPOS_REFORMA_UI: {
 ];
 
 export function buildProgramaEditReforma(p: Program): ProgramaEditReformaState {
+  const txt = (v: unknown) => (v == null || v === "" ? "" : String(v));
   return {
     dep_code_programa: p.dep_code_programa?.trim() ?? "",
     nombre: p.nombre ?? "",
-    codigo_snies: p.codigo_snies ?? "",
+    codigo_snies: txt(p.codigo_snies),
     modalidad: p.modalidad ?? "",
     nivel_academico: p.nivel_academico ?? "",
     nivel_formacion: p.nivel_formacion ?? "",
-    num_creditos: p.num_creditos ?? "",
-    periodos_duracion: p.periodos_duracion ?? "",
-    num_semestres: p.num_semestres ?? "",
+    num_creditos: txt(p.num_creditos),
+    periodos_duracion: txt(p.periodos_duracion),
+    num_semestres: txt(p.num_semestres),
     admision_estudiantes: p.admision_estudiantes ?? "",
-    num_estudiantes_saces: p.num_estudiantes_saces ?? "",
+    num_estudiantes_saces: txt(p.num_estudiantes_saces),
     cine_f: {
       campo_amplio: p.cine_f?.campo_amplio ?? "",
       campo_especifico: p.cine_f?.campo_especifico ?? "",
