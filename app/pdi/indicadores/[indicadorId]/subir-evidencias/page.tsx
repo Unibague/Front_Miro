@@ -120,7 +120,7 @@ function formatFechaCorta(fecha?: string | null) {
 }
 
 const MAX_DOC_SIZE = 10 * 1024 * 1024;
-const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png"];
+const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".zip", ".rar"];
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
   "application/x-pdf",
@@ -128,13 +128,19 @@ const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/vnd.ms-excel",
   "image/jpeg",
   "image/png",
+  "image/tiff",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-rar-compressed",
+  "application/vnd.rar",
+  "application/octet-stream",
 ]);
 const EVIDENCE_ACCEPT =
-  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png";
-const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls) e imagenes (.jpg, .jpeg, .png)";
+  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png,.tif,.tiff,image/tiff,.zip,application/zip,.rar,application/x-rar-compressed";
+const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls), imágenes (.jpg, .jpeg, .png, .tif) y comprimidos (.zip, .rar)";
 const SELECT_VALUE_SEPARATOR = " | ";
 const EVIDENCE_HELP_TEXT =
-  "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
+  "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls), imágenes de alta resolución (.jpg, .jpeg, .png, .tif) y archivos comprimidos (.zip, .rar), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
 const EVIDENCE_HELP_TEXT_2 =
   "La evidencia cargada debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o información que no guarde relación directa con el resultado reportado.";
 
@@ -561,7 +567,7 @@ export default function SubirEvidenciasPage() {
       fd.append("archivo", file);
       const res = await axios.post(
         PDI_ROUTES.formularioArchivo(form._id, respActual!._id, campo._id),
-        fd, { headers: { "Content-Type": "multipart/form-data" } }
+        fd
       );
       setRespuestas(prev => {
         const r = prev[form._id];
@@ -660,8 +666,7 @@ export default function SubirEvidenciasPage() {
       files.forEach(f => fd.append("archivo", f));
       const res = await axios.post(
         PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
-        fd,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        fd
       );
       setRespuestas(prev => {
         const actual = prev[form._id] ?? respActual;

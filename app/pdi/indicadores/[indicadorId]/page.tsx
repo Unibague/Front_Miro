@@ -579,7 +579,7 @@ function LiderRevisionPanel({
                 </div>
               </Group>
 
-              <Text fw={700} size="lg" mb="sm">Evaluación por periodo</Text>
+              <Text fw={700} size="lg" mb="sm" style={{ background: "linear-gradient(90deg, #7c3aed, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Evaluación por periodo</Text>
               <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm" mb="md">
                 {[
                   { label: "Periodo", value: periodoMostrado },
@@ -892,7 +892,7 @@ function LiderRevisionPanelV2({
               </Group>
 
               <div>
-                <Title order={5} mb="sm">Avance por periodo</Title>
+                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #7c3aed, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Avance por periodo</Title>
                 <Paper withBorder radius="xl" p="md" mb="lg" style={{ borderLeft: "4px solid #7c3aed", background: "#fff" }}>
                   <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
                     <div>
@@ -937,7 +937,7 @@ function LiderRevisionPanelV2({
                     <IconForms size={16} />
                   </ThemeIcon>
                   <div>
-                    <Title order={5}>Formulario de evidencias</Title>
+                    <Title order={5} style={{ background: "linear-gradient(90deg, #7c3aed, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Formulario de evidencias</Title>
                     <Text size="xs" c="dimmed">
                       {`${formularioNombre} · vista tipo Word del formulario enviado por el responsable`}
                     </Text>
@@ -1016,7 +1016,7 @@ function LiderRevisionPanelV2({
               </div>
 
               <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
-                <Title order={5} mb="sm">{readOnly ? "Aprobación del líder" : "Evaluación del líder"}</Title>
+                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{readOnly ? "Aprobación del líder" : "Evaluación del líder"}</Title>
                 <Text size="sm" c="dimmed" mb="md">
                   {readOnly
                     ? "Vista de solo lectura del estado definido por el líder."
@@ -1481,7 +1481,7 @@ export default function IndicadorEvidenciasPage() {
               <IconTarget size={20} />
             </ThemeIcon>
             <div>
-              <Title order={3}>{admin && !mostrarVistaLider ? "Avances y evidencias" : "Indicador de resultado"}</Title>
+              <Title order={3} style={{ background: "linear-gradient(90deg, #7c3aed, #3b82f6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{admin && !mostrarVistaLider ? "Avances y evidencias" : "Indicador de resultado"}</Title>
               <Text size="sm" c="dimmed">
                 {admin && !mostrarVistaLider ? config.nombre : `${config.nombre} - Seguimiento, reportes y evidencias`}
               </Text>

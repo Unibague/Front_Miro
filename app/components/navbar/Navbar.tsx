@@ -101,7 +101,7 @@ export default function Navbar() {
   const [opened, { toggle }] = useDisclosure(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const { userRole, setUserRole, viewPermissions, setViewPermissions, setUserAccessProfiles } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, setUserAccessProfiles, setAllowedDependencies, setAllowedDimensions } = useRole();
   const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
@@ -156,6 +156,8 @@ export default function Navbar() {
       setUserRole(role as Roles);
       setViewPermissions(permResponse.data.viewPermissions || {});
       setUserAccessProfiles(permResponse.data.accessProfiles || []);
+      setAllowedDependencies(permResponse.data.allowedDependencies || []);
+      setAllowedDimensions(permResponse.data.allowedDimensions || []);
       showNotification({
         title: "Rol actualizado",
         message: `Tu nuevo rol es ${role}`,

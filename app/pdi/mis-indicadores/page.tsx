@@ -1364,7 +1364,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           </ThemeIcon>
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
-            <Text fw={700} size="lg" style={{ lineHeight: 1.25 }}>{accion.nombre}</Text>
+            <Text fw={700} size="lg" style={{ lineHeight: 1.25, WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{accion.nombre}</Text>
             {accion.responsable && (
               <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
             )}
@@ -1538,7 +1538,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
           </ThemeIcon>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Text size="xs" fw={700} c="dimmed">{vista.proyecto.codigo}</Text>
-            <Title order={4} style={{ lineHeight: 1.2 }}>{vista.proyecto.nombre}</Title>
+            <Title order={3} style={{ lineHeight: 1.2,  WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{vista.proyecto.nombre}</Title>
             <Group gap="md" mt={6} wrap="wrap">
               {vista.proyecto.responsable && (
                 <Text size="xs" c="dimmed">Responsable: <b>{vista.proyecto.responsable}</b></Text>
@@ -2015,7 +2015,7 @@ export default function MisIndicadoresPage() {
             <IconTarget size={22} />
           </ThemeIcon>
           <div>
-            {loading ? <Skeleton height={28} width={200} mb={6} /> : <Title order={3}>{pageTitle}</Title>}
+            {loading ? <Skeleton height={28} width={200} mb={6} /> : <Title order={2} style={{ WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{pageTitle}</Title>}
             <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
@@ -2054,11 +2054,11 @@ export default function MisIndicadoresPage() {
           ? Array.from({ length: 4 }).map((_, i) => (
               <Paper key={i} withBorder radius="lg" p="lg" shadow="xs">
                 <Group justify="space-between" align="flex-start" mb="sm">
-                  <Skeleton height={48} width={48} radius="xl" />
-                  <Skeleton height={20} width={36} radius="xl" />
+                  <Skeleton height={58} width={48} radius="xl" />
+                  <Skeleton height={40} width={46} radius="xl" />
                 </Group>
-                <Skeleton height={12} width="60%" mb={8} />
-                <Skeleton height={36} width="40%" />
+                <Skeleton height={22} width="60%" mb={8} />
+                <Skeleton height={46} width="40%" />
               </Paper>
             ))
           : unifiedStatCards.map((s) => (
@@ -2117,7 +2117,7 @@ export default function MisIndicadoresPage() {
         <>
           <Group justify="space-between" mb="sm">
             <div>
-              <Text fw={700} size="xl">
+              <Text fw={700} size="xl" style={{ WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>
                 {isLider && !isDirectlyResponsable
                   ? "Proyectos y acciones de tu macroproyecto"
                   : isLider

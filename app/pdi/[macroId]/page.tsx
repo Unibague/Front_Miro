@@ -449,7 +449,9 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
 
       {open && (
         <>
-          <Text size="sm" fw={900} c="dark" my="md">Indicadores de resultado</Text>
+          <Text size="sm" fw={900} my="md" style={{ background: "linear-gradient(90deg, #7c3aed, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+            Indicadores de resultado
+          </Text>
           {loading ? (
             <Center py="sm"><Loader size="sm" /></Center>
           ) : indicadores.length === 0 ? (
@@ -648,7 +650,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={() => setOpen(v => !v)}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{proyecto.codigo}</Text>
+            <Text size="xxl" fw={800} c="dimmed">{proyecto.codigo}</Text>
             <Badge color={estadoProyectoColorReal} variant="light" radius="xl">
               {semaforoProyecto === "verde" ? "En cumplimiento" : semaforoProyecto === "amarillo" ? "En riesgo" : "Crítico"}
             </Badge>
@@ -708,7 +710,9 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
         <>
           <Group justify="space-between" align="center" mb="md">
             <div>
-              <Text fw={700}>Acciones estratégicas</Text>
+              <Text fw={700} style={{ background: "linear-gradient(90deg, #f97316, #f59e0b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                Acciones estratégicas
+              </Text>
             </div>
             {acciones.length > 0 && (
               <Badge variant="outline" color="orange" radius="xl">

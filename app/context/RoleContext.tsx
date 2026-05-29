@@ -10,6 +10,10 @@ type RoleContextType = {
   setPermissionsLoaded: (loaded: boolean) => void;
   userAccessProfiles: string[];
   setUserAccessProfiles: (profiles: string[]) => void;
+  allowedDependencies: string[];
+  setAllowedDependencies: (deps: string[]) => void;
+  allowedDimensions: string[];
+  setAllowedDimensions: (dims: string[]) => void;
 };
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
@@ -24,9 +28,11 @@ export const RoleProvider = ({ children, initialRole }: RoleProviderProps) => {
   const [viewPermissions, setViewPermissions] = useState<Record<string, string[]>>({});
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [userAccessProfiles, setUserAccessProfiles] = useState<string[]>([]);
+  const [allowedDependencies, setAllowedDependencies] = useState<string[]>([]);
+  const [allowedDimensions, setAllowedDimensions] = useState<string[]>([]);
 
   return (
-    <RoleContext.Provider value={{ userRole, setUserRole, viewPermissions, setViewPermissions, permissionsLoaded, setPermissionsLoaded, userAccessProfiles, setUserAccessProfiles }}>
+    <RoleContext.Provider value={{ userRole, setUserRole, viewPermissions, setViewPermissions, permissionsLoaded, setPermissionsLoaded, userAccessProfiles, setUserAccessProfiles, allowedDependencies, setAllowedDependencies, allowedDimensions, setAllowedDimensions }}>
       {children}
     </RoleContext.Provider>
   );

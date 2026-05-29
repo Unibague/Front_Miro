@@ -687,17 +687,17 @@ export default function PositionViewsPage() {
               </Stack>
             </Card>
 
-            {/* ── Restricciones de ámbitos y dependencias ── */}
+            {/* ── Acceso a ámbitos y dependencias ── */}
             <Card withBorder radius="md" p="md">
               <Stack gap="md">
                 <Group gap={8} align="center">
-                  <ThemeIcon size="md" radius="md" color="orange" variant="light">
+                  <ThemeIcon size="md" radius="md" color="teal" variant="light">
                     <IconLock size={16} />
                   </ThemeIcon>
                   <div>
-                    <Title order={4}>Restricciones de acceso</Title>
+                    <Title order={4}>Acceso a ámbitos y dependencias</Title>
                     <Text size="sm" c="dimmed">
-                      Si seleccionas ámbitos o dependencias, el perfil solo verá esos. Si dejas vacío, verá todos.
+                      Selecciona los ámbitos y dependencias a los que este perfil tiene acceso. Si dejas vacío, el perfil accede a todos.
                     </Text>
                   </div>
                 </Group>
@@ -708,13 +708,13 @@ export default function PositionViewsPage() {
                       <ThemeIcon size="sm" color="blue" variant="light">
                         <IconTemplate size={12} />
                       </ThemeIcon>
-                      <Text size="sm" fw={600}>Ámbitos permitidos</Text>
+                      <Text size="sm" fw={600}>Ámbitos con acceso</Text>
                       {allowedDimensions.length > 0 && (
                         <Badge size="xs" color="blue" variant="filled">{allowedDimensions.length}</Badge>
                       )}
                     </Group>
                     <MultiSelect
-                      placeholder="Todos los ámbitos (sin restricción)"
+                      placeholder="Todos los ámbitos"
                       data={allDimensions.map((d) => ({ value: d._id, label: d.name }))}
                       value={allowedDimensions}
                       onChange={(v) => { setAllowedDimensions(v); setHasChanges(true); }}
@@ -730,13 +730,13 @@ export default function PositionViewsPage() {
                       <ThemeIcon size="sm" color="violet" variant="light">
                         <IconBuilding size={12} />
                       </ThemeIcon>
-                      <Text size="sm" fw={600}>Dependencias permitidas</Text>
+                      <Text size="sm" fw={600}>Dependencias con acceso</Text>
                       {allowedDependencies.length > 0 && (
                         <Badge size="xs" color="violet" variant="filled">{allowedDependencies.length}</Badge>
                       )}
                     </Group>
                     <MultiSelect
-                      placeholder="Todas las dependencias (sin restricción)"
+                      placeholder="Todas las dependencias"
                       data={allDependencies.map((d) => ({ value: d._id, label: d.name }))}
                       value={allowedDependencies}
                       onChange={(v) => { setAllowedDependencies(v); setHasChanges(true); }}
@@ -748,12 +748,16 @@ export default function PositionViewsPage() {
                   </div>
                 </SimpleGrid>
 
-                {(allowedDimensions.length > 0 || allowedDependencies.length > 0) && (
-                  <Alert color="orange" icon={<IconAlertCircle size={16} />}>
-                    Este perfil tiene restricciones activas: solo verá
+                {(allowedDimensions.length > 0 || allowedDependencies.length > 0) ? (
+                  <Alert color="teal" icon={<IconAlertCircle size={16} />}>
+                    Este perfil tiene acceso habilitado a
                     {allowedDimensions.length > 0 && ` ${allowedDimensions.length} ámbito(s)`}
                     {allowedDimensions.length > 0 && allowedDependencies.length > 0 && " y"}
                     {allowedDependencies.length > 0 && ` ${allowedDependencies.length} dependencia(s)`} específicos.
+                  </Alert>
+                ) : (
+                  <Alert color="blue" icon={<IconAlertCircle size={16} />}>
+                    Este perfil tiene acceso a todos los ámbitos y dependencias disponibles.
                   </Alert>
                 )}
               </Stack>
