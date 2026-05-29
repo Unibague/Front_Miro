@@ -58,6 +58,12 @@ const RESPONSABLE_LINKS = [
       { label: "Presupuesto", icon: IconCurrencyDollar, path: "/pdi/presupuesto", permissionKey: "pdi", color: "violet", exact: true },
     ],
   },
+  {
+    section: "INFORMES",
+    items: [
+      { label: "Informes de avance", icon: IconReportAnalytics, path: "/pdi/informes", permissionKey: "pdi", color: "violet", exact: false },
+    ],
+  },
 ];
 
 export default function PdiSidebar() {

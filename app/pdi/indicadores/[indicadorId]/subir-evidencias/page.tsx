@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
-  FileButton, Group, Loader, MultiSelect, Paper, Progress, Select, Stack,
+  FileButton, Group, Loader, Modal, MultiSelect, Paper, Progress, Select, Stack,
   Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
-  IconArrowLeft, IconCheck, IconExternalLink,
+  IconArrowLeft, IconBulb, IconCheck, IconChevronDown, IconChevronUp, IconExternalLink,
   IconForms, IconLock, IconTarget, IconTrash, IconUpload,
 } from "@tabler/icons-react";
 import axios from "axios";
@@ -54,6 +54,8 @@ interface RespuestaCampo {
   nombre_original: string;
   filename: string;
   url: string;
+  comentario_lider?: string;
+  comentario_lider_resuelto?: boolean;
 }
 
 interface RespuestaFormulario {
@@ -119,8 +121,8 @@ function formatFechaCorta(fecha?: string | null) {
   return date.toLocaleDateString("es-CO");
 }
 
-const MAX_DOC_SIZE = 10 * 1024 * 1024;
-const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png"];
+const MAX_EVIDENCE_TOTAL_SIZE = 10 * 1024 * 1024;
+const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".zip", ".rar"];
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
   "application/x-pdf",
@@ -128,15 +130,27 @@ const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/vnd.ms-excel",
   "image/jpeg",
   "image/png",
+  "image/tiff",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
 ]);
 const EVIDENCE_ACCEPT =
-  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png";
-const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls) e imagenes (.jpg, .jpeg, .png)";
+  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,.tif,.tiff,image/jpeg,image/png,image/tiff,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed";
+const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls), im\u00e1genes (.jpg, .jpeg, .png, .tif), comprimidos (.zip, .rar) y enlaces institucionales";
 const SELECT_VALUE_SEPARATOR = " | ";
 const EVIDENCE_HELP_TEXT =
   "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
 const EVIDENCE_HELP_TEXT_2 =
   "La evidencia cargada debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o información que no guarde relación directa con el resultado reportado.";
+
+const EVIDENCE_HELP_TEXT_REQUESTED =
+  "Adjunte archivos que soporten y permitan verificar el avance del indicador reportado. Se aceptan archivos en formato PDF, Excel (.xlsx, .xls), im\u00e1genes de alta resoluci\u00f3n (.jpg, .jpeg, .png, .tif), archivos comprimidos (.zip, .rar) y enlaces institucionales.";
+const EVIDENCE_HELP_TEXT_2_REQUESTED =
+  "Importante: la evidencia debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o informaci\u00f3n sin relaci\u00f3n directa con la meta reportada.";
+const EVIDENCE_HELP_TEXT_3 =
+  "Capacidad m\u00e1xima: el tama\u00f1o total de las evidencias cargadas no debe superar los 10 MB.";
 
 function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvidencia[] {
   if (!resp) return [];
@@ -157,6 +171,14 @@ function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvi
 function formatFileSize(size?: number) {
   if (!size || size <= 0) return "";
   return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(size / 1024)} KB`;
+}
+
+function getDocumentosTotalSize(documentos: DocumentoEvidencia[]) {
+  return documentos.reduce((total, doc) => total + (Number(doc.size) || 0), 0);
+}
+
+function getFilesTotalSize(files: File[]) {
+  return files.reduce((total, file) => total + file.size, 0);
 }
 
 function isAllowedEvidenceFile(file: File) {
@@ -203,6 +225,8 @@ export default function SubirEvidenciasPage() {
   const [indicador, setIndicador] = useState<Indicador | null>(null);
   const [loadingInd, setLoadingInd] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
+  const [namingGuideOpen, setNamingGuideOpen] = useState(false);
+  const [mostrarTodosPeriodos, setMostrarTodosPeriodos] = useState(false);
 
   // Avances
   const [avancesStr, setAvancesStr] = useState<Record<string, string>>({});
@@ -216,6 +240,7 @@ export default function SubirEvidenciasPage() {
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
+  const [resolvingComentario, setResolvingComentario] = useState<Record<string, boolean>>({});
   const [razonesRechazoLabels, setRazonesRechazoLabels] = useState<Record<string, string>>({});
 
   const [sending, setSending] = useState(false);
@@ -387,6 +412,9 @@ export default function SubirEvidenciasPage() {
     form.campos.some((campo) => !campoEstaCompleto(form._id, campo))
   );
   const formulariosSinDocumento = formularios.filter((form) => !formTieneDocumento(form._id));
+  const formulariosConEvidenciasPesadas = formularios.filter((form) =>
+    getDocumentosTotalSize(getDocumentosEvidencia(respuestas[form._id])) > MAX_EVIDENCE_TOTAL_SIZE
+  );
 
   const recargarRespuestas = async (formsOverride?: FormularioPDI[]) => {
     const formsToLoad = formsOverride ?? formularios;
@@ -510,6 +538,8 @@ export default function SubirEvidenciasPage() {
         nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
         filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
         url: getRespuestaCampo(form._id, c._id)?.url ?? "",
+        comentario_lider: getRespuestaCampo(form._id, c._id)?.comentario_lider ?? "",
+        comentario_lider_resuelto: getRespuestaCampo(form._id, c._id)?.comentario_lider_resuelto ?? false,
       }));
     const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
       respondido_por: email, corte: corteActivo,
@@ -532,10 +562,10 @@ export default function SubirEvidenciasPage() {
       });
       return;
     }
-    if (file.size > MAX_DOC_SIZE) {
+    if (file.size > MAX_EVIDENCE_TOTAL_SIZE) {
       showNotification({
         title: "Archivo demasiado grande",
-        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
+        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El maximo permitido es 10 MB.`,
         color: "red",
       });
       return;
@@ -548,6 +578,7 @@ export default function SubirEvidenciasPage() {
           respuestas: form.campos.map(c => ({
             campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
             valor_texto: "", nombre_original: "", filename: "", url: "",
+            comentario_lider: "", comentario_lider_resuelto: false,
           })),
           estado: "Borrador",
         });
@@ -607,6 +638,57 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
+  const handleToggleComentarioResuelto = async (form: FormularioPDI, campo: CampoFormulario, resuelto: boolean) => {
+    const resp = respuestas[form._id];
+    if (!resp) return;
+
+    const key = `${form._id}-${campo._id}`;
+    setResolvingComentario(prev => ({ ...prev, [key]: true }));
+    setRespuestas(prev => {
+      const actual = prev[form._id];
+      if (!actual) return prev;
+      return {
+        ...prev,
+        [form._id]: {
+          ...actual,
+          respuestas: actual.respuestas.map(r =>
+            r.campo_id === campo._id ? { ...r, comentario_lider_resuelto: resuelto } : r
+          ),
+        },
+      };
+    });
+
+    try {
+      await axios.put(PDI_ROUTES.formularioComentarioCampoResuelto(form._id, resp._id, campo._id), { resuelto });
+      showNotification({
+        title: resuelto ? "Comentario resuelto" : "Comentario pendiente",
+        message: resuelto ? "Se marco el comentario del lider como resuelto." : "Se quito la marca de resuelto.",
+        color: resuelto ? "teal" : "orange",
+      });
+    } catch (e: any) {
+      setRespuestas(prev => {
+        const actual = prev[form._id];
+        if (!actual) return prev;
+        return {
+          ...prev,
+          [form._id]: {
+            ...actual,
+            respuestas: actual.respuestas.map(r =>
+              r.campo_id === campo._id ? { ...r, comentario_lider_resuelto: !resuelto } : r
+            ),
+          },
+        };
+      });
+      showNotification({
+        title: "Error",
+        message: e.response?.data?.error ?? "No se pudo actualizar el comentario",
+        color: "red",
+      });
+    } finally {
+      setResolvingComentario(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
   const handleUploadDocumento = async (form: FormularioPDI, selectedFiles: File[] | File | null) => {
     const files = Array.isArray(selectedFiles) ? selectedFiles : selectedFiles ? [selectedFiles] : [];
     if (files.length === 0) return;
@@ -619,11 +701,11 @@ export default function SubirEvidenciasPage() {
       });
       return;
     }
-    const oversizedFile = files.find(file => file.size > MAX_DOC_SIZE);
+    const oversizedFile = files.find(file => file.size > MAX_EVIDENCE_TOTAL_SIZE);
     if (oversizedFile) {
       showNotification({
         title: "Archivo demasiado grande",
-        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
+        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El maximo total permitido es 10 MB.`,
         color: "red",
       });
       return;
@@ -643,6 +725,8 @@ export default function SubirEvidenciasPage() {
             nombre_original: "",
             filename: "",
             url: "",
+            comentario_lider: "",
+            comentario_lider_resuelto: false,
           })),
           estado: "Borrador",
         });
@@ -652,6 +736,19 @@ export default function SubirEvidenciasPage() {
         showNotification({ title: "Error", message: "No se pudo preparar la respuesta", color: "red" });
         return;
       }
+    }
+
+    const documentosConservados = respActual?.estado_aval === "Rechazado" ? [] : getDocumentosEvidencia(respActual);
+    const totalExistente = getDocumentosTotalSize(documentosConservados);
+    const totalNuevo = getFilesTotalSize(files);
+    const totalFinal = totalExistente + totalNuevo;
+    if (totalFinal > MAX_EVIDENCE_TOTAL_SIZE) {
+      showNotification({
+        title: "Capacidad maxima superada",
+        message: `Las evidencias sumarian ${formatFileSize(totalFinal)}. El maximo total permitido es 10 MB.`,
+        color: "red",
+      });
+      return;
     }
 
     setUploadingDocumento(prev => ({ ...prev, [form._id]: true }));
@@ -731,6 +828,9 @@ export default function SubirEvidenciasPage() {
       if (formulariosSinDocumento.length > 0) {
         errores.push(`Debes adjuntar al menos una evidencia del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
+      if (formulariosConEvidenciasPesadas.length > 0) {
+        errores.push(`El total de evidencias no debe superar 10 MB en ${formulariosConEvidenciasPesadas.map((form) => `"${form.nombre}"`).join(", ")}.`);
+      }
       showNotification({
         title: "Falta información obligatoria",
         message: errores.join(" "),
@@ -799,12 +899,59 @@ export default function SubirEvidenciasPage() {
     hayPeriodosEditables &&
     periodosEditablesSinAvance.length === 0 &&
     formulariosIncompletos.length === 0 &&
-    formulariosSinDocumento.length === 0;
+    formulariosSinDocumento.length === 0 &&
+    formulariosConEvidenciasPesadas.length === 0;
   const bloqueado = todosEnviados && !tieneFormulariosRechazados;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       {!vieneDeMisIndicadores && <PdiSidebar />}
+
+      <Modal
+        opened={namingGuideOpen}
+        onClose={() => setNamingGuideOpen(false)}
+        title={
+          <Group gap={8}>
+            <IconBulb size={18} color="var(--mantine-color-yellow-6)" />
+            <Text fw={700}>Nombramiento de evidencias</Text>
+          </Group>
+        }
+        size="md"
+        radius="lg"
+      >
+        <Stack gap="sm">
+          <Text size="sm">Nombre cada archivo así:</Text>
+          <Paper withBorder radius="md" p="sm" style={{ background: "#f8f5ff", borderColor: "#ede9fe" }}>
+            <Text size="sm" fw={700} c="violet" style={{ fontFamily: "monospace" }}>
+              [Macroproyecto]-[Proyecto]-[Acción]-[Indicador]_[Nombre corto]
+            </Text>
+          </Paper>
+
+          <Text size="sm" fw={600} mt={4}>¿Cómo construirlo?</Text>
+          <Stack gap={2}>
+            <Text size="sm">• <b>M:</b> número del macroproyecto</Text>
+            <Text size="sm">• <b>P:</b> número del proyecto</Text>
+            <Text size="sm">• <b>A:</b> número de la acción estratégica</Text>
+            <Text size="sm">• <b>I:</b> número del indicador</Text>
+            <Text size="sm">• <b>Nombre corto:</b> descripción breve del archivo</Text>
+          </Stack>
+
+          <Text size="sm" fw={600} mt={4}>Ejemplo:</Text>
+          <Text size="sm" c="dimmed">
+            Si reporta el Indicador 1 de la Acción 1, del Proyecto 2, del Macroproyecto 3, el código será: <b>M3-P2-A1-I1</b>
+          </Text>
+          <Text size="sm" fw={600} mt={2}>Ejemplos completos:</Text>
+          <Paper withBorder radius="md" p="sm" style={{ background: "#f8f5ff", borderColor: "#ede9fe" }}>
+            <Stack gap={2}>
+              {["M3-P2-A1-I1_Informe.pdf", "M2-P1-A2-I2_Base.xlsx", "M1-P3-A1-I1_Acta.zip", "M3-P1-A1-I2_Foto.tif"].map((ej) => (
+                <Text key={ej} size="sm" style={{ fontFamily: "monospace" }}>{ej}</Text>
+              ))}
+            </Stack>
+          </Paper>
+          <Text size="xs" c="dimmed" mt={4}>Use nombres breves, claros y sin caracteres especiales.</Text>
+        </Stack>
+      </Modal>
+
       <div style={{ flex: 1, overflow: "auto" }}>
         <Container size="md" py="xl">
 
@@ -886,7 +1033,9 @@ export default function SubirEvidenciasPage() {
                 </Paper>
               ) : (
                 <Stack gap="sm">
-                  {indicador.periodos.map((p: Periodo) => {
+                  {indicador.periodos
+                    .filter((p: Periodo) => mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes))
+                    .map((p: Periodo) => {
                     const editable = esPeriodoEditable(p.periodo, cortesVigentes) && !bloqueado;
                     const metaNumerica = p.meta != null ? parseAvance(String(p.meta)) : null;
                     const avanceNumerico = parseAvance(avancesStr[p.periodo] ?? "");
@@ -954,12 +1103,29 @@ export default function SubirEvidenciasPage() {
                               <Text size="xs" c="dimmed">Progreso del periodo</Text>
                               <Text size="xs" fw={700}>{Math.round(porcentaje)}%</Text>
                             </Group>
-                            <Progress value={porcentaje} color={editable ? "violet" : "gray"} size="sm" radius="xl" />
+                            <Progress
+                              value={porcentaje}
+                              color={!editable ? "gray" : porcentaje >= 90 ? "green" : porcentaje >= 60 ? "yellow" : "red"}
+                              size="sm"
+                              radius="xl"
+                            />
                           </>
                         )}
                       </Paper>
                     );
                   })}
+                  {indicador.periodos.some((p: Periodo) => !esPeriodoEditable(p.periodo, cortesVigentes)) && (
+                    <Button
+                      variant="subtle"
+                      color="violet"
+                      size="xs"
+                      radius="xl"
+                      onClick={() => setMostrarTodosPeriodos(v => !v)}
+                      leftSection={mostrarTodosPeriodos ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                    >
+                      {mostrarTodosPeriodos ? "Ocultar otras metas" : "Ver próximas metas"}
+                    </Button>
+                  )}
                 </Stack>
               )}
             </div>
@@ -1007,6 +1173,8 @@ export default function SubirEvidenciasPage() {
                     const fechaAval = formatFechaCorta(resp?.aval_fecha);
                     const fechaEnvio = formatFechaCorta(resp?.fecha_envio);
                     const documentosAdjuntos = getDocumentosEvidencia(resp);
+                    const totalEvidencias = getDocumentosTotalSize(documentosAdjuntos);
+                    const porcentajeCapacidad = Math.min((totalEvidencias / MAX_EVIDENCE_TOTAL_SIZE) * 100, 100);
                     return (
                       <Stack key={form._id} gap="sm">
                         <Paper withBorder radius="xl" p="lg"
@@ -1122,6 +1290,8 @@ export default function SubirEvidenciasPage() {
                             const maxChars = getMaxCaracteres(campo);
                             const currentLen = getTexto(form._id, campo._id).length;
                             const selectedValues = getSelectValues(form._id, campo._id);
+                            const comentarioKey = `${form._id}-${campo._id}`;
+                            const comentarioResuelto = Boolean(archivoCampo?.comentario_lider_resuelto);
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
                                 style={{ background: bloqueado ? "rgba(248,250,252,0.8)" : "#fff" }}>
@@ -1456,6 +1626,38 @@ export default function SubirEvidenciasPage() {
                                     )}
                                   </Group>
                                 )}
+
+                                {estadoAval === "Rechazado" && archivoCampo?.comentario_lider?.trim() && (
+                                  <Paper
+                                    withBorder
+                                    radius="md"
+                                    p="sm"
+                                    mt="sm"
+                                    style={{
+                                      background: comentarioResuelto ? "rgba(240,253,244,0.95)" : "rgba(254,242,242,0.95)",
+                                      borderColor: comentarioResuelto ? "#bbf7d0" : "#fecaca",
+                                    }}
+                                  >
+                                    <Group justify="space-between" align="flex-start" gap="sm" mb={3}>
+                                      <Text size="xs" fw={700} c={comentarioResuelto ? "teal" : "red"}>
+                                        Comentario del lider
+                                      </Text>
+                                      <Checkbox
+                                        size="xs"
+                                        color="teal"
+                                        label="Resuelto"
+                                        checked={comentarioResuelto}
+                                        disabled={Boolean(resolvingComentario[comentarioKey])}
+                                        onChange={(event) =>
+                                          handleToggleComentarioResuelto(form, campo, event.currentTarget.checked)
+                                        }
+                                      />
+                                    </Group>
+                                    <Text size="sm" c={comentarioResuelto ? "teal" : "red"} style={{ whiteSpace: "pre-wrap" }}>
+                                      {archivoCampo.comentario_lider}
+                                    </Text>
+                                  </Paper>
+                                )}
                               </Paper>
                             );
                           })}
@@ -1480,23 +1682,48 @@ export default function SubirEvidenciasPage() {
                         >
                           <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
                             <div>
-                              <Group gap={6} mb={4}>
-                                <ThemeIcon size={24} radius="xl" color="violet" variant="light">
-                                  <IconUpload size={13} />
-                                </ThemeIcon>
-                                <Text size="sm" fw={700}>Archivo de evidencias</Text>
-                                <Badge size="xs" color="red" variant="dot">Requerido</Badge>
+                              <Group gap={6} mb={4} justify="space-between" wrap="nowrap">
+                                <Group gap={6}>
+                                  <ThemeIcon size={24} radius="xl" color="violet" variant="light">
+                                    <IconUpload size={13} />
+                                  </ThemeIcon>
+                                  <Text size="sm" fw={700}>Archivo de evidencias</Text>
+                                  <Badge size="xs" color="red" variant="dot">Requerido</Badge>
+                                </Group>
+                                <ActionIcon
+                                  size="sm"
+                                  variant="subtle"
+                                  color="yellow"
+                                  title="Cómo nombrar los archivos"
+                                  onClick={() => setNamingGuideOpen(true)}
+                                >
+                                  <IconBulb size={16} />
+                                </ActionIcon>
                               </Group>
                               <Stack gap={4}>
-                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT}</Text>
-                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_2}</Text>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_REQUESTED}</Text>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_2_REQUESTED}</Text>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_3}</Text>
                                 <Text size="xs" c="dimmed">
-                                  Formatos permitidos: <b>PDF, Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png)</b> · Tamaño máximo: <b>10 MB por archivo</b>
+                                  Formatos permitidos: <b>PDF, Excel (.xlsx, .xls), im&aacute;genes de alta resoluci&oacute;n (.jpg, .jpeg, .png, .tif), comprimidos (.zip, .rar) y enlaces institucionales</b>
                                 </Text>
                               </Stack>
                             </div>
 
                             <Stack gap="xs" w="100%" mt="sm">
+                              <Paper withBorder radius="md" p="xs" style={{ borderColor: "#ede9fe", background: "#fff" }}>
+                                <Group justify="space-between" mb={6}>
+                                  <Text size="xs" fw={700}>Peso total de evidencias</Text>
+                                  <Text size="xs" fw={700}>{formatFileSize(totalEvidencias) || "0 KB"} / 10 MB</Text>
+                                </Group>
+                                <Progress
+                                  value={porcentajeCapacidad}
+                                  color={porcentajeCapacidad >= 90 ? "red" : porcentajeCapacidad >= 70 ? "yellow" : "violet"}
+                                  size="sm"
+                                  radius="xl"
+                                />
+                              </Paper>
+
                               {documentosAdjuntos.length > 0 && (
                                 <Stack gap={6}>
                                   {documentosAdjuntos.map((doc, index) => (
@@ -1521,7 +1748,7 @@ export default function SubirEvidenciasPage() {
                                             {doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
                                           </Text>
                                           <Text size="xs" c="dimmed">
-                                            {formatFileSize(doc.size) || "Archivo"}
+                                            Peso: {formatFileSize(doc.size) || "no disponible"}
                                             {doc.url && doc.url.includes("drive.google") ? " · Drive" : ""}
                                           </Text>
                                         </Stack>
@@ -1635,6 +1862,9 @@ export default function SubirEvidenciasPage() {
                   });
                   formulariosSinDocumento.forEach((form: FormularioPDI) => {
                     erroresDetalle.push(`Adjunta al menos una evidencia en "${form.nombre}".`);
+                  });
+                  formulariosConEvidenciasPesadas.forEach((form: FormularioPDI) => {
+                    erroresDetalle.push(`El peso total de evidencias en "${form.nombre}" supera 10 MB.`);
                   });
                   return (
                     <Paper

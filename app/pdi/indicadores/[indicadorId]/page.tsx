@@ -14,7 +14,7 @@ import axios from "axios";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import type { Indicador, Periodo, EstadoReporte, RespuestaFormulario } from "../../types";
+import type { Indicador, Periodo, EstadoReporte, RespuestaCampo, RespuestaFormulario } from "../../types";
 import { PDI_ROUTES } from "../../api";
 import PdiSidebar from "../../components/PdiSidebar";
 import EvidenciasPanel from "../../components/EvidenciasPanel";
@@ -126,6 +126,32 @@ function getDocumentosFormulario(respuesta: RespuestaFormulario) {
     }];
   }
   return [];
+}
+
+function getRespuestaCampoKey(respuesta: RespuestaCampo, index: number) {
+  return String(respuesta.campo_id || respuesta._id || index);
+}
+
+function getRespuestaCampoValor(respuesta: RespuestaCampo) {
+  const value = String(respuesta.valor_texto ?? "").trim();
+  if (respuesta.tipo === "checkbox") return value === "true" ? "Si" : value === "false" ? "No" : "";
+  return value;
+}
+
+function getComentariosCamposPayload(
+  respuesta: RespuestaFormulario,
+  comentariosCampos: Record<string, Record<string, string>>
+) {
+  const comentariosRespuesta = comentariosCampos[respuesta._id] ?? {};
+  return respuesta.respuestas
+    .map((campo, index) => {
+      const campoKey = getRespuestaCampoKey(campo, index);
+      return {
+        campo_id: campo.campo_id,
+        comentario_lider: comentariosRespuesta[campoKey] ?? campo.comentario_lider ?? "",
+      };
+    })
+    .filter((item) => item.comentario_lider.trim());
 }
 
 function PeriodoCard({
@@ -748,6 +774,7 @@ function LiderRevisionPanelV2({
   const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [comentariosCampos, setComentariosCampos] = useState<Record<string, Record<string, string>>>({});
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<Record<string, "Pendiente" | "Aprobado" | "Rechazado">>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [razonesSeleccionadas, setRazonesSeleccionadas] = useState<Record<string, string[]>>({});
@@ -808,6 +835,9 @@ function LiderRevisionPanelV2({
         aval_comentario: comentarioAval,
         aval_razones: razones,
         aval_otro_cual: otroCual,
+        comentarios_campos: estadoSeleccionado === "Rechazado"
+          ? getComentariosCamposPayload(r, comentariosCampos)
+          : [],
       });
       load();
       showNotification({
@@ -1089,6 +1119,81 @@ function LiderRevisionPanelV2({
                       radius="md"
                       disabled={readOnly || !puedoAval}
                     />
+
+                    <Paper withBorder radius="lg" p="md" style={{ background: "#fff", borderColor: "#fee2e2" }}>
+                      <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                        <div>
+                          <Text size="sm" fw={700}>Formulario enviado por el responsable</Text>
+                          <Text size="xs" c="dimmed">
+                            Revisa las respuestas en linea. Solo puedes agregar comentarios; las respuestas no se editan.
+                          </Text>
+                        </div>
+                        <Badge color="red" variant="light">Comentarios por campo</Badge>
+                      </Group>
+
+                      <Stack gap="sm">
+                        {r.respuestas.map((respuestaCampo, index) => {
+                          const campoKey = getRespuestaCampoKey(respuestaCampo, index);
+                          const valorCampo = getRespuestaCampoValor(respuestaCampo);
+                          const comentarioCampo =
+                            comentariosCampos[r._id]?.[campoKey] ?? respuestaCampo.comentario_lider ?? "";
+
+                          return (
+                            <Paper
+                              key={campoKey}
+                              withBorder
+                              radius="md"
+                              p="sm"
+                              style={{ background: "var(--mantine-color-default-hover)" }}
+                            >
+                              <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>
+                                {respuestaCampo.etiqueta || `Pregunta ${index + 1}`}
+                              </Text>
+
+                              {respuestaCampo.url ? (
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="blue"
+                                  component="a"
+                                  href={respuestaCampo.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  leftSection={<IconFileTypePdf size={13} />}
+                                  mb="sm"
+                                >
+                                  {respuestaCampo.nombre_original || "Abrir archivo"}
+                                </Button>
+                              ) : (
+                                <Text size="sm" mb="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                  {valorCampo || <span style={{ color: "#94a3b8" }}>Sin respuesta</span>}
+                                </Text>
+                              )}
+
+                              <Textarea
+                                label="Comentario del lider"
+                                placeholder="Comentario puntual para esta respuesta..."
+                                value={comentarioCampo}
+                                onChange={(e) => {
+                                  const value = e.currentTarget.value;
+                                  setComentariosCampos((prev) => ({
+                                    ...prev,
+                                    [r._id]: {
+                                      ...(prev[r._id] ?? {}),
+                                      [campoKey]: value,
+                                    },
+                                  }));
+                                }}
+                                minRows={2}
+                                autosize
+                                radius="md"
+                                disabled={readOnly || !puedoAval}
+                              />
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                    </Paper>
                   </Stack>
                 )}
 

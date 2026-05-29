@@ -8,10 +8,11 @@ import {
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
-  IconEdit, IconChevronDown, IconChevronUp,
+  IconEdit, IconChevronDown, IconChevronRight, IconChevronUp,
   IconCheck, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf, IconGitPullRequest,
   IconForms, IconUpload, IconTrash, IconExternalLink, IconShieldCheck,
+  IconFileWord, IconBrandGoogleDrive, IconReportAnalytics,
 } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -32,6 +33,12 @@ interface CorteVigente {
   fecha_inicio: string | null;
   fecha_fin: string | null;
 }
+
+// ── Interfaces para informes del líder ───────────────────────────────────────
+interface IndicadorInforme { _id: string; codigo: string; nombre: string; avance: number; responsable: string; }
+interface AccionInforme    { _id: string; codigo: string; nombre: string; avance: number; responsable: string; indicadores: IndicadorInforme[]; }
+interface ProyectoInforme  { _id: string; codigo: string; nombre: string; avance: number; responsable: string; informe_drive_web_view_link: string | null; acciones: AccionInforme[]; }
+interface MacroInforme     { _id: string; codigo: string; nombre: string; avance: number; lider: string; informe_drive_web_view_link: string | null; proyectos: ProyectoInforme[]; }
 
 interface AccionResponsableView {
   accion: Accion;
@@ -804,12 +811,47 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
   const avanceTotalReal = getIndicadorAvanceTotalReal(ind);
   const barColor = avanceMostrado >= 70 ? "#22c55e" : avanceMostrado >= 40 ? "#f59e0b" : "#ef4444";
   const periodoSugeridoEvaluacion = getPeriodoSugeridoParaEvaluacion(ind);
+  const reportesPendientes = esResponsable ? getReportesPendientesAccion([ind], cortesVigentes) : [];
+  const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion([ind]) : [];
+  const tieneReporteRechazado = reportesPendientes.some((r) => r.estado === "Rechazado");
+  const alertaPendiente = reportesPendientes.length > 0
+    ? {
+        label: tieneReporteRechazado ? "Corregir reporte" : "Pendiente por reportar",
+        color: tieneReporteRechazado ? "red" : "orange",
+        borderColor: tieneReporteRechazado ? "rgba(239,68,68,0.78)" : "rgba(249,115,22,0.78)",
+        shadow: tieneReporteRechazado ? "0 0 0 3px rgba(239,68,68,0.14)" : "0 0 0 3px rgba(249,115,22,0.14)",
+        hoverShadow: tieneReporteRechazado ? "rgba(239,68,68,0.24)" : "rgba(249,115,22,0.24)",
+        cortes: reportesPendientes.map((r) => r.corte),
+      }
+    : evaluacionesPendientes.length > 0
+    ? {
+        label: "Pendiente por evaluar",
+        color: "teal",
+        borderColor: "rgba(20,184,166,0.78)",
+        shadow: "0 0 0 3px rgba(20,184,166,0.14)",
+        hoverShadow: "rgba(20,184,166,0.24)",
+        cortes: evaluacionesPendientes.map((e) => e.corte),
+      }
+    : null;
 
   return (
     <Paper withBorder radius="xl" p="lg" shadow="xs"
-      style={{ transition: "box-shadow .2s, transform .2s", position: "relative" }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
+      style={{
+        transition: "box-shadow .2s, transform .2s, border-color .2s",
+        position: "relative",
+        border: alertaPendiente ? `2px solid ${alertaPendiente.borderColor}` : undefined,
+        boxShadow: alertaPendiente?.shadow,
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+        (e.currentTarget as HTMLElement).style.boxShadow = alertaPendiente
+          ? `${alertaPendiente.shadow}, 0 8px 32px ${alertaPendiente.hoverShadow}`
+          : "0 8px 32px rgba(0,0,0,0.10)";
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.transform = "";
+        (e.currentTarget as HTMLElement).style.boxShadow = alertaPendiente?.shadow ?? "";
+      }}
     >
       <Badge
         color={SEMAFORO_COLOR[ind.semaforo]}
@@ -829,6 +871,19 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
           <Text fw={700} size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
         </div>
       </Group>
+
+      {alertaPendiente && (
+        <Badge
+          color={alertaPendiente.color}
+          variant="light"
+          radius="xl"
+          size="sm"
+          mb="sm"
+          leftSection={<IconFlag size={10} />}
+        >
+          {alertaPendiente.label} · {alertaPendiente.cortes.join(", ")}
+        </Badge>
+      )}
 
       {ind.indicador_resultado && (
         <Text size="xs" c="dimmed" mb="sm">{ind.indicador_resultado}</Text>
@@ -1814,6 +1869,156 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
   );
 }
 
+// ── Componentes de informes para el líder ────────────────────────────────────
+
+function semaforoColorInforme(avance: number) {
+  if (avance >= 90) return "teal";
+  if (avance >= 60) return "yellow";
+  return "red";
+}
+
+function FilaProyectoInforme({ proyecto, corte }: { proyecto: ProyectoInforme; corte: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [driveLink, setDriveLink] = useState<string | null>(proyecto.informe_drive_web_view_link);
+
+  const generar = async () => {
+    setLoading(true);
+    try {
+      const params = corte ? { params: { corte } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeProyecto(proyecto._id), params);
+      const link = data.drive_web_view_link || data.url;
+      setDriveLink(link);
+      window.open(link, "_blank");
+      showNotification({ title: "Informe generado", message: proyecto.nombre, color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Paper withBorder radius="lg" p="sm" style={{ background: "rgba(248,250,252,0.9)" }}>
+      <Group justify="space-between" wrap="nowrap" mb={abierto ? "xs" : 0}>
+        <Group gap={8} style={{ flex: 1, minWidth: 0 }} wrap="nowrap">
+          <ActionIcon variant="subtle" size="sm" onClick={() => setAbierto(v => !v)}>
+            {abierto ? <IconChevronDown size={15} /> : <IconChevronRight size={15} />}
+          </ActionIcon>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={8} mb={4}>
+              <Text size="xs" c="dimmed" fw={600}>{proyecto.codigo}</Text>
+              <Badge size="xs" color={semaforoColorInforme(proyecto.avance)} variant="light">{proyecto.avance}%</Badge>
+              <Badge size="xs" variant="dot" color="blue">{proyecto.acciones.length} acción{proyecto.acciones.length !== 1 ? "es" : ""}</Badge>
+            </Group>
+            <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
+            {proyecto.responsable && <Text size="xs" c="dimmed">Responsable: {proyecto.responsable}</Text>}
+            <Progress value={proyecto.avance} color={semaforoColorInforme(proyecto.avance)} size="xs" radius="xl" mt={6} />
+          </Box>
+        </Group>
+        <Group gap={6} wrap="nowrap">
+          {driveLink && (
+            <ActionIcon component="a" href={driveLink} target="_blank" variant="subtle" color="teal" size="sm" title="Ver en Drive">
+              <IconBrandGoogleDrive size={16} />
+            </ActionIcon>
+          )}
+          <Button size="xs" variant="light" color="violet" radius="xl" loading={loading}
+            leftSection={<IconFileWord size={13} />} onClick={generar}>
+            {driveLink ? "Regenerar" : "Generar informe"}
+          </Button>
+        </Group>
+      </Group>
+      <Collapse in={abierto}>
+        {proyecto.acciones.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="xs">Sin acciones</Text>
+        ) : (
+          <Stack gap={6} mt="xs" pl="lg">
+            {proyecto.acciones.map((a) => (
+              <Paper key={a._id} withBorder radius="md" p="xs" style={{ background: "#fff" }}>
+                <Group justify="space-between" wrap="nowrap">
+                  <Box style={{ flex: 1, minWidth: 0 }}>
+                    <Group gap={6} mb={2}>
+                      <Text size="xs" c="dimmed" fw={700}>{a.codigo}</Text>
+                      <Badge size="xs" color={semaforoColorInforme(a.avance)} variant="light">{a.avance}%</Badge>
+                    </Group>
+                    <Text size="sm" fw={600} truncate="end">{a.nombre}</Text>
+                    {a.responsable && <Text size="xs" c="dimmed">{a.responsable}</Text>}
+                  </Box>
+                </Group>
+              </Paper>
+            ))}
+          </Stack>
+        )}
+      </Collapse>
+    </Paper>
+  );
+}
+
+function FilaMacroInforme({ macro, corte }: { macro: MacroInforme; corte: string }) {
+  const [abierto, setAbierto] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [driveLink, setDriveLink] = useState<string | null>(macro.informe_drive_web_view_link);
+
+  const generar = async () => {
+    setLoading(true);
+    try {
+      const params = corte ? { params: { corte } } : {};
+      const { data } = await axios.get(PDI_ROUTES.informeMacro(macro._id), params);
+      const link = data.drive_web_view_link || data.url;
+      setDriveLink(link);
+      window.open(link, "_blank");
+      showNotification({ title: "Informe de macroproyecto generado", message: macro.nombre, color: "teal" });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo generar el informe", color: "red" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Paper withBorder radius="xl" p="md" style={{ borderColor: "rgba(124,58,237,0.25)", background: "rgba(124,58,237,0.03)" }}>
+      <Group justify="space-between" wrap="nowrap" mb={abierto ? "md" : 0}>
+        <Group gap={10} style={{ flex: 1, minWidth: 0 }} wrap="nowrap">
+          <ActionIcon variant="subtle" size="md" color="violet" onClick={() => setAbierto(v => !v)}>
+            {abierto ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
+          </ActionIcon>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={8} mb={4}>
+              <Text size="sm" c="violet" fw={800}>{macro.codigo}</Text>
+              <Badge size="sm" color={semaforoColorInforme(macro.avance)} variant="light">{macro.avance}%</Badge>
+              <Badge size="xs" variant="dot" color="violet">{macro.proyectos.length} proyecto{macro.proyectos.length !== 1 ? "s" : ""}</Badge>
+            </Group>
+            <Text fw={700} size="md" truncate="end">{macro.nombre}</Text>
+            <Progress value={macro.avance} color={semaforoColorInforme(macro.avance)} size="sm" radius="xl" mt={6} />
+          </Box>
+        </Group>
+        <Group gap={6} wrap="nowrap">
+          {driveLink && (
+            <ActionIcon component="a" href={driveLink} target="_blank" variant="subtle" color="teal" size="sm" title="Ver informe en Drive">
+              <IconBrandGoogleDrive size={16} />
+            </ActionIcon>
+          )}
+          <Button size="sm" variant="light" color="violet" radius="xl" loading={loading}
+            leftSection={<IconFileWord size={14} />} onClick={generar}>
+            {driveLink ? "Regenerar informe macro" : "Generar informe macro"}
+          </Button>
+        </Group>
+      </Group>
+      <Collapse in={abierto}>
+        {macro.proyectos.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="xs">Sin proyectos</Text>
+        ) : (
+          <Stack gap="xs">
+            {macro.proyectos.map((p) => (
+              <FilaProyectoInforme key={p._id} proyecto={p} corte={corte} />
+            ))}
+          </Stack>
+        )}
+      </Collapse>
+    </Paper>
+  );
+}
+
 export default function MisIndicadoresPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -1828,6 +2033,9 @@ export default function MisIndicadoresPage() {
   const [macroNombresLiderados, setMacroNombresLiderados] = useState<string[]>([]);
   const [userFullName, setUserFullName] = useState("");
   const [busquedaProyecto, setBusquedaProyecto] = useState("");
+  const [informesMacros, setInformesMacros] = useState<MacroInforme[]>([]);
+  const [loadingInformes, setLoadingInformes] = useState(false);
+  const [corteInformes, setCorteInformes] = useState("");
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) return;
@@ -1931,6 +2139,18 @@ export default function MisIndicadoresPage() {
       .finally(() => setLoading(false));
   }, [status, session]);
 
+  useEffect(() => {
+    if (macroIdsLiderados.size === 0) return;
+    setLoadingInformes(true);
+    axios.get(PDI_ROUTES.informesLista())
+      .then((res) => {
+        const todos: MacroInforme[] = res.data || [];
+        setInformesMacros(todos.filter((m) => macroIdsLiderados.has(m._id)));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingInformes(false));
+  }, [macroIdsLiderados]);
+
   const indicadores = proyectosVista.flatMap((proyecto) => proyecto.acciones.flatMap((accion) => accion.indicadores));
   const acciones = proyectosVista.flatMap((proyecto) => proyecto.acciones.map((accion) => accion.accion));
   const cortesVigentesNombres = new Set(cortesVigentes.map(c => c.nombre.trim().toUpperCase()));
@@ -1961,20 +2181,20 @@ export default function MisIndicadoresPage() {
     ? "Mi Macroproyecto PDI"
     : isLider
     ? "Mi PDI"
-    : "Mis Proyectos PDI";
+    : "Mis Proyectos en el PDI";
 
   const statCards = isLider
     ? [
         { label: "Macroproyectos que lidero", value: macroIdsLiderados.size, color: "violet", icon: <IconListCheck size={22} /> },
         { label: "Proyectos a cargo", value: proyectosVista.length, color: "blue", icon: <IconTrendingUp size={22} /> },
         { label: "Indicadores para evaluar", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
-        { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+        { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
       ]
     : [
         { label: "Mis proyectos", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
         { label: "Mis acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
         { label: "Mis indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
-        { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+        { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
       ];
 
   const handleIndicadorUpdated = (updated: Indicador) => {
@@ -1993,7 +2213,7 @@ export default function MisIndicadoresPage() {
     { label: "Proyectos a cargo", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
     { label: "Acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
     { label: "Indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
-    { label: "Requieren atención", value: alertas, color: "red", icon: <IconFlag size={22} /> },
+    { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
   ];
 
   const handleSolicitarCambio = (entity: CambioEntityContext) => {
@@ -2042,12 +2262,10 @@ export default function MisIndicadoresPage() {
               <Text fw={800} c="teal.7">
                 {macroLiderLabel} · Líder del macroproyecto
               </Text>
-             
             </div>
           </Group>
         </Paper>
       )}
-
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
         {loading

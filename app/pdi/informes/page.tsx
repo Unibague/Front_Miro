@@ -8,12 +8,14 @@ import {
 import { showNotification } from "@mantine/notifications";
 import {
   IconArrowLeft, IconBrandGoogleDrive, IconChevronDown, IconChevronRight,
-  IconFileWord, IconRefresh, IconReportAnalytics,
+  IconFileWord, IconReportAnalytics,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import { useRole } from "@/app/context/RoleContext";
 
 interface ProyectoResumen {
   _id: string;
@@ -364,28 +366,40 @@ function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: s
 
 export default function InformesPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
+  const { userRole } = useRole();
+  const isAdmin = userRole === "Administrador";
   const [macros, setMacros]       = useState<MacroResumen[]>([]);
   const [cortes, setCortes]       = useState<string[]>([]);
   const [corteGlobal, setCorteGlobal] = useState<string>("");
   const [loading, setLoading]     = useState(true);
 
-  const cargar = async () => {
-    setLoading(true);
-    try {
-      const [rLista, rCortes] = await Promise.all([
-        axios.get(PDI_ROUTES.informesLista()),
-        axios.get(PDI_ROUTES.informesCortes()),
-      ]);
-      setMacros(rLista.data ?? []);
-      setCortes(rCortes.data ?? []);
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo cargar la lista", color: "red" });
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user?.email) return;
+    const email = (session.user.email ?? "").toLowerCase().trim();
 
-  useEffect(() => { cargar(); }, []);
+    setLoading(true);
+    Promise.all([
+      axios.get(PDI_ROUTES.informesLista()),
+      axios.get(PDI_ROUTES.informesCortes()),
+      isAdmin ? Promise.resolve(null) : axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
+    ])
+      .then(([rLista, rCortes, rUser]) => {
+        const todos: MacroResumen[] = rLista.data ?? [];
+        if (isAdmin) {
+          setMacros(todos);
+        } else {
+          const nombre = (rUser?.data?.full_name ?? "").toLowerCase().trim();
+          setMacros(todos.filter((m) => {
+            const lider = (m.lider ?? "").toLowerCase().trim();
+            return lider === email || (nombre && lider === nombre);
+          }));
+        }
+        setCortes(rCortes.data ?? []);
+      })
+      .catch(() => showNotification({ title: "Error", message: "No se pudo cargar la lista", color: "red" }))
+      .finally(() => setLoading(false));
+  }, [status, session, isAdmin]);
 
   const opcionesCorte = [
     { value: "", label: "Todos los periodos" },
@@ -401,7 +415,7 @@ export default function InformesPage() {
           {/* Header */}
           <Group justify="space-between" mb="xl" align="center">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+              <ActionIcon variant="subtle" onClick={() => router.push(isAdmin ? "/pdi" : "/pdi/mis-indicadores")}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={42} radius="xl" color="violet" variant="light">

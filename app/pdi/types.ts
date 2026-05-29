@@ -30,6 +30,7 @@ export interface Macroproyecto {
 export type EstadoAval = "Pendiente" | "Aprobado" | "Rechazado";
 
 export interface RespuestaCampo {
+  _id?: string;
   campo_id: string;
   etiqueta: string;
   tipo: string;
@@ -37,6 +38,8 @@ export interface RespuestaCampo {
   nombre_original: string;
   filename: string;
   url: string;
+  comentario_lider?: string;
+  comentario_lider_resuelto?: boolean;
 }
 
 export interface DocumentoEvidenciaFormulario {

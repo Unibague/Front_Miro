@@ -117,7 +117,7 @@ function FormularioModal({
       setDescripcion(selected.descripcion);
       setCampos(selected.campos.map(c => ({
         ...c,
-        min_caracteres: c.min_caracteres ?? c.max_caracteres ?? null,
+        min_caracteres: c.min_caracteres ?? null,
         opciones: c.opciones ?? [],
         justificacion_descripcion: c.justificacion_descripcion ?? "",
         condicional_valor: (c.condicional_valor === "supero_meta" || c.condicional_valor === "no_supero_meta")
@@ -293,7 +293,9 @@ function FormularioModal({
                     label="Mínimo de caracteres"
                     placeholder="Sin mínimo"
                     value={campo.min_caracteres ?? ""}
-                    onChange={v => updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null)}
+                    onChange={v => {
+                      updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null);
+                    }}
                     min={1}
                     max={5000}
                     allowDecimal={false}
@@ -303,7 +305,9 @@ function FormularioModal({
                     label="Máximo de caracteres"
                     placeholder="Sin máximo"
                     value={campo.max_caracteres ?? ""}
-                    onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
+                    onChange={v => {
+                      updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null);
+                    }}
                     min={1}
                     max={5000}
                     allowDecimal={false}
@@ -355,7 +359,9 @@ function FormularioModal({
                       label="Mínimo de caracteres"
                       placeholder="Sin mínimo"
                       value={campo.justificacion_min_caracteres ?? ""}
-                      onChange={v => updateCampo(idx, "justificacion_min_caracteres", typeof v === "number" ? v : null)}
+                      onChange={v => {
+                        updateCampo(idx, "justificacion_min_caracteres", typeof v === "number" ? v : null);
+                      }}
                       min={1}
                       max={5000}
                       allowDecimal={false}
@@ -365,7 +371,9 @@ function FormularioModal({
                       label="Máximo de caracteres"
                       placeholder="Sin máximo"
                       value={campo.justificacion_max_caracteres ?? ""}
-                      onChange={v => updateCampo(idx, "justificacion_max_caracteres", typeof v === "number" ? v : null)}
+                      onChange={v => {
+                        updateCampo(idx, "justificacion_max_caracteres", typeof v === "number" ? v : null);
+                      }}
                       min={1}
                       max={5000}
                       allowDecimal={false}

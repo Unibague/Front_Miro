@@ -742,7 +742,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   {new Date().getFullYear()}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Presupuesto del año vs causado</Text>
+              <Text size="xs" c="dimmed">Presupuesto del año vs ejecutado</Text>
               <Text size="1.8rem" fw={800} lh={1} mt={4}>
                 {avanceFinancieroAnio}%
               </Text>

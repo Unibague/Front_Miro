@@ -12,6 +12,7 @@ import styles from "./AdminDependenciesPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { logDependencyPermissionChange, logDependencyUpdate, compareDependencyChanges, compareDependencyPermissions } from "@/app/utils/auditUtils";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { usePeriod } from "@/app/context/PeriodContext";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
@@ -45,6 +46,7 @@ interface DependencyOption {
 const AdminDependenciesPage = () => {
   const { canManage } = useViewPermission("dependencies");
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const isAdmin = session?.user?.role === 'admin';
   const [opened, setOpened] = useState(false);
@@ -74,23 +76,64 @@ const AdminDependenciesPage = () => {
   const handleDownloadExcel = async () => {
     setIsDownloading(true);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, {
-        params: { limit: 100000 },
-      });
-      const allDeps: Dependency[] = response.data.dependencies || [];
+      // Primero obtenemos dependencias y usuarios (obligatorios)
+      const [depsRes, usersRes] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, { params: { limit: 100000 } }),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`),
+      ]);
 
-      const data = allDeps.map((dep) => ({
-        "Código": dep.dep_code,
-        "Nombre": dep.name,
-        "Líder(es)": dep.responsible || "No definido",
-        "Dependencia Padre": dep.dep_father || "",
-        "Número de miembros": dep.members?.length ?? 0,
-      }));
+      const allDeps: Dependency[] = depsRes.data.dependencies || [];
+      const allUsers: { email: string; full_name: string; name?: string }[] = usersRes.data || [];
+      const userMap = new Map(allUsers.map((u) => [u.email, u.full_name || u.name || u.email]));
+
+      // Plantillas: petición independiente para no bloquear si falla
+      let depTemplatesMap: Record<string, string[]> = {};
+      try {
+        const templatesRes = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/dependencies/templates-summary`,
+          { params: selectedPeriodId ? { periodId: selectedPeriodId } : {} }
+        );
+        depTemplatesMap = templatesRes.data || {};
+      } catch {
+        // Si falla, el Excel se descarga igual sin la columna de plantillas
+      }
+
+      const data = allDeps.map((dep) => {
+        const miembros = (dep.members || []).map((email) => userMap.get(email) || email);
+        const plantillas = depTemplatesMap[dep._id] || [];
+        return {
+          "Código": dep.dep_code,
+          "Nombre": dep.name,
+          "Líder(es)": dep.responsible || "No definido",
+          "Dependencia Padre": dep.dep_father || "",
+          "Número de miembros": miembros.length,
+          "Miembros": miembros.join("\n"),
+          "Número de plantillas": plantillas.length,
+          "Plantillas Asignadas": plantillas.join("\n"),
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet(data);
+      ws["!cols"] = [
+        { wch: 12 },  // Código
+        { wch: 40 },  // Nombre
+        { wch: 35 },  // Líder(es)
+        { wch: 30 },  // Dependencia Padre
+        { wch: 18 },  // Número de miembros
+        { wch: 45 },  // Miembros
+        { wch: 18 },  // Número de plantillas
+        { wch: 55 },  // Plantillas Asignadas
+      ];
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      for (let row = range.s.r + 1; row <= range.e.r; row++) {
+        const cellMiembros = ws[XLSX.utils.encode_cell({ r: row, c: 5 })];
+        if (cellMiembros) cellMiembros.s = { alignment: { wrapText: true, vertical: "top" } };
+        const cellPlantillas = ws[XLSX.utils.encode_cell({ r: row, c: 7 })];
+        if (cellPlantillas) cellPlantillas.s = { alignment: { wrapText: true, vertical: "top" } };
+      }
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Dependencias");
-      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
       saveAs(new Blob([buf], { type: "application/octet-stream" }), "dependencias.xlsx");
     } catch (error) {
       showNotification({ title: "Error", message: "No se pudo descargar el Excel", color: "red" });
