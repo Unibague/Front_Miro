@@ -14,38 +14,57 @@ type Props = {
   onChange: (next: ProgramaEditReformaState) => void;
   /** Ej. tras intentar cerrar el proceso si el código institucional ya existe en otro programa. */
   codigoProgramaError?: string;
+  /** Dentro del modal de cierre (sin borde de sección de gestión). */
+  embeddedInModal?: boolean;
 };
 
 export default function FichaProgramaReformaPanel({
   value,
   onChange,
   codigoProgramaError,
+  embeddedInModal = false,
 }: Props) {
   const patch = <K extends keyof ProgramaEditReformaState>(key: K, v: ProgramaEditReformaState[K]) => {
     onChange({ ...value, [key]: v });
   };
 
   return (
-    <Box px="md" py="sm" style={{ borderBottom: "1px solid #dee2e6", backgroundColor: "#fafafa" }}>
-      <Text size="sm" fw={600} mb={4}>
-        Ficha del programa
-      </Text>
-      <Text size="xs" c="dimmed" mb="sm">
-        Edita la información del programa. Los cambios se aplican a la ficha al cerrar el proceso como aprobado.
-      </Text>
+    <Box
+      px={embeddedInModal ? 0 : "md"}
+      py={embeddedInModal ? 0 : "sm"}
+      style={
+        embeddedInModal
+          ? undefined
+          : { borderBottom: "1px solid #dee2e6", backgroundColor: "#fafafa" }
+      }
+    >
+      {!embeddedInModal && (
+        <>
+          <Text size="sm" fw={600} mb={4}>
+            Ficha del programa
+          </Text>
+          <Text size="xs" c="dimmed" mb="sm">
+            Edita la información del programa. Los cambios se aplican a la ficha al cerrar el proceso como aprobado.
+          </Text>
+        </>
+      )}
 
       <Stack gap="md">
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
           {CAMPOS_REFORMA_UI.map((c) => {
             const val = value[c.key];
             if (c.tipo === "select") {
+              const valStr = String(val ?? "").trim();
+              const base = c.opciones ?? [];
+              const data =
+                valStr && !base.includes(valStr) ? [...base, valStr] : base;
               return (
                 <Select
                   key={c.key}
                   label={c.label}
                   size="sm"
-                  data={c.opciones ?? []}
-                  value={String(val ?? "") || null}
+                  data={data}
+                  value={valStr || null}
                   onChange={(v) => patch(c.key, v ?? "")}
                   clearable
                 />
