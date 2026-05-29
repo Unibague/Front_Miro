@@ -496,13 +496,19 @@ export default function ProgramaProcessesMenPage() {
             placeholder="Ej: 22 (opcional)"
             description="Opcional. Si lo defines o cambias, el sistema actualiza procesos activos, historial, alertas y estudiantes vinculados."
             value={editForm.dep_code_programa ?? ""}
-            onChange={(e) => setEditForm((f) => ({ ...f, dep_code_programa: e.currentTarget.value }))}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              setEditForm((f) => ({ ...f, dep_code_programa: v }));
+            }}
           />
           <TextInput
             label="Código SNIES"
             placeholder="Opcional"
             value={editForm.codigo_snies ?? ""}
-            onChange={(e) => setEditForm((f) => ({ ...f, codigo_snies: e.currentTarget.value }))}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              setEditForm((f) => ({ ...f, codigo_snies: v }));
+            }}
           />
 
           {saveError && (
