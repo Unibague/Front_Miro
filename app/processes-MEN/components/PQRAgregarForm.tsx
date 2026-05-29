@@ -69,7 +69,11 @@ export default function PQRAgregarForm({ programas, onCreado, showHeader, onCanc
       <Switch
         label="¿Ligado a un programa académico?"
         checked={ligado}
-        onChange={e => { setLigado(e.currentTarget.checked); if (!e.currentTarget.checked) setProgramaId(null); }}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setLigado(checked);
+          if (!checked) setProgramaId(null);
+        }}
       />
       <TextInput
         label="Cédula del encargado"

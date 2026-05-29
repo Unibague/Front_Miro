@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useMemo, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader,
@@ -546,10 +546,29 @@ const ProcesoDetalleCard = ({
       || (colKey === "fecha_radicado_men" && !puedeEditarFechaRadicadoMen(proceso.subtipo));
   };
   const [programaEdit, setProgramaEdit] = useState<ProgramaEditReformaState>(() => buildProgramaEditReforma(programa));
+  const [fichaCierreKey, setFichaCierreKey] = useState(0);
+
   useEffect(() => {
-    if (!esReforma) return;
+    if (!esReformaCurricularSolo) return;
     setProgramaEdit(buildProgramaEditReforma(programa));
-  }, [esReforma, programa._id]);
+  }, [esReformaCurricularSolo, programa]);
+
+  const prevCierreModalAbierto = useRef(false);
+  const prevCierreEraAprobado = useRef(false);
+  useEffect(() => {
+    const abrioModal = cerrarProcesoOpen && !prevCierreModalAbierto.current;
+    const pasoAAprobado =
+      cerrarProcesoOpen
+      && esRenovacionReforma
+      && cierreResultado === "aprobado"
+      && !prevCierreEraAprobado.current;
+    if (esRenovacionReforma && (abrioModal || pasoAAprobado)) {
+      setProgramaEdit(buildProgramaEditReforma(programa));
+      if (abrioModal) setFichaCierreKey((k) => k + 1);
+    }
+    prevCierreModalAbierto.current = cerrarProcesoOpen;
+    prevCierreEraAprobado.current = cierreResultado === "aprobado";
+  }, [cerrarProcesoOpen, esRenovacionReforma, cierreResultado, programa]);
 
   /** Código institucional (`dep_code_programa`) ya usado por otro programa — solo afecta cierre aprobado de reforma. */
   const conflictoCodigoInstitucionalReforma = useMemo(() => {
@@ -657,16 +676,21 @@ const ProcesoDetalleCard = ({
       setCierreResultado("aprobado");
     }
 
-    if (esReforma && Array.isArray(todosProgramas) && todosProgramas.length > 0) {
-      const dupCodigoProg = otroProgramaConMismoCodigoInstitucional(
-        programaEdit.dep_code_programa,
-        programa._id,
-        todosProgramas,
-      );
-      if (dupCodigoProg) {
-        setResaltarCodigoDuplicadoFichaPorCierre(true);
-        return;
+    if (esReforma) {
+      const fichaActual = buildProgramaEditReforma(programa);
+      setProgramaEdit(fichaActual);
+      if (Array.isArray(todosProgramas) && todosProgramas.length > 0) {
+        const dupCodigoProg = otroProgramaConMismoCodigoInstitucional(
+          fichaActual.dep_code_programa,
+          programa._id,
+          todosProgramas,
+        );
+        setResaltarCodigoDuplicadoFichaPorCierre(!!dupCodigoProg);
+      } else {
+        setResaltarCodigoDuplicadoFichaPorCierre(false);
       }
+    } else {
+      setResaltarCodigoDuplicadoFichaPorCierre(false);
     }
 
     /* Fecha/código: copia manual del PDF; años de vigencia predeterminados en 7 (editables). */
@@ -2337,6 +2361,22 @@ const ProcesoDetalleCard = ({
         </>
       )}
 
+      {esRenovacionReforma && cierreResultado === "aprobado" && (
+        <>
+          <Divider label="Ficha del programa" labelPosition="left" my="sm" />
+          <Text size="xs" c="dimmed" mb="xs">
+            Los campos traen la ficha actual del programa. Modifica solo lo que cambió con esta renovación.
+          </Text>
+          <FichaProgramaReformaPanel
+            key={`ficha-cierre-${programa._id}-${fichaCierreKey}`}
+            embeddedInModal
+            value={programaEdit}
+            onChange={setProgramaEdit}
+            codigoProgramaError={errorCodigoProgramaParaFichaReforma}
+          />
+        </>
+      )}
+
       {cierreMuestraResolucionBloque && (
         <>
           {etiquetasResolucionAv && (
@@ -2666,7 +2706,13 @@ const ProcesoDetalleCard = ({
       onClose={() => { setCerrarProcesoOpen(false); setCierreError(null); }}
       title={`Cerrar proceso — ${LABEL_PROCESO[proceso.tipo_proceso]}`}
       centered
-      size={mostrarBloqueRcOficioCierre && cierreResultado === "aprobado" ? "lg" : "md"}
+      size={
+        esRenovacionReforma && cierreResultado === "aprobado"
+          ? "xl"
+          : mostrarBloqueRcOficioCierre && cierreResultado === "aprobado"
+            ? "lg"
+            : "md"
+      }
       radius="md"
       zIndex={300}
     >
@@ -3164,13 +3210,25 @@ const ProcesoDetalleCard = ({
             <Text size="xs" c="dimmed">Ajusta los meses para calcular fechas. Al guardar se recalcularán automáticamente.</Text>
             <SimpleGrid cols={2} spacing="sm">
               <TextInput label="Inicio proceso (meses antes del venc.)" type="number" value={offsets.inicio}
-                onChange={(e) => setOffsets(prev => ({ ...prev, inicio: Number(e.currentTarget.value || 0) }))} />
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value || 0);
+                  setOffsets((prev) => ({ ...prev, inicio: v }));
+                }} />
               <TextInput label="Documento par (meses antes del venc.)" type="number" value={offsets.docPar}
-                onChange={(e) => setOffsets(prev => ({ ...prev, docPar: Number(e.currentTarget.value || 0) }))} />
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value || 0);
+                  setOffsets((prev) => ({ ...prev, docPar: v }));
+                }} />
               <TextInput label="Digitación SACES (meses antes del venc.)" type="number" value={offsets.digitacion}
-                onChange={(e) => setOffsets(prev => ({ ...prev, digitacion: Number(e.currentTarget.value || 0) }))} />
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value || 0);
+                  setOffsets((prev) => ({ ...prev, digitacion: v }));
+                }} />
               <TextInput label="Radicado MEN (meses antes del venc.)" type="number" value={offsets.radicado}
-                onChange={(e) => setOffsets(prev => ({ ...prev, radicado: Number(e.currentTarget.value || 0) }))} />
+                onChange={(e) => {
+                  const v = Number(e.currentTarget.value || 0);
+                  setOffsets((prev) => ({ ...prev, radicado: v }));
+                }} />
             </SimpleGrid>
             <Group justify="flex-end" mt="sm">
               <Button variant="default" size="sm" onClick={() => setOffsetsModalOpen(false)}>Cancelar</Button>
@@ -3241,7 +3299,7 @@ const ProcesoDetalleCard = ({
         </Alert>
       )}
 
-      {esReforma && (
+      {esReformaCurricularSolo && (
         <FichaProgramaReformaPanel
           value={programaEdit}
           onChange={setProgramaEdit}
@@ -3601,13 +3659,25 @@ const ProcesoDetalleCard = ({
           <Text size="xs" c="dimmed">Ajusta los meses para calcular fechas. Al guardar se recalcularán automáticamente.</Text>
           <SimpleGrid cols={2} spacing="sm">
             <TextInput label="Inicio proceso (meses antes del venc.)" type="number" value={offsets.inicio}
-              onChange={(e) => setOffsets(prev => ({ ...prev, inicio: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setOffsets((prev) => ({ ...prev, inicio: v }));
+              }} />
             <TextInput label="Documento par (meses antes del venc.)" type="number" value={offsets.docPar}
-              onChange={(e) => setOffsets(prev => ({ ...prev, docPar: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setOffsets((prev) => ({ ...prev, docPar: v }));
+              }} />
             <TextInput label="Digitación SACES (meses antes del venc.)" type="number" value={offsets.digitacion}
-              onChange={(e) => setOffsets(prev => ({ ...prev, digitacion: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setOffsets((prev) => ({ ...prev, digitacion: v }));
+              }} />
             <TextInput label="Radicado MEN (meses antes del venc.)" type="number" value={offsets.radicado}
-              onChange={(e) => setOffsets(prev => ({ ...prev, radicado: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setOffsets((prev) => ({ ...prev, radicado: v }));
+              }} />
           </SimpleGrid>
           <Group justify="flex-end" mt="sm">
             <Button variant="default" size="sm" onClick={() => setOffsetsModalOpen(false)}>Cancelar</Button>
@@ -3666,16 +3736,28 @@ const ProcesoDetalleCard = ({
           <SimpleGrid cols={2} spacing="sm">
             <TextInput label="Envío informe PM a Vicerrectoría (+ meses)" type="number"
               value={pmOffsets.envioPlan}
-              onChange={(e) => setPmOffsets((p) => ({ ...p, envioPlan: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setPmOffsets((p) => ({ ...p, envioPlan: v }));
+              }} />
             <TextInput label="Entrega PM al CNA (+ meses)" type="number"
               value={pmOffsets.entregaCna}
-              onChange={(e) => setPmOffsets((p) => ({ ...p, entregaCna: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setPmOffsets((p) => ({ ...p, entregaCna: v }));
+              }} />
             <TextInput label="Envío avance a Vicerrectoría (meses antes mitad vigencia)" type="number"
               value={pmOffsets.envioAvance}
-              onChange={(e) => setPmOffsets((p) => ({ ...p, envioAvance: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setPmOffsets((p) => ({ ...p, envioAvance: v }));
+              }} />
             <TextInput label="Radicación avance CNA (meses desde mitad vigencia)" type="number"
               value={pmOffsets.radicAvance}
-              onChange={(e) => setPmOffsets((p) => ({ ...p, radicAvance: Number(e.currentTarget.value || 0) }))} />
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value || 0);
+                setPmOffsets((p) => ({ ...p, radicAvance: v }));
+              }} />
           </SimpleGrid>
           <Group justify="flex-end" mt="sm">
             <Button variant="default" size="sm" onClick={() => setPmOffsetsModalOpen(false)}>Cancelar</Button>
