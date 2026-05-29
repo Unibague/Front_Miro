@@ -9,6 +9,7 @@ import "dayjs/locale/es";
 import type { Proyecto, Macroproyecto } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Props {
   opened: boolean;
@@ -31,6 +32,7 @@ export default function ProyectoModal({
 }: Props) {
   const { data: session } = useSession();
   const { config } = usePdiConfig();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
   const [responsable, setResponsable] = useState("");
@@ -61,7 +63,7 @@ export default function ProyectoModal({
   }, []);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
 
     if (selected) {
       setCodigo(selected.codigo);
@@ -131,6 +133,7 @@ export default function ProyectoModal({
         : await axios.post(PDI_ROUTES.proyectos(), payload);
 
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Proyecto guardado", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
       if (!selected) onCreated?.(res.data);
@@ -142,30 +145,29 @@ export default function ProyectoModal({
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Proyecto" : "Nuevo Proyecto"} centered size="lg">
+    <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Proyecto" : "Nuevo Proyecto"} centered size="lg">
       <Stack gap="sm">
         <Select
           label="Macroproyecto"
           placeholder="Selecciona un macroproyecto"
           data={macroproyectos.map((m) => ({ value: m._id, label: `${m.codigo} - ${m.nombre}` }))}
           value={macroId}
-          onChange={setMacroId}
+          onChange={(v) => { setMacroId(v); setHasChanges(true); }}
           searchable
         />
         <Group grow>
-          <TextInput label="Codigo" placeholder="Ej: 1.1" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
+          <TextInput label="Codigo" placeholder="Ej: 1.1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
           <NumberInput
             label="Número de acciones"
-           
             placeholder="Ej: 4"
             value={numAcciones}
-            onChange={setNumAcciones}
+            onChange={(v) => { setNumAcciones(v); setHasChanges(true); }}
             min={0}
             step={1}
             allowDecimal={false}
           />
         </Group>
-        <TextInput label="Nombre" placeholder="Nombre del proyecto" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <TextInput label="Nombre" placeholder="Nombre del proyecto" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
         <Autocomplete
           label="Responsable"
           placeholder="Buscar usuario..."
@@ -174,15 +176,16 @@ export default function ProyectoModal({
             setResponsable(val);
             const found = usuariosData.find((u) => u.label === val);
             setResponsableEmail(found?.email ?? "");
+            setHasChanges(true);
           }}
           data={usuarios}
           limit={8}
         />
-        <TextInput label="Propósito" placeholder="Propósito del proyecto" value={proposito} onChange={(e) => setProposito(e.currentTarget.value)} />
+        <TextInput label="Propósito" placeholder="Propósito del proyecto" value={proposito} onChange={(e) => { setProposito(e.currentTarget.value); setHasChanges(true); }} />
       </Stack>
 
       <Group justify="flex-end" mt="lg">
-        <Button variant="default" onClick={onClose}>Cancelar</Button>
+        <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
         <Button loading={loading} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>

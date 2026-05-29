@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Stack, Paper, Group, Badge, ThemeIcon, Text, Textarea, TextInput,
-  Button, ActionIcon, FileButton, Center, Loader, Select, Checkbox,
+  Button, ActionIcon, FileButton, Center, Loader, Select, MultiSelect, Checkbox,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -15,10 +15,12 @@ import { PDI_ROUTES } from "../api";
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  min_caracteres?: number | null;
   max_caracteres?: number | null;
+  justificacion_descripcion?: string;
   opciones?: string[];
   condicional_campo_id?: string | null;
   condicional_valor?: string | null;
@@ -97,15 +99,25 @@ export default function FormulariosIndicadorPanel({
             respMap[f._id] = resp;
             if (resp) {
               resp.respuestas.forEach(r => {
+                const key = `${f._id}-${r.campo_id}`;
                 if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
-                  textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
+                  textMap[key] = r.valor_texto ?? "";
                 } else if (r.tipo === "select_con_otro" && r.valor_texto) {
                   if (r.valor_texto.startsWith("Otro: ")) {
-                    textMap[`${f._id}-${r.campo_id}`] = "Otro";
-                    otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+                    textMap[key] = "Otro";
+                    otroMap[key] = r.valor_texto.slice(6);
                   } else {
-                    textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+                    textMap[key] = r.valor_texto;
                   }
+                } else if (r.tipo === "select_multiple" && r.valor_texto) {
+                  textMap[key] = r.valor_texto;
+                } else if (r.tipo === "select_multiple_con_otro" && r.valor_texto) {
+                  const SEP = " | ";
+                  const rawValues = r.valor_texto.split(SEP).map((v: string) => v.trim()).filter(Boolean);
+                  const selectedValues = rawValues.map((v: string) => v.startsWith("Otro: ") ? "Otro" : v);
+                  const otroValue = rawValues.find((v: string) => v.startsWith("Otro: "));
+                  textMap[key] = selectedValues.join(SEP);
+                  if (otroValue) otroMap[key] = otroValue.slice(6);
                 }
               });
             }
@@ -119,12 +131,19 @@ export default function FormulariosIndicadorPanel({
       .finally(() => setLoading(false));
   }, [indicadorId, email, corteActivo]);
 
+  const SEP = " | ";
   const getTexto = (formId: string, campoId: string) => textos[`${formId}-${campoId}`] ?? "";
   const setTexto = (formId: string, campoId: string, val: string) =>
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
   const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
   const setOtroTexto = (formId: string, campoId: string, val: string) =>
     setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const getSelectValues = (formId: string, campoId: string) => {
+    const val = getTexto(formId, campoId);
+    return val ? val.split(SEP).map(v => v.trim()).filter(Boolean) : [];
+  };
+  const setSelectValues = (formId: string, campoId: string, values: string[]) =>
+    setTexto(formId, campoId, values.join(SEP));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
 
@@ -143,11 +162,36 @@ export default function FormulariosIndicadorPanel({
       const sel = getTexto(form._id, campo._id);
       return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, campo._id)}` : sel;
     }
+    if (campo.tipo === "select_multiple") return getTexto(form._id, campo._id);
+    if (campo.tipo === "select_multiple_con_otro") {
+      return getSelectValues(form._id, campo._id)
+        .map(v => v === "Otro" ? `Otro: ${getOtroTexto(form._id, campo._id)}` : v)
+        .join(SEP);
+    }
     if (campo.tipo === "checkbox") return getTexto(form._id, campo._id) || "false";
     return "";
   };
 
   const handleGuardar = async (form: FormularioPDI, enviar = false) => {
+    if (enviar) {
+      const camposConMaximoExcedido = form.campos.filter(c => {
+        if (c.tipo !== "texto_largo" && c.tipo !== "texto_corto") return false;
+        if (!shouldShowCampo(form, c)) return false;
+        const maxChars = c.max_caracteres ?? null;
+        const texto = buildValorTexto(form, c).trim();
+        return Boolean(maxChars && texto && texto.length > maxChars);
+      });
+      if (camposConMaximoExcedido.length > 0) {
+        showNotification({
+          title: "Máximo de caracteres excedido",
+          message: camposConMaximoExcedido
+            .map(c => `"${c.etiqueta}" supera el máximo de ${c.max_caracteres} caracteres.`)
+            .join(" "),
+          color: "red",
+        });
+        return;
+      }
+    }
     setSaving(prev => ({ ...prev, [form._id]: true }));
     try {
       const respuestasPayload = form.campos.map(c => ({
@@ -366,6 +410,7 @@ export default function FormulariosIndicadorPanel({
                 if (!shouldShowCampo(form, campo)) return null;
                 const archivoCampo = getRespuestaCampo(form._id, campo._id);
                 const maxChars = campo.max_caracteres ?? null;
+                const minChars = campo.min_caracteres ?? null;
                 const currentLen = getTexto(form._id, campo._id).length;
                 return (
                   <Paper key={campo._id} withBorder radius="md" p="md"
@@ -393,7 +438,7 @@ export default function FormulariosIndicadorPanel({
                           maxLength={maxChars ?? undefined}
                         />
                         {maxChars && (
-                          <Text size="xs" ta="right" c={currentLen > maxChars * 0.9 ? (currentLen >= maxChars ? "red" : "orange") : "dimmed"}>
+                          <Text size="xs" ta="right" c={currentLen > maxChars ? "red" : currentLen >= maxChars * 0.9 ? "orange" : "dimmed"}>
                             {currentLen} / {maxChars}
                           </Text>
                         )}
@@ -401,13 +446,29 @@ export default function FormulariosIndicadorPanel({
                     )}
 
                     {campo.tipo === "texto_corto" && (
-                      <TextInput
-                        placeholder={enviado ? "" : "Escribe aquí..."}
-                        value={getTexto(form._id, campo._id)}
-                        onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
-                        disabled={enviado}
-                        maxLength={maxChars ?? undefined}
-                      />
+                      <Stack gap={4}>
+                        <TextInput
+                          placeholder={enviado ? "" : "Escribe aquí..."}
+                          value={getTexto(form._id, campo._id)}
+                          onChange={e => setTexto(form._id, campo._id, e.currentTarget.value)}
+                          disabled={enviado}
+                          minLength={minChars ?? undefined}
+                          maxLength={maxChars ?? undefined}
+                        />
+                        {(minChars || maxChars) && (
+                          <Text size="xs" ta="right" c={
+                            (maxChars && currentLen > maxChars) ? "red" :
+                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" :
+                            (maxChars && currentLen >= maxChars * 0.9) ? "orange" : "dimmed"
+                          }>
+                            {minChars && currentLen < minChars
+                              ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                              : maxChars
+                              ? `${currentLen} / ${maxChars}`
+                              : `${currentLen} caracteres`}
+                          </Text>
+                        )}
+                      </Stack>
                     )}
 
                     {campo.tipo === "select" && (
@@ -439,7 +500,49 @@ export default function FormulariosIndicadorPanel({
                         />
                         {getTexto(form._id, campo._id) === "Otro" && (
                           <TextInput
-                            placeholder="Especifica..."
+                            label='Especifica "Otro ¿Cuál?"'
+                            placeholder="Escribe aquí..."
+                            value={getOtroTexto(form._id, campo._id)}
+                            onChange={e => setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                            disabled={enviado}
+                          />
+                        )}
+                      </Stack>
+                    )}
+
+                    {campo.tipo === "select_multiple" && (
+                      <MultiSelect
+                        placeholder="Selecciona una o varias opciones..."
+                        value={getSelectValues(form._id, campo._id)}
+                        onChange={values => !enviado && setSelectValues(form._id, campo._id, values)}
+                        data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                        disabled={enviado}
+                        clearable
+                      />
+                    )}
+
+                    {campo.tipo === "select_multiple_con_otro" && (
+                      <Stack gap={6}>
+                        <MultiSelect
+                          placeholder="Selecciona una o varias opciones..."
+                          value={getSelectValues(form._id, campo._id)}
+                          onChange={values => {
+                            if (!enviado) {
+                              setSelectValues(form._id, campo._id, values);
+                              if (!values.includes("Otro")) setOtroTexto(form._id, campo._id, "");
+                            }
+                          }}
+                          data={[
+                            ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                            { value: "Otro", label: "Otro ¿Cuál?" },
+                          ]}
+                          disabled={enviado}
+                          clearable
+                        />
+                        {getSelectValues(form._id, campo._id).includes("Otro") && (
+                          <TextInput
+                            label='Especifica "Otro ¿Cuál?"'
+                            placeholder="Escribe aquí..."
                             value={getOtroTexto(form._id, campo._id)}
                             onChange={e => setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                             disabled={enviado}

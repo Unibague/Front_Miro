@@ -30,6 +30,7 @@ import { filterFacultadesMen, parseDependenciesAllResponse } from "../../utils/f
 import { processesMenRoutes } from "../../config/routes";
 import { ClasificacionCineNbcSection } from "../../components/ClasificacionCineNbcSection";
 import { FichaCampoLectura } from "../../components/FichaCampoLectura";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 function primeraActividadEnFase(fase: Phase | undefined): string | null {
   if (!fase?.actividades?.length) return null;
@@ -64,6 +65,7 @@ export default function ProgramaProcessesMenPage() {
   const [fasesProg, setFasesProg] = useState<Phase[]>([]);
   const [loadingFasesProg, setLoadingFasesProg] = useState(false);
   const [historialRc, setHistorialRc] = useState<ProcessHistoryRecord[]>([]);
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     const ac = new AbortController();
@@ -300,6 +302,7 @@ export default function ProgramaProcessesMenPage() {
     if (!programa) return;
     setSaveError(null);
     setSaving(true);
+    setHasChanges(false);
     const base = process.env.NEXT_PUBLIC_API_URL ?? "";
     const codProgRaw = String(editForm.dep_code_programa ?? "").trim();
     const codProg = codProgRaw || null;
@@ -409,7 +412,7 @@ export default function ProgramaProcessesMenPage() {
               variant="default"
               size="sm"
               mb={8}
-              onClick={() => router.back()}
+              onClick={() => confirmNavigation(() => router.back())}
               aria-label="Volver"
             >
               <IconChevronLeft size={16} />
@@ -515,7 +518,7 @@ export default function ProgramaProcessesMenPage() {
             <Text size="sm" c="red">{saveError}</Text>
           )}
           <Group justify="flex-end">
-            <Button variant="default" size="xs" onClick={() => { setSaveError(null); setEditando(false); }}>Cancelar</Button>
+            <Button variant="default" size="xs" onClick={() => { setSaveError(null); setHasChanges(false); setEditando(false); }}>Cancelar</Button>
             <Button size="xs" loading={saving} onClick={() => void guardar()}>Guardar</Button>
           </Group>
         </Stack>

@@ -22,6 +22,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 import styles from './AdminValidationCreatePage.module.css';
 import '@mantine/dropzone/styles.css';
 import dynamic from "next/dynamic";
@@ -50,6 +51,7 @@ const AdminValidationCreatePage = () => {
   const [isFormValid, setIsFormValid] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
+  const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
 
   const handleFileProcessed = (data: any[]) => {
@@ -165,6 +167,9 @@ const AdminValidationCreatePage = () => {
         name,
         columns: columnsToSave,
         periodId: selectedPeriodId,
+        email: session?.user?.email,
+      }, {
+        headers: { 'user-email': session?.user?.email ?? '' },
       });
       showNotification({
         title: "Validación creada",

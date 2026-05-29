@@ -4,23 +4,19 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import {
-  Badge,
+  ActionIcon,
   Button,
   Center,
   Container,
-  Divider,
   Group,
   Modal,
   Pagination,
   Progress,
-  rem,
   Stack,
   Table,
   Text,
   TextInput,
   Title,
-  Tooltip,
-  useMantineTheme,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import {
@@ -34,6 +30,7 @@ import { showNotification } from "@mantine/notifications";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useRole } from "@/app/context/RoleContext";
 
 dayjs.extend(utc);
 
@@ -85,7 +82,7 @@ const AdminPubReportsPage = () => {
   const [newDeadline, setNewDeadline] = useState<Date | null>(null);
   const [currentPeriod, setCurrentPeriod] = useState<Period | null>(null);
   const router = useRouter();
-  const theme = useMantineTheme();
+  const { userRole } = useRole();
 
   const fetchReports = async (page: number, search: string) => {
     try {
@@ -94,10 +91,11 @@ const AdminPubReportsPage = () => {
         {
           params: {
             page,
-            limit:100,
+            limit: 100,
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
+            userRole,
           },
         }
       );
@@ -178,19 +176,21 @@ const AdminPubReportsPage = () => {
       <Table.Tr key={pubReport._id}>
         <Table.Td>
           <Group>
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  setSelectedReports((prev) => [...prev, pubReport._id]);
-                } else {
-                  setSelectedReports((prev) =>
-                    prev.filter((id) => id !== pubReport._id)
-                  );
-                }
-              }}
-            />
+            {userRole === "Administrador" && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedReports((prev) => [...prev, pubReport._id]);
+                  } else {
+                    setSelectedReports((prev) =>
+                      prev.filter((id) => id !== pubReport._id)
+                    );
+                  }
+                }}
+              />
+            )}
             {pubReport.report.name}
           </Group>
         </Table.Td>
@@ -221,6 +221,11 @@ const AdminPubReportsPage = () => {
 
   return (
     <Container size="xl">
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Title ta="center" mb={"md"}>
         Gestión Informes de Productores
       </Title>
@@ -230,31 +235,33 @@ const AdminPubReportsPage = () => {
         onChange={(e) => setSearch(e.currentTarget.value)}
         mb="md"
       />
-      <Group mb="sm">
-        <Button
-          variant="outline"
-          onClick={() => router.push("/admin/reports/producers")}
-          leftSection={<IconArrowLeft size={16} />}
-        >
-          Ir a Configuración
-        </Button>
-        <Button
-          onClick={() => {
-            const allIds = pubReports.map((r) => r._id);
-            setSelectedReports(allIds);
-            setOpenedDeadlineModal(true);
-          }}
-          leftSection={<IconCalendar size={16} />}
-        >
-          Cambiar fecha a todos
-        </Button>
-        <Button
-          disabled={selectedReports.length === 0}
-          onClick={() => setOpenedDeadlineModal(true)}
-        >
-          Cambiar fecha seleccionados
-        </Button>
-      </Group>
+      {userRole === "Administrador" && (
+        <Group mb="sm">
+          <Button
+            variant="outline"
+            onClick={() => router.push("/admin/reports/producers")}
+            leftSection={<IconArrowLeft size={16} />}
+          >
+            Ir a Configuración
+          </Button>
+          <Button
+            onClick={() => {
+              const allIds = pubReports.map((r) => r._id);
+              setSelectedReports(allIds);
+              setOpenedDeadlineModal(true);
+            }}
+            leftSection={<IconCalendar size={16} />}
+          >
+            Cambiar fecha a todos
+          </Button>
+          <Button
+            disabled={selectedReports.length === 0}
+            onClick={() => setOpenedDeadlineModal(true)}
+          >
+            Cambiar fecha seleccionados
+          </Button>
+        </Group>
+      )}
       <Table striped withTableBorder>
         <Table.Thead>
           <Table.Tr>

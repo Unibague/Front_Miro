@@ -12,6 +12,8 @@ import {
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useRole } from "@/app/context/RoleContext";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 
@@ -487,6 +489,9 @@ function EntradaCambio({ entrada }: { entrada: EntradaHistorial }) {
 
 export default function HistorialPage() {
   const router = useRouter();
+  const { userRole } = useRole();
+  const admin = userRole === "Administrador";
+  const { data: session } = useSession();
 
   const [historial, setHistorial]       = useState<EntradaHistorial[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -499,12 +504,38 @@ export default function HistorialPage() {
 
   const [filtroMacro, setFiltroMacro]       = useState<string | null>(null);
   const [filtroProyecto, setFiltroProyecto] = useState<string | null>(null);
-  const [filtroCorteId, setFiltroCorteId]   = useState<string | null>(null); // _id del corte
+  const [filtroCorteId, setFiltroCorteId]   = useState<string | null>(null);
+
+  const [userMacroInfo, setUserMacroInfo] = useState<{ codes: string[]; isLider: boolean } | null>(null);
 
   useEffect(() => {
     axios.get(PDI_ROUTES.macroproyectos()).then(r => setMacros(r.data)).catch(() => {});
     axios.get(PDI_ROUTES.cortes()).then(r => setCortes(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (admin || !session?.user?.email) return;
+    axios.get<{ codes: string[]; isLider: boolean }>(PDI_ROUTES.presupuestoUserMacros(session.user.email))
+      .then((res) => setUserMacroInfo({ codes: res.data.codes, isLider: res.data.isLider }))
+      .catch(() => setUserMacroInfo({ codes: [], isLider: false }));
+  }, [admin, session?.user?.email]);
+
+  // Auto-aplicar filtro de macro para no-admin cuando cargan los macros
+  useEffect(() => {
+    if (admin || !userMacroInfo?.codes.length || !macros.length || filtroMacro) return;
+    const macro = macros.find(m =>
+      userMacroInfo.codes.some(c => m.codigo.toUpperCase() === c.toUpperCase())
+    );
+    if (macro) setFiltroMacro(macro._id);
+  }, [admin, userMacroInfo, macros]);
+
+  // Macros visibles en el dropdown según rol
+  const allowedMacros = useMemo(() => {
+    if (admin || !userMacroInfo || userMacroInfo.isLider) return macros;
+    return macros.filter(m =>
+      userMacroInfo.codes.some(c => m.codigo.toUpperCase() === c.toUpperCase())
+    );
+  }, [admin, userMacroInfo, macros]);
 
   useEffect(() => {
     setFiltroProyecto(null);
@@ -536,11 +567,16 @@ export default function HistorialPage() {
   const proyectoCodigo = proyectos.find(p => p._id === filtroProyecto)?.codigo ?? null;
 
   const filtrado = useMemo(() => historial.filter(h => {
+    // Responsables de proyecto (no líderes) solo ven su macroproyecto
+    if (!admin && userMacroInfo !== null && !userMacroInfo.isLider && userMacroInfo.codes.length > 0) {
+      const hMacro = getMacroCod(h.indicador_codigo);
+      if (!userMacroInfo.codes.some(c => hMacro.toUpperCase() === c.toUpperCase())) return false;
+    }
     if (macroCodigo    && getMacroCod(h.indicador_codigo) !== macroCodigo)    return false;
     if (proyectoCodigo && getProyCod(h.indicador_codigo)  !== proyectoCodigo) return false;
     if (!hayDetalle(h)) return false;
     return true;
-  }), [historial, macroCodigo, proyectoCodigo]);
+  }), [historial, macroCodigo, proyectoCodigo, admin, userMacroInfo]);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -568,10 +604,11 @@ export default function HistorialPage() {
           <SimpleGrid cols={{ base: 1, sm: 3 }} mb="md">
             <Select
               placeholder="Macroproyecto"
-              data={macros.map(m => ({ value: m._id, label: `${m.codigo} — ${m.nombre}` }))}
+              data={allowedMacros.map(m => ({ value: m._id, label: `${m.codigo} — ${m.nombre}` }))}
               value={filtroMacro}
-              onChange={handleFiltroMacro}
-              clearable
+              onChange={!admin && userMacroInfo !== null && !userMacroInfo.isLider ? undefined : handleFiltroMacro}
+              clearable={admin || userMacroInfo?.isLider === true}
+              readOnly={!admin && userMacroInfo !== null && !userMacroInfo.isLider}
               size="sm"
             />
             <Select

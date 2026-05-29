@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useParams } from "next/navigation";
 import { paramKey } from "@/app/utils/routeParams";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Template {
   _id: string;
@@ -24,6 +25,7 @@ const EditCategoryPage = () => {
   const router = useRouter();
   const params = useParams();
   const categoryId = paramKey(params, "categoryId");
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -60,6 +62,7 @@ const EditCategoryPage = () => {
   }, [categoryId]);
 
   const handleFieldChange = (index: number, field: string, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
     setFields(updatedFields);
@@ -102,7 +105,8 @@ const EditCategoryPage = () => {
         message: "La categoría se ha actualizado exitosamente.",
         color: "teal",
       });
-  
+
+      setHasChanges(false);
       router.push("/templates/categories"); // Redirigir después de guardar
   
     } catch (error) {
@@ -120,7 +124,7 @@ const EditCategoryPage = () => {
       <TextInput
         label="Nombre de la Categoría"
         value={categoryName}
-        onChange={(e) => setCategoryName(e.currentTarget.value)}
+        onChange={(e) => { setCategoryName(e.currentTarget.value); setHasChanges(true); }}
         placeholder="Ingrese el nombre de la categoría"
         mb="md"
         required
@@ -194,7 +198,7 @@ const EditCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back())}
           color="red"
         >
           Cancelar

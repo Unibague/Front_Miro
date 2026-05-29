@@ -764,7 +764,7 @@ const ProcessesMenPage = () => {
       return !r.estado_solicitud || r.estado_solicitud === "APROBADO";
     });
     const scoreFecha = (r: ProcessHistoryRecord) =>
-      new Date(r.fecha_resolucion || r.cerrado_en || r.createdAt || 0).getTime();
+      new Date(r.fecha_resolucion || r.cerrado_en || 0).getTime();
     for (const r of candidatos) {
       const key = String(r.program_code ?? "").trim();
       if (!key) continue;
@@ -1303,6 +1303,16 @@ const ProcessesMenPage = () => {
                       onClick={() => { irAModuloMen("comunicaciones"); setPqrSeccion("activos"); }}
                     >
                       Comunicaciones MEN
+                    </Button>
+                    <Button
+                      variant="subtle"
+                      color="violet"
+                      size="xs"
+                      fullWidth
+                      mt={2}
+                      onClick={() => router.push("/processes-MEN/tasks")}
+                    >
+                      Tareas asignadas
                     </Button>
                   </Stack>
                 )}

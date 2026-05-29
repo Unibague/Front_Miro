@@ -11,6 +11,7 @@ import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange } from "@/app/utils/auditUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Field {
   name: string;
@@ -68,6 +69,7 @@ const CreateTemplatePage = () => {
   const { data: session } = useSession();
   const { userRole } = useRole();
   const { selectedPeriodId } = usePeriod();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     const fetchDimensions = async () => {
@@ -131,6 +133,7 @@ const CreateTemplatePage = () => {
   }, [session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
 
@@ -236,6 +239,7 @@ const CreateTemplatePage = () => {
         message: "Plantilla creada exitosamente",
         color: "teal",
       });
+      setHasChanges(false);
       router.back();
     } catch (error) {
       console.error("Error guardando plantilla:", error);
@@ -296,21 +300,21 @@ const CreateTemplatePage = () => {
         label="Nombre"
         placeholder="Nombre de la plantilla"
         value={name}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onChange={(event) => { setName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Nombre del Archivo"
         placeholder="Nombre del archivo"
         value={fileName}
-        onChange={(event) => setFileName(event.currentTarget.value)}
+        onChange={(event) => { setFileName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Descripción del Archivo"
         placeholder="Descripción del archivo"
         value={fileDescription}
-        onChange={(event) => setFileDescription(event.currentTarget.value)}
+        onChange={(event) => { setFileDescription(event.currentTarget.value); setHasChanges(true); }}
         mb="sm"
       />
       {userRole === "Administrador" && (
@@ -489,7 +493,7 @@ const CreateTemplatePage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back())}
           color="red"
         >
           Cancelar

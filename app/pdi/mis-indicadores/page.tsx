@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
-  Divider, TextInput, Modal, Tabs, Select, Textarea, FileButton, Collapse,
+  Divider, TextInput, Modal, Tabs, Select, MultiSelect, Textarea, FileButton, Collapse, Skeleton,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
@@ -21,6 +21,8 @@ import { PDI_ROUTES } from "../api";
 import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio, RespuestaFormulario as RespuestaFormularioAval } from "../types";
 import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import PdiSidebar from "../components/PdiSidebar";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -76,9 +78,38 @@ function sortByCodigo<T extends { codigo: string }>(a: T, b: T) {
 }
 
 function esPeriodoEditable(periodo: string, cortesVigentes: CorteVigente[]): boolean {
-  // Si no hay cortes configurados con fechas, todo es editable
-  if (!cortesVigentes.length) return true;
   return cortesVigentes.some(c => c.nombre === periodo);
+}
+
+function getReportesPendientesAccion(indicadores: Indicador[], cortesVigentes: CorteVigente[]) {
+  const estadosReportados = new Set(["Enviado", "Aprobado"]);
+
+  return indicadores.flatMap((indicador) =>
+    (indicador.periodos ?? [])
+      .filter((periodo) =>
+        esPeriodoEditable(periodo.periodo, cortesVigentes) &&
+        !estadosReportados.has(periodo.estado_reporte ?? "Borrador")
+      )
+      .map((periodo) => ({
+        indicadorId: indicador._id,
+        indicadorCodigo: indicador.codigo,
+        indicadorNombre: indicador.nombre,
+        corte: periodo.periodo,
+        estado: periodo.estado_reporte ?? "Borrador",
+      }))
+  );
+}
+
+function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
+  return indicadores.flatMap((ind) =>
+    (ind.periodos ?? [])
+      .filter((p) => (p.estado_reporte ?? "") === "Enviado")
+      .map((p) => ({
+        indicadorId: ind._id,
+        indicadorCodigo: ind.codigo,
+        corte: p.periodo,
+      }))
+  );
 }
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
@@ -1027,7 +1058,7 @@ function SolicitudCambioModal({
 
   useEffect(() => {
     if (!opened || !entity) return;
-    setTipoCambio(entity.metasPeriodo?.length ? "meta" : "presupuesto");
+    setTipoCambio("meta");
     setIndicadorSeleccionado(entity.metasPeriodo?.[0]?.indicadorId ?? null);
     setMetaSeleccionada(entity.metasPeriodo?.[0]?.value ?? null);
     setJustificacion("");
@@ -1145,7 +1176,7 @@ function SolicitudCambioModal({
               <Text size="xs" fw={700} c="violet" tt="uppercase">{entity.tipo}</Text>
               <Text fw={800} size="lg">{entity.codigo}:{entity.nombre}</Text>
               <Text size="sm" c="dimmed" mt={4}>
-                Puedes solicitar cambios de meta por periodo, presupuesto o fechas de un indicador.
+                Puedes solicitar cambios de meta por periodo o fechas de un indicador.
               </Text>
             </div>
             <Badge color="violet" variant="light" radius="xl">{solicitudes.length} solicitud{solicitudes.length === 1 ? "" : "es"}</Badge>
@@ -1158,12 +1189,11 @@ function SolicitudCambioModal({
             <Select
               label="Que deseas modificar"
               data={[
-                ...(entity.metasPeriodo?.length ? [{ value: "meta", label: TIPO_CAMBIO_LABEL.meta }] : []),
-                ...(entity.metasPeriodo?.length ? [{ value: "cronograma", label: "Fechas del indicador" }] : []),
-                { value: "presupuesto", label: TIPO_CAMBIO_LABEL.presupuesto },
+                { value: "meta", label: TIPO_CAMBIO_LABEL.meta },
+                { value: "cronograma", label: "Fechas del indicador" },
               ]}
               value={tipoCambio}
-              onChange={(v) => setTipoCambio((v as "meta" | "presupuesto" | "cronograma") ?? "presupuesto")}
+              onChange={(v) => setTipoCambio((v as "meta" | "cronograma") ?? "meta")}
             />
             {(tipoCambio === "meta" || tipoCambio === "cronograma") && (
               <Select
@@ -1299,7 +1329,7 @@ function SolicitudCambioModal({
   );
 }
 
-function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLider = false, esResponsable = true }: {
+function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLider = false, esResponsable = true, canManage = true }: {
   accion: Accion;
   indicadores: Indicador[];
   cortesVigentes: CorteVigente[];
@@ -1310,6 +1340,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   email: string;
   esLider?: boolean;
   esResponsable?: boolean;
+  canManage?: boolean;
 }) {
   const [openAccion, setOpenAccion] = useState(false);
   const avanceAccion = indicadores.length
@@ -1317,6 +1348,8 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
     : Number(accion.avance) || 0;
   const semaforoAccion = getSemaforoByAvance(avanceAccion);
   const avanceAccionBarra = Math.min(Math.max(avanceAccion, 0), 100);
+  const reportesPendientes = esResponsable ? getReportesPendientesAccion(indicadores, cortesVigentes) : [];
+  const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion(indicadores) : [];
   return (
     <Paper withBorder radius="xl" p="lg"
       style={{ background: "rgba(255,255,255,0.72)", cursor: "pointer", transition: "box-shadow 0.2s" }}
@@ -1335,9 +1368,38 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
             {accion.responsable && (
               <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
             )}
+            {(reportesPendientes.length > 0 || evaluacionesPendientes.length > 0) && (
+              <Group gap={4} mt={8} wrap="wrap">
+                {reportesPendientes.map((r) => (
+                  <Badge
+                    key={`rep-${r.indicadorId}-${r.corte}`}
+                    size="sm"
+                    color={r.estado === "Rechazado" ? "red" : "orange"}
+                    variant="filled"
+                    radius="xl"
+                    leftSection={<IconFlag size={10} />}
+                  >
+                    Reportar · {r.indicadorCodigo} · {r.corte}{r.estado === "Rechazado" ? " · Rechazado" : ""}
+                  </Badge>
+                ))}
+                {evaluacionesPendientes.map((e) => (
+                  <Badge
+                    key={`eval-${e.indicadorId}-${e.corte}`}
+                    size="sm"
+                    color="teal"
+                    variant="filled"
+                    radius="xl"
+                    leftSection={<IconFlag size={10} />}
+                  >
+                    Evaluar · {e.indicadorCodigo} · {e.corte}
+                  </Badge>
+                ))}
+              </Group>
+            )}
           </div>
         </Group>
         <Group gap="sm" onClick={(e) => e.stopPropagation()}>
+          {canManage && (
           <Button
             variant="light"
             color="violet"
@@ -1367,6 +1429,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           >
             Solicitar cambio
           </Button>
+          )}
           <Badge color={SEMAFORO_COLOR[semaforoAccion]} variant="light" radius="xl">
             {SEMAFORO_LABEL[semaforoAccion]}
           </Badge>
@@ -1401,6 +1464,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           </Group>
           <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
         </Box>
+
 
         {indicadores.length === 0 ? (
           <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }} onClick={(e) => e.stopPropagation()}>
@@ -1490,28 +1554,39 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
       </Group>
 
       <Collapse in={openProyecto}>
-        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="lg">
-          {[
+        {(() => {
+          const anioActual = new Date().getFullYear().toString();
+          const presupuestoAnioActual = vista.acciones.reduce((sum, item) => {
+            const val = item.accion.presupuesto_por_anio?.[anioActual] ?? 0;
+            return sum + Number(val);
+          }, 0);
+          const stats = [
             { label: "Avance", value: `${avanceProyecto}%` },
             { label: "Acciones", value: vista.acciones.length },
             { label: "Indicadores", value: indicadoresCount },
-            { label: "Presupuesto", value: vista.proyecto.presupuesto > 0 ? formatCOP(vista.proyecto.presupuesto) : "Pendiente" },
-          ].map((item) => (
-            <Box
-              key={item.label}
-              style={{
-                textAlign: "center",
-                background: "rgba(255,255,255,0.82)",
-                border: "1px solid rgba(124,58,237,0.08)",
-                borderRadius: 16,
-                padding: "12px 8px",
-              }}
-            >
-              <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
-              <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
-            </Box>
-          ))}
-        </SimpleGrid>
+            { label: "Presupuesto 2026–2029", value: formatCOP(vista.proyecto.presupuesto) },
+            ...(presupuestoAnioActual > 0 ? [{ label: `Presupuesto ${anioActual}`, value: formatCOP(presupuestoAnioActual) }] : []),
+          ];
+          return (
+            <SimpleGrid cols={{ base: 2, sm: Math.min(stats.length, 5) as 2|3|4|5 }} spacing="sm" mb="lg">
+              {stats.map((item) => (
+                <Box
+                  key={item.label}
+                  style={{
+                    textAlign: "center",
+                    background: "rgba(255,255,255,0.82)",
+                    border: "1px solid rgba(124,58,237,0.08)",
+                    borderRadius: 16,
+                    padding: "12px 8px",
+                  }}
+                >
+                  <Text fw={800} size="1.2rem" lh={1}>{item.value}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+                </Box>
+              ))}
+            </SimpleGrid>
+          );
+        })()}
 
         <Box mb="lg">
           <Group justify="space-between" mb={6}>
@@ -1543,6 +1618,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
                 email={email}
                 esLider={esLiderProyecto}
                 esResponsable={esResponsableProyecto}
+                canManage={esLiderProyecto || esResponsableProyecto}
               />
             ))}
           </Stack>
@@ -1557,8 +1633,11 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
   const [avales, setAvales] = useState<RespuestaFormularioAval[]>([]);
   const [loading, setLoading] = useState(true);
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [razonesSeleccionadas, setRazonesSeleccionadas] = useState<Record<string, string[]>>({});
+  const [otrosCuales, setOtrosCuales] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [razonesDisponibles, setRazonesDisponibles] = useState<{ value: string; label: string }[]>([]);
 
   useEffect(() => {
     if (!liderEmail) return;
@@ -1567,18 +1646,40 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
       .then((r) => setAvales(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then(r => setRazonesDisponibles([
+        ...r.data.map((x: any) => ({ value: x.texto, label: x.texto })),
+        { value: "Otro", label: "Otro ¿Cuál?" },
+      ]))
+      .catch(() => {});
   }, [liderEmail]);
 
   const handleAval = async (respuesta: RespuestaFormularioAval, estado_aval: "Aprobado" | "Rechazado") => {
     const formId = typeof respuesta.formulario_id === "string"
       ? respuesta.formulario_id
       : (respuesta.formulario_id as any)._id;
+
+    if (estado_aval === "Rechazado") {
+      const razones = razonesSeleccionadas[respuesta._id] ?? [];
+      if (razones.length === 0) {
+        showNotification({ title: "Falta información", message: "Selecciona al menos una razón de rechazo", color: "orange" });
+        return;
+      }
+      if (razones.includes("Otro") && !(otrosCuales[respuesta._id] ?? "").trim()) {
+        showNotification({ title: "Falta información", message: "Especifica el campo \"Otro ¿Cuál?\"", color: "orange" });
+        return;
+      }
+    }
+
     setSavingId(respuesta._id);
     try {
+      const razones = razonesSeleccionadas[respuesta._id] ?? [];
       await axios.put(PDI_ROUTES.formularioAval(formId, respuesta._id), {
         estado_aval,
         aval_por: liderEmail,
         aval_comentario: comentarios[respuesta._id] ?? "",
+        aval_razones: razones,
+        aval_otro_cual: razones.includes("Otro") ? (otrosCuales[respuesta._id] ?? "") : "",
       });
       setAvales((prev) => prev.filter((a) => a._id !== respuesta._id));
       showNotification({ title: estado_aval, message: `Formulario ${estado_aval.toLowerCase()} correctamente`, color: estado_aval === "Aprobado" ? "teal" : "red" });
@@ -1658,8 +1759,32 @@ function AvalesPendientesPanel({ liderEmail, onAvalDone }: { liderEmail: string;
                 </Stack>
               )}
 
+              {razonesDisponibles.length > 1 && (
+                <Stack gap={6} mb="sm">
+                  <MultiSelect
+                    size="xs"
+                    label="Razones de rechazo"
+                    placeholder="Selecciona una o varias razones..."
+                    data={razonesDisponibles}
+                    value={razonesSeleccionadas[r._id] ?? []}
+                    onChange={vals => {
+                      setRazonesSeleccionadas(prev => ({ ...prev, [r._id]: vals }));
+                      if (!vals.includes("Otro")) setOtrosCuales(prev => ({ ...prev, [r._id]: "" }));
+                    }}
+                    clearable
+                  />
+                  {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
+                    <TextInput
+                      size="xs"
+                      placeholder="Especifica..."
+                      value={otrosCuales[r._id] ?? ""}
+                      onChange={e => setOtrosCuales(prev => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                    />
+                  )}
+                </Stack>
+              )}
               <Textarea
-                placeholder="Comentario para el responsable (opcional)..."
+                placeholder="Comentario adicional para el responsable (opcional)..."
                 value={comentarios[r._id] ?? ""}
                 onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
                 rows={2}
@@ -1693,6 +1818,7 @@ export default function MisIndicadoresPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const { config } = usePdiConfig();
+  const { canManage: canManagePdi } = useViewPermission("pdi");
   const [proyectosVista, setProyectosVista] = useState<ProyectoResponsableView[]>([]);
   const [loading, setLoading] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
@@ -1713,7 +1839,8 @@ export default function MisIndicadoresPage() {
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${encodeURIComponent(email)}`),
-      axios.get(PDI_ROUTES.cortesVigentes()),
+      axios.get(PDI_ROUTES.cortesVigentes())
+        .then(r => r.data.length ? r : axios.get(PDI_ROUTES.cortesActivos())),
     ])
       .then(([resMacros, resInd, resAcc, resProy, resUser, resCortes]) => {
         const todosMacros: Array<{ _id: string; codigo: string; nombre: string; lider?: string }> = resMacros.data;
@@ -1806,7 +1933,13 @@ export default function MisIndicadoresPage() {
 
   const indicadores = proyectosVista.flatMap((proyecto) => proyecto.acciones.flatMap((accion) => accion.indicadores));
   const acciones = proyectosVista.flatMap((proyecto) => proyecto.acciones.map((accion) => accion.accion));
-  const alertas = indicadores.filter((indicador) => indicador.semaforo === "rojo" || indicador.semaforo === "amarillo").length;
+  const cortesVigentesNombres = new Set(cortesVigentes.map(c => c.nombre.trim().toUpperCase()));
+  const alertas = indicadores.filter((indicador) => {
+    const tieneCorteActivo = (indicador.periodos ?? []).some(
+      p => cortesVigentesNombres.has((p.periodo ?? "").trim().toUpperCase())
+    );
+    return tieneCorteActivo && (indicador.semaforo === "rojo" || indicador.semaforo === "amarillo");
+  }).length;
   const requesterName =
     (session?.user as { full_name?: string } | undefined)?.full_name ||
     session?.user?.name ||
@@ -1869,17 +2002,20 @@ export default function MisIndicadoresPage() {
   };
 
   return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <PdiSidebar />
+    <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
     <Container size="xl" py="xl">
       <Group mb="lg" justify="space-between">
         <Group gap={10}>
-          <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <ActionIcon variant="subtle" onClick={() => router.push("/pdi-modulo")}>
             <IconArrowLeft size={18} />
           </ActionIcon>
           <ThemeIcon size={40} radius="xl" color="violet" variant="light">
             <IconTarget size={22} />
           </ThemeIcon>
           <div>
-            <Title order={3}>{pageTitle}</Title>
+            {loading ? <Skeleton height={28} width={200} mb={6} /> : <Title order={3}>{pageTitle}</Title>}
             <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
           </div>
         </Group>
@@ -1914,18 +2050,30 @@ export default function MisIndicadoresPage() {
 
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} mb="xl">
-        {unifiedStatCards.map((s) => (
-          <Paper key={s.label} withBorder radius="lg" p="lg" shadow="xs">
-            <Group justify="space-between" align="flex-start" mb="sm">
-              <ThemeIcon size={48} radius="xl" color={s.color} variant="light">
-                {s.icon}
-              </ThemeIcon>
-              <Badge color={s.color} variant="light" size="sm" radius="xl">PDI</Badge>
-            </Group>
-            <Text size="xs" c="dimmed" mb={2}>{s.label}</Text>
-            <Text size="1.8rem" fw={800} lh={1}>{s.value}</Text>
-          </Paper>
-        ))}
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Paper key={i} withBorder radius="lg" p="lg" shadow="xs">
+                <Group justify="space-between" align="flex-start" mb="sm">
+                  <Skeleton height={48} width={48} radius="xl" />
+                  <Skeleton height={20} width={36} radius="xl" />
+                </Group>
+                <Skeleton height={12} width="60%" mb={8} />
+                <Skeleton height={36} width="40%" />
+              </Paper>
+            ))
+          : unifiedStatCards.map((s) => (
+              <Paper key={s.label} withBorder radius="lg" p="lg" shadow="xs">
+                <Group justify="space-between" align="flex-start" mb="sm">
+                  <ThemeIcon size={48} radius="xl" color={s.color} variant="light">
+                    {s.icon}
+                  </ThemeIcon>
+                  <Badge color={s.color} variant="light" size="sm" radius="xl">PDI</Badge>
+                </Group>
+                <Text size="xs" c="dimmed" mb={2}>{s.label}</Text>
+                <Text size="1.8rem" fw={800} lh={1}>{s.value}</Text>
+              </Paper>
+            ))
+        }
       </SimpleGrid>
 
       {cortesVigentes.length > 0 && (
@@ -2022,8 +2170,8 @@ export default function MisIndicadoresPage() {
                     onUpdated={handleIndicadorUpdated}
                     onSolicitarCambio={handleSolicitarCambio}
                     email={requesterEmail}
-                    esLiderProyecto={esLiderProyecto}
-                    esResponsableProyecto={esResponsableProyecto}
+                    esLiderProyecto={canManagePdi && esLiderProyecto}
+                    esResponsableProyecto={canManagePdi && esResponsableProyecto}
                   />
                 );
               })}
@@ -2039,5 +2187,7 @@ export default function MisIndicadoresPage() {
         requesterEmail={requesterEmail}
       />
     </Container>
+    </div>
+    </div>
   );
 }

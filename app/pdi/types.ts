@@ -39,6 +39,15 @@ export interface RespuestaCampo {
   url: string;
 }
 
+export interface DocumentoEvidenciaFormulario {
+  _id?: string;
+  nombre_original?: string;
+  filename?: string;
+  url?: string;
+  mimetype?: string;
+  size?: number;
+}
+
 export interface RespuestaFormulario {
   _id: string;
   formulario_id: string | { _id: string; nombre: string; campos: any[] };
@@ -55,11 +64,19 @@ export interface RespuestaFormulario {
   documento_url: string;
   documento_nombre_original: string;
   documento_mimetype: string;
+  documento_size?: number;
+  documentos?: DocumentoEvidenciaFormulario[];
   estado_aval: EstadoAval | null;
   lider_email_aval: string;
   aval_por: string;
   aval_comentario: string;
+  aval_razones?: string[];
+  aval_otro_cual?: string;
   aval_fecha: string | null;
+  aval_planeacion?: "Pendiente" | "Validado" | "Devuelto" | null;
+  aval_planeacion_por?: string;
+  aval_planeacion_comentario?: string;
+  aval_planeacion_fecha?: string | null;
   createdAt: string;
 }
 

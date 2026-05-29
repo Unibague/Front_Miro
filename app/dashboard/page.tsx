@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconMessageCircle, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -28,22 +28,38 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const { userRole, setUserRole } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, userAccessProfiles, setUserAccessProfiles, permissionsLoaded } = useRole();
   const [notificationShown, setNotificationShown] = useState(false);
   const [isResponsible, setIsResponsible] = useState(false);
   const colorScheme = useColorScheme();
   const [pendingReports, setPendingReports] = useState<number>(0);
   const [pendingTemplates, setPendingTemplates] = useState<number>(0);
+  const [encargadoTemplatesCount, setEncargadoTemplatesCount] = useState<number>(0);
   const [nextReportDeadline, setNextReportDeadline] = useState<string | null>(null);
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
+  const [nextEncargadoDeadline, setNextEncargadoDeadline] = useState<string | null>(null);
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
-  const showResponsibleScopeCards = false;
   const showSupportTemplatesModule = false;
+
+  const hasViewPermission = (key: string) =>
+    Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
+
+  // Si tiene perfil: el perfil manda, el rol no agrega nada
+  // Si no tiene perfil: el rol decide todo normalmente
+  const hasProfile = userAccessProfiles.length > 0;
+
+  const canSee = (key: string, roles: string[]) => {
+    if (hasProfile) return hasViewPermission(key);
+    return roles.includes(userRole);
+  };
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
+
+  // gestionReportesOpen vive en la URL para que el historial del navegador funcione
+  const gestionReportesOpen = searchParams?.get("view") === "gestion";
 
   useEffect(() => {
     if (searchParams?.get("gestionProcesos") === "1") {
@@ -52,30 +68,28 @@ const DashboardPage = () => {
     }
   }, [searchParams, router]);
 
-  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" | "configuracion" =
+  const activeModule: "home" | "reports" | "snies" | "cna" | "pdi" | "configuracion" | "responsible-admin" =
     pathname === "/reports" || pathname === "/operations"
       ? "reports"
       : pathname === "/snies"
         ? "snies"
         : pathname === "/cna"
           ? "cna"
-          : pathname === "/pdi"
+          : pathname === "/pdi-modulo"
             ? "pdi"
             : pathname === "/configuracion"
               ? "configuracion"
-              : "home";
+              : pathname === "/responsible/admin"
+                ? "responsible-admin"
+                : "home";
 
-  const shouldRedirectFromDashboardHome =
-    pathname === "/dashboard" &&
-    status === "authenticated" &&
-    !opened &&
-    !!userRole &&
-    userRole !== "Administrador";
+  const shouldRedirectFromDashboardHome = false;
 
   const shouldWaitDashboardRedirect =
     pathname === "/dashboard" &&
     status === "authenticated" &&
     !opened &&
+    permissionsLoaded &&
     !userRole;
 
   const getDefaultRouteByRole = (role: string) => {
@@ -83,9 +97,9 @@ const DashboardPage = () => {
       case "Administrador":
         return "/dashboard";
       case "Responsable":
-        return "/reports";
+        return "/dashboard";
       case "Productor":
-        return "/reports";
+        return "/dashboard";
       default:
         return "/dashboard";
     }
@@ -145,12 +159,43 @@ const DashboardPage = () => {
                   ? templatesResponse.data.templates
                   : [];
                 const totalTemplates = templatesList.length;
+                const encargadoList = templatesList.filter((t: any) => t.isEncargado);
+                const regularList = templatesList.filter((t: any) => !t.isEncargado);
 
-                // Se establece el número total de plantillas pendientes
                 setPendingTemplates(totalTemplates);
-                setNextTemplateDeadline(
-                    totalTemplates > 0 ? dayjs(templatesList[0].deadline).format("DD/MM/YYYY") : null
-                );
+                setEncargadoTemplatesCount(encargadoList.length);
+
+                // Fecha más próxima para productores regulares
+                const regularDeadlines = regularList
+                    .map((t: any) => {
+                        const raw = t.fecha_final_productores
+                            ?? t.template?.fecha_final_productores
+                            ?? t.fecha_final
+                            ?? t.template?.fecha_final
+                            ?? t.deadline;
+                        return raw ? new Date(raw) : null;
+                    })
+                    .filter((d: Date | null): d is Date => d !== null && !isNaN(d.getTime()));
+                const minRegular = regularDeadlines.length > 0
+                    ? new Date(Math.min(...regularDeadlines.map((d: Date) => d.getTime())))
+                    : null;
+                setNextTemplateDeadline(minRegular ? dayjs(minRegular).format("DD/MM/YYYY") : null);
+
+                // Fecha más próxima para el productor encargado
+                const encargadoDeadlines = encargadoList
+                    .map((t: any) => {
+                        const raw = t.fecha_final_responsables
+                            ?? t.template?.fecha_final_responsables
+                            ?? t.fecha_final_productores
+                            ?? t.template?.fecha_final_productores
+                            ?? t.deadline;
+                        return raw ? new Date(raw) : null;
+                    })
+                    .filter((d: Date | null): d is Date => d !== null && !isNaN(d.getTime()));
+                const minEncargado = encargadoDeadlines.length > 0
+                    ? new Date(Math.min(...encargadoDeadlines.map((d: Date) => d.getTime())))
+                    : null;
+                setNextEncargadoDeadline(minEncargado ? dayjs(minEncargado).format("DD/MM/YYYY") : null);
             } else {
                 setPendingTemplates(0);
                 setNextTemplateDeadline(null);
@@ -224,9 +269,14 @@ const DashboardPage = () => {
             `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
             { params: { email: session.user.email } }
           );
-          setAvailableRoles(response.data.roles);
+          const roles = response.data.roles ?? [];
+          setAvailableRoles(roles);
           if (!response.data.activeRole) {
-            setOpened(true);
+            // Solo abrir modal si tiene roles para elegir
+            if (roles.length > 0) {
+              setOpened(true);
+            }
+            // Si no tiene roles, queda como "Usuario" sin bloquear
           } else {
             if (userRole !== response.data.activeRole) {
               setUserRole(response.data.activeRole);
@@ -336,8 +386,8 @@ const DashboardPage = () => {
           )}
           {pendingTemplates > 0 && userRole !== "Responsable" && (
             <>
-              Tienes <strong>{pendingTemplates}</strong> plantillas pendientes.{" "}
-              {nextTemplateDeadline && `Fecha de vencimiento más próxima: ${nextTemplateDeadline}.`}
+              Tienes <strong>{pendingTemplates}</strong>{" "}
+              {pendingTemplates === 1 ? "plantilla pendiente" : "plantillas pendientes"}.
             </>
           )}
         </Badge>
@@ -349,15 +399,20 @@ const DashboardPage = () => {
     if (!session?.user?.email) return;
 
     try {
-      const response = await axios.put(
+      await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`,
-        {
-          email: session.user.email,
-          activeRole: role,
-        }
+        { email: session.user.email, activeRole: role }
       );
-      console.log("Active role updated:", response.data);
+
+      // Recargar permisos del cargo para el nuevo rol activo
+      const permResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
+        { params: { email: session.user.email } }
+      );
       setUserRole(role);
+      setViewPermissions(permResponse.data.viewPermissions || {});
+      setUserAccessProfiles(permResponse.data.accessProfiles || []);
+
       setOpened(false);
       const targetRoute = getDefaultRouteByRole(role);
       if (targetRoute !== pathname) {
@@ -470,7 +525,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos')} style={{ cursor: "pointer" }}>
                <Center style={{ position: "relative" }}>
                 <IconClipboard size={80}/>
                 <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
@@ -487,7 +542,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos/uploaded')} style={{ cursor: "pointer" }}>
               <Center>
                 <IconReportSearch size={80}/>
               </Center>
@@ -678,7 +733,7 @@ const DashboardPage = () => {
       case "Responsable":
         cards.push(
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-published-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates/published')} style={{ cursor: "pointer" }}>
               <Center><IconChecklist size={80}></IconChecklist></Center>
               <Group mt="md" mb="xs">
                   <Text ta={"center"} w={500}>Gestionar Plantillas Productores</Text>
@@ -692,7 +747,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/reportproducers')} style={{ cursor: "pointer" }}>
              <Center><IconClipboardData size={80}/></Center>
              <Group mt="md" mb="xs">
                <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
@@ -705,43 +760,8 @@ const DashboardPage = () => {
              </Button>
             </Card>
          </Grid.Col>,
-          showResponsibleScopeCards && (
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="dimension-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center style={{ position: "relative" }}>
-                <IconClipboard size={80}/>
-                <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
-                </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Informe de Ámbito</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-              Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/reports')}>
-                Ir a Informes de Ámbito
-              </Button>
-            </Card>
-          </Grid.Col>
-          ),
-          showResponsibleScopeCards && (
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-dimensions">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconHexagon3d size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Mi Ámbito</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el ámbito del que eres responsable.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/responsible/dimension')}>
-                Ir a Gestión de Mi Ámbito
-              </Button>
-            </Card>
-          </Grid.Col>
-          ),
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
-  <Card shadow="sm" padding="lg" radius="md" withBorder>
+  <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/responsible/reports')} style={{ cursor: "pointer" }}>
     <Center>
       <IconChartBarPopular size={80} />
     </Center>
@@ -768,7 +788,7 @@ const DashboardPage = () => {
   </Card>
 </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
               <Center><IconFilter size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
@@ -781,8 +801,22 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
+          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-validations">
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/validations')} style={{ cursor: "pointer" }}>
+              <Center><IconCheckbox size={80}/></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Validaciones</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Conoce las validaciones que deben cumplir los datos de tus plantillas.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/validations')}>
+                Ir a Validaciones
+              </Button>
+            </Card>
+          </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
               <Center><IconChartHistogram size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Historial de Cambios</Text>
@@ -795,26 +829,12 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-pdi-indicadores">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
-              <Center><IconTarget size={80} /></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Proyectos PDI</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Proyectos PDI
-              </Button>
-            </Card>
-          </Grid.Col>,
         );
         break;
       case "Productor":
         cards.push(
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-my-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/templates')} style={{ cursor: "pointer" }}>
               <Center><IconFileAnalytics size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
@@ -828,7 +848,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-reports">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/reports')} style={{ cursor: "pointer" }}>
             <Center><IconClipboardData size={80}/></Center>
             <Group mt="md" mb="xs">
               <Text ta={"center"} w={500}>Informe de gestión de productor</Text>
@@ -841,22 +861,8 @@ const DashboardPage = () => {
             </Button>
           </Card>
         </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-validations">
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconCheckbox size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Validaciones</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-            Conoce las validaciones que deben cumplir los datos de tus plantillas
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/validations')}>
-              Ir a Validaciones
-            </Button>
-          </Card>
-        </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-templates-with-filters-all">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
               <Center><IconFilter size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
@@ -870,7 +876,7 @@ const DashboardPage = () => {
             </Card>
           </Grid.Col>,
           <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
+            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
               <Center><IconChartHistogram size={80}/></Center>
               <Group mt="md" mb="xs">
                 <Text ta={"center"} w={500}>Historial de Cambios</Text>
@@ -883,122 +889,30 @@ const DashboardPage = () => {
               </Button>
             </Card>
           </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-pdi-indicadores">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/pdi/mis-indicadores')} style={{ cursor: "pointer" }}>
-              <Center><IconTarget size={80} /></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Proyectos PDI</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta y actualiza el avance de los proyectos PDI asignados a ti.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/pdi/mis-indicadores')}>
-                Ir a Mis Proyectos PDI
-              </Button>
-            </Card>
-          </Grid.Col>,
         );
-        if (isVisualizer) {
-
-          cards.push(
-            <Grid.Col
-            span={{ base: 12, md: 5, lg: 4 }}
-            key="administer-dependency"
-          >
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center>
-                <IconUserStar size={80} />
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>
-                  Ver Mi Dependencia
-                </Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Selecciona qué miembros de tu equipo tendrán acceso a Miró
-              </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push("/dependency")}
-              >
-                Ir a Gestión de Dependencia
-              </Button>
-            </Card>
-          </Grid.Col>,
-
-            <Grid.Col
-              span={{ base: 12, md: 5, lg: 4 }}
-              key="view-child-dependency-templates"
-            >
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center>
-                  <IconHierarchy2 size={80} />
-                </Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>
-                    Visualizar plantillas de dependencias hijo
-                  </Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Observa el progreso de carga de las plantillas de tus
-                  dependencias hijo
-                </Text>
-                <Button
-                  variant="light"
-                  fullWidth
-                  mt="md"
-                  radius="md"
-                  onClick={() =>
-                    router.push("/dependency/children-dependencies/templates")
-                  }
-                >
-                  Ir a visualizador
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col
-              span={{ base: 12, md: 5, lg: 4 }}
-              key="view-child-dependency-reports"
-            >
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center>
-                  <IconClipboardData size={80} />
-                </Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>
-                    Visualizar reportes de dependencias hijo
-                  </Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Observa los reportes generados por las dependencias hijo y su
-                  estado de cumplimiento.
-                </Text>
-                <Button
-                  variant="light"
-                  fullWidth
-                  mt="md"
-                  radius="md"
-                  onClick={() =>
-                    router.push("/dependency/children-dependencies/reports")
-                  }
-                >
-                  Ir a visualizador de reportes
-                </Button>
-              </Card>
-            </Grid.Col>,
-
-          );
-        }
-  break;
+        break;
       case "Usuario":
       default:
+        if (Object.keys(viewPermissions).length > 0) {
+          // Usuario con permisos por cargo: no mostrar tarjetas extra aquí,
+          // las tarjetas de módulo ya aparecen en el home por hasViewPermission
+          break;
+        }
         cards.push(
-          <Container key="default-message">
-            <Text>Bienvenido al sistema. Por favor selecciona un rol desde el menú superior.</Text>
-          </Container>
+          <Grid.Col span={12} key="no-roles-message">
+            <Paper
+              withBorder
+              radius="xl"
+              p="xl"
+              style={{ textAlign: "center", background: "var(--mantine-color-gray-0)" }}
+            >
+              <Text fw={600} size="lg" mb="xs">Sin módulos asignados</Text>
+              <Text size="sm" c="dimmed">
+                Tu cuenta aún no tiene roles ni permisos configurados.<br />
+                Contacta al administrador del sistema para que te asigne un rol.
+              </Text>
+            </Paper>
+          </Grid.Col>
         );
         break;
     }
@@ -1073,7 +987,7 @@ const DashboardPage = () => {
   };
 
   const renderConfigurationCards = () => {
-    if (userRole !== "Administrador") {
+    if (!hasViewPermission("configuration") && !hasViewPermission("profiles") && !hasViewPermission("users") && userRole !== "Administrador") {
       return (
         <Grid.Col span={12}>
           <Center>
@@ -1101,6 +1015,7 @@ const DashboardPage = () => {
             </Button>
           </Card>
         </Grid.Col>
+
 
         <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
@@ -1139,6 +1054,104 @@ const DashboardPage = () => {
     );
   };
 
+  const renderResponsiblePdiCards = () => {
+    if (!hasViewPermission("pdi") && !hasViewPermission("pdiMine") && !hasViewPermission("pdiDashboard") && userRole !== "Responsable" && userRole !== "Administrador") {
+      return (
+        <Grid.Col span={12}>
+          <Center>
+            <Text c="dimmed">No tienes permisos para este modulo.</Text>
+          </Center>
+        </Grid.Col>
+      );
+    }
+
+    return (
+      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/pdi/mis-indicadores")} style={{ cursor: "pointer" }}>
+          <Center>
+            <IconTarget size={80} />
+          </Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>Proyectos PDI</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            Consulta y actualiza el avance de los proyectos PDI asignados a ti.
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/pdi/mis-indicadores")}>
+            Ir a Mis Proyectos PDI
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
+  const renderResponsibleAdminCards = () => {
+    if (!hasViewPermission("responsibleReports") && !hasViewPermission("publishedTemplates") && userRole !== "Responsable" && userRole !== "Administrador") {
+      return (
+        <Grid.Col span={12}>
+          <Center>
+            <Text c="dimmed">No tienes permisos para este modulo.</Text>
+          </Center>
+        </Grid.Col>
+      );
+    }
+
+    return (
+      <>
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconUserStar size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Ver Mi Dependencia</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Selecciona que miembros de tu equipo tendran acceso a Miro.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency")}>
+              Ir a Gestion de Dependencia
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/templates")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconHierarchy2 size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Visualizar plantillas de dependencias hijo</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Observa el progreso de carga de las plantillas de tus dependencias hijo.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/templates")}>
+              Ir a visualizador
+            </Button>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/reports")} style={{ cursor: "pointer" }}>
+            <Center>
+              <IconClipboardData size={80} />
+            </Center>
+            <Group mt="md" mb="xs">
+              <Text ta={"center"} w={500}>Visualizar reportes de dependencias hijo</Text>
+            </Group>
+            <Text ta={"center"} size="sm" color="dimmed">
+              Observa los reportes generados por las dependencias hijo y su estado de cumplimiento.
+            </Text>
+            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/reports")}>
+              Ir a visualizador de reportes
+            </Button>
+          </Card>
+        </Grid.Col>
+      </>
+    );
+  };
+
   if (shouldRedirectFromDashboardHome || shouldWaitDashboardRedirect) {
     return (
       <Container size="xl" py="xl">
@@ -1152,40 +1165,67 @@ const DashboardPage = () => {
   const renderAvRcCards = () => {
     return (
       <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconCalendarMonth size={80} /></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
-              Ir a gestión de procesos MEN
-            </Button>
-          </Card>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Gestión ante el MEN.
-            </Text>
-            <Button
-              variant="light"
-              fullWidth
-              mt="md"
-              radius="md"
-              onClick={() => router.push(processesMenRoutes.comunicaciones)}
-            >
-              Ir a comunicaciones MEN
-            </Button>
-          </Card>
-        </Grid.Col>
+        {canSee("dateReview", ["Administrador"]) && (
+          <>
+            <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconCalendarMonth size={80} /></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
+                </Text>
+                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
+                  Ir a gestión de procesos MEN
+                </Button>
+              </Card>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
+                <Group mt="md" mb="xs">
+                  <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
+                </Group>
+                <Text ta={"center"} size="sm" color="dimmed">
+                  Gestión ante el MEN.
+                </Text>
+                <Button
+                  variant="light"
+                  fullWidth
+                  mt="md"
+                  radius="md"
+                  onClick={() => router.push(processesMenRoutes.comunicaciones)}
+                >
+                  Ir a comunicaciones MEN
+                </Button>
+              </Card>
+            </Grid.Col>
+          </>
+        )}
+
+        {["Responsable", "Productor"].includes(userRole) && (
+          <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconCalendarMonth size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Estado de procesos MEN</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Consulta el estado de fases y actividades de los programas de tu facultad.
+              </Text>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push("/processes-MEN/responsible")}
+              >
+                Ver procesos de mi facultad
+              </Button>
+            </Card>
+          </Grid.Col>
+        )}
       </>
     );
   };
@@ -1195,41 +1235,46 @@ const DashboardPage = () => {
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
-        {(activeModule !== "home" || avRcOpen) && !(activeModule === "reports" && ["Productor", "Responsable"].includes(userRole)) && (
+        {(activeModule !== "home" || avRcOpen || gestionReportesOpen) && (
           <Group justify="flex-start">
-            <Button variant="subtle" onClick={() => { router.push("/dashboard"); setAvRcOpen(false); }}>
-              Volver a módulos
+            <Button variant="subtle" onClick={() => {
+              if (avRcOpen) {
+                setAvRcOpen(false);
+              } else {
+                router.back();
+              }
+            }}>
+              Volver al módulo
             </Button>
           </Group>
         )}
-        {activeModule === "home" && !avRcOpen ? (
+        {activeModule === "home" && !avRcOpen && !gestionReportesOpen ? (
           <Grid justify="center" align="stretch">
+            {canSee("adminTemplates", ["Administrador", "Responsable", "Productor"]) && (
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
                 p="xl"
-                onClick={() => router.push(userRole === "Responsable" ? "/responsible/reports" : "/reports")}
+                onClick={() => router.push("/dashboard?view=gestion")}
                 style={{
                   cursor: "pointer",
                   minHeight: 260,
                   color: "white",
                   border: "1px solid rgba(255,255,255,0.12)",
-                  background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
-                  boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
+                  background: "linear-gradient(135deg, #0f4c75 0%, #1b6ca8 100%)",
+                  boxShadow: "0 18px 45px rgba(15, 76, 117, 0.22)",
                 }}
               >
                 <Stack justify="space-between" h="100%" align="center">
                   <Stack align="center" gap="md">
                     <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconFileAnalytics size={28} />
+                      <IconReportSearch size={28} />
                     </ThemeIcon>
                     <Title order={2} c="white" ta="center">
-                      Plantillas y reportes
+                      Gestión de reportes
                     </Title>
                     <Text c="rgba(255,255,255,0.82)" ta="center">
-                      {userRole === "Responsable"
-                        ? "Accede a tus plantillas publicadas y reportes asignados."
-                        : "Gestión plantillas y reportes."}
+                      Plantillas, reportes, SNIES, CNA y consulta de información.
                     </Text>
                   </Stack>
                   <Button variant="white" color="blue" radius="xl">
@@ -1238,151 +1283,104 @@ const DashboardPage = () => {
                 </Stack>
               </Card>
             </Grid.Col>
+            )}
 
-            {showSupportTemplatesModule && userRole === "Administrador" && (
+            {userRole === "Administrador" && (
+              <>
+                {showSupportTemplatesModule && (
+                  <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                    <Card
+                      radius="xl"
+                      p="xl"
+                      onClick={() => router.push("/apoyos-plantillas")}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 260,
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "linear-gradient(135deg, #164e63 0%, #0891b2 100%)",
+                        boxShadow: "0 18px 45px rgba(8, 145, 178, 0.22)",
+                      }}
+                    >
+                      <Stack justify="space-between" h="100%" align="center">
+                        <Stack align="center" gap="md">
+                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                            <IconDatabase size={28} />
+                          </ThemeIcon>
+                          <Title order={2} c="white" ta="center">
+                            Cruce de apoyos SIGA/Iceberg
+                          </Title>
+                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                            Cruza plantillas de apoyos con SIGA/Iceberg e historial de periodos.
+                          </Text>
+                        </Stack>
+                        <Button variant="white" color="cyan" radius="xl">
+                          Abrir modulo
+                        </Button>
+                      </Stack>
+                    </Card>
+                  </Grid.Col>
+                )}
+              </>
+            )}
+
+            {(canSee("dateReview", ["Administrador", "Responsable", "Productor"]) || ["Responsable", "Productor"].includes(userRole)) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
                   p="xl"
-                  onClick={() => router.push("/apoyos-plantillas")}
+                  onClick={() =>
+                    userRole === "Administrador"
+                      ? setAvRcOpen(true)
+                      : router.push("/processes-MEN/responsible")
+                  }
                   style={{
                     cursor: "pointer",
                     minHeight: 260,
                     color: "white",
                     border: "1px solid rgba(255,255,255,0.12)",
-                    background: "linear-gradient(135deg, #0e3a4a 0%, #168aad 100%)",
-                    boxShadow: "0 18px 45px rgba(14, 58, 74, 0.22)",
+                    background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
+                    boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
                   }}
                 >
                   <Stack justify="space-between" h="100%" align="center">
                     <Stack align="center" gap="md">
                       <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconClipboardData size={28} />
+                        <IconCalendarMonth size={28} />
                       </ThemeIcon>
                       <Title order={2} c="white" ta="center">
-                        Cruce de apoyos
+                        Procesos de calidad MEN
                       </Title>
                       <Text c="rgba(255,255,255,0.82)" ta="center">
-                        Plantillas con datos SIGA/Iceberg.
+                        {userRole === "Administrador"
+                          ? "RC, AV y comunicaciones MEN."
+                          : "Estado de fases y actividades de los programas de tu facultad."}
                       </Text>
                     </Stack>
-                    <Button variant="white" color="cyan" radius="xl">
-                      Abrir modulo
+                    <Button
+                      variant="white"
+                      color="green"
+                      radius="xl"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        userRole === "Administrador"
+                          ? setAvRcOpen(true)
+                          : router.push("/processes-MEN/responsible");
+                      }}
+                    >
+                      Abrir módulo
                     </Button>
                   </Stack>
                 </Card>
               </Grid.Col>
             )}
 
-            {userRole !== "Responsable" && (
-              <>
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => router.push("/snies")}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
-                      boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconHexagon3d size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          SNIES
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          Gestión SNIES.
-                        </Text>
-                      </Stack>
-                      <Button variant="white" color="teal" radius="xl">
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
-
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => router.push("/cna")}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
-                      boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconReport size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          CNA
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          Gestión CNA.
-                        </Text>
-                      </Stack>
-                      <Button variant="white" color="orange" radius="xl" onClick={() => router.push("/cna/templates")}>
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
-
-                <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-                  <Card
-                    radius="xl"
-                    p="xl"
-                    onClick={() => setAvRcOpen(true)}
-                    style={{
-                      cursor: "pointer",
-                      minHeight: 260,
-                      color: "white",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
-                      boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
-                    }}
-                  >
-                    <Stack justify="space-between" h="100%" align="center">
-                      <Stack align="center" gap="md">
-                        <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                          <IconCalendarMonth size={28} />
-                        </ThemeIcon>
-                        <Title order={2} c="white" ta="center">
-                          Procesos de calidad MEN
-                        </Title>
-                        <Text c="rgba(255,255,255,0.82)" ta="center">
-                          RC, AV y comunicaciones MEN.
-                        </Text>
-                      </Stack>
-                      <Button variant="white" color="green" radius="xl" onClick={() => setAvRcOpen(true)}>
-                        Abrir módulo
-                      </Button>
-                    </Stack>
-                  </Card>
-                </Grid.Col>
-              </>
-            )}
-
-            {(userRole === "Responsable" || userRole === "Administrador") && (
+            {canSee("pdi", ["Administrador", "Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
                   p="xl"
-                  onClick={() => router.push(userRole === "Responsable" ? "/pdi/mis-indicadores" : "/pdi")}
+                  onClick={() => router.push(userRole === "Responsable" ? "/pdi-modulo" : "/pdi")}
                   style={{
                     cursor: "pointer",
                     minHeight: 260,
@@ -1414,7 +1412,44 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
-            {userRole === "Administrador" && (
+
+            {canSee("responsibleReports", ["Responsable"]) && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  onClick={() => router.push("/responsible/admin")}
+                  style={{
+                    cursor: "pointer",
+                    minHeight: 260,
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "linear-gradient(135deg, #263238 0%, #607d8b 100%)",
+                    boxShadow: "0 18px 45px rgba(38, 50, 56, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="md">
+                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                        <IconBuilding size={28} />
+                      </ThemeIcon>
+                      <Title order={2} c="white" ta="center">
+                        Administración
+                      </Title>
+                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                        Dependencia y visualizadores de dependencias hijo.
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="gray" radius="xl">
+                      Abrir módulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
+            
+
+            {canSee("configuration", ["Administrador"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1435,23 +1470,191 @@ const DashboardPage = () => {
                         <IconHomeCog size={28} />
                       </ThemeIcon>
                       <Title order={2} c="white" ta="center">
-                        Configuracion
+                      Configuración
                       </Title>
                       <Text c="rgba(255,255,255,0.82)" ta="center">
                         Perfiles y permisos de vistas.
                       </Text>
                     </Stack>
                     <Button variant="white" color="gray" radius="xl">
-                      Abrir modulo
+                      Abrir módulo
                     </Button>
                   </Stack>
                 </Card>
               </Grid.Col>
             )}
+
+            {/* Fallback: usuario sin roles ni permisos */}
+            {!canSee("adminTemplates", ["Administrador", "Responsable", "Productor"]) &&
+             !canSee("dateReview", ["Administrador", "Responsable", "Productor"]) &&
+             !["Responsable", "Productor"].includes(userRole) &&
+             !canSee("pdi", ["Administrador", "Responsable"]) &&
+             !canSee("responsibleReports", ["Administrador", "Responsable"]) &&
+             !canSee("configuration", ["Administrador"]) && (
+              <Grid.Col span={12}>
+                <Paper
+                  withBorder
+                  radius="xl"
+                  p="xl"
+                  style={{ textAlign: "center", background: "var(--mantine-color-gray-0)" }}
+                >
+                  <Text fw={600} size="lg" mb="xs">Sin módulos asignados</Text>
+                  <Text size="sm" c="dimmed">
+                    Tu cuenta aún no tiene roles ni permisos configurados.<br />
+                    Contacta al administrador del sistema para que te asigne un rol.
+                  </Text>
+                </Paper>
+              </Grid.Col>
+            )}
+
           </Grid>
         ) : (
           <Grid justify="center" align="stretch">
-            {avRcOpen
+            {gestionReportesOpen
+              ? (
+                <>
+                  <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                    <Card
+                      radius="xl"
+                      p="xl"
+                      onClick={() => router.push("/reports")}
+                      style={{
+                        cursor: "pointer",
+                        minHeight: 260,
+                        color: "white",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
+                        boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
+                      }}
+                    >
+                      <Stack justify="space-between" h="100%" align="center">
+                        <Stack align="center" gap="md">
+                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                            <IconFileAnalytics size={28} />
+                          </ThemeIcon>
+                          <Title order={2} c="white" ta="center">
+                            Plantillas y reportes
+                          </Title>
+                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                            {userRole === "Administrador"
+                              ? "Gestión plantillas y reportes."
+                              : "Plantillas, informes, filtros, validaciones e historial."}
+                          </Text>
+                        </Stack>
+                        <Button variant="white" color="blue" radius="xl">
+                          Abrir módulo
+                        </Button>
+                      </Stack>
+                    </Card>
+                  </Grid.Col>
+
+                  {canSee("snies", ["Administrador"]) && (
+                    <>
+                      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                        <Card
+                          radius="xl"
+                          p="xl"
+                          onClick={() => router.push("/snies")}
+                          style={{
+                            cursor: "pointer",
+                            minHeight: 260,
+                            color: "white",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
+                            boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
+                          }}
+                        >
+                          <Stack justify="space-between" h="100%" align="center">
+                            <Stack align="center" gap="md">
+                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                                <IconHexagon3d size={28} />
+                              </ThemeIcon>
+                              <Title order={2} c="white" ta="center">
+                                SNIES
+                              </Title>
+                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                                Gestión SNIES.
+                              </Text>
+                            </Stack>
+                            <Button variant="white" color="teal" radius="xl">
+                              Abrir módulo
+                            </Button>
+                          </Stack>
+                        </Card>
+                      </Grid.Col>
+
+                      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                        <Card
+                          radius="xl"
+                          p="xl"
+                          onClick={() => router.push("/cna")}
+                          style={{
+                            cursor: "pointer",
+                            minHeight: 260,
+                            color: "white",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
+                            boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
+                          }}
+                        >
+                          <Stack justify="space-between" h="100%" align="center">
+                            <Stack align="center" gap="md">
+                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                                <IconReport size={28} />
+                              </ThemeIcon>
+                              <Title order={2} c="white" ta="center">
+                                CNA
+                              </Title>
+                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                                Gestión CNA.
+                              </Text>
+                            </Stack>
+                            <Button variant="white" color="orange" radius="xl">
+                              Abrir módulo
+                            </Button>
+                          </Stack>
+                        </Card>
+                      </Grid.Col>
+                    </>
+                  )}
+
+                  {canSee("dashboard", ["Administrador", "Responsable", "Productor"]) && (
+                    <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                      <Card
+                        radius="xl"
+                        p="xl"
+                        onClick={() => router.push("/historico-docentes")}
+                        style={{
+                          cursor: "pointer",
+                          minHeight: 260,
+                          color: "white",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
+                          boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
+                        }}
+                      >
+                        <Stack justify="space-between" h="100%" align="center">
+                          <Stack align="center" gap="md">
+                            <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
+                              <IconUsersGroup size={28} />
+                            </ThemeIcon>
+                            <Title order={2} c="white" ta="center">
+                              Consulta de Información
+                            </Title>
+                            <Text c="rgba(255,255,255,0.82)" ta="center">
+                              Consulta plantillas, informes e histórico docentes (SNIES).
+                            </Text>
+                          </Stack>
+                          <Button variant="white" color="violet" radius="xl">
+                            Abrir módulo
+                          </Button>
+                        </Stack>
+                      </Card>
+                    </Grid.Col>
+                  )}
+                </>
+              )
+              : avRcOpen
               ? renderAvRcCards()
               : activeModule === "reports"
               ? renderCards()
@@ -1460,7 +1663,9 @@ const DashboardPage = () => {
               : activeModule === "configuracion"
               ? renderConfigurationCards()
               : activeModule === "pdi"
-              ? null
+              ? renderResponsiblePdiCards()
+              : activeModule === "responsible-admin"
+              ? renderResponsibleAdminCards()
               : renderCnaCards()}
           </Grid>
         )}
@@ -1496,20 +1701,30 @@ const DashboardPage = () => {
         }}
         withCloseButton={false}
       >
-        <Select
-          label="Selecciona uno de tus roles"
-          placeholder="Elige un rol"
-          data={availableRoles}
-          value={selectedRole}
-          onChange={(value) => setSelectedRole(value || "")}
-        />
-        <Button
-          mt="md"
-          onClick={() => handleRoleSelect(selectedRole)}
-          disabled={!selectedRole}
-        >
-          Guardar
-        </Button>
+        {availableRoles.length === 0 ? (
+          <>
+            <Text size="sm" c="dimmed" mb="md">
+              Tu cuenta aún no tiene roles asignados. Contacta al administrador del sistema para que te asigne un rol.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Select
+              label="Selecciona uno de tus roles"
+              placeholder="Elige un rol"
+              data={availableRoles}
+              value={selectedRole}
+              onChange={(value) => setSelectedRole(value || "")}
+            />
+            <Button
+              mt="md"
+              onClick={() => handleRoleSelect(selectedRole)}
+              disabled={!selectedRole}
+            >
+              Guardar
+            </Button>
+          </>
+        )}
       </Modal>
     </>
   );

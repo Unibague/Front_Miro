@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import {
+  ActionIcon,
   Badge,
   Button,
   Center,
@@ -17,7 +18,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
-import { IconBulb, IconReportAnalytics } from "@tabler/icons-react";
+import { IconArrowLeft, IconBulb, IconReportAnalytics } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
@@ -268,6 +269,11 @@ label={validPeriod[pRep.period._id] === false ? "Plazo terminado para acceder a 
 
   return (
     <Container size="xl">
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Title ta="center" mb="md">
         Gestión de Informes de Responsables
       </Title>

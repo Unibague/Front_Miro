@@ -11,6 +11,7 @@ import "dayjs/locale/es";
 import type { Accion } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Props {
   opened: boolean;
@@ -28,6 +29,7 @@ function buildAniosMap(anios: number[], source?: Record<string, number>): Record
 
 export default function AccionModal({ opened, onClose, selected, defaultProyectoId, onSaved }: Props) {
   const { config } = usePdiConfig();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
   const [numIndicadores, setNumIndicadores] = useState<number | string>(0);
@@ -37,7 +39,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
@@ -93,6 +95,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         : await axios.post(PDI_ROUTES.acciones(), payload);
 
       showNotification({ title: selected ? "Actualizado" : "Creada", message: "Accion estrategica guardada", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -105,17 +108,17 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const cols = { base: 2, sm: Math.min(Math.max(config.anios.length, 1), 4) } as any;
 
   return (
-    <Modal opened={opened} onClose={onClose} title={selected ? "Editar Accion Estrategica" : "Nueva Accion Estrategica"} centered size="lg">
+    <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Accion Estrategica" : "Nueva Accion Estrategica"} centered size="lg">
       <Stack gap="sm">
         <Group grow>
-          <TextInput label="Codigo" value={codigo} onChange={(e) => setCodigo(e.currentTarget.value)} />
-          <NumberInput label="Número de indicadores" value={numIndicadores} onChange={setNumIndicadores} min={0} step={1} allowDecimal={false} />
+          <TextInput label="Codigo" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
+          <NumberInput label="Número de indicadores" value={numIndicadores} onChange={(v) => { setNumIndicadores(v); setHasChanges(true); }} min={0} step={1} allowDecimal={false} />
         </Group>
-        <TextInput label="Nombre" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <TextInput label="Nombre" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
         <NumberInput
           label="Presupuesto global (COP)"
           value={presupuesto}
-          onChange={setPresupuesto}
+          onChange={(v) => { setPresupuesto(v); setHasChanges(true); }}
           min={0}
           thousandSeparator="."
           decimalSeparator=","
@@ -128,7 +131,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
             <Tabs defaultValue="asignado">
               <Tabs.List>
                 <Tabs.Tab value="asignado">Presupuesto asignado por año</Tabs.Tab>
-                <Tabs.Tab value="ejecutado">Ejecutado por año</Tabs.Tab>
+                <Tabs.Tab value="ejecutado">Causado por año</Tabs.Tab>
               </Tabs.List>
 
               <Tabs.Panel value="asignado" pt="sm">
@@ -138,7 +141,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
                       key={anio}
                       label={String(anio)}
                       value={presupuestoAnios[String(anio)] ?? 0}
-                      onChange={v => setPresupuestoAnios(prev => ({ ...prev, [String(anio)]: v }))}
+                      onChange={v => { setPresupuestoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
                       min={0}
                       thousandSeparator="."
                       decimalSeparator=","
@@ -162,7 +165,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
                       key={anio}
                       label={String(anio)}
                       value={ejecutadoAnios[String(anio)] ?? 0}
-                      onChange={v => setEjecutadoAnios(prev => ({ ...prev, [String(anio)]: v }))}
+                      onChange={v => { setEjecutadoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
                       min={0}
                       thousandSeparator="."
                       decimalSeparator=","
@@ -172,7 +175,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
                 </SimpleGrid>
                 {totalEjecutado > 0 && (
                   <Text size="xs" c="dimmed" ta="right" mt={6}>
-                    Total ejecutado: $ {totalEjecutado.toLocaleString("es-CO")}
+                    Total causado: $ {totalEjecutado.toLocaleString("es-CO")}
                   </Text>
                 )}
               </Tabs.Panel>
@@ -182,7 +185,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       </Stack>
 
       <Group justify="flex-end" mt="lg">
-        <Button variant="default" onClick={onClose}>Cancelar</Button>
+        <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
         <Button loading={loading} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>

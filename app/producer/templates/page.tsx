@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Container,
   Table,
@@ -15,28 +15,30 @@ import {
   Text,
   Badge,
   Select,
+  CopyButton,
+  Stack,
+  Divider,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import {
   IconArrowBigDownFilled,
   IconArrowBigUpFilled,
-  IconArrowRight,
   IconArrowsTransferDown,
-  IconBulb,
+  IconArrowLeft,
   IconChecks,
   IconDownload,
-  IconEdit,
   IconPencil,
   IconUpload,
+  IconQrcode,
 } from "@tabler/icons-react";
+import QRCode from "react-qr-code";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useDisclosure } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
-import { format } from "fecha";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
@@ -89,6 +91,12 @@ interface Category{
   templateSequence: number
 }
 
+interface Producer {
+  _id: string;
+  dep_code: string;
+  name: string;
+}
+
 interface Template {
   _id: string;
   name: string;
@@ -99,7 +107,13 @@ interface Template {
   workbook_sheets?: TemplateWorksheet[];
   original_workbook_base64?: string;
   active: boolean;
-  category: Category
+  category: Category;
+  producers?: Producer[];
+  shared?: boolean;
+  allows_qr?: boolean;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
 }
 
 interface TemplateWorksheet {
@@ -109,15 +123,21 @@ interface TemplateWorksheet {
   rawRows?: any[][];
   cellNotes?: { row: number; col: number; note: string }[];
   columnWidths?: number[];
+  producers?: string[];
+  shared?: boolean;
 }
 
 interface FilledFieldData {
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
   field_name: string;
   values: any[];
 }
 
 interface ProducerData {
   dependency: string;
+  dependency_code?: string;
   send_by: any;
   loaded_date: Date;
   filled_data: FilledFieldData[];
@@ -144,11 +164,19 @@ interface PublishedTemplate {
   createdAt: string;
   updatedAt: string;
   loaded_data: ProducerData[];
+  qr_draft_data?: ProducerData[];
   validators: Validator[];
   deadline: string | Date;
   isPending: boolean;
   category_name?: string;
-      sequence: number;
+  sequence: number;
+  responsible_producers?: string[];
+  final_submitted?: boolean;
+  final_submitted_date?: string;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
+  isEncargado?: boolean;
 }
 
 const ProducerTemplatesPage = () => {
@@ -160,7 +188,7 @@ const ProducerTemplatesPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(20); // Nuevo estado para el tamaño de página
-  const [producerEndDate, setProducerEndDate] = useState<Date | undefined>();
+
   const [nextDeadline, setNextDeadline] = useState<Date | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
@@ -168,6 +196,43 @@ const ProducerTemplatesPage = () => {
   );
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+  const [qrTemplateName, setQrTemplateName] = useState('');
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  const getQrBaseUrl = () => {
+    const configuredUrl = process.env.NEXT_PUBLIC_QR_BASE_URL?.trim().replace(/\/+$/, "");
+    const currentOrigin = window.location.origin.replace(/\/+$/, "");
+    if (!configuredUrl) return currentOrigin;
+    try {
+      const host = new URL(configuredUrl).hostname;
+      const isDockerInternalIp = /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+      return isDockerInternalIp ? currentOrigin : configuredUrl;
+    } catch {
+      return currentOrigin;
+    }
+  };
+
+  const downloadQR = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, size, size);
+      const link = document.createElement('a');
+      link.download = `QR_${qrTemplateName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+  };
   const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
   const [selectedDependency, setSelectedDependency] = useState<string>('');
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
@@ -309,7 +374,7 @@ const ProducerTemplatesPage = () => {
     }
 
     const deadlines = templates
-      .map((t) => new Date(t.deadline))
+      .map((t) => getEffectiveDeadline(t))
       .filter((date) => !isNaN(date.getTime()));
 
     if (deadlines.length > 0) {
@@ -317,14 +382,44 @@ const ProducerTemplatesPage = () => {
     } else {
       setNextDeadline(null);
     }
-  }, [templates]);
+  }, [templates, selectedDependency]);
   
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
-    const { template, validators } = publishedTemplate;
+    const { template } = publishedTemplate;
+    const freshTemplateResponse = await axios.get(
+      `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+    );
+    const validators =
+      freshTemplateResponse.data.template?.validators ??
+      publishedTemplate.validators;
     const workbookSheets = (template.workbook_sheets || []).filter(
       (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
     );
+
+    // Mapa de ID de productor → dep_code para resolver las hojas
+    const producerIdMap = new Map<string, string>();
+    (template.producers || []).forEach((p) => {
+      if (p._id && p.dep_code) producerIdMap.set(p._id.toString(), p.dep_code);
+    });
+
+    // dep_codes del usuario actual (principal + adicionales)
+    const userDepCodes = new Set((userDependencies || []).map((d) => d.value));
+
+    // Hojas editables: solo si tiene productores asignados Y el usuario es uno de ellos
+    // Hojas sin productores (ej. INFO) → siempre bloqueadas
+    const canUserEditSheet = (sheet: TemplateWorksheet): boolean => {
+      if (!sheet.producers || sheet.producers.length === 0) return false;
+      return sheet.producers.some((producerId) => {
+        const depCode = producerIdMap.get(producerId.toString());
+        return depCode !== undefined && userDepCodes.has(depCode);
+      });
+    };
+
+    const applySheetTabColor = (ws: ExcelJS.Worksheet, editable: boolean) => {
+      ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
+    };
+
 
     if (template.original_workbook_base64) {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
@@ -357,6 +452,16 @@ const ProducerTemplatesPage = () => {
         originalCommentsBySheet,
       });
 
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const ws = workbook.getWorksheet(sheet.name);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
+
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
@@ -366,7 +471,11 @@ const ProducerTemplatesPage = () => {
     const workbook = new ExcelJS.Workbook();
 
     if (workbookSheets.length > 0) {
-      workbookSheets.forEach((sheet, sheetIndex) => {
+      // Mapa de nombre original de hoja → nombre real en el workbook (puede tener sufijo por deduplicación)
+      const sheetNameMap = new Map<string, string>();
+
+      for (let sheetIndex = 0; sheetIndex < workbookSheets.length; sheetIndex++) {
+        const sheet = workbookSheets[sheetIndex];
         const baseName = sanitizeSheetName(sheet.name || `Hoja_${sheetIndex + 1}`) || `Hoja_${sheetIndex + 1}`;
         let worksheetName = baseName;
         let counter = 1;
@@ -375,6 +484,7 @@ const ProducerTemplatesPage = () => {
           worksheetName = `${baseName.slice(0, 31 - suffix.length)}${suffix}`;
           counter += 1;
         }
+        sheetNameMap.set(sheet.name, worksheetName);
 
         if (sheet.preserveOriginalContent) {
           const worksheet = workbook.addWorksheet(worksheetName);
@@ -394,7 +504,7 @@ const ProducerTemplatesPage = () => {
             startRow: 2,
             endRow: 1000,
           });
-          return;
+          continue;
         }
 
         const worksheet = workbook.addWorksheet(worksheetName);
@@ -430,7 +540,18 @@ const ProducerTemplatesPage = () => {
           startRow: 2,
           endRow: 1000,
         });
-      });
+      }
+
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const actualName = sheetNameMap.get(sheet.name) || sheet.name;
+        const ws = workbook.getWorksheet(actualName);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
@@ -494,7 +615,7 @@ if (field.multiple) {
             cell.dataValidation = {
               type: 'decimal',
               operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
+              formulae: [0.0, Number.MAX_SAFE_INTEGER],
               showErrorMessage: true,
               errorTitle: 'Valor no válido',
               error: 'Por favor, introduce un número decimal.'
@@ -798,14 +919,97 @@ if (field.multiple) {
       }
     }
   }
+  // Verifica si el usuario es productor encargado de una plantilla publicada
+  const isResponsibleForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
+    // Usar el flag calculado en el backend cuando esté disponible
+    if (typeof publishedTemplate.isEncargado === 'boolean') return publishedTemplate.isEncargado;
+    // Fallback local: comparar dep del usuario seleccionado con responsible_producers
+    const responsibleIds = publishedTemplate.responsible_producers || [];
+    if (responsibleIds.length === 0) return false;
+    const depId = publishedTemplate.template?.producers?.find(
+      (p: any) => p.dep_code === selectedDependency
+    )?._id;
+    return depId ? responsibleIds.includes(depId) : false;
+  };
+
+  const canGenerateQrForTemplate = (publishedTemplate: PublishedTemplate): boolean => (
+    isResponsibleForTemplate(publishedTemplate) && publishedTemplate.template?.allows_qr === true
+  );
+
+  const handleConfirmFinalSubmit = async (pubTemId: string) => {
+    modals.openConfirmModal({
+      title: "Confirmar envío final al SNIES",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas realizar el <strong>envío final al módulo SNIES</strong>?
+          <br /><br />
+          Esta acción confirma que toda la información ha sido consolidada y está lista para ser procesada en el SNIES.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar al SNIES", cancel: "Cancelar" },
+      confirmProps: { color: "blue" },
+      onConfirm: async () => {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmFinalSubmit`, {
+            pubTem_id: pubTemId,
+            email: session?.user?.email
+          });
+          showNotification({
+            title: "Enviado al SNIES",
+            message: "El envío final al módulo SNIES se realizó exitosamente",
+            color: "blue",
+          });
+          refreshTemplates();
+        } catch (error: any) {
+          const msg = error?.response?.data?.status || "Hubo un error al realizar el envío final";
+          showNotification({ title: "Error", message: msg, color: "red" });
+        }
+      },
+    });
+  };
+
+  const handleGenerateQR = async (pubTemId: string, templateName: string) => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/qr/generate`,
+        { pubTemId, email: session?.user?.email }
+      );
+      const token = response.data.token;
+      const baseUrl = getQrBaseUrl();
+      const formUrl = `${baseUrl}/public/form/${token}`;
+      setQrUrl(formUrl);
+      setQrTemplateName(templateName);
+      setQrModalOpen(true);
+    } catch (error) {
+      showNotification({
+        title: 'Error',
+        message: 'No se pudo generar el código QR',
+        color: 'red',
+      });
+    }
+  };
+
+  const getEffectiveDeadline = (publishedTemplate: PublishedTemplate): Date => {
+    const isEncargado = isResponsibleForTemplate(publishedTemplate);
+    const raw = isEncargado
+      ? (publishedTemplate.fecha_final_responsables
+          ?? publishedTemplate.template?.fecha_final_responsables
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date)
+      : (publishedTemplate.fecha_final_productores
+          ?? publishedTemplate.template?.fecha_final_productores
+          ?? publishedTemplate.fecha_final
+          ?? publishedTemplate.template?.fecha_final
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date);
+    const d = new Date(raw);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
+
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
-    const now = new Date();
-    const deadline = new Date(publishedTemplate.deadline);
-    
-    // Establecer la hora del deadline al final del día (23:59:59
-    deadline.setHours(23, 59, 59, 999);
-    
-    return now > deadline;
+    return new Date() > getEffectiveDeadline(publishedTemplate);
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
@@ -841,21 +1045,58 @@ if (field.multiple) {
 
         <Table.Td>{publishedTemplate.template.dimensions.map(dim => dim.name).join(', ')}</Table.Td>
         <Table.Td fw={700}>
-          {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+          {(() => {
+            const isEncargado = isResponsibleForTemplate(publishedTemplate);
+            const fecha = isEncargado
+              ? (publishedTemplate.fecha_final_responsables
+                  ?? publishedTemplate.template?.fecha_final_responsables
+                  ?? publishedTemplate.deadline
+                  ?? publishedTemplate.period.producer_end_date)
+              : (publishedTemplate.fecha_final_productores
+                  ?? publishedTemplate.template?.fecha_final_productores
+                  ?? publishedTemplate.fecha_final
+                  ?? publishedTemplate.template?.fecha_final
+                  ?? publishedTemplate.deadline
+                  ?? publishedTemplate.period.producer_end_date);
+            return (
+              <Stack gap={2}>
+                <Text size="sm" fw={700}>{dateToGMT(fecha)}</Text>
+                {isEncargado && (
+                  <Badge size="xs" color="blue" variant="light">Productor encargado</Badge>
+                )}
+              </Stack>
+            );
+          })()}
         </Table.Td>
         <Table.Td>
           <Center>
-            <Tooltip
-              label="Descargar plantilla"
-              transitionProps={{ transition: "fade-up", duration: 300 }}
-            >
-              <Button
-                variant="outline"
-                onClick={() => handleDownload(publishedTemplate)}
+            <Group gap="xs">
+              <Tooltip
+                label="Descargar plantilla"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
               >
-                <IconDownload size={16} />
-              </Button>
-            </Tooltip>
+                <Button
+                  variant="outline"
+                  onClick={() => handleDownload(publishedTemplate)}
+                >
+                  <IconDownload size={16} />
+                </Button>
+              </Tooltip>
+              {canGenerateQrForTemplate(publishedTemplate) && (
+                <Tooltip
+                label="Generar código QR"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="violet"
+                  onClick={() => handleGenerateQR(publishedTemplate._id, publishedTemplate.name)}
+                >
+                  <IconQrcode size={16} />
+                </Button>
+                </Tooltip>
+              )}
+            </Group>
           </Center>
         </Table.Td>
         <Table.Td>
@@ -916,6 +1157,25 @@ if (field.multiple) {
                   <IconPencil size={16} />
                 </Button>
               </Tooltip>
+              {isResponsibleForTemplate(publishedTemplate) && (
+                <Tooltip
+                  label={
+                    publishedTemplate.final_submitted
+                      ? "Ya se realizó el envío final al SNIES"
+                      : "Envío final al SNIES (solo productor encargado)"
+                  }
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant={publishedTemplate.final_submitted ? "filled" : "outline"}
+                    color="blue"
+                    onClick={() => handleConfirmFinalSubmit(publishedTemplate._id)}
+                    disabled={!!publishedTemplate.final_submitted}
+                  >
+                    <IconChecks size={16} />
+                  </Button>
+                </Tooltip>
+              )}
             </Group>
           </Center>
         </Table.Td>
@@ -926,6 +1186,11 @@ if (field.multiple) {
   return (
     <Container size="xl">
       <DateConfig />
+      <Group mb="sm">
+        <Button variant="subtle" px={6} onClick={() => router.push('/dashboard?view=gestion')}>
+          <IconArrowLeft size={20} />
+        </Button>
+      </Group>
       <Title ta="center" mb={"md"}>
         Plantillas Pendientes
       </Title>
@@ -936,15 +1201,6 @@ if (field.multiple) {
     Tienes <strong>{pendingCount}</strong> plantilla
     {pendingCount === 1 ? "" : "s"} pendiente
     {pendingCount === 1 ? "" : "s"}.
-    <br />
-    {nextDeadline ? (
-      <>
-        La fecha de vencimiento es el{" "}
-        <strong>{dayjs(nextDeadline).format("DD/MM/YYYY")}</strong>.
-      </>
-    ) : (
-      <>No hay fecha de vencimiento próxima.</>
-    )}
   </Text>
       <Group mb="md">
         <TextInput
@@ -1115,17 +1371,52 @@ if (field.multiple) {
         {selectedTemplateId && (
           <DropzoneButton
             pubTemId={selectedTemplateId}
-            endDate={producerEndDate}
+            endDate={undefined}
             onClose={closeUploadModal}
             onUploadSuccess={refreshTemplates}
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage 
-        fetchTemp={fetchTemplates} 
+      <ProducerUploadedTemplatesPage
+        fetchTemp={fetchTemplates}
         selectedDependency={selectedDependency}
         userDependencies={userDependencies}
       />
+
+      <Modal
+        opened={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title={`Código QR — ${qrTemplateName}`}
+        centered
+        size="md"
+      >
+        <Stack align="center" gap="md">
+          <div ref={qrRef}>
+            <QRCode value={qrUrl} size={220} />
+          </div>
+          <Divider w="100%" />
+          <Text size="xs" ta="center" style={{ wordBreak: 'break-all' }}>
+            <a href={qrUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1c7ed6' }}>
+              {qrUrl}
+            </a>
+          </Text>
+          <Group>
+            <Button leftSection={<IconDownload size={16} />} color="blue" onClick={downloadQR}>
+              Descargar QR
+            </Button>
+            <CopyButton value={qrUrl}>
+              {({ copied, copy }) => (
+                <Button color={copied ? 'teal' : 'violet'} onClick={copy}>
+                  {copied ? 'Enlace copiado' : 'Copiar enlace'}
+                </Button>
+              )}
+            </CopyButton>
+            <Button variant="outline" onClick={() => setQrModalOpen(false)}>
+              Cerrar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

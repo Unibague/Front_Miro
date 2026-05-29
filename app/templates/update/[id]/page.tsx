@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Stack } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
+import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
@@ -22,6 +24,7 @@ import {
 } from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Field {
   name: string;
@@ -79,6 +82,8 @@ interface TemplateWorksheet {
   rawRows?: any[][];
   cellNotes?: { row: number; col: number; note: string }[];
   columnWidths?: number[];
+  producers?: string[];
+  shared?: boolean;
 }
 
 const UpdateTemplatePage = () => {
@@ -94,6 +99,13 @@ const UpdateTemplatePage = () => {
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
+  const [shared, setShared] = useState(false);
+  const [allowsQr, setAllowsQr] = useState(false);
+  const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
+  const [fechaFinalProductores, setFechaFinalProductores] = useState<Date | null>(null);
+  const [fechaFinalResponsables, setFechaFinalResponsables] = useState<Date | null>(null);
+  const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
+  const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -106,6 +118,7 @@ const UpdateTemplatePage = () => {
   const { data: session } = useSession();
   const { userRole } = useRole();
   const { selectedPeriodId } = usePeriod();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   const createEmptyField = (): Field => ({
     name: "",
@@ -145,6 +158,8 @@ const UpdateTemplatePage = () => {
         rawRows: Array.isArray(sheet?.rawRows) ? sheet.rawRows : undefined,
         cellNotes: Array.isArray(sheet?.cellNotes) ? sheet.cellNotes : undefined,
         columnWidths: Array.isArray(sheet?.columnWidths) ? sheet.columnWidths : undefined,
+        producers: Array.isArray(sheet?.producers) ? sheet.producers.map((p: any) => String(p)) : [],
+        shared: sheet?.shared ?? false,
       }))
       .filter((sheet: TemplateWorksheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields.length > 0);
   };
@@ -186,6 +201,16 @@ const UpdateTemplatePage = () => {
     );
   };
 
+  const toggleBaseFieldRequired = (fieldName: string, required: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => (f.name === fieldName ? { ...f, required } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
   const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string) => {
     const base = sanitizeSheetName(rawName || fallback) || fallback;
     let candidate = base;
@@ -223,6 +248,13 @@ const UpdateTemplatePage = () => {
             setActiveSheet(firstEditableSheet?.name || null);
             setFields(nextFields);
             setActive(response.data.active);
+            setShared(response.data.shared ?? false);
+            setAllowsQr(response.data.allows_qr ?? false);
+            setFechaInicio(response.data.fecha_inicio ? new Date(response.data.fecha_inicio) : null);
+            setFechaFinalProductores(response.data.fecha_final_productores ? new Date(response.data.fecha_final_productores) : null);
+            setFechaFinalResponsables(response.data.fecha_final_responsables ? new Date(response.data.fecha_final_responsables) : null);
+            setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
+            setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -314,6 +346,7 @@ const UpdateTemplatePage = () => {
   }, [id, session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
 
@@ -424,7 +457,12 @@ const UpdateTemplatePage = () => {
   };
 
   const handleSave = async () => {
+    setHasChanges(false);
     const fieldsToSave = hasWorkbookSheets ? flattenWorkbookSheets(workbookSheets) : fields;
+
+    const derivedProducers = hasWorkbookSheets
+      ? [...new Set(workbookSheets.flatMap(s => s.producers || []))]
+      : selectedDependencies;
 
     const missing: string[] = [];
     if (!name) missing.push("Nombre de la plantilla");
@@ -432,7 +470,7 @@ const UpdateTemplatePage = () => {
     if (!fileDescription) missing.push("Descripción del archivo");
     if (fieldsToSave.length === 0) missing.push("Al menos un campo");
     if (selectedDimensions.length === 0) missing.push("Ámbito");
-    if (selectedDependencies.length === 0) missing.push("Productores");
+    if (derivedProducers.length === 0) missing.push("Productores");
 
     if (missing.length > 0) {
       showNotification({
@@ -453,8 +491,15 @@ const UpdateTemplatePage = () => {
       workbook_sheets: hasWorkbookSheets ? workbookSheets : [],
       original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
+      shared,
+      allows_qr: allowsQr,
+      fecha_inicio: fechaInicio,
+      fecha_final_productores: fechaFinalProductores,
+      fecha_final_responsables: fechaFinalResponsables,
+      fecha_final: fechaFinal,
+      responsible_producers: responsibleProducers,
       dimensions: selectedDimensions,
-      producers: selectedDependencies,
+      producers: derivedProducers,
       email: session?.user?.email,
       full_name: session?.user?.name
     };
@@ -833,21 +878,21 @@ router.back();
         label="Nombre"
         placeholder="Nombre de la plantilla"
         value={name}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onChange={(event) => { setName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Nombre del Archivo"
         placeholder="Nombre del archivo"
         value={fileName}
-        onChange={(event) => setFileName(event.currentTarget.value)}
+        onChange={(event) => { setFileName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Descripción del Archivo"
         placeholder="Descripción del archivo"
         value={fileDescription}
-        onChange={(event) => setFileDescription(event.currentTarget.value)}
+        onChange={(event) => { setFileDescription(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       {userRole === "Administrador" && (
@@ -861,32 +906,127 @@ router.back();
         searchable
       />
       )}
-      <MultiSelect
-        mb={'xl'}
-        label="Productores"
-        placeholder="Seleccionar productores"
-        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-        onChange={setSelectedDependencies}
-        value={selectedDependencies}
-        searchable
-      />
+      {!hasWorkbookSheets && (
+        <>
+          <Group justify="space-between" align="flex-end" mb={4}>
+            <Text size="sm" fw={500}>Productores</Text>
+            <Group gap="xs">
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="blue"
+                onClick={() => setSelectedDependencies(dependencies.map((d) => d._id))}
+                disabled={selectedDependencies.length === dependencies.length}
+              >
+                Seleccionar todos
+              </Button>
+              {selectedDependencies.length > 0 && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="red"
+                  onClick={() => setSelectedDependencies([])}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </Group>
+          </Group>
+          <MultiSelect
+            mb="xl"
+            placeholder="Seleccionar productores"
+            data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+            onChange={(v) => { setSelectedDependencies(v); setHasChanges(true); }}
+            value={selectedDependencies}
+            searchable
+          />
+        </>
+      )}
       <Switch
         label="Activo"
         checked={active}
         onChange={(event) => setActive(event.currentTarget.checked)}
+        mb="sm"
+      />
+      <Switch
+        label="Información visible para otros productores"
+        description="Cuando está activo, todos los productores podrán ver (en modo lectura) la información que otros productores hayan cargado en esta plantilla."
+        checked={shared}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setShared(checked);
+        }}
+        mb="sm"
+      />
+      <Switch
+        label="Permite generación de código QR"
+        description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla. También habilita la configuración de campos obligatorios."
+        checked={allowsQr}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setAllowsQr(checked);
+        }}
         mb="md"
       />
-              <Group>
-                <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleDownloadTemplate} 
-                  leftSection={<IconDownload />}
-                >
-                  Descargar Plantilla Actualizada
-                </Button>
-              </Group>
-
+      <Divider label="Fechas de la plantilla" labelPosition="left" mb="sm" />
+      <Group grow mb="xs">
+        <DateInput
+          label="Fecha inicial"
+          description="Desde cuándo pueden empezar a cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaInicio}
+          onChange={setFechaInicio}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final productores"
+          description="Hasta cuándo pueden cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalProductores}
+          onChange={setFechaFinalProductores}
+          minDate={fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Group grow mb="md">
+        <DateInput
+          label="Fecha final productor encargado"
+          description="Fecha límite para el productor encargado"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalResponsables}
+          onChange={setFechaFinalResponsables}
+          minDate={fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final administradores"
+          description="Fecha límite final visible para administradores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinal}
+          onChange={setFechaFinal}
+          minDate={fechaFinalResponsables ?? fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Select
+        mb="md"
+        label="Productor encargado"
+        description="Este productor será el encargado del envío final al SNIES. Si no se selecciona ninguno, todos los productores asignados pueden enviar."
+        placeholder="Seleccionar productor encargado"
+        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+        value={responsibleProducers[0] ?? null}
+        onChange={(val) => setResponsibleProducers(val ? [val] : [])}
+        searchable
+        clearable
+      />
       {hasWorkbookSheets && (
         <>
           <Text size="sm" c="dimmed" mt="md">
@@ -908,30 +1048,136 @@ router.back();
               ))}
             </Tabs.List>
           </Tabs>
+          {activeSheet && (
+            <>
+              <Group justify="space-between" align="flex-end" mb={4}>
+                <Text size="sm" fw={500}>Productores para la hoja &quot;{activeSheet}&quot;</Text>
+                <Group gap="xs">
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    color="blue"
+                    onClick={() => {
+                      const allIds = dependencies.map((d) => d._id);
+                      setWorkbookSheets(prev => prev.map(s =>
+                        s.name === activeSheet ? { ...s, producers: allIds } : s
+                      ));
+                    }}
+                    disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
+                  >
+                    Seleccionar todos
+                  </Button>
+                  {(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length > 0 && (
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        setWorkbookSheets(prev => prev.map(s =>
+                          s.name === activeSheet ? { ...s, producers: [] } : s
+                        ));
+                      }}
+                    >
+                      Limpiar
+                    </Button>
+                  )}
+                </Group>
+              </Group>
+              <MultiSelect
+                placeholder="Asignar productores a esta hoja"
+                data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+                value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
+                onChange={(values) => {
+                  setWorkbookSheets(prev => prev.map(s =>
+                    s.name === activeSheet ? { ...s, producers: values } : s
+                  ));
+                }}
+                searchable
+                mb="xs"
+              />
+            </>
+          )}
         </>
       )}
 
       {baseFields.length > 0 && (
-        <Box
-          mt="sm"
-          mb="sm"
-          p="sm"
-          style={{
-            background: "var(--mantine-color-gray-0)",
-            borderRadius: "var(--mantine-radius-sm)",
-            border: "1px solid var(--mantine-color-gray-3)",
-          }}
-        >
-          <Text size="xs" fw={600} c="dimmed" mb={8}>
-            Campos base (solo lectura)
-          </Text>
-          <Stack gap={4}>
-            {baseFields.map((field, i) => (
-              <Text key={i} size="sm">
-                {i + 1}. {field.name}
-              </Text>
-            ))}
-          </Stack>
+        <Box mt="sm" mb="sm" style={{ borderRadius: "var(--mantine-radius-md)", border: "1px solid var(--mantine-color-gray-3)", overflow: "hidden" }}>
+          {/* Encabezado */}
+          <Group
+            justify="space-between"
+            px="sm"
+            py={8}
+            style={{ background: "var(--mantine-color-gray-1)", borderBottom: "1px solid var(--mantine-color-gray-3)" }}
+          >
+            <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+              Campos base
+            </Text>
+            {allowsQr && (
+              <Group gap="xs" align="center">
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="blue"
+                  onClick={() => {
+                    const allRequired = baseFields.every(f => f.required);
+                    baseFields.forEach(f => toggleBaseFieldRequired(f.name, !allRequired));
+                  }}
+                >
+                  {baseFields.every(f => f.required) ? "Desmarcar todos" : "Marcar todos"}
+                </Button>
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+                  ¿Obligatorio?
+                </Text>
+              </Group>
+            )}
+          </Group>
+          {/* Filas */}
+          {baseFields.map((field, i) => (
+            <Group
+              key={i}
+              justify="space-between"
+              align="center"
+              px="sm"
+              py={7}
+              style={{
+                background: i % 2 === 0 ? "white" : "var(--mantine-color-gray-0)",
+                borderBottom: i < baseFields.length - 1 ? "1px solid var(--mantine-color-gray-2)" : "none",
+                transition: "background 0.15s",
+              }}
+            >
+              <Group gap="xs" align="center">
+                <Text
+                  size="xs"
+                  fw={500}
+                  style={{
+                    minWidth: 22,
+                    textAlign: "right",
+                    color: "var(--mantine-color-gray-5)",
+                  }}
+                >
+                  {i + 1}.
+                </Text>
+                <Text
+                  size="sm"
+                  fw={allowsQr && field.required ? 600 : 400}
+                  c={allowsQr && field.required ? "dark" : "dimmed"}
+                >
+                  {field.name}
+                </Text>
+              </Group>
+              {allowsQr && (
+                <Tooltip label={field.required ? "Obligatorio" : "Opcional"} withArrow position="left">
+                  <Checkbox
+                    size="sm"
+                    checked={field.required}
+                    color={field.required ? "blue" : "gray"}
+                    onChange={(e) => toggleBaseFieldRequired(field.name, e.currentTarget.checked)}
+                    aria-label={`${field.name} obligatorio`}
+                  />
+                </Tooltip>
+              )}
+            </Group>
+          ))}
         </Box>
       )}
 
@@ -1132,7 +1378,10 @@ router.back();
       </DragDropContext>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-        <Button variant="outline" onClick={() => router.back()}>
+        <Button variant="outline" onClick={handleDownloadTemplate} leftSection={<IconDownload />}>
+          Descargar Plantilla Actualizada
+        </Button>
+        <Button variant="outline" onClick={() => confirmNavigation(() => router.back())}>
           Cancelar
         </Button>
       </Group>

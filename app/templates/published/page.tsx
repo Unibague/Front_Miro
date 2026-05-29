@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -84,6 +85,10 @@ interface PublishedTemplate {
   loaded_data: any[];
   validators: Validator[];
   deadline: Date;
+  fecha_inicio?: Date;
+  fecha_final_productores?: Date;
+  fecha_final_responsables?: Date;
+  fecha_final?: Date;
 }
 
 interface TemplateStatusRow {
@@ -135,13 +140,14 @@ const PublishedTemplatesPage = () => {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension`,
         {
-          params: { 
+          params: {
             page,
             limit: 10,
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
+            filterByUserScope: true,
+            userRole,
           },
         }
       );
@@ -242,24 +248,29 @@ const PublishedTemplatesPage = () => {
     });
   }
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+              filterByUserScope: true, // Filtrar por ámbito del usuario
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
+      const data = dataResponse.data.data;
       const { template } = publishedTemplate;
+      const validators =
+        freshTemplateResponse.data.template?.validators ??
+        publishedTemplate.validators;
 
       // Campos de tipo fecha para formatear correctament
 const dateFields = new Set(
@@ -559,7 +570,7 @@ const dateFields = new Set(
         </Table.Td>
         <Table.Td>
           <Center>
-            {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+            {dateToGMT(publishedTemplate.fecha_final ?? publishedTemplate.deadline ?? publishedTemplate.period?.producer_end_date)}
           </Center>
         </Table.Td>
         <Table.Td>
@@ -657,8 +668,13 @@ const dateFields = new Set(
   return (
     <Container size="xl">
       <DateConfig />
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Title ta="center" mb={"md"}>
-        Gestión de Plantillas
+        {userRole === "Responsable" ? "Plantillas de mis Productores" : "Gestión de Plantillas"}
       </Title>
       <TextInput
         placeholder="Buscar plantillas"

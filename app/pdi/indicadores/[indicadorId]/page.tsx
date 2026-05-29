@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Box, Button, Center, Container, Group,
-  Loader, Paper, Progress, Select, SimpleGrid, Stack, Text, ThemeIcon, Title, Divider, Textarea,
+  Loader, Paper, Progress, Select, MultiSelect, TextInput, SimpleGrid, Stack, Text, ThemeIcon, Title, Divider, Textarea,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -113,6 +113,19 @@ function resolvePeriodoForRespuesta(periodos: Periodo[], respuesta: RespuestaFor
   }
 
   return null;
+}
+
+function getDocumentosFormulario(respuesta: RespuestaFormulario) {
+  if (Array.isArray(respuesta.documentos) && respuesta.documentos.length > 0) return respuesta.documentos;
+  if (respuesta.documento_url || respuesta.documento_nombre_original || respuesta.documento_filename) {
+    return [{
+      _id: "legacy",
+      nombre_original: respuesta.documento_nombre_original,
+      filename: respuesta.documento_filename,
+      url: respuesta.documento_url,
+    }];
+  }
+  return [];
 }
 
 function PeriodoCard({
@@ -430,7 +443,7 @@ function FormulariosRespuestasPanel({
                 <Textarea
                   placeholder="Comentario para el responsable (opcional)..."
                   value={comentarios[r._id] ?? ""}
-                  onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                  onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                   rows={2}
                   radius="md"
                   mt="sm"
@@ -535,6 +548,7 @@ function LiderRevisionPanel({
             r.lider_email_aval?.toLowerCase().trim() === liderEmail.toLowerCase().trim();
           const formularioNombre =
             typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
 
           return (
             <Paper key={r._id} withBorder radius="xl" p="lg" shadow="xs">
@@ -666,7 +680,7 @@ function LiderRevisionPanel({
                   <Textarea
                     placeholder="Comentario de evaluacion para el responsable (opcional)..."
                     value={comentarios[r._id] ?? ""}
-                    onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
+                    onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                     rows={3}
                     radius="md"
                     mb="sm"
@@ -736,6 +750,18 @@ function LiderRevisionPanelV2({
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<Record<string, "Pendiente" | "Aprobado" | "Rechazado">>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [razonesSeleccionadas, setRazonesSeleccionadas] = useState<Record<string, string[]>>({});
+  const [otrosCuales, setOtrosCuales] = useState<Record<string, string>>({});
+  const [razonesDisponibles, setRazonesDisponibles] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then((res) => {
+        const base = (res.data as { _id: string; texto: string }[]).map((r) => ({ value: r.texto, label: r.texto }));
+        setRazonesDisponibles([...base, { value: "Otro", label: "Otro ¿Cuál?" }]);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = () => {
     if (!indicadorId) return;
@@ -756,8 +782,21 @@ function LiderRevisionPanelV2({
   const handleAval = async (r: RespuestaFormulario) => {
     const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
     const estadoSeleccionado = estadosSeleccionados[r._id] ?? "Pendiente";
+    const comentarioAval = estadoSeleccionado === "Rechazado" ? (comentarios[r._id] ?? "").trim() : "";
+    const razones = estadoSeleccionado === "Rechazado" ? (razonesSeleccionadas[r._id] ?? []) : [];
+    const otroCual = estadoSeleccionado === "Rechazado" && razones.includes("Otro") ? (otrosCuales[r._id] ?? "").trim() : "";
 
     if (estadoSeleccionado === "Pendiente") {
+      return;
+    }
+
+    if (estadoSeleccionado === "Rechazado" && razones.length === 0) {
+      showNotification({ title: "Requerido", message: "Selecciona al menos una razón de rechazo", color: "orange" });
+      return;
+    }
+
+    if (estadoSeleccionado === "Rechazado" && razones.includes("Otro") && !otroCual) {
+      showNotification({ title: "Requerido", message: 'Especifica el "Otro ¿Cuál?"', color: "orange" });
       return;
     }
 
@@ -766,7 +805,9 @@ function LiderRevisionPanelV2({
       await axios.put(PDI_ROUTES.formularioAval(formId, r._id), {
         estado_aval: estadoSeleccionado,
         aval_por: liderEmail,
-        aval_comentario: comentarios[r._id] ?? "",
+        aval_comentario: comentarioAval,
+        aval_razones: razones,
+        aval_otro_cual: otroCual,
       });
       load();
       showNotification({
@@ -820,6 +861,7 @@ function LiderRevisionPanelV2({
           const estadoSeleccionado = estadosSeleccionados[r._id] ?? avalEstado;
           const formularioNombre =
             typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
 
           return (
             <Paper key={r._id} withBorder radius="xl" p="lg" shadow="sm">
@@ -920,7 +962,6 @@ function LiderRevisionPanelV2({
                       <Text size="xs" c="dimmed" mt={4}>Periodo: {periodoMostrado}</Text>
                     </div>
                     <Group gap="xs">
-                      <Badge variant="outline" color="gray" radius="xl">Formato Word</Badge>
                       {r.word_url && (
                           <Button
                             size="xs"
@@ -928,9 +969,10 @@ function LiderRevisionPanelV2({
                             color="blue"
                             component="a"
                             href={r.word_url}
-                            download={r.word_filename || true}
+                            target="_blank"
+                            rel="noreferrer"
                           >
-                            Descargar Word
+                            Ver reporte
                           </Button>
                       )}
                     </Group>
@@ -939,25 +981,32 @@ function LiderRevisionPanelV2({
                   <Paper withBorder radius="md" p="md" style={{ background: "var(--mantine-color-default-hover)" }}>
                     <Group justify="space-between" align="center" wrap="wrap" gap="sm">
                       <div>
-                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencia adjunta</Text>
+                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencias adjuntas</Text>
                         <Text size="sm" fw={600} mt={3}>
-                          {r.documento_nombre_original || r.documento_filename || "Sin evidencia adjunta"}
+                          {documentosFormulario.length > 0
+                            ? `${documentosFormulario.length} archivo(s) PDF`
+                            : "Sin evidencia adjunta"}
                         </Text>
-                        <Text size="xs" c="dimmed" mt={2}>Archivo Word o PDF enviado por el responsable</Text>
+                        <Text size="xs" c="dimmed" mt={2}>PDF enviado por el responsable</Text>
                       </div>
-                      {r.documento_url ? (
-                        <Button
-                          size="xs"
-                          variant="light"
-                          color="violet"
-                          component="a"
-                          href={r.documento_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          leftSection={<IconFileTypePdf size={13} />}
-                        >
-                          Abrir evidencia
-                        </Button>
+                      {documentosFormulario.length > 0 ? (
+                        <Group gap="xs" wrap="wrap">
+                          {documentosFormulario.filter((doc) => !!doc.url).map((doc, index) => (
+                            <Button
+                              key={doc._id ?? `${doc.url}-${index}`}
+                              size="xs"
+                              variant="light"
+                              color="violet"
+                              component="a"
+                              href={doc.url!}
+                              target="_blank"
+                              rel="noreferrer"
+                              leftSection={<IconFileTypePdf size={13} />}
+                            >
+                              {documentosFormulario.length > 1 ? `Abrir evidencia ${index + 1}` : "Abrir evidencia"}
+                            </Button>
+                          ))}
+                        </Group>
                       ) : (
                         <Badge color="gray" variant="light">Sin archivo</Badge>
                       )}
@@ -970,8 +1019,8 @@ function LiderRevisionPanelV2({
                 <Title order={5} mb="sm">{readOnly ? "Aprobación del líder" : "Evaluación del líder"}</Title>
                 <Text size="sm" c="dimmed" mb="md">
                   {readOnly
-                    ? "Vista de solo lectura del estado aprobado por el líder y sus observaciones."
-                    : "Define el estado del formulario y registra observaciones para el responsable."}
+                    ? "Vista de solo lectura del estado definido por el líder."
+                    : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte."}
                 </Text>
 
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
@@ -1005,16 +1054,43 @@ function LiderRevisionPanelV2({
                   </Box>
                 </SimpleGrid>
 
-                <Textarea
-                  label="Observaciones"
-                  placeholder="Escribe aquí las observaciones para el responsable..."
-                  value={comentarios[r._id] ?? r.aval_comentario ?? ""}
-                  onChange={(e) => setComentarios((prev) => ({ ...prev, [r._id]: e.currentTarget.value }))}
-                  rows={4}
-                  radius="md"
-                  disabled={readOnly || !puedoAval}
-                  mb="md"
-                />
+                {estadoSeleccionado === "Rechazado" && (
+                  <Stack gap="sm" mb="md">
+                    {razonesDisponibles.length > 1 && (
+                      <MultiSelect
+                        label="Razones de rechazo"
+                        placeholder="Selecciona una o varias razones..."
+                        data={razonesDisponibles}
+                        value={razonesSeleccionadas[r._id] ?? []}
+                        onChange={(vals) => {
+                          setRazonesSeleccionadas((prev) => ({ ...prev, [r._id]: vals }));
+                          if (!vals.includes("Otro")) setOtrosCuales((prev) => ({ ...prev, [r._id]: "" }));
+                        }}
+                        disabled={readOnly || !puedoAval}
+                        radius="md"
+                      />
+                    )}
+                    {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
+                      <TextInput
+                        label='Especifica "Otro ¿Cuál?"'
+                        placeholder="Escribe aquí..."
+                        value={otrosCuales[r._id] ?? ""}
+                        onChange={(e) => { const v = e.currentTarget.value; setOtrosCuales((prev) => ({ ...prev, [r._id]: v })); }}
+                        disabled={readOnly || !puedoAval}
+                        radius="md"
+                      />
+                    )}
+                    <Textarea
+                      label="Observaciones del rechazo"
+                      placeholder="Escribe aquí el motivo del rechazo para el responsable..."
+                      value={comentarios[r._id] ?? r.aval_comentario ?? ""}
+                      onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
+                      rows={4}
+                      radius="md"
+                      disabled={readOnly || !puedoAval}
+                    />
+                  </Stack>
+                )}
 
                 {!puedoAval && (
                   <Paper withBorder radius="md" p="sm" mb="md" style={{ background: "var(--mantine-color-default-hover)" }}>
@@ -1026,24 +1102,6 @@ function LiderRevisionPanelV2({
                   </Paper>
                 )}
 
-                {(r.aval_por || r.aval_comentario) && (
-                  <Paper
-                    withBorder
-                    radius="md"
-                    p="sm"
-                    mb="md"
-                    style={{ background: avalEstado === "Rechazado" ? "rgba(239,68,68,0.04)" : "rgba(13,148,136,0.04)" }}
-                  >
-                    {r.aval_por && (
-                      <Text size="sm" c={avalEstado === "Rechazado" ? "red" : "teal"}>
-                        Evaluado por: {r.aval_por}{r.aval_fecha ? ` · ${new Date(r.aval_fecha).toLocaleDateString("es-CO")}` : ""}
-                      </Text>
-                    )}
-                    {r.aval_comentario && (
-                      <Text size="sm" mt={4}>Observaciones registradas: {r.aval_comentario}</Text>
-                    )}
-                  </Paper>
-                )}
 
                 {puedoAval && (
                   <Group justify="flex-end">
@@ -1062,6 +1120,267 @@ function LiderRevisionPanelV2({
                       Guardar evaluación
                     </Button>
                   </Group>
+                )}
+              </Paper>
+            </Paper>
+          );
+        })}
+    </Stack>
+  );
+}
+
+const PLAN_COLOR: Record<string, string> = { Validado: "teal", Devuelto: "orange" };
+const PLAN_LABEL: Record<string, string> = {
+  Validado: "Validado por Planeación",
+  Devuelto: "Devuelto con observaciones por Planeación",
+};
+
+function PlaneacionRevisionPanel({
+  indicadorId,
+  periodos,
+  adminEmail = "",
+  preferredPeriodo = "",
+}: {
+  indicadorId: string;
+  periodos: Periodo[];
+  adminEmail?: string;
+  preferredPeriodo?: string;
+}) {
+  const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [estados, setEstados]       = useState<Record<string, "Validado" | "Devuelto">>({});
+  const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [savingId, setSavingId]     = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
+      .then((res) => setRespuestas(
+        (res.data as RespuestaFormulario[]).filter(
+          (item) => item.estado === "Enviado" && item.estado_aval === "Aprobado"
+        )
+      ))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [indicadorId]);
+
+  const handleEvaluar = async (r: RespuestaFormulario) => {
+    const estado = estados[r._id];
+    if (!estado) {
+      showNotification({ title: "Requerido", message: "Selecciona el estado de evaluación", color: "orange" });
+      return;
+    }
+    const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
+    setSavingId(r._id);
+    try {
+      await axios.put(PDI_ROUTES.formularioPlaneacion(formId, r._id), {
+        estado,
+        por: adminEmail,
+        comentario: comentarios[r._id] ?? "",
+      });
+      load();
+      showNotification({
+        title: estado === "Validado" ? "Validado por Planeación" : "Devuelto",
+        message: `Formulario ${estado === "Validado" ? "validado y consolidado" : "devuelto con observaciones"} correctamente`,
+        color: estado === "Validado" ? "teal" : "orange",
+      });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo guardar la evaluación de Planeación", color: "red" });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (loading) return <Center py="sm"><Loader size="sm" /></Center>;
+  if (respuestas.length === 0) {
+    return (
+      <Paper withBorder radius="xl" p="lg">
+        <Text size="sm" c="dimmed" ta="center">
+          No hay reportes aprobados por el líder pendientes de revisión por Planeación.
+        </Text>
+      </Paper>
+    );
+  }
+
+  return (
+    <Stack gap="md">
+      {respuestas
+        .slice()
+        .sort((a, b) => {
+          const pa = resolvePeriodoForRespuesta(periodos, a, preferredPeriodo);
+          const pb = resolvePeriodoForRespuesta(periodos, b, preferredPeriodo);
+          return normalizePeriodo(pb?.periodo ?? b.corte).localeCompare(normalizePeriodo(pa?.periodo ?? a.corte));
+        })
+        .map((r) => {
+          const periodo        = resolvePeriodoForRespuesta(periodos, r, preferredPeriodo);
+          const periodoMostrado = periodo?.periodo ?? "Sin periodo asociado";
+          const avanceNum      = periodo?.avance != null ? Number(periodo.avance) : null;
+          const metaNum        = periodo?.meta   != null ? Number(periodo.meta)   : null;
+          const pct            = avanceNum != null && metaNum && metaNum > 0
+            ? Math.min(Math.round((avanceNum / metaNum) * 100), 100) : null;
+          const planEstado     = r.aval_planeacion ?? null;
+          const puedoEvaluar   = !planEstado || planEstado === "Pendiente";
+          const estadoSel      = estados[r._id] ?? "";
+          const formularioNombre = typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
+
+          return (
+            <Paper key={r._id} withBorder radius="xl" p="lg" shadow="sm">
+              <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+                <div>
+                  <Group gap={8} mb={6}>
+                    <Badge color="violet" variant="filled" radius="xl">{periodoMostrado}</Badge>
+                    <Badge color="teal" variant="light" radius="xl" leftSection={<IconShieldCheck size={12} />}>
+                      Aprobado por el líder
+                    </Badge>
+                    {planEstado && planEstado !== "Pendiente" && (
+                      <Badge color={PLAN_COLOR[planEstado]} variant="filled" radius="xl">
+                        {PLAN_LABEL[planEstado]}
+                      </Badge>
+                    )}
+                  </Group>
+                  <Text fw={700}>Reporte enviado por {r.respondido_por}</Text>
+                  <Text size="sm" c="dimmed">
+                    {r.fecha_envio ? `Enviado el ${new Date(r.fecha_envio).toLocaleDateString("es-CO")}` : "Sin fecha de envío"}
+                  </Text>
+                </div>
+              </Group>
+
+              {/* Avance */}
+              <Paper withBorder radius="xl" p="md" mb="lg" style={{ borderLeft: "4px solid #7c3aed", background: "#fff" }}>
+                <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                  <div>
+                    <Text size="lg" fw={800}>{periodoMostrado}</Text>
+                    <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodo?.meta ?? "Sin dato"}</b></Text>
+                  </div>
+                  <Box style={{ minWidth: 160, padding: "8px 12px", borderRadius: 10, background: "var(--mantine-color-default-hover)" }}>
+                    <Text size="xs" c="dimmed">Avance reportado</Text>
+                    <Text fw={700} mt={2}>{avanceNum ?? "Sin dato"}</Text>
+                  </Box>
+                </Group>
+                {pct != null && (
+                  <>
+                    <Group justify="space-between" mb={4}>
+                      <Text size="xs" c="dimmed">Progreso del periodo</Text>
+                      <Text size="xs" fw={700}>{pct}%</Text>
+                    </Group>
+                    <Progress value={pct} color="violet" size="sm" radius="xl" />
+                  </>
+                )}
+              </Paper>
+
+              <Divider mb="lg" />
+
+              {/* Documento */}
+              <Paper withBorder radius="xl" p="lg" mb="lg" style={{ background: "#fff", borderColor: "#d9d9d9", boxShadow: "0 10px 24px rgba(15,23,42,0.05)" }}>
+                <Group justify="space-between" mb="md" wrap="wrap">
+                  <div>
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">Documento evaluado</Text>
+                    <Title order={6}>{formularioNombre}</Title>
+                    <Text size="xs" c="dimmed" mt={4}>Periodo: {periodoMostrado}</Text>
+                  </div>
+                  <Group gap="xs">
+                    {r.word_url && (
+                      <Button size="xs" variant="light" color="blue" component="a" href={r.word_url} target="_blank" rel="noreferrer">
+                        Ver reporte
+                      </Button>
+                    )}
+                  </Group>
+                </Group>
+                <Paper withBorder radius="md" p="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                  <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                    <div>
+                      <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencias adjuntas</Text>
+                      <Text size="sm" fw={600} mt={3}>
+                        {documentosFormulario.length > 0 ? `${documentosFormulario.length} archivo(s)` : "Sin evidencia adjunta"}
+                      </Text>
+                    </div>
+                    {documentosFormulario.length > 0 && (
+                      <Group gap="xs" wrap="wrap">
+                        {documentosFormulario.filter(d => !!d.url).map((d, i) => (
+                          <Button key={d._id ?? i} size="xs" variant="light" color="violet" component="a" href={d.url!} target="_blank" rel="noreferrer" leftSection={<IconFileTypePdf size={13} />}>
+                            {documentosFormulario.length > 1 ? `Abrir evidencia ${i + 1}` : "Abrir evidencia"}
+                          </Button>
+                        ))}
+                      </Group>
+                    )}
+                  </Group>
+                </Paper>
+              </Paper>
+
+              {/* Panel de evaluación Planeación */}
+              <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(0,128,100,0.03)", borderColor: "#c3fae8" }}>
+                <Title order={5} mb="xs">
+                  {puedoEvaluar ? "Evaluación de Planeación" : "Estado de Planeación"}
+                </Title>
+                <Text size="sm" c="dimmed" mb="md">
+                  {puedoEvaluar
+                    ? "El reporte fue aprobado por el líder. Define si queda validado o si requiere ajustes."
+                    : "Evaluación de Planeación ya registrada."}
+                </Text>
+
+                {planEstado && planEstado !== "Pendiente" && (
+                  <Paper withBorder radius="md" p="sm" mb="md" style={{ background: planEstado === "Validado" ? "rgba(18,184,134,0.06)" : "rgba(255,146,43,0.06)", borderColor: planEstado === "Validado" ? "#c3fae8" : "#ffe8cc" }}>
+                    <Group gap={8}>
+                      {planEstado === "Validado" ? <IconShieldCheck size={16} color="#0ca678" /> : <IconShieldX size={16} color="#e8590c" />}
+                      <div>
+                        <Text size="sm" fw={700}>{PLAN_LABEL[planEstado]}</Text>
+                        {r.aval_planeacion_por && <Text size="xs" c="dimmed">Por: {r.aval_planeacion_por}</Text>}
+                        {r.aval_planeacion_comentario && <Text size="sm" mt={4}>{r.aval_planeacion_comentario}</Text>}
+                      </div>
+                    </Group>
+                  </Paper>
+                )}
+
+                {puedoEvaluar && (
+                  <Stack gap="sm">
+                    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                      <Select
+                        label="Estado de evaluación"
+                        placeholder="Selecciona..."
+                        data={[
+                          { value: "Validado", label: "Validado por Planeación" },
+                          { value: "Devuelto", label: "Devuelto con observaciones por Planeación" },
+                        ]}
+                        value={estadoSel || null}
+                        onChange={(val) => {
+                          if (!val) return;
+                          setEstados((prev) => ({ ...prev, [r._id]: val as "Validado" | "Devuelto" }));
+                        }}
+                        radius="md"
+                      />
+                      <Box style={{ padding: "12px 14px", borderRadius: 12, background: "var(--mantine-color-default-hover)", alignSelf: "end" }}>
+                        <Text size="xs" c="dimmed">Estado actual de Planeación</Text>
+                        <Text fw={700} mt={4}>{planEstado ? PLAN_LABEL[planEstado] : "Sin evaluar"}</Text>
+                      </Box>
+                    </SimpleGrid>
+
+                    {estadoSel === "Devuelto" && (
+                      <Textarea
+                        label="Observaciones de Planeación"
+                        placeholder="Describe qué debe ajustar o complementar el responsable..."
+                        value={comentarios[r._id] ?? ""}
+                        onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
+                        rows={3}
+                        radius="md"
+                      />
+                    )}
+
+                    <Group justify="flex-end">
+                      <Button
+                        color={estadoSel === "Validado" ? "teal" : "orange"}
+                        radius="xl"
+                        loading={savingId === r._id}
+                        disabled={!estadoSel}
+                        leftSection={estadoSel === "Validado" ? <IconShieldCheck size={14} /> : <IconShieldX size={14} />}
+                        onClick={() => handleEvaluar(r)}
+                      >
+                        Guardar evaluación de Planeación
+                      </Button>
+                    </Group>
+                  </Stack>
                 )}
               </Paper>
             </Paper>
@@ -1095,6 +1414,7 @@ export default function IndicadorEvidenciasPage() {
   const [reportePeriodo, setReportePeriodo] = useState<string | null>(null);
   const [isLider, setIsLider]     = useState(false);
   const [liderEmail, setLiderEmail] = useState("");
+  const [cortesVigentes, setCortesVigentes] = useState<Array<{ nombre: string; estado: string }>>([]);
 
   const load = () => {
     if (!indicadorId) return;
@@ -1122,8 +1442,19 @@ export default function IndicadorEvidenciasPage() {
       .catch(() => {});
   }, [indicadorId, session?.user?.email]);
 
+  useEffect(() => {
+    axios.get(PDI_ROUTES.cortesVigentes())
+      .then(r => setCortesVigentes(r.data))
+      .catch(() => {});
+  }, []);
+
   const mostrarVistaLider = isLider || fuerzaVistaEvaluacion;
   const emailSesion = (session?.user?.email ?? "").toLowerCase().trim();
+  const corteActivo = indicador
+    ? (cortesVigentes.find((c) =>
+        (indicador.periodos ?? []).some((p) => normalizePeriodo(p.periodo) === normalizePeriodo(c.nombre))
+      )?.nombre ?? null)
+    : null;
   const semColor = indicador ? SEMAFORO_COLORS[indicador.semaforo] : "#aaa";
   const avanceMostrado = indicador ? getIndicadorAvanceMostrado(indicador) : null;
   const periodosVisibles = indicador
@@ -1272,6 +1603,63 @@ export default function IndicadorEvidenciasPage() {
                 </div>
               ) : (
                 <>
+                  {!admin && corteActivo && (() => {
+                    const periodoActivo = (indicador.periodos ?? []).find(
+                      p => normalizePeriodo(p.periodo) === normalizePeriodo(corteActivo)
+                    );
+                    const avanceNum = periodoActivo?.avance != null ? Number(periodoActivo.avance) : null;
+                    const metaNum   = periodoActivo?.meta   != null ? Number(periodoActivo.meta)   : null;
+                    const pct = avanceNum != null && metaNum && metaNum > 0
+                      ? Math.min(Math.round((avanceNum / metaNum) * 100), 100)
+                      : null;
+                    const yaReportado = periodoActivo?.estado_reporte && periodoActivo.estado_reporte !== "Borrador";
+                    return (
+                      <Paper
+                        withBorder
+                        radius="xl"
+                        p="lg"
+                        style={{
+                          borderLeft: "4px solid #7c3aed",
+                          background: "linear-gradient(135deg, rgba(124,58,237,0.06) 0%, rgba(124,58,237,0.02) 100%)",
+                        }}
+                      >
+                        <Group justify="space-between" align="flex-start" wrap="wrap" mb={pct != null ? "md" : 0}>
+                          <div>
+                            <Group gap={8} mb={6}>
+                              <Badge color="violet" variant="filled" radius="xl" size="lg">
+                                Corte activo: {corteActivo}
+                              </Badge>
+                              {periodoActivo?.estado_reporte && periodoActivo.estado_reporte !== "Borrador" && (
+                                <Badge color={ESTADO_COLORS[periodoActivo.estado_reporte]} variant="light" radius="xl">
+                                  {periodoActivo.estado_reporte}
+                                </Badge>
+                              )}
+                            </Group>
+                            <Text fw={700} size="md">
+                              {yaReportado ? "Reporte enviado para este corte" : "Este es el corte activo a reportar"}
+                            </Text>
+                            <Group gap={16} mt={4}>
+                              <Text size="sm" c="dimmed">Meta: <b>{periodoActivo?.meta ?? "—"}</b></Text>
+                              {avanceNum != null && <Text size="sm" c="dimmed">Avance reportado: <b>{avanceNum}</b></Text>}
+                              {pct != null && <Text size="sm" c="dimmed">Cumplimiento: <b>{pct}%</b></Text>}
+                            </Group>
+                          </div>
+                          <Button
+                            color="violet"
+                            radius="xl"
+                            leftSection={<IconEdit size={14} />}
+                            onClick={() => setReportePeriodo(corteActivo)}
+                          >
+                            {yaReportado ? "Actualizar reporte" : "Reportar este corte"}
+                          </Button>
+                        </Group>
+                        {pct != null && (
+                          <Progress value={pct} color="violet" size="sm" radius="xl" />
+                        )}
+                      </Paper>
+                    );
+                  })()}
+
                   {!admin && (
                   <div>
                     <Group justify="space-between" mb="sm">
@@ -1333,18 +1721,19 @@ export default function IndicadorEvidenciasPage() {
                     <>
                       <Divider />
                       <div>
-                        <Title order={5} mb="sm">
+                        <Title order={5} mb="xs">
                           <Group gap={6}>
                             <IconForms size={18} />
-                            Formularios aprobados por el líder
+                            Revisión y validación por Planeación
                           </Group>
                         </Title>
-                        <LiderRevisionPanelV2
+                        <Text size="sm" c="dimmed" mb="md">
+                          Solo se muestran reportes ya aprobados por el líder del macroproyecto. Planeación puede validarlos o devolverlos con observaciones.
+                        </Text>
+                        <PlaneacionRevisionPanel
                           indicadorId={indicador._id}
                           periodos={indicador.periodos}
-                          liderEmail={liderEmail || emailSesion}
-                          readOnly
-                          onlyApproved
+                          adminEmail={emailSesion}
                           preferredPeriodo={preferredPeriodo}
                         />
                       </div>

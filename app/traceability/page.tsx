@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, TextInput, Select, Group, Title, Badge, Text, Pagination, Center, Card } from "@mantine/core";
-import { IconSearch, IconFilter, IconHistory } from "@tabler/icons-react";
+import { ActionIcon, Container, Table, TextInput, Select, Group, Title, Badge, Text, Pagination, Center, Card } from "@mantine/core";
+import { useRouter } from "next/navigation";
+import { IconArrowLeft, IconSearch, IconFilter, IconHistory } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
@@ -19,6 +20,7 @@ interface AuditLog {
 }
 
 const TraceabilityHistoryPage = () => {
+  const router = useRouter();
   const { data: session } = useSession();
   const { userRole } = useRole();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -192,6 +194,9 @@ const TraceabilityHistoryPage = () => {
   return (
     <Container size="xl">
       <Group mb="lg" align="center">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
         <IconHistory size={32} color="teal" />
         <div>
           <Title order={2}>Historial de Cambios</Title>

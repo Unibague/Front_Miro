@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -361,25 +362,30 @@ const TemplatesWithFiltersPage = () => {
     }
   };
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
-            userRole: userRole, // Enviar el rol del usuario
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+              filterByUserScope: true, // Filtrar por ámbito del usuario
+              userRole: userRole, // Enviar el rol del usuario
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
+      const data = dataResponse.data.data;
       const { template } = publishedTemplate;
+      const validators =
+        freshTemplateResponse.data.template?.validators ??
+        publishedTemplate.validators;
 
       // Campos de tipo fecha para formatear correctamente
       const dateFields = new Set(
@@ -623,9 +629,14 @@ const TemplatesWithFiltersPage = () => {
           <DateConfig/>
           
           <Group justify="space-between" mb="md">
-            <Title ta="center">
-              Gestión de Plantillas con Filtros
-            </Title>
+            <Group gap={8}>
+              <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+                <IconArrowLeft size={20} />
+              </ActionIcon>
+              <Title ta="center">
+                Gestión de Plantillas con Filtros
+              </Title>
+            </Group>
             <Button 
               variant="outline"
               leftSection={<IconFilter size={16} />} 

@@ -155,25 +155,31 @@ const PublishedTemplatesPage = () => {
     }
   }
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
+      const data = dataResponse.data.data;
       console.log("Data: ", data);
       const { template } = publishedTemplate;
       console.log("Template: ", template);
+      const validators =
+        freshTemplateResponse.data.template?.validators ??
+        publishedTemplate.validators;
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
       const headerRow = worksheet.addRow(Object.keys(data[0]));

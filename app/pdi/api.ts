@@ -34,11 +34,16 @@ export const PDI_ROUTES = {
   formularioRespuesta: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}`,
   formularioArchivo: (id: string, rId: string, cId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/archivos/${cId}`,
   formularioAval: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/aval`,
+  formularioPlaneacion: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/planeacion`,
   formularioDocumentoFinal: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/documento-final`,
   formularioRespuestasPendientesAval: () => `${BASE()}/pdi/formularios/respuestas/pendientes-aval`,
   formularioRespuestasPorIndicador: () => `${BASE()}/pdi/formularios/respuestas/por-indicador`,
   formularioLiderEmailIndicador: () => `${BASE()}/pdi/formularios/respuestas/lider-email-indicador`,
 
+
+  // Razones de rechazo
+  razonesRechazo:               () => `${BASE()}/pdi/razones-rechazo`,
+  razonRechazo: (id: string)    => `${BASE()}/pdi/razones-rechazo/${id}`,
 
   // Tableros de control
   dashboardResumen:                   () => `${BASE()}/pdi/dashboard/resumen`,
@@ -54,9 +59,15 @@ export const PDI_ROUTES = {
   config:                          () => `${BASE()}/pdi/config`,
   configRedistribuir:              () => `${BASE()}/pdi/config/redistribuir-pesos`,
 
+  // Presupuesto desde Google Sheets
+  presupuestoData:                 (refresh?: boolean) => `${BASE()}/pdi/presupuesto/data${refresh ? "?refresh=true" : ""}`,
+  presupuestoUserMacros:           (email: string)    => `${BASE()}/pdi/presupuesto/user-macros?email=${encodeURIComponent(email)}`,
+
   // Informes consolidados (admin)
   informesLista:                   () => `${BASE()}/pdi/informes/lista`,
   informesCortes:                  () => `${BASE()}/pdi/informes/cortes`,
+  informeIndicador: (id: string)   => `${BASE()}/pdi/informes/indicador/${id}`,
+  informeAccion:    (id: string)   => `${BASE()}/pdi/informes/accion/${id}`,
   informeProyecto: (id: string)    => `${BASE()}/pdi/informes/proyecto/${id}`,
   informeMacro:    (id: string)    => `${BASE()}/pdi/informes/macro/${id}`,
 };

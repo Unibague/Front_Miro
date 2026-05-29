@@ -25,21 +25,25 @@ import {
 } from "@mantine/core";
 import {
   IconArrowLeft,
+  IconCheck,
   IconChevronDown,
   IconChevronUp,
   IconEdit,
   IconForms,
   IconPlus,
   IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import PdiSidebar from "../components/PdiSidebar";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
-type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
 
 interface Campo {
   _id?: string;
@@ -48,7 +52,11 @@ interface Campo {
   requerido: boolean;
   descripcion: string;
   orden: number;
-  max_caracteres: number | null;
+  min_caracteres: number | null;
+  max_caracteres?: number | null;
+  justificacion_descripcion?: string;
+  justificacion_min_caracteres?: number | null;
+  justificacion_max_caracteres?: number | null;
   opciones: string[];
   condicional_valor: "supero_meta" | "no_supero_meta" | null;
 }
@@ -66,19 +74,22 @@ interface Formulario {
 }
 
 const TIPO_OPTIONS = [
-  { value: "texto_largo", label: "Texto largo" },
-  { value: "texto_corto", label: "Texto corto" },
+  { value: "texto_largo", label: "Texto" },
   { value: "select", label: "Selección única" },
-  { value: "select_con_otro", label: "Selección con Otro" },
+  { value: "select_con_otro", label: "Selección única con Otro" },
+  { value: "select_multiple", label: "Selección múltiple" },
+  { value: "select_multiple_con_otro", label: "Selección múltiple con Otro" },
   { value: "checkbox", label: "Casilla de verificación" },
 ];
 
 const TIPO_LABELS: Record<TipoCampo, string> = {
-  texto_largo: "Texto largo",
-  texto_corto: "Texto corto",
+  texto_largo: "Texto",
+  texto_corto: "Texto",
   archivo_pdf: "Archivo PDF",
   select: "Selección única",
-  select_con_otro: "Selección con Otro",
+  select_con_otro: "Selección única con Otro",
+  select_multiple: "Selección múltiple",
+  select_multiple_con_otro: "Selección múltiple con Otro",
   checkbox: "Casilla",
 };
 
@@ -93,20 +104,22 @@ function FormularioModal({
   selected: Formulario | null;
   onSaved: (f: Formulario) => void;
 }) {
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [campos, setCampos] = useState<Campo[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!opened) return;
+    if (!opened) { setHasChanges(false); return; }
     if (selected) {
       setNombre(selected.nombre);
       setDescripcion(selected.descripcion);
       setCampos(selected.campos.map(c => ({
         ...c,
-        max_caracteres: c.max_caracteres ?? null,
+        min_caracteres: c.min_caracteres ?? c.max_caracteres ?? null,
         opciones: c.opciones ?? [],
+        justificacion_descripcion: c.justificacion_descripcion ?? "",
         condicional_valor: (c.condicional_valor === "supero_meta" || c.condicional_valor === "no_supero_meta")
           ? c.condicional_valor : null,
       })));
@@ -115,28 +128,40 @@ function FormularioModal({
     setNombre("");
     setDescripcion("");
     setCampos([]);
-  }, [opened, selected]);
+  }, [opened, selected, setHasChanges]);
 
-  const addCampo = () =>
+  const addCampo = () => {
     setCampos(prev => [
       ...prev,
-      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, max_caracteres: null, opciones: [], condicional_valor: null },
+      { etiqueta: "", tipo: "texto_largo", requerido: false, descripcion: "", orden: prev.length, min_caracteres: null, max_caracteres: null, justificacion_descripcion: "", justificacion_min_caracteres: null, justificacion_max_caracteres: null, opciones: [], condicional_valor: null },
     ]);
+    setHasChanges(true);
+  };
 
-  const removeCampo = (idx: number) =>
+  const removeCampo = (idx: number) => {
     setCampos(prev => prev.filter((_, i) => i !== idx));
+    setHasChanges(true);
+  };
 
-  const updateCampo = (idx: number, key: keyof Campo, value: Campo[keyof Campo]) =>
+  const updateCampo = (idx: number, key: keyof Campo, value: Campo[keyof Campo]) => {
     setCampos(prev => prev.map((c, i) => (i === idx ? { ...c, [key]: value } : c)));
+    setHasChanges(true);
+  };
 
-  const addOpcion = (campoIdx: number) =>
+  const addOpcion = (campoIdx: number) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: [...c.opciones, ""] } : c));
+    setHasChanges(true);
+  };
 
-  const removeOpcion = (campoIdx: number, opIdx: number) =>
+  const removeOpcion = (campoIdx: number, opIdx: number) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: c.opciones.filter((_, oi) => oi !== opIdx) } : c));
+    setHasChanges(true);
+  };
 
-  const updateOpcion = (campoIdx: number, opIdx: number, value: string) =>
+  const updateOpcion = (campoIdx: number, opIdx: number, value: string) => {
     setCampos(prev => prev.map((c, i) => i === campoIdx ? { ...c, opciones: c.opciones.map((op, oi) => oi === opIdx ? value : op) } : c));
+    setHasChanges(true);
+  };
 
   const handleSave = async () => {
     if (!nombre.trim()) {
@@ -151,12 +176,27 @@ function FormularioModal({
         activo: true,
         alcance: "general",
         indicador_id: null,
-        campos: campos.map((c, index) => ({ ...c, orden: index })),
+        campos: campos.map((c, index) => ({
+          ...(c._id ? { _id: c._id } : {}),
+          etiqueta: c.etiqueta,
+          tipo: c.tipo,
+          requerido: c.requerido,
+          descripcion: c.descripcion,
+          orden: index,
+          min_caracteres: c.min_caracteres,
+          max_caracteres: c.max_caracteres ?? null,
+          justificacion_descripcion: c.justificacion_descripcion ?? "",
+          justificacion_min_caracteres: c.justificacion_min_caracteres ?? null,
+          justificacion_max_caracteres: c.justificacion_max_caracteres ?? null,
+          opciones: c.opciones,
+          condicional_valor: c.condicional_valor,
+        })),
       };
       const res = selected
         ? await axios.put(PDI_ROUTES.formulario(selected._id), payload)
         : await axios.post(PDI_ROUTES.formularios(), payload);
       showNotification({ title: selected ? "Actualizado" : "Creado", message: "Formulario guardado", color: "teal" });
+      setHasChanges(false);
       onSaved(res.data);
       onClose();
     } catch (e: any) {
@@ -167,12 +207,12 @@ function FormularioModal({
   };
 
   const tieneTexto = (t: TipoCampo) => t === "texto_largo" || t === "texto_corto";
-  const tieneOpciones = (t: TipoCampo) => t === "select" || t === "select_con_otro";
+  const tieneOpciones = (t: TipoCampo) => t === "select" || t === "select_con_otro" || t === "select_multiple" || t === "select_multiple_con_otro";
 
   return (
     <Modal
       opened={opened}
-      onClose={onClose}
+      onClose={() => confirmNavigation(onClose)}
       title={selected ? "Editar formulario" : "Nuevo formulario PDI"}
       centered
       size="xl"
@@ -182,13 +222,13 @@ function FormularioModal({
           label="Nombre del formulario"
           placeholder="Ej: Reporte semestral del indicador"
           value={nombre}
-          onChange={e => setNombre(e.currentTarget.value)}
+          onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }}
         />
         <Textarea
           label="Descripción"
           placeholder="Instrucciones para el responsable"
           value={descripcion}
-          onChange={e => setDescripcion(e.currentTarget.value)}
+          onChange={e => { setDescripcion(e.currentTarget.value); setHasChanges(true); }}
           rows={2}
         />
 
@@ -222,7 +262,7 @@ function FormularioModal({
                   value={campo.tipo}
                   onChange={v => {
                     updateCampo(idx, "tipo", (v as TipoCampo) ?? "texto_largo");
-                    updateCampo(idx, "max_caracteres", null);
+                    updateCampo(idx, "min_caracteres", null);
                     updateCampo(idx, "opciones", []);
                   }}
                   allowDeselect={false}
@@ -247,16 +287,28 @@ function FormularioModal({
               </Group>
 
               {tieneTexto(campo.tipo) && (
-                <NumberInput
-                  size="xs"
-                  label="Límite de caracteres (dejar vacío = sin límite)"
-                  placeholder="Ej: 1500"
-                  value={campo.max_caracteres ?? ""}
-                  onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
-                  min={10}
-                  max={5000}
-                  allowDecimal={false}
-                />
+                <Group gap="md" grow>
+                  <NumberInput
+                    size="xs"
+                    label="Mínimo de caracteres"
+                    placeholder="Sin mínimo"
+                    value={campo.min_caracteres ?? ""}
+                    onChange={v => updateCampo(idx, "min_caracteres", typeof v === "number" ? v : null)}
+                    min={1}
+                    max={5000}
+                    allowDecimal={false}
+                  />
+                  <NumberInput
+                    size="xs"
+                    label="Máximo de caracteres"
+                    placeholder="Sin máximo"
+                    value={campo.max_caracteres ?? ""}
+                    onChange={v => updateCampo(idx, "max_caracteres", typeof v === "number" ? v : null)}
+                    min={1}
+                    max={5000}
+                    allowDecimal={false}
+                  />
+                </Group>
               )}
 
               {tieneOpciones(campo.tipo) && (
@@ -280,9 +332,45 @@ function FormularioModal({
                     onClick={() => addOpcion(idx)}>
                     Agregar opción
                   </Button>
-                  {campo.tipo === "select_con_otro" && (
+                  {(campo.tipo === "select_con_otro" || campo.tipo === "select_multiple_con_otro") && (
                     <Text size="xs" c="dimmed">&quot;Otro ¿Cuál?&quot; se agrega automáticamente al final</Text>
                   )}
+                </Stack>
+              )}
+
+              {tieneOpciones(campo.tipo) && (
+                <Stack gap={4}>
+                  <Text size="xs" fw={600}>Justificación (siempre visible)</Text>
+                  <Text size="xs" c="dimmed">El responsable debe justificar su selección.</Text>
+                  <TextInput
+                    size="xs"
+                    label="Descripción o ayuda de la justificación"
+                    placeholder="Ej: Explica brevemente por qué seleccionaste esa opción"
+                    value={campo.justificacion_descripcion ?? ""}
+                    onChange={e => updateCampo(idx, "justificacion_descripcion", e.currentTarget.value)}
+                  />
+                  <Group gap="md" grow>
+                    <NumberInput
+                      size="xs"
+                      label="Mínimo de caracteres"
+                      placeholder="Sin mínimo"
+                      value={campo.justificacion_min_caracteres ?? ""}
+                      onChange={v => updateCampo(idx, "justificacion_min_caracteres", typeof v === "number" ? v : null)}
+                      min={1}
+                      max={5000}
+                      allowDecimal={false}
+                    />
+                    <NumberInput
+                      size="xs"
+                      label="Máximo de caracteres"
+                      placeholder="Sin máximo"
+                      value={campo.justificacion_max_caracteres ?? ""}
+                      onChange={v => updateCampo(idx, "justificacion_max_caracteres", typeof v === "number" ? v : null)}
+                      min={1}
+                      max={5000}
+                      allowDecimal={false}
+                    />
+                  </Group>
                 </Stack>
               )}
 
@@ -307,7 +395,7 @@ function FormularioModal({
         </Button>
 
         <Group justify="flex-end" mt="sm">
-          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
           <Button loading={loading} onClick={handleSave} color="teal">Guardar</Button>
         </Group>
       </Stack>
@@ -319,10 +407,12 @@ function FormularioCard({
   form,
   onEdit,
   onDelete,
+  canManage,
 }: {
   form: Formulario;
   onEdit: () => void;
   onDelete: () => void;
+  canManage: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -348,8 +438,8 @@ function FormularioCard({
         </Group>
 
         <Group gap={6}>
-          <ActionIcon variant="subtle" color="blue" onClick={onEdit}><IconEdit size={15} /></ActionIcon>
-          <ActionIcon variant="subtle" color="red" onClick={onDelete}><IconTrash size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="blue" disabled={!canManage} onClick={onEdit}><IconEdit size={15} /></ActionIcon>
+          <ActionIcon variant="subtle" color="red" disabled={!canManage} onClick={onDelete}><IconTrash size={15} /></ActionIcon>
           <ActionIcon variant="subtle" color="teal" onClick={() => setOpen(v => !v)}>
             {open ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
           </ActionIcon>
@@ -371,7 +461,7 @@ function FormularioCard({
                     {TIPO_LABELS[campo.tipo as TipoCampo] ?? campo.tipo}
                   </Badge>
                   {campo.max_caracteres && (
-                    <Badge size="xs" variant="light" color="blue">max {campo.max_caracteres}</Badge>
+                    <Badge size="xs" variant="light" color="blue">máx {campo.max_caracteres}</Badge>
                   )}
                   {campo.condicional_valor === "supero_meta" && (
                     <Badge size="xs" variant="light" color="green">si superó meta</Badge>
@@ -390,12 +480,27 @@ function FormularioCard({
   );
 }
 
+interface RazonRechazo {
+  _id: string;
+  texto: string;
+  activo: boolean;
+}
+
 export default function FormulariosPage() {
   const router = useRouter();
+  const { canManage } = useViewPermission("pdiForms");
+  const { confirmNavigation } = useUnsavedChanges();
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [selected, setSelected] = useState<Formulario | null>(null);
+
+  // Razones de rechazo
+  const [razones, setRazones] = useState<RazonRechazo[]>([]);
+  const [nuevaRazon, setNuevaRazon] = useState("");
+  const [savingRazon, setSavingRazon] = useState(false);
+  const [editingRazonId, setEditingRazonId] = useState<string | null>(null);
+  const [editingRazonTexto, setEditingRazonTexto] = useState("");
 
   useEffect(() => {
     axios
@@ -403,7 +508,50 @@ export default function FormulariosPage() {
       .then(r => setFormularios(r.data))
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
+    axios.get(PDI_ROUTES.razonesRechazo()).then(r => setRazones(r.data)).catch(() => {});
   }, []);
+
+  const handleAddRazon = async () => {
+    if (!nuevaRazon.trim()) return;
+    setSavingRazon(true);
+    try {
+      const res = await axios.post(PDI_ROUTES.razonesRechazo(), { texto: nuevaRazon.trim() });
+      setRazones(prev => [...prev, res.data]);
+      setNuevaRazon("");
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo agregar la razón", color: "red" });
+    } finally {
+      setSavingRazon(false);
+    }
+  };
+
+  const handleSaveEditRazon = async (id: string) => {
+    if (!editingRazonTexto.trim()) return;
+    try {
+      const res = await axios.put(PDI_ROUTES.razonRechazo(id), { texto: editingRazonTexto.trim() });
+      setRazones(prev => prev.map(r => r._id === id ? res.data : r));
+      setEditingRazonId(null);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo guardar", color: "red" });
+    }
+  };
+
+  const handleDeleteRazon = (id: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar razón de rechazo",
+      children: <Text size="sm">Esta razón ya no estará disponible al rechazar formularios.</Text>,
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.razonRechazo(id));
+          setRazones(prev => prev.filter(r => r._id !== id));
+        } catch {
+          showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" });
+        }
+      },
+    });
+  };
 
   const handleDelete = (id: string) => {
     modals.openConfirmModal({
@@ -428,20 +576,21 @@ export default function FormulariosPage() {
       <PdiSidebar />
       <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
         <Container size="lg" py="xl">
+
           <Group mb="lg" justify="space-between">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+              <ActionIcon variant="subtle" onClick={() => confirmNavigation(() => router.push("/pdi"))}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={40} radius="xl" color="teal" variant="light">
                 <IconForms size={22} />
               </ThemeIcon>
               <div>
-                <Title order={3}>Formulario PDI</Title>
-                <Text size="xs" c="dimmed">Crea un formulario general para todos los indicadores</Text>
+                <Title order={3}>Campos PDI</Title>
+                <Text size="xs" c="dimmed">Configura los campos del formulario y las razones de rechazo</Text>
               </div>
             </Group>
-            {formularios.length === 0 && (
+            {formularios.length === 0 && canManage && (
               <Button leftSection={<IconPlus size={15} />} color="teal"
                 onClick={() => { setSelected(null); setModal(true); }}>
                 Nuevo formulario
@@ -475,12 +624,88 @@ export default function FormulariosPage() {
                 <FormularioCard
                   key={formulario._id}
                   form={formulario}
+                  canManage={canManage}
                   onEdit={() => { setSelected(formulario); setModal(true); }}
                   onDelete={() => handleDelete(formulario._id)}
                 />
               ))}
             </Stack>
           )}
+
+          {/* Razones de rechazo */}
+          <Paper withBorder radius="lg" p="lg" shadow="xs" mt="xl"
+            style={{ borderLeft: "4px solid #fa5252" }}>
+            <Group gap={10} mb="md">
+              <ThemeIcon size={36} radius="xl" color="red" variant="light">
+                <IconX size={18} />
+              </ThemeIcon>
+              <div>
+                <Title order={5}>Razones de rechazo</Title>
+                <Text size="xs" c="dimmed">Opciones que verá el líder al rechazar un formulario</Text>
+              </div>
+            </Group>
+
+          <Stack gap="xs">
+            {razones.length === 0 && (
+              <Text size="sm" c="dimmed" ta="center" py="xs">Sin razones configuradas</Text>
+            )}
+            {razones.map(r => (
+              <Paper key={r._id} withBorder radius="md" p="sm">
+                {editingRazonId === r._id ? (
+                  <Group gap={6}>
+                    <TextInput
+                      size="xs"
+                      value={editingRazonTexto}
+                      onChange={e => setEditingRazonTexto(e.currentTarget.value)}
+                      style={{ flex: 1 }}
+                      onKeyDown={e => e.key === "Enter" && handleSaveEditRazon(r._id)}
+                      autoFocus
+                    />
+                    <ActionIcon size="sm" color="teal" variant="light" onClick={() => handleSaveEditRazon(r._id)}>
+                      <IconCheck size={13} />
+                    </ActionIcon>
+                    <ActionIcon size="sm" color="gray" variant="subtle" onClick={() => setEditingRazonId(null)}>
+                      <IconX size={13} />
+                    </ActionIcon>
+                  </Group>
+                ) : (
+                  <Group justify="space-between">
+                    <Text size="sm">{r.texto}</Text>
+                    {canManage && (
+                      <Group gap={4}>
+                        <ActionIcon size="sm" variant="subtle" color="blue"
+                          onClick={() => { setEditingRazonId(r._id); setEditingRazonTexto(r.texto); }}>
+                          <IconEdit size={13} />
+                        </ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteRazon(r._id)}>
+                          <IconTrash size={13} />
+                        </ActionIcon>
+                      </Group>
+                    )}
+                  </Group>
+                )}
+              </Paper>
+            ))}
+
+            {canManage && (
+              <Group gap={6} mt={4}>
+                <TextInput
+                  size="xs"
+                  placeholder="Nueva razón de rechazo..."
+                  value={nuevaRazon}
+                  onChange={e => setNuevaRazon(e.currentTarget.value)}
+                  onKeyDown={e => e.key === "Enter" && handleAddRazon()}
+                  style={{ flex: 1 }}
+                />
+                <Button size="xs" color="red" variant="light" loading={savingRazon}
+                  leftSection={<IconPlus size={12} />} onClick={handleAddRazon}>
+                  Agregar
+                </Button>
+              </Group>
+            )}
+          </Stack>
+          </Paper>
+
         </Container>
       </div>
 

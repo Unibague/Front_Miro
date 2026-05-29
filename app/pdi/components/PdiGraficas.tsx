@@ -32,11 +32,20 @@ const CHART_COLORS = [BLUE, TEAL, PURPLE, ORANGE, PINK, GREEN, YELLOW, RED];
 const SEMAFORO_COLOR: Record<string, string> = { verde: GREEN, amarillo: YELLOW, rojo: RED };
 const SEMAFORO_LABEL: Record<string, string> = { verde: "En cumplimiento", amarillo: "En riesgo", rojo: "Crítico" };
 const SEMAFORO_BADGE: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
+const FINAL_TARGET_YEAR = "2029";
 
 const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
 
 function fmtCOP(n: number) {
   return new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+}
+
+function fmtCompactCOP(n: number) {
+  const value = Number(n) || 0;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toLocaleString("es-CO", { maximumFractionDigits: 1 })}B`;
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toLocaleString("es-CO", { maximumFractionDigits: 1 })}M`;
+  return fmtCOP(value).replace(/\s/g, "");
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────
@@ -93,6 +102,59 @@ function fmtValue(value: number | string | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+function cumplimientoPct(avance: number | null, meta: number | null) {
+  if (avance === null || meta === null || meta <= 0) return null;
+  return Math.min(Math.round((avance / meta) * 100), 100);
+}
+
+function semaforoFromPct(pct: number | null | undefined) {
+  const value = Number(pct) || 0;
+  if (value >= 90) return "verde";
+  if (value >= 60) return "amarillo";
+  return "rojo";
+}
+
+function resolvePeriodoActual(inds: Indicador[]) {
+  const currentYear = String(new Date().getFullYear());
+  const periodos = Array.from(new Set(
+    inds.flatMap((ind) => (ind.periodos ?? [])
+      .map((p) => String(p.periodo ?? "").trim())
+      .filter(Boolean))
+  ));
+  const delAnioActual = periodos.filter((periodo) => periodo.slice(0, 4) === currentYear);
+  const candidatos = delAnioActual.length ? delAnioActual : periodos;
+  const ordenados = [...candidatos].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+  return ordenados[ordenados.length - 1] ?? currentYear;
+}
+
+function metricasPeriodo(ind: Indicador, periodo: string) {
+  const metaPeriodo = absMetaEnCorte(ind, periodo);
+  const avancePeriodo = absAvanceHastaCorte(ind, periodo);
+  const pctPeriodo = cumplimientoPct(avancePeriodo, metaPeriodo) ?? 0;
+
+  return {
+    metaPeriodo,
+    avancePeriodo,
+    pctPeriodo,
+    semaforoPeriodo: semaforoFromPct(pctPeriodo),
+  };
+}
+
+function periodoByName(ind: Indicador, periodo: string) {
+  return (ind.periodos ?? []).find((p) => p.periodo === periodo);
+}
+
+function hasMetaEnPeriodo(ind: Indicador, periodo: string) {
+  const meta = periodoByName(ind, periodo)?.meta;
+  return meta !== null && meta !== undefined && String(meta).trim() !== "";
+}
+
+function isReportadoEnPeriodo(ind: Indicador, periodo: string) {
+  const periodoData = periodoByName(ind, periodo);
+  const estado = periodoData?.estado_reporte ?? "Borrador";
+  return Boolean(periodoData?.fecha_envio) || estado !== "Borrador";
+}
+
 function StatCard({ title, value, sub, color = "blue", icon }: {
   title: string; value: React.ReactNode; sub?: string; color?: string; icon: React.ReactNode;
 }) {
@@ -116,9 +178,163 @@ function PctBar({ pct, semaforo }: { pct: number; semaforo: string }) {
       <Box style={{ flex: 1, height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
         <Box style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 4 }} />
       </Box>
-      <Text size="sm" fw={700} style={{ minWidth: 48, textAlign: "right" }}>{Math.round(Number(pct) || 0)}%</Text>
+      <Text size="sm" fw={700} style={{ minWidth: 48, textAlign: "right" }}>{value}%</Text>
     </Group>
   );
+}
+
+type PresupuestoDetail = {
+  codificacion?: string;
+  accionEstrategica?: string;
+  tipo?: string;
+  valor?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+  causado?: number;
+};
+
+type PresupuestoSourceRow = {
+  macroproyecto?: string;
+  proyecto?: string;
+  codificacion?: string;
+  presupuesto?: number;
+  presupuestoGasto?: number;
+  presupuestoInversion?: number;
+  comprometido?: number;
+  comprometidoGasto?: number;
+  comprometidoInversion?: number;
+  causado?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+  detalles?: PresupuestoDetail[];
+};
+
+type PresupuestoChartDatum = {
+  label: string;
+  nombre: string;
+  presupuesto: number;
+  presupuestoGasto: number;
+  presupuestoInversion: number;
+  comprometido: number;
+  comprometidoGasto: number;
+  comprometidoInversion: number;
+  causado: number;
+  causadoGasto: number;
+  causadoInversion: number;
+  causadoPct: number;
+};
+
+function numberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clampPercentage(value: number, total: number) {
+  if (!total) return 0;
+  return Math.min(Math.round((value / total) * 100), 100);
+}
+
+function normalizeBudgetCode(value: unknown) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .trim();
+}
+
+function macroCodeFromText(value: unknown) {
+  const text = String(value || "");
+  const systemMatch = text.match(/^(M\d+)\b/i);
+  if (systemMatch) return systemMatch[1].toUpperCase();
+  const numericMatch = text.match(/^(\d+)/);
+  return numericMatch ? `M${numericMatch[1]}` : "";
+}
+
+function actionProjectId(action: Accion) {
+  return typeof action.proyecto_id === "object"
+    ? action.proyecto_id._id
+    : String(action.proyecto_id ?? "");
+}
+
+function makeBudgetDatum(label: string, nombre: string): PresupuestoChartDatum {
+  return {
+    label,
+    nombre,
+    presupuesto: 0,
+    presupuestoGasto: 0,
+    presupuestoInversion: 0,
+    comprometido: 0,
+    comprometidoGasto: 0,
+    comprometidoInversion: 0,
+    causado: 0,
+    causadoGasto: 0,
+    causadoInversion: 0,
+    causadoPct: 0,
+  };
+}
+
+function ensureBudgetDatum(groups: Map<string, PresupuestoChartDatum>, key: string, label: string, nombre: string) {
+  const normalizedKey = normalizeBudgetCode(key || label);
+  if (!groups.has(normalizedKey)) groups.set(normalizedKey, makeBudgetDatum(label, nombre));
+  return groups.get(normalizedKey)!;
+}
+
+function addProjectBudget(row: PresupuestoSourceRow, target: PresupuestoChartDatum) {
+  target.presupuesto += numberValue(row.presupuesto);
+  target.presupuestoGasto += numberValue(row.presupuestoGasto);
+  target.presupuestoInversion += numberValue(row.presupuestoInversion);
+  target.comprometido += numberValue(row.comprometido);
+  target.comprometidoGasto += numberValue(row.comprometidoGasto);
+  target.comprometidoInversion += numberValue(row.comprometidoInversion);
+  target.causado += numberValue(row.causado);
+  target.causadoGasto += numberValue(row.causadoGasto);
+  target.causadoInversion += numberValue(row.causadoInversion);
+}
+
+function addDetailBudget(detail: PresupuestoDetail, target: PresupuestoChartDatum) {
+  const value = numberValue(detail.valor);
+  const isInvestment = String(detail.tipo || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .includes("inversion");
+
+  if (isInvestment) target.comprometidoInversion += value;
+  else target.comprometidoGasto += value;
+
+  target.comprometido += value;
+  target.causadoGasto += numberValue(detail.causadoGasto);
+  target.causadoInversion += numberValue(detail.causadoInversion);
+  target.causado += numberValue(detail.causado) || numberValue(detail.causadoGasto) + numberValue(detail.causadoInversion);
+}
+
+function finalizeBudgetDatum(item: PresupuestoChartDatum) {
+  const budgetSplit = item.presupuestoGasto + item.presupuestoInversion;
+  const committedSplit = item.comprometidoGasto + item.comprometidoInversion;
+
+  if (item.presupuesto > 0 && budgetSplit <= 0) {
+    if (committedSplit > 0) {
+      item.presupuestoGasto = item.presupuesto * (item.comprometidoGasto / committedSplit);
+      item.presupuestoInversion = item.presupuesto * (item.comprometidoInversion / committedSplit);
+    } else {
+      item.presupuestoGasto = item.presupuesto;
+    }
+  }
+
+  item.causadoPct = clampPercentage(item.causado, item.presupuesto);
+  return item;
+}
+
+function compareBudgetLabels(a: string, b: string) {
+  const aParts = (a.match(/\d+/g) || []).map(Number);
+  const bParts = (b.match(/\d+/g) || []).map(Number);
+  const length = Math.max(aParts.length, bParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const diff = (aParts[index] ?? 0) - (bParts[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+
+  return a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
 }
 
 export default function PdiGraficas() {
@@ -126,10 +342,13 @@ export default function PdiGraficas() {
     macros: Macroproyecto[]; proyectos: Proyecto[]; acciones: Accion[]; indicadores: Indicador[];
   } | null>(null);
   const [resumen, setResumen] = useState<DashboardResumen | null>(null);
+  const [corteActivo, setCorteActivo] = useState<string | null>(null);
 
   const [selectedMacro,    setSelectedMacro]    = useState<string | null>("todos");
   const [selectedProyecto, setSelectedProyecto] = useState<string | null>("todos");
   const [selectedAccion,   setSelectedAccion]   = useState<string | null>("todos");
+
+  const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSourceRow[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -138,10 +357,13 @@ export default function PdiGraficas() {
       axios.get(PDI_ROUTES.proyectos()),
       axios.get(PDI_ROUTES.acciones()),
       axios.get(PDI_ROUTES.indicadores()),
-    ]).then(([rR, rM, rP, rA, rI]) => {
+      axios.get(PDI_ROUTES.cortesActivos()),
+    ]).then(([rR, rM, rP, rA, rI, rC]) => {
       setResumen(rR.data);
       setPdiData({ macros: rM.data, proyectos: rP.data, acciones: rA.data, indicadores: rI.data });
+      setCorteActivo(rC.data?.[0]?.nombre ?? null);
     }).catch(console.error);
+    axios.get(PDI_ROUTES.presupuestoData()).then(r => setPresupuestoRows(r.data.rows ?? [])).catch(() => {});
   }, []);
 
   useEffect(() => { setSelectedProyecto("todos"); setSelectedAccion("todos"); }, [selectedMacro]);
@@ -256,11 +478,6 @@ export default function PdiGraficas() {
     return resumen?.avance_global ?? 0;
   }, [accionActual, proyectoActual, macroActual, verTodos, resumen]);
 
-  const reportesPendientes = useMemo(() => metricIndicators.filter((ind) => {
-    const avance = toNumberValue(ind.avance_total_real ?? ind.avance) ?? 0;
-    return avance === 0;
-  }).length, [metricIndicators]);
-
   const indicadoresConRetrasos = useMemo(() => metricIndicators.filter((ind) =>
     (ind.periodos ?? []).some((p) => String(p.justificacion_retrasos ?? "").trim() !== "")
   ).length, [metricIndicators]);
@@ -275,35 +492,41 @@ export default function PdiGraficas() {
     });
   }, [verTodos, indicadores, indsMacroAll, accionesFiltIds, selectedProyecto, selectedAccion]);
 
-  const indicadoresCriticosTop = useMemo(() => [...indsFiltradas]
-    .filter((ind) => ind.semaforo === "rojo")
+  const periodoActual = useMemo(
+    () => corteActivo || resolvePeriodoActual(indsFiltradas),
+    [corteActivo, indsFiltradas]
+  );
+
+  const indicadoresConMetaPeriodo = useMemo(
+    () => metricIndicators.filter((ind) => hasMetaEnPeriodo(ind, periodoActual)),
+    [metricIndicators, periodoActual]
+  );
+
+  const reportesPendientes = useMemo(
+    () => indicadoresConMetaPeriodo.filter((ind) => !isReportadoEnPeriodo(ind, periodoActual)).length,
+    [indicadoresConMetaPeriodo, periodoActual]
+  );
+
+  const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
+    .filter((ind) => hasMetaEnPeriodo(ind, periodoActual))
     .map((ind) => {
-      const periodosOrdenados = [...(ind.periodos ?? [])]
-        .filter((p) => p.avance !== null && p.avance !== "" && p.avance !== undefined)
-        .sort((a, b) => a.periodo.localeCompare(b.periodo));
-      const ultimoPeriodo = periodosOrdenados[periodosOrdenados.length - 1] ?? null;
-      const meta = ind.meta_final_2029;
-      const dato = ind.tipo_calculo === "ultimo_valor"
-        ? ultimoPeriodo?.avance ?? null
-        : periodosOrdenados.reduce((acc, p) => acc + (toNumberValue(p.avance) ?? 0), 0);
-      const metaNum = toNumberValue(meta);
-      const datoNum = toNumberValue(dato);
-      const pct = metaNum && metaNum > 0 && datoNum !== null
-        ? Math.round((datoNum / metaNum) * 100)
-        : Math.round(toNumberValue(ind.avance_total_real ?? ind.avance) ?? 0);
+      const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo } = metricasPeriodo(ind, periodoActual);
 
       return {
         id: ind._id,
         codigo: ind.codigo,
         nombre: ind.nombre,
-        meta,
-        dato,
-        pct,
-        semaforo: ind.semaforo,
+        metaFinal: ind.meta_final_2029,
+        metaPeriodo,
+        avancePeriodo,
+        pctPeriodo,
+        semaforoPeriodo,
       };
     })
-    .sort((a, b) => a.pct - b.pct || a.codigo.localeCompare(b.codigo))
-    .slice(0, 5), [indsFiltradas]);
+    .sort((a, b) => a.pctPeriodo - b.pctPeriodo || a.codigo.localeCompare(b.codigo))
+  , [indsFiltradas, periodoActual]);
+
+  const indicadoresCriticosTop = indicadoresCriticosPeriodo;
 
   // ── Mapas para vincular indicadores a su macro/proyecto ──────────────────
   const { indToMacro, indToProyecto } = useMemo(() => {
@@ -490,51 +713,83 @@ export default function PdiGraficas() {
     });
   }, [indsDelProyecto]);
 
-  // ── Datos Gasto/Inversión por nivel ──────────────────────────────────────
-  const budgetExecChartData = useMemo(() => {
-    if (accionActual) return [];
+  // Datos presupuestales segun el filtro activo.
+  const presupuestoChartData = useMemo(() => {
+    const groups = new Map<string, PresupuestoChartDatum>();
+    const macroCode = normalizeBudgetCode(macroActual?.codigo);
+    const projectCode = normalizeBudgetCode(proyectoActual?.codigo);
 
-    if (proyectoActual) {
-      return accionesFiltradas.map((a) => ({
-        label: a.codigo,
-        nombre: a.nombre,
-        gasto: Number(a.gasto) || 0,
-        inversion: Number(a.inversion) || 0,
-        ejecutado: Number(a.presupuesto_ejecutado) || 0,
-      }));
+    if (proyectoActual || accionActual) {
+      const actions = accionActual
+        ? [accionActual]
+        : accionesFiltradas.filter((action) => !proyectoActual || actionProjectId(action) === proyectoActual._id);
+      const actionCodes = new Set(actions.map((action) => normalizeBudgetCode(action.codigo)));
+
+      for (const action of actions) {
+        const item = ensureBudgetDatum(groups, action.codigo, action.codigo, action.nombre);
+        item.presupuesto = numberValue(action.presupuesto);
+      }
+
+      for (const row of presupuestoRows) {
+        if (projectCode && normalizeBudgetCode(row.codificacion) !== projectCode) continue;
+
+        for (const detail of row.detalles ?? []) {
+          const detailCode = normalizeBudgetCode(detail.codificacion);
+          if (!actionCodes.has(detailCode)) continue;
+
+          const action = actions.find((item) => normalizeBudgetCode(item.codigo) === detailCode);
+          const item = ensureBudgetDatum(
+            groups,
+            detailCode,
+            action?.codigo || detail.codificacion || "Sin codigo",
+            action?.nombre || detail.accionEstrategica || "Sin nombre",
+          );
+          addDetailBudget(detail, item);
+        }
+      }
+
+      for (const action of actions) {
+        const item = ensureBudgetDatum(groups, action.codigo, action.codigo, action.nombre);
+        const gasto = numberValue(action.gasto);
+        const inversion = numberValue(action.inversion);
+        const causado = numberValue(action.presupuesto_ejecutado) || gasto + inversion;
+
+        if (item.causado <= 0 && causado > 0) {
+          item.causadoGasto = gasto || (!inversion ? causado : 0);
+          item.causadoInversion = inversion;
+          item.causado = causado;
+        }
+      }
+    } else if (macroActual) {
+      for (const row of presupuestoRows) {
+        if (macroCode && macroCodeFromText(row.macroproyecto) !== macroCode) continue;
+
+        const label = row.codificacion || "Sin codigo";
+        const item = ensureBudgetDatum(groups, label, label, row.proyecto || "Sin nombre");
+        addProjectBudget(row, item);
+      }
+
+      for (const project of proysMacro) {
+        const item = ensureBudgetDatum(groups, project.codigo, project.codigo, project.nombre);
+        if (item.presupuesto <= 0) item.presupuesto = numberValue(project.presupuesto);
+      }
+    } else {
+      for (const row of presupuestoRows) {
+        const label = macroCodeFromText(row.macroproyecto);
+        if (!label) continue;
+
+        const macro = macros.find((item) => normalizeBudgetCode(item.codigo) === label);
+        const nombre = macro?.nombre ?? String(row.macroproyecto || "").replace(/^M?\d+\s*[-.:]\s*/i, "").trim();
+        const item = ensureBudgetDatum(groups, label, label, nombre);
+        addProjectBudget(row, item);
+      }
     }
 
-    if (!verTodos) {
-      return proysMacro.map((p) => {
-        const accsP = accionesMacro.filter((a) => {
-          const pid = typeof a.proyecto_id === "object" ? a.proyecto_id._id : a.proyecto_id;
-          return pid === p._id;
-        });
-        return {
-          label: p.codigo,
-          nombre: p.nombre,
-          gasto: accsP.reduce((s, a) => s + (Number(a.gasto) || 0), 0),
-          inversion: accsP.reduce((s, a) => s + (Number(a.inversion) || 0), 0),
-          ejecutado: Number(p.presupuesto_ejecutado) || 0,
-        };
-      });
-    }
-
-    const proyToMacro = new Map(proyectos.map((p) => [p._id, typeof p.macroproyecto_id === "object" ? p.macroproyecto_id._id : String(p.macroproyecto_id)]));
-    return macros.map((m) => {
-      const accsM = acciones.filter((a) => {
-        const pid = typeof a.proyecto_id === "object" ? a.proyecto_id._id : String(a.proyecto_id);
-        return proyToMacro.get(pid) === m._id;
-      });
-      return {
-        label: m.codigo,
-        nombre: m.nombre,
-        gasto: accsM.reduce((s, a) => s + (Number(a.gasto) || 0), 0),
-        inversion: accsM.reduce((s, a) => s + (Number(a.inversion) || 0), 0),
-        ejecutado: Number(m.presupuesto_ejecutado) || 0,
-      };
-    });
-  }, [accionActual, proyectoActual, verTodos, accionesFiltradas, proysMacro, accionesMacro, macros, acciones, proyectos]);
+    return Array.from(groups.values())
+      .map(finalizeBudgetDatum)
+      .filter((item) => item.presupuesto > 0 || item.comprometido > 0 || item.causado > 0)
+      .sort((a, b) => compareBudgetLabels(a.label, b.label));
+  }, [accionActual, accionesFiltradas, macroActual, macros, presupuestoRows, proyectoActual, proysMacro]);
 
   const anyFilter = selectedProyecto !== "todos" || selectedAccion !== "todos";
   const limpiarFiltros = () => {
@@ -542,6 +797,21 @@ export default function PdiGraficas() {
   };
 
   if (!pdiData) return <Center py="xl"><Loader color="blue" /></Center>;
+
+  const presupuestoChartTitle = accionActual
+    ? "Ejecución presupuestal de la acción estratégica"
+    : proyectoActual
+    ? "Ejecución presupuestal por acción estratégica"
+    : macroActual
+    ? "Ejecución presupuestal por proyecto"
+    : "Ejecución presupuestal por macroproyecto";
+  const presupuestoChartDescription = accionActual
+    ? `${accionActual.codigo} — ${accionActual.nombre}`
+    : proyectoActual
+    ? `${proyectoActual.codigo} — ${proyectoActual.nombre}`
+    : macroActual
+    ? `${macroActual.codigo} — ${macroActual.nombre}`
+    : "Presupuesto, comprometido y causado — gasto e inversión";
 
   return (
     <Stack gap="md">
@@ -598,7 +868,7 @@ export default function PdiGraficas() {
               />
               <StatCard
                 icon={<IconTrendingUp size={18} />}
-                title="Presupuesto ejecutado"
+                title="Presupuesto causado"
                 value={fmtCOP(budgetStats.ejecutado)}
                 sub={`${budgetStats.porcentaje_ejecucion}% del total`}
                 color={budgetStats.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
@@ -613,7 +883,7 @@ export default function PdiGraficas() {
                 icon={<IconBulb size={18} />}
                 title="Indicadores sin reporte"
                 value={reportesPendientes}
-                sub={`de ${metricIndicators.length} indicadores`}
+                sub={`de ${indicadoresConMetaPeriodo.length} con meta en ${periodoActual}`}
                 color="orange"
               />
             </SimpleGrid>
@@ -621,63 +891,153 @@ export default function PdiGraficas() {
         );
       })()}
 
-      {/* ── Gráfica Gasto / Inversión por nivel ──────────────────────── */}
-      {budgetExecChartData.some((d) => d.gasto > 0 || d.inversion > 0) && (
+      {/* ── Ejecución presupuestal (torta + barras unificadas) ───────────── */}
+      {presupuestoChartData.length > 0 && (
         <Paper withBorder radius="xl" p="md">
-          <Text size="md" fw={700} mb={2}>
-            Ejecución presupuestal — Gasto vs Inversión por {
-              proyectoActual ? "acción estratégica" : !verTodos ? "proyecto" : "macroproyecto"
-            }
-          </Text>
-          <Text size="sm" c="dimmed" mb="sm">Monto ejecutado clasificado por tipo</Text>
-          <ResponsiveContainer width="100%" height={Math.max(220, budgetExecChartData.length * 38)}>
-            <BarChart data={budgetExecChartData} margin={{ top: 10, right: 20, left: 10, bottom: 8 }}>
+          <Text size="md" fw={700} mb={2}>{presupuestoChartTitle}</Text>
+          <Text size="sm" c="dimmed" mb="md">{presupuestoChartDescription}</Text>
+
+          <Box style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+
+            {/* Izquierda: torta (solo cuando hay acción seleccionada) */}
+            {accionActual && budgetStats.total > 0 && (() => {
+              const causado  = budgetStats.ejecutado;
+              const restante = Math.max(budgetStats.total - causado, 0);
+              const pct      = budgetStats.porcentaje_ejecucion;
+              const pieColor = pct >= 80 ? TEAL : pct >= 40 ? ORANGE : RED;
+              const pieData  = [
+                { name: "Causado",  value: causado,  fill: pieColor },
+                { name: "Restante", value: restante, fill: "#e9ecef" },
+              ];
+              return (
+                <Box style={{ flexShrink: 0, width: 260, borderRight: "1px solid var(--mantine-color-default-border)", paddingRight: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                  <Badge color="gray" variant="light" radius="sm" size="sm">{accionActual.codigo}</Badge>
+
+                  {/* Donut */}
+                  <Box style={{ position: "relative", width: 180, height: 180 }}>
+                    <PieChart width={180} height={180}>
+                      <Pie data={pieData} cx={85} cy={85} innerRadius={54} outerRadius={82}
+                        startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                        {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                      </Pie>
+                    </PieChart>
+                    <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+                      <Text fw={900} size="1.6rem" lh={1} style={{ color: pieColor }}>{pct}%</Text>
+                      <Text size="xs" c="dimmed">ejecutado</Text>
+                    </Box>
+                  </Box>
+
+                  {/* Etiqueta compacta de presupuesto; el porcentaje causado queda en el centro de la dona. */}
+                  <Box style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr", gap: 6, textAlign: "center" }}>
+                    <Box style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 4px" }}>
+                      <Text size="xs" c="dimmed" lh={1} mb={4}>Presupuesto</Text>
+                      <Text size="xs" fw={800} lh={1}>{fmtCOP(budgetStats.total).replace("$ ", "$").replace(/\s/g, "")}</Text>
+                    </Box>
+                  </Box>
+
+                  {/* Barra de progreso */}
+                  <Box style={{ width: "100%", height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden" }}>
+                    <Box style={{ width: `${pct}%`, height: "100%", background: pieColor, borderRadius: 4, transition: "width 0.4s" }} />
+                  </Box>
+                </Box>
+              );
+            })()}
+
+            {/* Derecha: barras según el filtro activo */}
+            <Box style={{ flex: 1, minWidth: 0 }}>
+          <ResponsiveContainer width="100%" height={Math.max(260, presupuestoChartData.length * 56)}>
+            <BarChart data={presupuestoChartData} margin={{ top: 14, right: 24, left: 10, bottom: 8 }} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 12, fontWeight: 700 }} interval={0} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} width={60} />
               <ReTooltip
-                formatter={(v: any, name: any) => [fmtCOP(Number(v)), name === "gasto" ? "Gasto" : name === "inversion" ? "Inversión" : "Ejecutado"]}
-                labelFormatter={(label: any) => label}
+                allowEscapeViewBox={{ x: true, y: true }}
+                wrapperStyle={{ pointerEvents: "none", zIndex: 30 }}
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = presupuestoChartData.find(x => x.label === label);
+                  if (!d) return null;
+                  const pctOfBudget = (value: number) => d.presupuesto > 0
+                    ? Math.min(Math.round((value / d.presupuesto) * 100), 100)
+                    : 0;
+                  const row = (title: string, g: number, inv: number, total: number, color: string, percentage = pctOfBudget(total)) => (
+                    <Box key={title} py={5} style={{ borderTop: "1px solid #edf2f7" }}>
+                      <Group justify="space-between" gap={10} wrap="nowrap">
+                        <Text size="xs" fw={900} c={color}>{title}</Text>
+                        <Text size="xs" fw={900}>{fmtCompactCOP(total)}</Text>
+                      </Group>
+                      <Group gap={8} wrap="nowrap" mt={2}>
+                        <Text size="0.68rem" c="dimmed">G: <b style={{ color }}>{fmtCompactCOP(g)}</b></Text>
+                        <Text size="0.68rem" c="dimmed">I: <b style={{ color }}>{fmtCompactCOP(inv)}</b></Text>
+                        <Text size="0.68rem" c="dimmed"><b style={{ color }}>{percentage}%</b></Text>
+                      </Group>
+                    </Box>
+                  );
+                  return (
+                    <Paper withBorder p="xs" radius="md" shadow="md" style={{ width: 300, maxWidth: "calc(100vw - 32px)" }}>
+                      <Text size="xs" fw={900} lh={1.2}>{label}</Text>
+                      <Text size="0.68rem" c="dimmed" mb={4} lineClamp={2}>{d.nombre}</Text>
+                      {row("Presupuesto", d.presupuestoGasto, d.presupuestoInversion, d.presupuesto, "#868e96", d.presupuesto > 0 ? 100 : 0)}
+                      {row("Comprometido", d.comprometidoGasto, d.comprometidoInversion, d.comprometido, BLUE)}
+                      {row("Causado", d.causadoGasto, d.causadoInversion, d.causado, TEAL)}
+                    </Paper>
+                  );
+                }}
               />
-              <Bar dataKey="gasto" name="gasto" fill={BLUE} radius={[4, 4, 0, 0]} barSize={20}>
-                <LabelList dataKey="gasto" position="top" style={{ fontSize: 11, fill: BLUE, fontWeight: 700 }}
-                  formatter={(v: any) => v > 0 ? `$${(v / 1_000_000).toFixed(0)}M` : ""} />
+              {/* Presupuesto — gasto + inversión apilados (etiqueta en el tope) */}
+              <Bar dataKey="presupuestoGasto" name="Pres. Gasto" stackId="pres" fill="#adb5bd" barSize={22} />
+              <Bar dataKey="presupuestoInversion" name="Pres. Inversión" stackId="pres" fill="#dee2e6" radius={[4, 4, 0, 0]} barSize={22}>
+                <LabelList dataKey="presupuesto" position="top" style={{ fontSize: 10, fill: "#868e96", fontWeight: 700 }}
+                  formatter={(v: any) => v > 0 ? `$${(Number(v) / 1_000_000).toFixed(0)}M` : ""} />
               </Bar>
-              <Bar dataKey="inversion" name="inversion" fill={PURPLE} radius={[4, 4, 0, 0]} barSize={20}>
-                <LabelList dataKey="inversion" position="top" style={{ fontSize: 11, fill: PURPLE, fontWeight: 700 }}
-                  formatter={(v: any) => v > 0 ? `$${(v / 1_000_000).toFixed(0)}M` : ""} />
+              {/* Comprometido — gasto + inversión apilados */}
+              <Bar dataKey="comprometidoGasto" name="Comp. Gasto" stackId="comp" fill={BLUE} barSize={22} />
+              <Bar dataKey="comprometidoInversion" name="Comp. Inversión" stackId="comp" fill="#74c0fc" radius={[4, 4, 0, 0]} barSize={22}>
+                <LabelList dataKey="comprometido" position="top" style={{ fontSize: 10, fill: BLUE, fontWeight: 700 }}
+                  formatter={(v: any) => v > 0 ? `$${(Number(v) / 1_000_000).toFixed(0)}M` : ""} />
+              </Bar>
+              {/* Causado — gasto + inversión apilados */}
+              <Bar dataKey="causadoGasto" name="Caus. Gasto" stackId="caus" fill={TEAL} barSize={22} />
+              <Bar dataKey="causadoInversion" name="Caus. Inversión" stackId="caus" fill="#63e6be" radius={[4, 4, 0, 0]} barSize={22}>
+                <LabelList dataKey="causadoPct" position="top" style={{ fontSize: 10, fill: TEAL, fontWeight: 700 }}
+                  formatter={(v: any) => Number(v) > 0 ? `${Number(v)}%` : ""} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <Group gap={16} justify="center" mt={4}>
-            <Group gap={4}><Box w={10} h={10} style={{ background: BLUE, borderRadius: 2 }} /><Text size="sm" fw={600}>Gasto</Text></Group>
-            <Group gap={4}><Box w={10} h={10} style={{ background: PURPLE, borderRadius: 2 }} /><Text size="sm" fw={600}>Inversión</Text></Group>
-          </Group>
-          {proyectoActual ? (
-            <Stack gap={4} mt="sm">
-              {budgetExecChartData.map((d, i) => (
-                <Group key={d.label} gap={6} align="flex-start" wrap="nowrap">
-                  <Box w={8} h={8} style={{ borderRadius: "50%", background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0, marginTop: 3 }} />
-                  <Box style={{ minWidth: 0 }}>
-                    <Text size="xs" fw={700} c="blue" lh={1.2}>{d.label}</Text>
-                    <Text size="xs" c="dimmed" lh={1.3}>{d.nombre}</Text>
-                  </Box>
-                </Group>
-              ))}
-            </Stack>
-          ) : (
-            <Group gap="lg" mt="sm" wrap="wrap" justify="center">
-              {budgetExecChartData.map((d, i) => (
-                <Group key={d.label} gap={6} align="flex-start" wrap="nowrap" style={{ minWidth: 160 }}>
-                  <Box w={8} h={8} style={{ borderRadius: "50%", background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0, marginTop: 3 }} />
-                  <Box style={{ minWidth: 0 }}>
-                    <Text size="xs" fw={700} c="blue" lh={1.2}>{d.label}</Text>
-                    <Text size="xs" c="dimmed" lh={1.3}>{d.nombre}</Text>
-                  </Box>
-                </Group>
-              ))}
+
+          {/* Leyenda */}
+          <Group gap={20} justify="center" mt="sm" wrap="wrap">
+            <Group gap={4}>
+              <Box w={10} h={10} style={{ background: "#adb5bd", borderRadius: 2 }} />
+              <Box w={10} h={10} style={{ background: "#dee2e6", borderRadius: 2 }} />
+              <Text size="xs" fw={600} c="dimmed">Presupuesto (Gasto / Inv)</Text>
             </Group>
-          )}
+            <Group gap={4}>
+              <Box w={10} h={10} style={{ background: BLUE, borderRadius: 2 }} />
+              <Box w={10} h={10} style={{ background: "#74c0fc", borderRadius: 2 }} />
+              <Text size="xs" fw={600}>Comprometido (Gasto / Inv)</Text>
+            </Group>
+            <Group gap={4}>
+              <Box w={10} h={10} style={{ background: TEAL, borderRadius: 2 }} />
+              <Box w={10} h={10} style={{ background: "#63e6be", borderRadius: 2 }} />
+              <Text size="xs" fw={600} c="teal">Causado (Gasto / Inv)</Text>
+            </Group>
+          </Group>
+
+          {/* Elementos del gráfico */}
+          <Group gap="lg" mt="sm" wrap="wrap" justify="center">
+            {presupuestoChartData.map((d, i) => (
+              <Group key={d.label} gap={6} align="flex-start" wrap="nowrap" style={{ minWidth: 160 }}>
+                <Box w={8} h={8} style={{ borderRadius: "50%", background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0, marginTop: 3 }} />
+                <Box style={{ minWidth: 0 }}>
+                  <Text size="xs" fw={700} c="blue" lh={1.2}>{d.label}</Text>
+                  <Text size="xs" c="dimmed" lh={1.3}>{d.nombre}</Text>
+                </Box>
+              </Group>
+            ))}
+          </Group>
+            </Box>{/* fin columna derecha */}
+          </Box>{/* fin flex container */}
         </Paper>
       )}
 
@@ -772,9 +1132,9 @@ export default function PdiGraficas() {
             <Paper withBorder radius="xl" p="md" h="100%">
               <Group justify="space-between" mb="sm" align="flex-start">
                 <Box>
-                  <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
-                  <Text size="xs" c="red" fw={600}>
-                    {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
+                  <Text size="md" fw={700}>Indicadores del período</Text>
+                  <Text size="xs" c="dimmed" fw={600}>
+                    {indicadoresCriticosPeriodo.length} indicadores con meta en {periodoActual}
                   </Text>
                 </Box>
                 <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
@@ -785,17 +1145,18 @@ export default function PdiGraficas() {
                     <tr>
                       <th style={thStyle}>Indicador</th>
                       <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
-                        Meta 2029
+                        Meta {FINAL_TARGET_YEAR}
                       </th>
-                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance</th>
-                      <th style={{ ...thStyle, width: 170 }}>% cumplimiento</th>
-                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado</th>
+                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {periodoActual}</th>
+                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {periodoActual}</th>
+                      <th style={{ ...thStyle, width: 150 }}>% cumpl. {periodoActual}</th>
+                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {periodoActual}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {indicadoresCriticosTop.length === 0 ? (
                       <tr>
-                        <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                        <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                           Sin indicadores críticos para mostrar
                         </td>
                       </tr>
@@ -807,17 +1168,20 @@ export default function PdiGraficas() {
                             <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
+                            <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
+                            <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
                           </td>
-                          <td style={{ ...tdStyle, minWidth: 150 }}>
-                            <PctBar pct={row.pct} semaforo={row.semaforo} />
+                          <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                            <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                          </td>
+                          <td style={{ ...tdStyle, minWidth: 140 }}>
+                            <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                           </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
-                            <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
-                              {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
+                            <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                              {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
                             </Badge>
                           </td>
                         </tr>
@@ -847,7 +1211,7 @@ export default function PdiGraficas() {
               </Stack>
               <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                 <Text size="sm" c="dimmed" lh={1.5}>
-                  El <b>% de cumplimiento</b> se calcula como el avance alcanzado dividido entre la meta definida para el indicador.
+                  La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance del periodo {periodoActual}.
                 </Text>
               </Box>
             </Paper>
@@ -1026,15 +1390,15 @@ export default function PdiGraficas() {
             })}
           </Stack>
 
-          {/* 6. Top 5 indicadores críticos del proyecto + Semaforización */}
+          {/* 6. Indicadores del período del proyecto + Semaforización */}
           <Grid gutter="sm">
             <Grid.Col span={{ base: 12, md: 9 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
                 <Group justify="space-between" mb="sm" align="flex-start">
                   <Box>
-                    <Text size="md" fw={700}>Top 5 indicadores críticos</Text>
+                    <Text size="md" fw={700}>Indicadores del período</Text>
                     <Text size="xs" c="red" fw={600}>
-                      {indsFiltradas.filter((ind) => ind.semaforo === "rojo").length} indicadores críticos encontrados
+                      {indicadoresCriticosPeriodo.length} indicadores críticos encontrados
                     </Text>
                   </Box>
                   <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
@@ -1045,17 +1409,18 @@ export default function PdiGraficas() {
                       <tr>
                         <th style={thStyle}>Indicador</th>
                         <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
-                          Meta 2029
+                          Meta {FINAL_TARGET_YEAR}
                         </th>
-                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance</th>
-                        <th style={{ ...thStyle, width: 170 }}>% cumplimiento</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {periodoActual}</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {periodoActual}</th>
+                        <th style={{ ...thStyle, width: 150 }}>% cumpl. {periodoActual}</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {periodoActual}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {indicadoresCriticosTop.length === 0 ? (
                         <tr>
-                          <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                          <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                             Sin indicadores críticos para mostrar
                           </td>
                         </tr>
@@ -1067,17 +1432,20 @@ export default function PdiGraficas() {
                               <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={700}>{fmtValue(row.meta)}</Text>
+                              <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={600}>{fmtValue(row.dato)}</Text>
+                              <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
                             </td>
-                            <td style={{ ...tdStyle, minWidth: 150 }}>
-                              <PctBar pct={row.pct} semaforo={row.semaforo} />
+                            <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                              <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                            </td>
+                            <td style={{ ...tdStyle, minWidth: 140 }}>
+                              <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                             </td>
                             <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <Badge color={SEMAFORO_BADGE[row.semaforo] ?? "gray"} variant="filled" size="md">
-                                {SEMAFORO_LABEL[row.semaforo] ?? row.semaforo}
+                              <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                                {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
                               </Badge>
                             </td>
                           </tr>
@@ -1107,7 +1475,7 @@ export default function PdiGraficas() {
                 </Stack>
                 <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                   <Text size="xs" c="dimmed" lh={1.5}>
-                    El <b>% de cumplimiento</b> se calcula como el avance alcanzado dividido entre la meta definida para el indicador.
+                    La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance del periodo {periodoActual}.
                   </Text>
                 </Box>
               </Paper>

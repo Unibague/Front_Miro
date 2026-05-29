@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActionIcon,
   Container,
   Grid,
   Text,
@@ -19,9 +20,10 @@ import {
   Tooltip,
 } from '@mantine/core';
 import axios from 'axios';
-import { IconBulb, IconClipboardCheck, IconCopy } from '@tabler/icons-react';
+import { IconArrowLeft, IconBulb, IconClipboardCheck, IconCopy } from '@tabler/icons-react';
 import { showNotification } from '@mantine/notifications';
 import { usePeriod } from '@/app/context/PeriodContext';
+import { useRouter } from 'next/navigation';
 
 interface Validator {
   _id: string;
@@ -38,6 +40,7 @@ interface Column {
 }
 
 const ValidationsPage = () => {
+  const router = useRouter();
   const [validators, setValidators] = useState<Validator[]>([]);
   const [selectedValidator, setSelectedValidator] = useState<Validator | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,30 +49,7 @@ const ValidationsPage = () => {
   const [columnsInfo, setColumnsInfo] = useState<{ name: string; isValidator: boolean }[]>([]);
   const [tableRows, setTableRows] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchValidators = async () => {
-      if (!selectedPeriodId) return;
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
-          params: { periodId: selectedPeriodId },
-        });
-        setValidators(response.data.validators);
-        if (response.data.validators.length > 0) {
-          handleSelectValidator(response.data.validators[0]._id);
-        } else {
-          setSelectedValidator(null);
-          setColumnsInfo([]);
-          setTableRows([]);
-        }
-      } catch (error) {
-        console.error("Error al obtener las validaciones:", error);
-      }
-    };
-
-    fetchValidators();
-  }, [selectedPeriodId]);
-
-  const handleSelectValidator = async (id: string) => {
+  const handleSelectValidator = useCallback(async (id: string) => {
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
@@ -101,7 +81,30 @@ const ValidationsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedPeriodId]);
+
+  useEffect(() => {
+    const fetchValidators = async () => {
+      if (!selectedPeriodId) return;
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/allValidators`, {
+          params: { periodId: selectedPeriodId },
+        });
+        setValidators(response.data.validators);
+        if (response.data.validators.length > 0) {
+          handleSelectValidator(response.data.validators[0]._id);
+        } else {
+          setSelectedValidator(null);
+          setColumnsInfo([]);
+          setTableRows([]);
+        }
+      } catch (error) {
+        console.error("Error al obtener las validaciones:", error);
+      }
+    };
+
+    fetchValidators();
+  }, [selectedPeriodId, handleSelectValidator]);
 
   const handleCellClick = (value: any) => {
     const valueStr = value?.toString() || '';
@@ -119,6 +122,11 @@ const ValidationsPage = () => {
 
   return (
     <Container size="xl">
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Grid>
         <Grid.Col span={{ base: 12, md: 3 }}>
           <Box>

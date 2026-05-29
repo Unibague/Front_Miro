@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { useRole } from "@/app/context/RoleContext";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import PdiGraficas from "../components/PdiGraficas";
@@ -57,6 +58,8 @@ function EstructuraCol({ label, total, icon }: { label: string; total: number; i
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { userRole } = useRole();
+  const isAdmin = userRole === "Administrador";
   const { config } = usePdiConfig();
 
   const [resumen, setResumen] = useState<DashboardResumen | null>(null);
@@ -93,7 +96,7 @@ export default function DashboardPage() {
           {/* Header */}
           <Group justify="space-between" mb="xl">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+              <ActionIcon variant="subtle" onClick={() => router.push(isAdmin ? "/pdi" : "/pdi/mis-indicadores")}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={42} radius="xl" color="violet" variant="light">

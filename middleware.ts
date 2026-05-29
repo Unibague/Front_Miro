@@ -31,6 +31,7 @@ export const config = {
     "/responsible/:path*",
     "/templates/:path*",
     "/templates-with-filters/:path*",
+    "/apoyos-plantillas/:path*",
     "/date-review/:path*",
     "/processes-MEN/:path*",
   ],

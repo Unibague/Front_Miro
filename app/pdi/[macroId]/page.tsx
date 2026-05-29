@@ -9,7 +9,7 @@ import {
   IconArrowLeft, IconTarget, IconBulb,
   IconEdit, IconTrash, IconPlus, IconChevronRight,
   IconChartBarPopular, IconFolderOpen,
-  IconCheck, IconAlertTriangle, IconX,
+  IconCheck, IconAlertTriangle, IconX, IconFlag,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -24,6 +24,26 @@ import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+
+interface CorteVigente {
+  _id: string;
+  nombre: string;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+}
+
+function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
+  return indicadores.flatMap((ind) =>
+    (ind.periodos ?? [])
+      .filter((p) => (p.estado_reporte ?? "") === "Enviado" || (p.estado_reporte ?? "") === "Aprobado")
+      .map((p) => ({
+        indicadorId: ind._id,
+        indicadorCodigo: ind.codigo,
+        corte: p.periodo,
+        tipo: (p.estado_reporte ?? "") === "Aprobado" ? "planeacion" : "lider",
+      }))
+  );
+}
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -52,7 +72,7 @@ function formatIndicadorTotalActual(ind: Indicador) {
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
-  verde: "Cumplimiento adecuado",
+  verde: "En cumplimiento",
   amarillo: "Requiere atención",
   rojo: "Crítico",
 };
@@ -127,12 +147,12 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       <Group justify="space-between" align="flex-start" mb="xs">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={() => router.push(`/pdi/indicadores/${ind._id}`)}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{ind.codigo}</Text>
+            <Text size="xxl" fw={900} c="dark">{ind.codigo}</Text>
             <Badge color={SEMAFORO_COLOR[ind.semaforo]} variant="light" size="sm" radius="xl">
               {SEMAFORO_LABEL[ind.semaforo]}
             </Badge>
           </Group>
-          <Text size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
+          <Text size="xl" fw={800} style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
         </div>
         <Group gap={4}>
           {admin && <>
@@ -227,14 +247,22 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const [indModal, setIndModal] = useState(false);
   const [selectedInd, setSelectedInd] = useState<Indicador | null>(null);
   const [indicadoresCount, setIndicadoresCount] = useState<number | null>(null);
+  const [indicadoresPrevio, setIndicadoresPrevio] = useState<Indicador[]>([]);
 
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
   useEffect(() => {
     axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accionInicial._id } })
-      .then(res => setIndicadoresCount(res.data.length))
+      .then(res => {
+        setIndicadoresCount(res.data.length);
+        setIndicadoresPrevio(res.data);
+      })
       .catch(() => {});
   }, [accionInicial._id]);
+
+  const pendientesBadges = getEvaluacionesPendientesAccion(
+    loaded ? indicadores : indicadoresPrevio
+  );
 
   const cargar = async () => {
     if (loaded) {
@@ -314,10 +342,28 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
         <div style={{ cursor: "pointer", flex: 1 }} onClick={toggleIndicadores}>
           <Group gap={8} mb={4} align="center" wrap="wrap">
-            <Text size="xl" fw={800} c="dimmed">{accion.codigo}</Text>
+            <Text size="xxl" fw={900} c="dark">{accion.codigo}</Text>
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
-          <Text size="md" lh={1.35}>{accion.nombre}</Text>
+          <Text size="xl" fw={700} lh={1.35}>{accion.nombre}</Text>
+          {pendientesBadges.length > 0 && (
+            <Group gap={4} mt={8} wrap="wrap">
+              {pendientesBadges.map((r) => (
+                <Badge
+                  key={`${r.indicadorId}-${r.corte}`}
+                  size="sm"
+                  color={r.tipo === "planeacion" ? "teal" : "yellow"}
+                  variant="filled"
+                  radius="xl"
+                  leftSection={<IconFlag size={10} />}
+                >
+                  {r.tipo === "planeacion"
+                    ? `Revisar Planeación · ${r.indicadorCodigo} · ${r.corte}`
+                    : `Pendiente líder · ${r.indicadorCodigo} · ${r.corte}`}
+                </Badge>
+              ))}
+            </Group>
+          )}
         </div>
 
         <Group gap={6}>
@@ -340,8 +386,8 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           { label: "Avance", value: `${avanceAccion}%` },
           { label: "Peso", value: `${Number(accion.peso).toFixed(2)}%` },
           { label: "Indicadores", value: loaded ? indicadores.length : (indicadoresCount ?? "—") },
-          { label: "Presupuesto", value: Number(accion.presupuesto) > 0 ? formatCOP(Number(accion.presupuesto)) : "Pendiente" },
-          { label: "Ejecutado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
+          { label: "Presupuesto", value: formatCOP(Number(accion.presupuesto)) },
+          { label: "Causado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "10px 6px" }}>
             <Text fw={800} size="lg" lh={1}>{item.value}</Text>
@@ -380,7 +426,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                         <Text size="xs" fw={700} c="blue">{formatCOP(asignado)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Ejecutado</Text>
+                        <Text size="xs" c="dimmed" lh={1}>Causado</Text>
                         <Text size="xs" fw={700} c="teal">{formatCOP(ejecutado)}</Text>
                       </div>
                     </Group>
@@ -639,8 +685,8 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           { label: "Avance", value: `${avanceProyecto}%` },
           { label: "Peso", value: `${Number(proyecto.peso).toFixed(2)}%` },
           { label: "Acciones", value: loaded ? acciones.length : (accionesCount ?? "—") },
-          { label: "Presupuesto", value: presupuestoProyecto > 0 ? formatCOP(presupuestoProyecto) : "Pendiente" },
-          { label: "Ejecutado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
+          { label: "Presupuesto", value: formatCOP(presupuestoProyecto) },
+          { label: "Causado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "rgba(255,255,255,0.82)", border: "1px solid rgba(124,58,237,0.08)", borderRadius: 16, padding: "12px 8px" }}>
             <Text fw={800} size="1.1rem" lh={1}>{item.value}</Text>
@@ -848,7 +894,7 @@ export default function MacroproyectoDetallePage() {
                       <Text size="sm" c="dimmed">
                         Presupuesto: <b>{formatCOP(presupuestoMacro)}</b>
                         {presupuestoEjecutadoMacro > 0 && (
-                          <> · Ejecutado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
+                          <> · Causado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
                         )}
                       </Text>
                     )}

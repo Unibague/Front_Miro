@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
-  FileButton, Group, Loader, Paper, Progress, Select, Stack,
+  FileButton, Group, Loader, MultiSelect, Paper, Progress, Select, Stack,
   Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -26,10 +26,14 @@ interface CorteVigente { _id: string; nombre: string; }
 interface CampoFormulario {
   _id: string;
   etiqueta: string;
-  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "checkbox";
+  tipo: "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
   descripcion?: string;
   requerido?: boolean;
+  min_caracteres?: number | null;
   max_caracteres?: number | null;
+  justificacion_descripcion?: string;
+  justificacion_min_caracteres?: number | null;
+  justificacion_max_caracteres?: number | null;
   opciones?: string[];
   condicional_valor?: "supero_meta" | "no_supero_meta" | null;
 }
@@ -68,11 +72,24 @@ interface RespuestaFormulario {
   documento_filename?: string;
   documento_url?: string;
   documento_mimetype?: string;
+  documento_size?: number;
+  documentos?: DocumentoEvidencia[];
   estado_aval?: "Pendiente" | "Aprobado" | "Rechazado" | null;
   lider_email_aval?: string;
   aval_por?: string;
   aval_comentario?: string;
+  aval_razones?: string[];
+  aval_otro_cual?: string;
   aval_fecha?: string | null;
+}
+
+interface DocumentoEvidencia {
+  _id?: string;
+  nombre_original?: string;
+  filename?: string;
+  url?: string;
+  mimetype?: string;
+  size?: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,7 +99,6 @@ const SEMAFORO_COLORS: Record<string, string> = {
 };
 
 function esPeriodoEditable(periodo: string, cortes: CorteVigente[]) {
-  if (!cortes.length) return true;
   return cortes.some(c => c.nombre === periodo);
 }
 
@@ -101,6 +117,72 @@ function formatFechaCorta(fecha?: string | null) {
   const date = new Date(fecha);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("es-CO");
+}
+
+const MAX_DOC_SIZE = 10 * 1024 * 1024;
+const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png"];
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/x-pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "image/jpeg",
+  "image/png",
+]);
+const EVIDENCE_ACCEPT =
+  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png";
+const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls) e imagenes (.jpg, .jpeg, .png)";
+const SELECT_VALUE_SEPARATOR = " | ";
+const EVIDENCE_HELP_TEXT =
+  "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";
+const EVIDENCE_HELP_TEXT_2 =
+  "La evidencia cargada debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o información que no guarde relación directa con el resultado reportado.";
+
+function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvidencia[] {
+  if (!resp) return [];
+  if (Array.isArray(resp.documentos) && resp.documentos.length > 0) return resp.documentos;
+  if (resp.documento_url || resp.documento_nombre_original || resp.documento_filename) {
+    return [{
+      _id: "legacy",
+      nombre_original: resp.documento_nombre_original,
+      filename: resp.documento_filename,
+      url: resp.documento_url,
+      mimetype: resp.documento_mimetype,
+      size: resp.documento_size,
+    }];
+  }
+  return [];
+}
+
+function formatFileSize(size?: number) {
+  if (!size || size <= 0) return "";
+  return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(size / 1024)} KB`;
+}
+
+function isAllowedEvidenceFile(file: File) {
+  const fileName = file.name.toLowerCase();
+  return ALLOWED_EVIDENCE_MIME_TYPES.has(file.type) ||
+    ALLOWED_EVIDENCE_EXTENSIONS.some(ext => fileName.endsWith(ext));
+}
+
+function splitSavedValueAndJustification(value: string) {
+  const [answer, ...justificationParts] = value.split(/\nJustificaci[oó]n:\s*/);
+  return {
+    answer: answer.trim(),
+    justification: justificationParts.join("\nJustificación: ").trim(),
+  };
+}
+
+function splitSelectValues(value: string) {
+  const { answer } = splitSavedValueAndJustification(value);
+  return answer
+    .split(SELECT_VALUE_SEPARATOR)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function formatSelectValues(values: string[]) {
+  return values.map(item => item.trim()).filter(Boolean).join(SELECT_VALUE_SEPARATOR);
 }
 
 // ── Página ───────────────────────────────────────────────────────────────────
@@ -130,36 +212,60 @@ export default function SubirEvidenciasPage() {
   const [respuestas, setRespuestas] = useState<Record<string, RespuestaFormulario | null>>({});
   const [textos, setTextos] = useState<Record<string, string>>({});
   const [otrosTextos, setOtrosTextos] = useState<Record<string, string>>({});
+  const [justificaciones, setJustificaciones] = useState<Record<string, string>>({});
   const [loadingForms, setLoadingForms] = useState(true);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadingDocumento, setUploadingDocumento] = useState<Record<string, boolean>>({});
+  const [razonesRechazoLabels, setRazonesRechazoLabels] = useState<Record<string, string>>({});
 
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
-  const corteActivo = cortesVigentes[0]?.nombre ?? "";
+
+  // Busca el corte vigente que coincide con un período real del indicador.
+  // Si no hay coincidencia, el indicador no debe quedar abierto para reportar.
+  const corteQueCoincide = indicador
+    ? (cortesVigentes.find(c =>
+        (indicador.periodos ?? []).some((p: Periodo) => p.periodo === c.nombre)
+      )?.nombre ?? "")
+    : "";
+  const corteActivo = corteQueCoincide;
 
   // ── Superó meta del corte activo (para lógica condicional de campos) ──────
   const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
-  const superoMeta = avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
-    ? avanceCorteNum >= metaCorteNum
-    : null;
+  const estadoCumplimientoMeta =
+    avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
+      ? avanceCorteNum > metaCorteNum
+        ? "supero"
+        : avanceCorteNum < metaCorteNum
+          ? "no_supero"
+          : "cumplio"
+      : null;
 
   const shouldShowCampo = (campo: CampoFormulario): boolean => {
     if (!campo.condicional_valor) return true;
-    if (superoMeta === null) return true;
-    if (campo.condicional_valor === "supero_meta") return superoMeta === true;
-    if (campo.condicional_valor === "no_supero_meta") return superoMeta === false;
+    if (estadoCumplimientoMeta === null) return true;
+    if (estadoCumplimientoMeta === "cumplio") return false;
+    if (campo.condicional_valor === "supero_meta") return estadoCumplimientoMeta === "supero";
+    if (campo.condicional_valor === "no_supero_meta") return estadoCumplimientoMeta === "no_supero";
     return true;
   };
 
   const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
   const setOtroTexto = (formId: string, campoId: string, val: string) =>
     setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+
+  const getJustificacion = (formId: string, campoId: string) => justificaciones[`${formId}-${campoId}`] ?? "";
+  const setJustificacion = (formId: string, campoId: string, val: string) =>
+    setJustificaciones(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const formatRazonRechazo = (razon: string, otroCual?: string) => {
+    const label = razonesRechazoLabels[razon] ?? razon;
+    return label === "Otro" && otroCual ? `Otro: ${otroCual}` : label;
+  };
 
   // ── Calcular si ya está todo enviado ──────────────────────────────────────
   const todosEnviados =
@@ -196,6 +302,21 @@ export default function SubirEvidenciasPage() {
   }, [indicadorId]);
 
   useEffect(() => {
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then((r) => {
+        const labels: Record<string, string> = { Otro: "Otro" };
+        (r.data as { _id?: string; texto?: string }[]).forEach((razon) => {
+          const texto = String(razon.texto ?? "").trim();
+          if (!texto) return;
+          if (razon._id) labels[razon._id] = texto;
+          labels[texto] = texto;
+        });
+        setRazonesRechazoLabels(labels);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!indicadorId || !email) return;
     axios.get(PDI_ROUTES.formularioLiderEmailIndicador(), { params: { indicador_id: indicadorId } })
       .then((r) => {
@@ -223,13 +344,37 @@ export default function SubirEvidenciasPage() {
   const getTexto = (formId: string, campoId: string) => textos[`${formId}-${campoId}`] ?? "";
   const setTexto = (formId: string, campoId: string, val: string) =>
     setTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
+  const getSelectValues = (formId: string, campoId: string) => splitSelectValues(getTexto(formId, campoId));
+  const setSelectValues = (formId: string, campoId: string, values: string[]) =>
+    setTexto(formId, campoId, formatSelectValues(values));
   const getRespuestaCampo = (formId: string, campoId: string): RespuestaCampo | undefined =>
     respuestas[formId]?.respuestas.find(r => r.campo_id === campoId);
-  const formTieneDocumento = (formId: string) => Boolean(respuestas[formId]?.documento_url);
+  const formTieneDocumento = (formId: string) => getDocumentosEvidencia(respuestas[formId]).length > 0;
+  const getMaxCaracteres = (campo: CampoFormulario) => campo.max_caracteres ?? null;
   const campoEstaCompleto = (formId: string, campo: CampoFormulario) => {
-    if (!campo.requerido) return true;
     if (!shouldShowCampo(campo)) return true;
-    if (["texto_largo", "texto_corto", "select", "select_con_otro", "checkbox"].includes(campo.tipo)) {
+    if (campo.tipo === "texto_largo" || campo.tipo === "texto_corto") {
+      const texto = getTexto(formId, campo._id).trim();
+      const maxChars = getMaxCaracteres(campo);
+      if (campo.requerido && !texto) return false;
+      return !texto || !maxChars || texto.length <= maxChars;
+    }
+    if (!campo.requerido) return true;
+    if (campo.tipo === "select") {
+      return Boolean(getTexto(formId, campo._id).trim());
+    }
+    if (campo.tipo === "select_con_otro") {
+      const val = getTexto(formId, campo._id).trim();
+      return Boolean(val) && (val !== "Otro" || Boolean(getOtroTexto(formId, campo._id).trim()));
+    }
+    if (campo.tipo === "select_multiple") {
+      return getSelectValues(formId, campo._id).length > 0;
+    }
+    if (campo.tipo === "select_multiple_con_otro") {
+      const values = getSelectValues(formId, campo._id);
+      return values.length > 0 && (!values.includes("Otro") || Boolean(getOtroTexto(formId, campo._id).trim()));
+    }
+    if (campo.tipo === "checkbox") {
       return Boolean(getTexto(formId, campo._id).trim());
     }
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
@@ -248,6 +393,7 @@ export default function SubirEvidenciasPage() {
     if (!indicadorId || !email || !corteActivo || formsToLoad.length === 0) return;
     const respMap: Record<string, RespuestaFormulario | null> = {};
     const textMap: Record<string, string> = {};
+    const justMap: Record<string, string> = {};
 
     await Promise.all(formsToLoad.map(async (f) => {
       try {
@@ -259,15 +405,26 @@ export default function SubirEvidenciasPage() {
         if (resp) {
           const otroMap: Record<string, string> = {};
           resp.respuestas.forEach((r) => {
+            const key = `${f._id}-${r.campo_id}`;
+            const { answer, justification } = splitSavedValueAndJustification(r.valor_texto ?? "");
+            if (justification) justMap[key] = justification;
             if (["texto_largo", "texto_corto", "select", "checkbox"].includes(r.tipo)) {
-              textMap[`${f._id}-${r.campo_id}`] = r.valor_texto ?? "";
-            } else if (r.tipo === "select_con_otro" && r.valor_texto) {
-              if (r.valor_texto.startsWith("Otro: ")) {
-                textMap[`${f._id}-${r.campo_id}`] = "Otro";
-                otroMap[`${f._id}-${r.campo_id}`] = r.valor_texto.slice(6);
+              textMap[key] = answer;
+            } else if (r.tipo === "select_con_otro" && answer) {
+              if (answer.startsWith("Otro: ")) {
+                textMap[key] = "Otro";
+                otroMap[key] = answer.slice(6);
               } else {
-                textMap[`${f._id}-${r.campo_id}`] = r.valor_texto;
+                textMap[key] = answer;
               }
+            } else if (r.tipo === "select_multiple" && answer) {
+              textMap[key] = answer;
+            } else if (r.tipo === "select_multiple_con_otro" && answer) {
+              const rawValues = splitSelectValues(answer);
+              const selectedValues = rawValues.map(value => value.startsWith("Otro: ") ? "Otro" : value);
+              const otroValue = rawValues.find(value => value.startsWith("Otro: "));
+              textMap[key] = formatSelectValues(selectedValues);
+              if (otroValue) otroMap[key] = otroValue.slice(6);
             }
           });
           setOtrosTextos(prev => ({ ...prev, ...otroMap }));
@@ -279,6 +436,7 @@ export default function SubirEvidenciasPage() {
 
     setRespuestas(respMap);
     setTextos(textMap);
+    setJustificaciones(justMap);
   };
 
   // ── Guardar avances ───────────────────────────────────────────────────────
@@ -315,23 +473,44 @@ export default function SubirEvidenciasPage() {
   // ── Guardar respuesta formulario ──────────────────────────────────────────
   const buildValorTexto = (form: FormularioPDI, c: CampoFormulario): string => {
     if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
-    if (c.tipo === "select") return getTexto(form._id, c._id);
+    if (c.tipo === "select") {
+      const sel = getTexto(form._id, c._id).trim();
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${sel}\nJustificación: ${just}` : sel;
+    }
     if (c.tipo === "select_con_otro") {
-      const sel = getTexto(form._id, c._id);
-      return sel === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id)}` : sel;
+      const val = getTexto(form._id, c._id).trim();
+      const base = val === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : val;
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${base}\nJustificación: ${just}` : base;
+    }
+    if (c.tipo === "select_multiple") {
+      const sel = formatSelectValues(getSelectValues(form._id, c._id));
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${sel}\nJustificación: ${just}` : sel;
+    }
+    if (c.tipo === "select_multiple_con_otro") {
+      const values = getSelectValues(form._id, c._id).map(value =>
+        value === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : value
+      );
+      const base = formatSelectValues(values);
+      const just = getJustificacion(form._id, c._id);
+      return just ? `${base}\nJustificación: ${just}` : base;
     }
     if (c.tipo === "checkbox") return getTexto(form._id, c._id) || "false";
     return "";
   };
 
   const guardarFormulario = async (form: FormularioPDI, enviar: boolean) => {
-    const respuestasPayload = form.campos.map(c => ({
-      campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
-      valor_texto: buildValorTexto(form, c),
-      nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
-      filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
-      url: getRespuestaCampo(form._id, c._id)?.url ?? "",
-    }));
+    const respuestasPayload = form.campos
+      .filter(shouldShowCampo)
+      .map(c => ({
+        campo_id: c._id, etiqueta: c.etiqueta, tipo: c.tipo,
+        valor_texto: buildValorTexto(form, c),
+        nombre_original: getRespuestaCampo(form._id, c._id)?.nombre_original ?? "",
+        filename: getRespuestaCampo(form._id, c._id)?.filename ?? "",
+        url: getRespuestaCampo(form._id, c._id)?.url ?? "",
+      }));
     const res = await axios.post(PDI_ROUTES.formularioRespuestas(form._id), {
       respondido_por: email, corte: corteActivo,
       indicador_id: indicadorId,
@@ -342,9 +521,25 @@ export default function SubirEvidenciasPage() {
     return res.data;
   };
 
-  // ── Subir PDF ─────────────────────────────────────────────────────────────
+  // ── Subir archivo ─────────────────────────────────────────────────────────
   const handleUploadPDF = async (form: FormularioPDI, campo: CampoFormulario, file: File | null) => {
     if (!file) return;
+    if (!isAllowedEvidenceFile(file)) {
+      showNotification({
+        title: "Formato inválido",
+        message: `El archivo "${file.name}" no tiene un formato permitido. Solo se permiten ${EVIDENCE_FORMATS_TEXT}.`,
+        color: "red",
+      });
+      return;
+    }
+    if (file.size > MAX_DOC_SIZE) {
+      showNotification({
+        title: "Archivo demasiado grande",
+        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
+        color: "red",
+      });
+      return;
+    }
     let respActual = respuestas[form._id];
     if (!respActual) {
       try {
@@ -377,7 +572,7 @@ export default function SubirEvidenciasPage() {
         else updated.push({ campo_id: campo._id, etiqueta: campo.etiqueta, tipo: campo.tipo, valor_texto: "", ...res.data });
         return { ...prev, [form._id]: { ...r, respuestas: updated } };
       });
-      showNotification({ title: "Subido", message: "PDF subido correctamente", color: "teal" });
+      showNotification({ title: "Subido", message: "Archivo subido correctamente", color: "teal" });
     } catch {
       showNotification({ title: "Error", message: "No se pudo subir el archivo", color: "red" });
     } finally {
@@ -412,8 +607,27 @@ export default function SubirEvidenciasPage() {
   };
 
   // ── Acción: guardar borrador (solo avances) ───────────────────────────────
-  const handleUploadDocumento = async (form: FormularioPDI, file: File | null) => {
-    if (!file) return;
+  const handleUploadDocumento = async (form: FormularioPDI, selectedFiles: File[] | File | null) => {
+    const files = Array.isArray(selectedFiles) ? selectedFiles : selectedFiles ? [selectedFiles] : [];
+    if (files.length === 0) return;
+    const invalidFile = files.find(file => !isAllowedEvidenceFile(file));
+    if (invalidFile) {
+      showNotification({
+        title: "Formato inválido",
+        message: `El archivo "${invalidFile.name}" no tiene un formato permitido. Solo se permiten ${EVIDENCE_FORMATS_TEXT}.`,
+        color: "red",
+      });
+      return;
+    }
+    const oversizedFile = files.find(file => file.size > MAX_DOC_SIZE);
+    if (oversizedFile) {
+      showNotification({
+        title: "Archivo demasiado grande",
+        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El máximo permitido es 10 MB por archivo.`,
+        color: "red",
+      });
+      return;
+    }
     let respActual = respuestas[form._id];
     if (!respActual) {
       try {
@@ -443,7 +657,7 @@ export default function SubirEvidenciasPage() {
     setUploadingDocumento(prev => ({ ...prev, [form._id]: true }));
     try {
       const fd = new FormData();
-      fd.append("archivo", file);
+      files.forEach(f => fd.append("archivo", f));
       const res = await axios.post(
         PDI_ROUTES.formularioDocumentoFinal(form._id, respActual!._id),
         fd,
@@ -454,19 +668,25 @@ export default function SubirEvidenciasPage() {
         if (!actual) return prev;
         return { ...prev, [form._id]: { ...actual, ...res.data } };
       });
-      showNotification({ title: "Subido", message: "Evidencia adjuntada correctamente", color: "teal" });
-    } catch {
-      showNotification({ title: "Error", message: "Solo se permiten archivos Word o PDF", color: "red" });
+      showNotification({
+        title: "Subido",
+        message: files.length === 1 ? "Evidencia adjuntada correctamente" : `${files.length} evidencias adjuntadas correctamente`,
+        color: "teal",
+      });
+    } catch (e: any) {
+      showNotification({ title: "Error", message: e.response?.data?.error ?? `Solo se permiten ${EVIDENCE_FORMATS_TEXT}`, color: "red" });
     } finally {
       setUploadingDocumento(prev => ({ ...prev, [form._id]: false }));
     }
   };
 
-  const handleDeleteDocumento = async (form: FormularioPDI) => {
+  const handleDeleteDocumento = async (form: FormularioPDI, documento?: DocumentoEvidencia) => {
     const resp = respuestas[form._id];
     if (!resp) return;
     try {
-      await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id));
+      const res = await axios.delete(PDI_ROUTES.formularioDocumentoFinal(form._id, resp._id), {
+        params: documento?._id ? { documentoId: documento._id } : undefined,
+      });
       setRespuestas(prev => {
         const actual = prev[form._id];
         if (!actual) return prev;
@@ -474,10 +694,7 @@ export default function SubirEvidenciasPage() {
           ...prev,
           [form._id]: {
             ...actual,
-            documento_filename: "",
-            documento_url: "",
-            documento_nombre_original: "",
-            documento_mimetype: "",
+            ...res.data,
           },
         };
       });
@@ -512,7 +729,7 @@ export default function SubirEvidenciasPage() {
         errores.push(`Debes completar el formulario ${formulariosIncompletos.map((form) => `"${form.nombre}"`).join(", ")} antes de enviar.`);
       }
       if (formulariosSinDocumento.length > 0) {
-        errores.push(`Debes adjuntar la evidencia Word o PDF del formulario ${formulariosSinDocumento.map((form) => `"${form.nombre}"`).join(", ")}.`);
+        errores.push(`Debes adjuntar al menos una evidencia del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -525,8 +742,10 @@ export default function SubirEvidenciasPage() {
     setSending(true);
     try {
       const autoAprobado = esLiderDelIndicador || esLiderDesdeListado;
-      await guardarAvances("enviar");
+      // Primero el formulario (genera Word y sube a Drive); si falla, el avance NO se marca como Enviado
       await Promise.all(formularios.map(f => guardarFormulario(f, true)));
+      // Solo si el formulario se envió correctamente, marcar el avance como Enviado
+      await guardarAvances("enviar");
       await recargarRespuestas();
       showNotification({
         title: autoAprobado ? "Aprobado" : "Enviado",
@@ -535,8 +754,16 @@ export default function SubirEvidenciasPage() {
           : "Avances y formulario enviados correctamente. El reporte quedó en revisión del líder.",
         color: "teal",
       });
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo enviar", color: "red" });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || "No se pudo enviar";
+      showNotification({
+        title: "Error al enviar",
+        message: msg.includes("Drive")
+          ? msg
+          : "No se pudo completar el envío. Verifica la configuración de Google Drive e intenta de nuevo.",
+        color: "red",
+        autoClose: 8000,
+      });
     } finally {
       setSending(false);
     }
@@ -737,7 +964,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {(corteActivo && periodoActivo) && (<>
+            {corteActivo && (<>
             <Divider />
 
             {/* Formulario de evidencias */}
@@ -779,14 +1006,7 @@ export default function SubirEvidenciasPage() {
                     const estadoAval = resp?.estado_aval ?? (autoAprobadoFormulario ? "Aprobado" : enviado ? "Pendiente" : null);
                     const fechaAval = formatFechaCorta(resp?.aval_fecha);
                     const fechaEnvio = formatFechaCorta(resp?.fecha_envio);
-                    const avalLabel =
-                      estadoAval === "Aprobado"
-                        ? "Aprobado"
-                        : estadoAval === "Rechazado"
-                          ? "Rechazado"
-                          : estadoAval === "Pendiente"
-                            ? "En revisión"
-                            : null;
+                    const documentosAdjuntos = getDocumentosEvidencia(resp);
                     return (
                       <Stack key={form._id} gap="sm">
                         <Paper withBorder radius="xl" p="lg"
@@ -804,26 +1024,25 @@ export default function SubirEvidenciasPage() {
                         <Group justify="space-between" mb="md">
                           <Text fw={700} size="md">{form.nombre}</Text>
                           <Group gap={8}>
-                            <Badge color={autoAprobadoFormulario ? "teal" : enviado ? "teal" : resp ? "yellow" : "gray"} variant="light">
-                              {autoAprobadoFormulario ? "Aprobado" : enviado ? "Enviado" : resp ? "Guardado" : "Sin responder"}
+                            <Badge
+                              color={
+                                autoAprobadoFormulario ? "teal"
+                                : estadoAval === "Rechazado" ? "red"
+                                : enviado ? "teal"
+                                : resp ? "yellow"
+                                : "gray"
+                              }
+                              variant="light"
+                            >
+                              {autoAprobadoFormulario ? "Aprobado"
+                                : estadoAval === "Rechazado" ? "Rechazado — corrige y reenvía"
+                                : enviado ? "Enviado"
+                                : resp ? "Borrador"
+                                : "Sin responder"}
                             </Badge>
-                            {avalLabel && (
-                              <Badge
-                                color={
-                                  estadoAval === "Aprobado"
-                                    ? "green"
-                                    : estadoAval === "Rechazado"
-                                      ? "red"
-                                      : "yellow"
-                                }
-                                variant="light"
-                              >
-                                {avalLabel}
-                              </Badge>
-                            )}
                           </Group>
                         </Group>
-                        {resp?.estado === "Enviado" && (
+                        {(resp?.estado === "Enviado" || resp?.estado_aval === "Rechazado") && (
                           <Paper
                             withBorder
                             radius="md"
@@ -845,53 +1064,53 @@ export default function SubirEvidenciasPage() {
                             }}
                           >
                             <Stack gap={6}>
-                              <Text size="sm" fw={700}>
-                                {estadoAval === "Aprobado"
-                                  ? "Evaluación del líder: Aprobado"
-                                  : estadoAval === "Rechazado"
-                                    ? "Evaluación del líder: Rechazado"
-                                    : "Evaluación del líder: En revisión"}
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                {fechaEnvio ? `Enviado el ${fechaEnvio}. ` : ""}
-                                {resp?.aval_por ? `Evaluado por ${resp.aval_por}` : resp?.lider_email_aval ? `Líder asignado: ${resp.lider_email_aval}` : ""}
-                                {fechaAval ? ` · ${fechaAval}` : ""}
-                              </Text>
+                              <Group justify="space-between" align="flex-start" gap="md" wrap="wrap">
+                                <Stack gap={6} style={{ flex: 1, minWidth: 220 }}>
+                                  <Text size="sm" fw={700}>
+                                    {estadoAval === "Aprobado"
+                                      ? "Evaluación del líder: Aprobado"
+                                      : estadoAval === "Rechazado"
+                                        ? "Evaluación del líder: Rechazado"
+                                        : "Evaluación del líder: En revisión"}
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {fechaEnvio ? `Enviado el ${fechaEnvio}. ` : ""}
+                                    {resp?.aval_por ? `Evaluado por ${resp.aval_por}` : resp?.lider_email_aval ? `Líder asignado: ${resp.lider_email_aval}` : ""}
+                                    {fechaAval ? ` · ${fechaAval}` : ""}
+                                  </Text>
+                                </Stack>
+                                {estadoAval === "Aprobado" && resp.word_url && (
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="blue"
+                                    component="a"
+                                    href={resp.word_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ flexShrink: 0 }}
+                                  >
+                                    Descargar Word aprobado
+                                  </Button>
+                                )}
+                              </Group>
+                              {estadoAval === "Rechazado" && resp?.aval_razones && resp.aval_razones.length > 0 && (
+                                <Stack gap={4}>
+                                  <Text size="xs" fw={700} c="red">Razones de rechazo:</Text>
+                                  {resp.aval_razones.map((razon, i) => (
+                                    <Text key={i} size="sm" c="red">
+                                      • {formatRazonRechazo(razon, resp.aval_otro_cual)}
+                                    </Text>
+                                  ))}
+                                </Stack>
+                              )}
                               {resp?.aval_comentario && (
                                 <Text size="sm">{resp.aval_comentario}</Text>
                               )}
                               {estadoAval === "Rechazado" && (
                                 <Text size="sm" c="red" fw={600}>
-                                  El líder rechazó este envío. Puedes corregir el formulario y volver a reportar.
+                                  El líder rechazó este envío. Corrige el formulario y sube nuevas evidencias — los archivos anteriores serán reemplazados automáticamente al subir nuevos.
                                 </Text>
-                              )}
-                              {estadoAval === "Aprobado" && resp.word_url && (
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="blue"
-                                  component="a"
-                                  href={resp.word_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ alignSelf: "flex-start" }}
-                                >
-                                  Descargar Word aprobado
-                                </Button>
-                              )}
-                              {estadoAval === "Aprobado" && resp.documento_url && (
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="violet"
-                                  component="a"
-                                  href={resp.documento_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ alignSelf: "flex-start" }}
-                                >
-                                  Ver evidencia aprobada
-                                </Button>
                               )}
                             </Stack>
                           </Paper>
@@ -900,8 +1119,9 @@ export default function SubirEvidenciasPage() {
                           {form.campos.map(campo => {
                             if (!shouldShowCampo(campo)) return null;
                             const archivoCampo = getRespuestaCampo(form._id, campo._id);
-                            const maxChars = campo.max_caracteres ?? null;
+                            const maxChars = getMaxCaracteres(campo);
                             const currentLen = getTexto(form._id, campo._id).length;
+                            const selectedValues = getSelectValues(form._id, campo._id);
                             return (
                               <Paper key={campo._id} withBorder radius="md" p="md"
                                 style={{ background: bloqueado ? "rgba(248,250,252,0.8)" : "#fff" }}>
@@ -917,42 +1137,115 @@ export default function SubirEvidenciasPage() {
                                   </>
                                 )}
 
-                                {campo.tipo === "texto_largo" && (
-                                  <Stack gap={4}>
-                                    <Textarea
-                                      placeholder={bloqueado ? "" : "Escribe aquí..."}
-                                      value={getTexto(form._id, campo._id)}
-                                      onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                      rows={4} disabled={bloqueado} autosize minRows={3}
-                                      maxLength={maxChars ?? undefined}
-                                    />
-                                    {maxChars && (
-                                      <Text size="xs" ta="right"
-                                        c={currentLen >= maxChars ? "red" : currentLen > maxChars * 0.9 ? "orange" : "dimmed"}>
-                                        {currentLen} / {maxChars}
-                                      </Text>
-                                    )}
-                                  </Stack>
-                                )}
+                                {campo.tipo === "texto_largo" && (() => {
+                                  const minChars = campo.min_caracteres ?? null;
+                                  return (
+                                    <Stack gap={4}>
+                                      <Textarea
+                                        placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                        value={getTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                        rows={4} disabled={bloqueado} autosize minRows={3}
+                                        maxLength={maxChars ?? undefined}
+                                        error={
+                                          !bloqueado && campo.requerido && currentLen === 0
+                                            ? "Este campo es obligatorio"
+                                            : !bloqueado && maxChars && currentLen > maxChars
+                                            ? `Has superado el máximo de ${maxChars} caracteres`
+                                            : undefined
+                                        }
+                                      />
+                                      {(minChars || maxChars) && (
+                                        <Text size="xs" ta="right"
+                                          c={
+                                            (maxChars && currentLen > maxChars) ? "red" :
+                                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" : "dimmed"
+                                          }>
+                                          {minChars && currentLen < minChars
+                                            ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                                            : minChars && maxChars
+                                            ? `${currentLen} / ${maxChars} (mín: ${minChars})`
+                                            : maxChars
+                                            ? `${currentLen} / ${maxChars}`
+                                            : `${currentLen} caracteres`}
+                                        </Text>
+                                      )}
+                                    </Stack>
+                                  );
+                                })()}
 
-                                {campo.tipo === "texto_corto" && (
-                                  <TextInput
-                                    placeholder={bloqueado ? "" : "Escribe aquí..."}
-                                    value={getTexto(form._id, campo._id)}
-                                    onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
-                                    disabled={bloqueado}
-                                    maxLength={maxChars ?? undefined}
-                                  />
-                                )}
+                                {campo.tipo === "texto_corto" && (() => {
+                                  const minChars = campo.min_caracteres ?? null;
+                                  return (
+                                    <Stack gap={4}>
+                                      <TextInput
+                                        placeholder={bloqueado ? "" : "Escribe aquí..."}
+                                        value={getTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                        maxLength={maxChars ?? undefined}
+                                      />
+                                      {(minChars || maxChars) && (
+                                        <Text size="xs" ta="right"
+                                          c={
+                                            (maxChars && currentLen > maxChars) ? "red" :
+                                            (minChars && currentLen > 0 && currentLen < minChars) ? "orange" : "dimmed"
+                                          }>
+                                          {minChars && currentLen < minChars
+                                            ? `Mínimo ${minChars} caracteres · ${currentLen} escritos`
+                                            : minChars && maxChars
+                                            ? `${currentLen} / ${maxChars} (mín: ${minChars})`
+                                            : maxChars
+                                            ? `${currentLen} / ${maxChars}`
+                                            : `${currentLen} caracteres`}
+                                        </Text>
+                                      )}
+                                    </Stack>
+                                  );
+                                })()}
 
                                 {campo.tipo === "select" && (
-                                  <Select
-                                    placeholder="Selecciona una opción..."
-                                    value={getTexto(form._id, campo._id) || null}
-                                    onChange={v => !bloqueado && setTexto(form._id, campo._id, v ?? "")}
-                                    data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
-                                    disabled={bloqueado} clearable
-                                  />
+                                  <Stack gap={6}>
+                                    <Select
+                                      placeholder="Selecciona una opción..."
+                                      value={getTexto(form._id, campo._id) || null}
+                                      onChange={val => !bloqueado && setTexto(form._id, campo._id, val ?? "")}
+                                      data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {getTexto(form._id, campo._id) && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
+                                  </Stack>
                                 )}
 
                                 {campo.tipo === "select_con_otro" && (
@@ -960,10 +1253,10 @@ export default function SubirEvidenciasPage() {
                                     <Select
                                       placeholder="Selecciona una opción..."
                                       value={getTexto(form._id, campo._id) || null}
-                                      onChange={v => {
+                                      onChange={val => {
                                         if (!bloqueado) {
-                                          setTexto(form._id, campo._id, v ?? "");
-                                          if (v !== "Otro") setOtroTexto(form._id, campo._id, "");
+                                          setTexto(form._id, campo._id, val ?? "");
+                                          if (val !== "Otro") setOtroTexto(form._id, campo._id, "");
                                         }
                                       }}
                                       data={[
@@ -974,12 +1267,150 @@ export default function SubirEvidenciasPage() {
                                     />
                                     {getTexto(form._id, campo._id) === "Otro" && (
                                       <TextInput
-                                        placeholder="Especifica..."
+                                        label='Especifica "Otro ¿Cuál?"'
+                                        placeholder="Escribe aquí..."
                                         value={getOtroTexto(form._id, campo._id)}
                                         onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
                                         disabled={bloqueado}
                                       />
                                     )}
+                                    {getTexto(form._id, campo._id) && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "select_multiple" && (
+                                  <Stack gap={6}>
+                                    <MultiSelect
+                                      placeholder="Selecciona una o varias opciones..."
+                                      value={selectedValues}
+                                      onChange={values => !bloqueado && setSelectValues(form._id, campo._id, values)}
+                                      data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {selectedValues.length > 0 && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
+                                  </Stack>
+                                )}
+
+                                {campo.tipo === "select_multiple_con_otro" && (
+                                  <Stack gap={6}>
+                                    <MultiSelect
+                                      placeholder="Selecciona una o varias opciones..."
+                                      value={selectedValues}
+                                      onChange={values => {
+                                        if (!bloqueado) {
+                                          setSelectValues(form._id, campo._id, values);
+                                          if (!values.includes("Otro")) setOtroTexto(form._id, campo._id, "");
+                                        }
+                                      }}
+                                      data={[
+                                        ...(campo.opciones ?? []).map(op => ({ value: op, label: op })),
+                                        { value: "Otro", label: "Otro ¿Cuál?" },
+                                      ]}
+                                      disabled={bloqueado} clearable
+                                    />
+                                    {selectedValues.includes("Otro") && (
+                                      <TextInput
+                                        label='Especifica "Otro ¿Cuál?"'
+                                        placeholder="Escribe aquí..."
+                                        value={getOtroTexto(form._id, campo._id)}
+                                        onChange={e => !bloqueado && setOtroTexto(form._id, campo._id, e.currentTarget.value)}
+                                        disabled={bloqueado}
+                                      />
+                                    )}
+                                    {selectedValues.length > 0 && (() => {
+                                      const jMin = campo.justificacion_min_caracteres ?? null;
+                                      const jMax = campo.justificacion_max_caracteres ?? null;
+                                      const jLen = getJustificacion(form._id, campo._id).length;
+                                      return (
+                                        <Stack gap={2}>
+                                          <Textarea
+                                            placeholder="Justifica tu respuesta..."
+                                            label="Justificación"
+                                            description={campo.justificacion_descripcion || undefined}
+                                            value={getJustificacion(form._id, campo._id)}
+                                            onChange={e => !bloqueado && setJustificacion(form._id, campo._id, e.currentTarget.value)}
+                                            disabled={bloqueado}
+                                            minRows={2}
+                                            autosize
+                                            minLength={jMin ?? undefined}
+                                            maxLength={jMax ?? undefined}
+                                          />
+                                          {(jMin || jMax) && (
+                                            <Text size="xs" ta="right" c={jMax && jLen > jMax ? "red" : jMin && jLen > 0 && jLen < jMin ? "orange" : "dimmed"}>
+                                              {jMin && jLen < jMin
+                                              ? `Mínimo ${jMin} caracteres · ${jLen} escritos`
+                                              : jMin && jMax
+                                              ? `${jLen} / ${jMax} (mín: ${jMin})`
+                                              : jMax
+                                              ? `${jLen} / ${jMax}`
+                                              : `${jLen} caracteres`}
+                                            </Text>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Stack>
                                 )}
 
@@ -1000,7 +1431,7 @@ export default function SubirEvidenciasPage() {
                                         <Button size="sm" variant="light" color="blue"
                                           leftSection={<IconExternalLink size={14} />}
                                           component="a" href={archivoCampo.url} target="_blank">
-                                          {archivoCampo.nombre_original || "Ver PDF"}
+                                          {archivoCampo.nombre_original || "Ver archivo"}
                                         </Button>
                                         {!bloqueado && (
                                           <ActionIcon size="md" variant="subtle" color="red"
@@ -1010,13 +1441,13 @@ export default function SubirEvidenciasPage() {
                                         )}
                                       </Group>
                                     ) : !bloqueado ? (
-                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept="application/pdf">
+                                      <FileButton onChange={file => handleUploadPDF(form, campo, file)} accept={EVIDENCE_ACCEPT}>
                                         {props => (
                                           <Button size="sm" variant="light" color="teal"
                                             leftSection={<IconUpload size={14} />}
                                             loading={uploading[`${form._id}-${campo._id}`]}
                                             {...props}>
-                                            Subir PDF
+                                            Subir archivo
                                           </Button>
                                         )}
                                       </FileButton>
@@ -1038,7 +1469,7 @@ export default function SubirEvidenciasPage() {
                           </ThemeIcon>
                           <div>
                             <Title order={5}>Evidencias</Title>
-                            <Text size="xs" c="dimmed">Archivo Word o PDF para revisión</Text>
+                            <Text size="xs" c="dimmed">Uno o varios archivos para revisión</Text>
                           </div>
                         </Group>
                         <Paper
@@ -1056,57 +1487,102 @@ export default function SubirEvidenciasPage() {
                                 <Text size="sm" fw={700}>Archivo de evidencias</Text>
                                 <Badge size="xs" color="red" variant="dot">Requerido</Badge>
                               </Group>
-                              <Text size="xs" c="dimmed">
-                                Adjunta un archivo PDF o Word para que el lider lo revise con el formulario.
-                              </Text>
+                              <Stack gap={4}>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT}</Text>
+                                <Text size="xs" c="dimmed">{EVIDENCE_HELP_TEXT_2}</Text>
+                                <Text size="xs" c="dimmed">
+                                  Formatos permitidos: <b>PDF, Excel (.xlsx, .xls) e imágenes de alta resolución (.jpg, .jpeg, .png)</b> · Tamaño máximo: <b>10 MB por archivo</b>
+                                </Text>
+                              </Stack>
                             </div>
 
-                            {resp?.documento_url ? (
-                              <Group gap={8}>
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="violet"
-                                  component="a"
-                                  href={resp.documento_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  leftSection={<IconExternalLink size={13} />}
+                            <Stack gap="xs" w="100%" mt="sm">
+                              {documentosAdjuntos.length > 0 && (
+                                <Stack gap={6}>
+                                  {documentosAdjuntos.map((doc, index) => (
+                                    <Paper
+                                      key={doc._id ?? `${doc.url}-${index}`}
+                                      withBorder
+                                      radius="md"
+                                      p="xs"
+                                      style={{ borderColor: "#ede9fe", background: "#faf5ff" }}
+                                    >
+                                      <Group gap={8} align="center" wrap="nowrap">
+                                        <ThemeIcon size={32} radius="md" color="violet" variant="light" style={{ flexShrink: 0 }}>
+                                          <IconForms size={16} />
+                                        </ThemeIcon>
+                                        <Stack gap={0} style={{ flex: 1, minWidth: 0 }}>
+                                          <Text
+                                            size="xs"
+                                            fw={600}
+                                            truncate="end"
+                                            title={doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
+                                          >
+                                            {doc.nombre_original || doc.filename || `Evidencia ${index + 1}`}
+                                          </Text>
+                                          <Text size="xs" c="dimmed">
+                                            {formatFileSize(doc.size) || "Archivo"}
+                                            {doc.url && doc.url.includes("drive.google") ? " · Drive" : ""}
+                                          </Text>
+                                        </Stack>
+                                        <Group gap={4} style={{ flexShrink: 0 }}>
+                                          {doc.url && (
+                                            <ActionIcon
+                                              size="sm"
+                                              variant="subtle"
+                                              color="violet"
+                                              component="a"
+                                              href={doc.url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                            >
+                                              <IconExternalLink size={13} />
+                                            </ActionIcon>
+                                          )}
+                                          {!bloqueado && (
+                                            <ActionIcon
+                                              size="sm"
+                                              variant="subtle"
+                                              color="red"
+                                              onClick={() => handleDeleteDocumento(form, doc)}
+                                            >
+                                              <IconTrash size={13} />
+                                            </ActionIcon>
+                                          )}
+                                        </Group>
+                                      </Group>
+                                    </Paper>
+                                  ))}
+                                </Stack>
+                              )}
+
+                              {bloqueado && documentosAdjuntos.length === 0 && (
+                                <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
+                              )}
+
+                              {!bloqueado && (
+                                <FileButton
+                                  multiple
+                                  onChange={files => handleUploadDocumento(form, files)}
+                                  accept={EVIDENCE_ACCEPT}
                                 >
-                                  {resp.documento_nombre_original || resp.documento_filename || "Ver evidencia"}
-                                </Button>
-                                {!bloqueado && (
-                                  <ActionIcon
-                                    size="sm"
-                                    variant="subtle"
-                                    color="red"
-                                    onClick={() => handleDeleteDocumento(form)}
-                                  >
-                                    <IconTrash size={13} />
-                                  </ActionIcon>
-                                )}
-                              </Group>
-                            ) : !bloqueado ? (
-                              <FileButton
-                                onChange={file => handleUploadDocumento(form, file)}
-                                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                              >
-                                {props => (
-                                  <Button
-                                    size="xs"
-                                    variant="light"
-                                    color="violet"
-                                    loading={uploadingDocumento[form._id]}
-                                    leftSection={<IconUpload size={13} />}
-                                    {...props}
-                                  >
-                                    Subir Word/PDF
-                                  </Button>
-                                )}
-                              </FileButton>
-                            ) : (
-                              <Text size="sm" c="dimmed">Sin evidencia adjunta</Text>
-                            )}
+                                  {props => (
+                                    <Button
+                                      size="sm"
+                                      variant="light"
+                                      color="violet"
+                                      radius="xl"
+                                      loading={uploadingDocumento[form._id]}
+                                      leftSection={<IconUpload size={13} />}
+                                      fullWidth
+                                      {...props}
+                                    >
+                                      Subir evidencia
+                                    </Button>
+                                  )}
+                                </FileButton>
+                              )}
+                            </Stack>
                           </Group>
                         </Paper>
                       </div>
@@ -1131,19 +1607,51 @@ export default function SubirEvidenciasPage() {
                       : " Una vez enviado, el líder del macroproyecto recibirá tu reporte para revisión."}
                   </b>
                 </Text>
-                {!puedeEnviarTodo && (
-                  <Paper
-                    withBorder
-                    radius="md"
-                    p="sm"
-                    mb="md"
-                    style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
-                  >
-                    <Text size="sm" c="red" fw={600}>
-                      Debes diligenciar el avance del corte activo, completar los campos obligatorios y adjuntar la evidencia Word o PDF antes de enviar.
-                    </Text>
-                  </Paper>
-                )}
+                {!puedeEnviarTodo && (() => {
+                  const erroresDetalle: string[] = [];
+                  if (!hayPeriodosEditables) {
+                    erroresDetalle.push("No hay un corte activo para reportar.");
+                  }
+                  if (periodosEditablesSinAvance.length > 0) {
+                    erroresDetalle.push(`Registra el avance del corte: ${periodosEditablesSinAvance.map(p => p.periodo).join(", ")}.`);
+                  }
+                  formularios.forEach(form => {
+                    form.campos.forEach(campo => {
+                      if (!shouldShowCampo(campo)) return;
+                      const maxChars = getMaxCaracteres(campo);
+                      const currentLen = getTexto(form._id, campo._id).trim().length;
+                      if (campo.requerido && currentLen === 0) {
+                        erroresDetalle.push(`"${campo.etiqueta}" está vacío (obligatorio).`);
+                      } else if (maxChars && currentLen > maxChars) {
+                        erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, el máximo permitido es ${maxChars}.`);
+                      }
+                      if (["select", "select_con_otro", "select_multiple", "select_multiple_con_otro"].includes(campo.tipo)) {
+                        const sel = getTexto(form._id, campo._id);
+                        if (sel && !getJustificacion(form._id, campo._id).trim()) {
+                          erroresDetalle.push(`"${campo.etiqueta}": debes justificar tu respuesta.`);
+                        }
+                      }
+                    });
+                  });
+                  formulariosSinDocumento.forEach((form: FormularioPDI) => {
+                    erroresDetalle.push(`Adjunta al menos una evidencia en "${form.nombre}".`);
+                  });
+                  return (
+                    <Paper
+                      withBorder radius="md" p="sm" mb="md"
+                      style={{ background: "rgba(254,242,242,0.95)", borderColor: "#fecaca" }}
+                    >
+                      <Text size="sm" c="red" fw={700} mb={erroresDetalle.length > 1 ? 6 : 0}>
+                        Para poder enviar, corrige lo siguiente:
+                      </Text>
+                      {erroresDetalle.map((err, i) => (
+                        <Text key={i} size="sm" c="red" mt={4}>
+                          • {err}
+                        </Text>
+                      ))}
+                    </Paper>
+                  );
+                })()}
                 <Group justify="center" gap="md">
                   <Button
                     variant="default"
@@ -1176,3 +1684,4 @@ export default function SubirEvidenciasPage() {
     </div>
   );
 }
+

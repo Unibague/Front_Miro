@@ -27,6 +27,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
 import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { modals } from "@mantine/modals";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface Field {
   name: string;
@@ -318,9 +319,13 @@ const extractExplicitListOptionsFromText = (value: string): string[] => {
 
     if (!inSection) {
       const normalizedMarker = normalizeMarkerText(trimmed);
+      const hasValueWord =
+        normalizedMarker.includes("VALORES") ||
+        normalizedMarker.includes("VALOSRES") ||
+        normalizedMarker.includes("VALOSR");
       if (
         normalizedMarker.endsWith(":") &&
-        normalizedMarker.includes("VALORES") &&
+        hasValueWord &&
         (
           normalizedMarker.includes("VALIDOS") ||
           normalizedMarker.includes("POSIBLES") ||
@@ -336,9 +341,13 @@ const extractExplicitListOptionsFromText = (value: string): string[] => {
         .toUpperCase();
       // Solo coincide con frases como "Los valores válidos son:", "Valores posibles:", etc.
       // La línea DEBE terminar con ":" y contener "VALORES" + "VALIDOS/POSIBLES/PERMITIDOS"
+      const hasFallbackValueWord =
+        n.includes("VALORES") ||
+        n.includes("VALOSRES") ||
+        n.includes("VALOSR");
       if (
         n.endsWith(":") &&
-        n.includes("VALORES") &&
+        hasFallbackValueWord &&
         (n.includes("VALIDOS") || n.includes("POSIBLES") || n.includes("PERMITIDOS"))
       ) {
         inSection = true;
@@ -784,6 +793,7 @@ const getTemplateWorksheets = (template: Template): TemplateWorksheet[] => {
 
 const AdminTemplatesPage = () => {
   const { selectedPeriodId } = usePeriod();
+  const { canManage } = useViewPermission("adminTemplates");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -1676,10 +1686,7 @@ const AdminTemplatesPage = () => {
               label="Editar plantilla"
               transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button
-                variant="outline"
-                onClick={() => router.push(`/templates/update/${template._id}`)}
-              >
+              <Button variant="outline" onClick={() => router.push(`/templates/update/${template._id}`)} disabled={!canManage}>
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
@@ -1704,7 +1711,7 @@ const AdminTemplatesPage = () => {
                   label="Borrar plantilla"
                   transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button color="red" variant="outline" onClick={() => handleDelete(template._id)}>
+              <Button color="red" variant="outline" onClick={() => handleDelete(template._id)} disabled={!canManage}>
                 <IconTrash size={16} />
               </Button>
             </Tooltip>
@@ -1756,10 +1763,7 @@ const AdminTemplatesPage = () => {
             <IconArrowLeft size={20} />
           </ActionIcon>
         </Tooltip>
-        <Button
-          onClick={() => router.push('/templates/create')}
-          leftSection={<IconCirclePlus/>}
-        >
+        <Button onClick={() => router.push('/templates/create')} leftSection={<IconCirclePlus/>} disabled={!canManage}>
           Crear Nueva Plantilla
         </Button>
         <Button

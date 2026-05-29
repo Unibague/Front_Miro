@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
@@ -9,23 +9,22 @@ import {
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
-  IconFlag, IconAlertTriangle,
-  IconListCheck, IconExternalLink, IconSettings, IconFolderOpen, IconUpload,
+  IconFlag, IconAlertTriangle, IconCurrencyDollar,
+  IconListCheck, IconExternalLink, IconSettings,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen, ImportExecutedResponse } from "./types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen } from "./types";
 import { PDI_ROUTES } from "./api";
 import MacroproyectoModal from "./components/MacroproyectoModal";
-import ProyectoModal from "./components/ProyectoModal";
 import AccionModal from "./components/AccionModal";
 import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
-import PdiResumenSidebar from "./components/PdiResumenSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
+import PermissionGate from "@/app/components/PermissionGate";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -39,29 +38,8 @@ const PDI_FIXED_NAME = "Plan de Desarrollo Institucional (PDI)";
 const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
   anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
 
-function getSemaforoByAvance(avance: number) {
-  if (avance >= 90) return "verde";
-  if (avance >= 60) return "amarillo";
-  return "rojo";
-}
-
-function normalizePeso(peso: number) {
-  const value = Number(peso) || 0;
-  return value <= 1 ? value * 100 : value;
-}
-
-function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
-  );
-}
-
 function getIndicadorAvanceMostrado(ind: Indicador) {
   return ind.avance_total_real ?? ind.avance;
-}
-
-function getIndicadorAvancePonderado(ind: Indicador) {
-  return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
@@ -216,7 +194,21 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
         </Group>
       </Group>
       <Text size="sm" fw={600} mb={4}>{ind.nombre}</Text>
-      {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={6}>{ind.indicador_resultado}</Text>}
+      {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={4}>{ind.indicador_resultado}</Text>}
+      {admin && (() => {
+        const estados = ind.periodos.map(p => p.estado_reporte).filter(Boolean);
+        const tieneAprobado  = estados.some(e => e === "Aprobado");
+        const tieneEnviado   = estados.some(e => e === "Enviado");
+        const tieneRechazado = estados.some(e => e === "Rechazado");
+        if (!tieneAprobado && !tieneEnviado && !tieneRechazado) return null;
+        return (
+          <Group gap={6} mb={6} wrap="wrap">
+            {tieneAprobado  && <Badge size="xs" color="teal"   variant="filled" radius="xl">✓ Listo para Planeación</Badge>}
+            {tieneEnviado   && <Badge size="xs" color="yellow" variant="filled" radius="xl">⏳ Pendiente evaluación líder</Badge>}
+            {tieneRechazado && <Badge size="xs" color="red"    variant="light"  radius="xl">↩ Devuelto al responsable</Badge>}
+          </Group>
+        );
+      })()}
       <AvanceBar avance={avanceMostrado} semaforo={ind.semaforo} />
       <Group gap={12} mt={4} wrap="wrap">
         <Text size="xs" c="dimmed">Avance total: <b>{avanceMostrado}%</b></Text>
@@ -295,6 +287,8 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
 
   // Sincronizar si el padre actualiza la acción
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
+  const presupuestoAccion = Number(accion.presupuesto) || 0;
+  const presupuestoEjecutadoAccion = Number(accion.presupuesto_ejecutado) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }
@@ -355,8 +349,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
       <Group gap={8} mt={4}>
         <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
-        {admin && accion.presupuesto > 0 && (
-          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(accion.presupuesto)}</b></Text>
+        {presupuestoAccion > 0 && (
+          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoAccion)}</b></Text>
+        )}
+        {presupuestoEjecutadoAccion > 0 && (
+          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoAccion)}</b></Text>
         )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar indicadores" : "Ver indicadores"}
@@ -416,6 +413,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
   const presupuestoProyecto = Number(proyecto.presupuesto) || 0;
+  const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado) || 0;
 
   const cargar = async () => {
     if (loaded) { setOpen(v => !v); return; }
@@ -487,6 +485,9 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
         <Text size="xs" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
         <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
         <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
+        {presupuestoEjecutadoProyecto > 0 && (
+          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
+        )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar acciones" : "Ver acciones estratégicas"}
         </Button>
@@ -534,6 +535,14 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 }
 
 // ── Stats cards ───────────────────────────────────────────────────────────
+interface CorteResumenPeriodo {
+  periodo: string;
+  sin_reporte: number;
+  con_reporte: number;
+  total_indicadores: number;
+  porcentaje_cobertura: number;
+}
+
 function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
@@ -542,6 +551,34 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   alertasActivas: number;
   resumen: DashboardResumen | null;
 }) {
+  const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
+  const [presupuestoAnio, setPresupuestoAnio] = useState<{ total: number; causado: number } | null>(null);
+
+  useEffect(() => {
+    const fetchCorte = (nombre: string) =>
+      axios.get<CorteResumenPeriodo>(PDI_ROUTES.dashboardCorte(nombre))
+        .then(r => setCorteActual(r.data))
+        .catch(() => {});
+
+    axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesActivos())
+      .then(({ data: activos }) => {
+        if (activos.length) { fetchCorte(activos[0].nombre); return; }
+        axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesVigentes())
+          .then(({ data: vigentes }) => { if (vigentes.length) fetchCorte(vigentes[0].nombre); })
+          .catch(() => {});
+      })
+      .catch(() => {});
+
+    axios.get<{ rows: { presupuesto: number; causado: number }[] }>(PDI_ROUTES.presupuestoData())
+      .then(({ data }) => {
+        const rows = data.rows ?? [];
+        const total = rows.reduce((s, r) => s + (Number(r.presupuesto) || 0), 0);
+        const causado = rows.reduce((s, r) => s + (Number(r.causado) || 0), 0);
+        setPresupuestoAnio({ total, causado });
+      })
+      .catch(() => {});
+  }, []);
+
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
@@ -556,12 +593,21 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const alertas = alertasActivas;
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Crítico";
-  const avanceFinanciero = resumen?.presupuesto?.porcentaje_ejecucion ?? 0;
-  const presupuestoTotal = resumen?.presupuesto?.total ?? 0;
-  const presupuestoEjecutado = resumen?.presupuesto?.ejecutado ?? 0;
+  const presupuestoTotal = resumen?.presupuesto.total
+    ?? macros.reduce((s, m) => s + (Number(m.presupuesto) || 0), 0);
+  const presupuestoEjecutado = resumen?.presupuesto.ejecutado
+    ?? macros.reduce((s, m) => s + (Number(m.presupuesto_ejecutado) || 0), 0);
+  const avanceFinanciero = presupuestoTotal > 0
+    ? Math.min(Math.round((presupuestoEjecutado / presupuestoTotal) * 100), 100)
+    : 0;
   const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
   const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
-  const macroLider = [...macros].sort((a, b) => b.avance - a.avance)[0];
+  const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
+  const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
+  const avanceFinancieroAnio = presupuestoAnioTotal > 0
+    ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
+    : 0;
+  const finColorAnio = avanceFinancieroAnio >= 70 ? "teal" : avanceFinancieroAnio >= 40 ? "blue" : "orange";
   const estructuraResumen = [
     { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
@@ -655,23 +701,24 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
             <Paper withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color={alertas > 0 ? "red" : "teal"} variant="light">
+                <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
                   <IconAlertTriangle size={20} />
                 </ThemeIcon>
-                <Badge color={alertas > 0 ? "red" : "teal"} variant="light" radius="xl">
-                  {alertas > 0 ? "Revisar" : "Controlado"}
+                <Badge color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
+                  {corteActual ? corteActual.periodo : "—"}
                 </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Indicadores de resultado</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>{alertas}</Text>
-              <Text size="xs" c="dimmed" mt={6}>
-                {alertas === 0 ? "Todos los indicadores han reportado" : "Sin reporte enviado"}
+              <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                {corteActual ? corteActual.sin_reporte : "—"}
               </Text>
-              {sinAvance > 0 && (
-                <Text size="xs" c="red" mt={6} fw={600}>
-                  {sinAvance} Macroproyecto{sinAvance !== 1 ? "s" : ""} sin avance registrado
-                </Text>
-              )}
+              <Text size="xs" c="dimmed" mt={6}>
+                {corteActual
+                  ? corteActual.sin_reporte === 0
+                    ? "Todos han reportado"
+                    : `Sin reporte en ${corteActual.periodo}`
+                  : "Cargando período..."}
+              </Text>
             </Paper>
 
             <Paper withBorder radius="lg" p="lg">
@@ -688,18 +735,27 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
             <Paper withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color="grape" variant="light">
-                  <IconTrendingUp size={20} />
+                <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                  <IconCurrencyDollar size={20} />
                 </ThemeIcon>
-                <Badge color="grape" variant="light" radius="xl">Referencia</Badge>
+                <Badge color={finColorAnio} variant="light" radius="xl">
+                  {new Date().getFullYear()}
+                </Badge>
               </Group>
-              <Text size="xs" c="dimmed">Macroproyectos con mayor avance</Text>
-              <Text size="lg" fw={800} lh={1.2} mt={4} lineClamp={2}>
-                {macroLider?.codigo ?? "Sin datos"}
+              <Text size="xs" c="dimmed">Presupuesto del año vs causado</Text>
+              <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                {avanceFinancieroAnio}%
               </Text>
-              <Text size="xs" c="dimmed" mt={6}>
-                {macroLider ? `${macroLider.avance}% consolidado` : "Aun no hay avance registrado"}
-              </Text>
+              <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
+                <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
+              </Box>
+              {presupuestoAnioTotal > 0 ? (
+                <Text size="xs" c="dimmed">
+                  {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                </Text>
+              ) : (
+                <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
+              )}
             </Paper>
           </SimpleGrid>
         </SimpleGrid>
@@ -811,69 +867,6 @@ export default function PdiPage() {
   const [macroModal, setMacroModal] = useState(false);
   const [configModal, setConfigModal] = useState(false);
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
-  const [executedFile, setExecutedFile] = useState<File | null>(null);
-  const [uploadingExecuted, setUploadingExecuted] = useState(false);
-  const [executedImportResult, setExecutedImportResultState] = useState<ImportExecutedResponse | null>(() => {
-    try { const s = localStorage.getItem("pdi_executed_import_result"); return s ? JSON.parse(s) : null; } catch { return null; }
-  });
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-
-  const setExecutedImportResult = (val: ImportExecutedResponse | null) => {
-    setExecutedImportResultState(val);
-    try { if (val) localStorage.setItem("pdi_executed_import_result", JSON.stringify(val)); else localStorage.removeItem("pdi_executed_import_result"); } catch {}
-  };
-
-  const handleImportExecuted = async () => {
-    if (!executedFile) {
-      showNotification({ title: "Archivo requerido", message: "Selecciona un archivo Excel antes de importar", color: "orange" });
-      return;
-    }
-    const fileName = executedFile.name.toLowerCase();
-    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xlsm")) {
-      showNotification({ title: "Formato inválido", message: "Solo se permiten archivos .xlsx o .xlsm", color: "orange" });
-      return;
-    }
-    const formData = new FormData();
-    formData.append("file", executedFile);
-    setUploadingExecuted(true);
-    try {
-      const res = await axios.post<ImportExecutedResponse>(
-        PDI_ROUTES.importarEjecutadoProyecto(),
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      setExecutedImportResult(res.data);
-      await cargarPortfolio();
-      if (res.data.acciones_actualizadas === 0) {
-        showNotification({
-          title: "Sin coincidencias",
-          message: res.data.observacion ?? "Ninguna acción del archivo coincidió con el sistema.",
-          color: "orange",
-        });
-      } else {
-        showNotification({
-          title: "Ejecución importada",
-          message: `${res.data.acciones_actualizadas} acción(es) actualizadas — ${res.data.macro_detectado?.nombre ?? "búsqueda global"}`,
-          color: "teal",
-        });
-      }
-    } catch (e: any) {
-      const errData = e.response?.data;
-      const macrosDisponibles: { codigo: string; nombre: string; similitud: number }[] = errData?.macros_disponibles ?? [];
-      const extra = macrosDisponibles.length
-        ? `\nMacros en sistema: ${macrosDisponibles.map((m) => `${m.codigo} (${m.similitud}%)`).join(", ")}`
-        : "";
-      showNotification({
-        title: "Error al importar",
-        message: (errData?.error ?? "No se pudo procesar el archivo de ejecución") + extra,
-        color: "red",
-        autoClose: 12000,
-      });
-    } finally {
-      setUploadingExecuted(false);
-    }
-  };
-
   const cargarPortfolio = async () => {
     try {
       const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes] = await Promise.all([
@@ -966,23 +959,6 @@ export default function PdiPage() {
     });
   };
 
-  const handleDeleteProyecto = (macroId: string, id: string) => {
-    modals.openConfirmModal({
-      title: "Eliminar proyecto",
-      children: <Text size="sm">¿Seguro que deseas eliminar este proyecto?</Text>,
-      labels: { confirm: "Eliminar", cancel: "Cancelar" },
-      confirmProps: { color: "red" },
-      onConfirm: async () => {
-        try {
-          await axios.delete(PDI_ROUTES.proyecto(id));
-          setProyectosPorMacro(prev => ({ ...prev, [macroId]: prev[macroId].filter(p => p._id !== id) }));
-          showNotification({ title: "Eliminado", message: "Proyecto eliminado", color: "teal" });
-          await refrescarMacro(macroId);
-        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
-      },
-    });
-  };
-
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
     <PdiSidebar />
@@ -1002,6 +978,7 @@ export default function PdiPage() {
           </div>
         </Group>
         {admin && (
+          <PermissionGate viewKey="pdi">
           <Group gap="sm">
             <Button variant="default" leftSection={<IconSettings size={15} />} onClick={() => setConfigModal(true)}>
               Editar PDI
@@ -1011,6 +988,7 @@ export default function PdiPage() {
               Nuevo macroproyecto
             </Button>
           </Group>
+          </PermissionGate>
         )}
       </Group>
 
@@ -1045,155 +1023,6 @@ export default function PdiPage() {
             />
           ))}
         </SimpleGrid>
-      )}
-
-      {admin && macros.length > 0 && (
-        <Paper withBorder radius="lg" p="md" mt="md"
-          style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.05), rgba(255,255,255,0.98) 58%)" }}>
-          <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-            <div style={{ minWidth: 0 }}>
-              <Text fw={700}>Importar ejecución presupuestal</Text>
-              <Text size="sm" c="dimmed" mt={2}>
-                El macroproyecto se identifica automáticamente desde el archivo Excel.
-              </Text>
-            </div>
-            <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".xlsx,.xlsm"
-                style={{ display: "none" }}
-                onChange={(e) => { setExecutedFile(e.currentTarget.files?.[0] ?? null); }}
-              />
-              <Button variant="default" leftSection={<IconFolderOpen size={14} />}
-                onClick={() => importInputRef.current?.click()}>
-                {executedFile ? executedFile.name.slice(0, 20) + (executedFile.name.length > 20 ? "…" : "") : "Seleccionar Excel"}
-              </Button>
-              <Button color="blue" leftSection={<IconUpload size={14} />}
-                loading={uploadingExecuted}
-                disabled={!executedFile}
-                onClick={handleImportExecuted}>
-                Importar ejecutado
-              </Button>
-            </Group>
-          </Group>
-
-          {executedImportResult && (() => {
-            const r = executedImportResult;
-            const detalle = r.acciones_actualizadas_detalle ?? [];
-            // Agrupar por proyecto
-            const byProyecto = new Map<string, { nombre: string; acciones: typeof detalle }>();
-            for (const a of detalle) {
-              const key = a.codigo_proyecto ?? a.nombre_proyecto ?? "Sin proyecto";
-              if (!byProyecto.has(key)) byProyecto.set(key, { nombre: a.nombre_proyecto ?? key, acciones: [] });
-              byProyecto.get(key)!.acciones.push(a);
-            }
-            const noEncontradosAcciones = r.no_encontrados?.acciones ?? [];
-            const noEncontradosProyectos = r.no_encontrados?.proyectos ?? [];
-
-            return (
-              <Stack gap="md" mt="md">
-                {/* Aviso cuando no hubo coincidencias */}
-                {r.acciones_actualizadas === 0 && r.observacion && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#fffbeb", borderColor: "#fbbf24" }}>
-                    <Group gap={8}>
-                      <Badge color="orange" variant="light" size="sm">Sin coincidencias</Badge>
-                      <Text size="sm">{r.observacion}</Text>
-                    </Group>
-                  </Paper>
-                )}
-                {/* Resumen del macro detectado */}
-                {r.macro_detectado && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#f0fdf4", borderColor: "#86efac" }}>
-                    <Group gap={8} align="center">
-                      <Badge color="green" variant="filled" size="sm">Macro detectado</Badge>
-                      <Text size="sm" fw={700}>{r.macro_detectado.codigo} — {r.macro_detectado.nombre}</Text>
-                      <Text size="xs" c="dimmed" ml="auto">{r.acciones_actualizadas} acción(es) actualizada(s) · {r.proyectos_actualizados} proyecto(s)</Text>
-                    </Group>
-                  </Paper>
-                )}
-
-                {/* Tabla de resultados por proyecto */}
-                {byProyecto.size > 0 && (
-                  <Stack gap="sm">
-                    {Array.from(byProyecto.entries()).map(([key, { nombre, acciones: accs }]) => {
-                      const totalGasto    = accs.reduce((s, a) => s + (a.gasto ?? 0), 0);
-                      const totalInversion = accs.reduce((s, a) => s + (a.inversion ?? 0), 0);
-                      const totalEjec     = accs.reduce((s, a) => s + a.presupuesto_ejecutado, 0);
-                      return (
-                        <Paper key={key} withBorder radius="lg" p="md">
-                          <Group justify="space-between" mb="xs" wrap="wrap">
-                            <Group gap={6}>
-                              <Badge color="blue" variant="light" size="sm">{key}</Badge>
-                              <Text size="sm" fw={700}>{nombre}</Text>
-                            </Group>
-                            <Group gap={12}>
-                              <Text size="xs" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(totalGasto)}</b></Text>
-                              <Text size="xs" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(totalInversion)}</b></Text>
-                              <Text size="xs" fw={700}>Total: {formatCOP(totalEjec)}</Text>
-                            </Group>
-                          </Group>
-                          <Box style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                              <thead>
-                                <tr style={{ background: "#f8f9fa" }}>
-                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#495057" }}>Acción estratégica</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#2563eb", width: 110 }}>Gasto</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#7c3aed", width: 110 }}>Inversión</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#374151", width: 120 }}>Total ejecutado</th>
-                                  <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "2px solid #e9ecef", fontWeight: 700, color: "#6b7280", width: 160 }}>Observación</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {accs.map((a, idx) => (
-                                  <tr key={idx} style={{ background: idx % 2 === 0 ? "#fff" : "#f9fafb" }}>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", verticalAlign: "middle" }}>
-                                      <Group gap={6} wrap="nowrap">
-                                        {a.tipo === "gasto" && <Badge color="blue" variant="light" size="xs">Gasto</Badge>}
-                                        {a.tipo === "inversion" && <Badge color="violet" variant="light" size="xs">Inversión</Badge>}
-                                        {a.tipo === "mixto" && <Badge color="grape" variant="light" size="xs">Gasto + Inv.</Badge>}
-                                        <Text size="xs">{a.nombre ?? a.nombre_accion}</Text>
-                                      </Group>
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#2563eb", fontWeight: (a.gasto ?? 0) > 0 ? 700 : 400 }}>
-                                      {(a.gasto ?? 0) > 0 ? formatCOP(a.gasto!) : "—"}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", color: "#7c3aed", fontWeight: (a.inversion ?? 0) > 0 ? 700 : 400 }}>
-                                      {(a.inversion ?? 0) > 0 ? formatCOP(a.inversion!) : "—"}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", textAlign: "right", fontWeight: 700 }}>
-                                      {formatCOP(a.presupuesto_ejecutado)}
-                                    </td>
-                                    <td style={{ padding: "6px 10px", borderBottom: "1px solid #f1f3f5", color: "#6b7280", fontSize: 11 }}>
-                                      {a.observacion || "—"}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </Box>
-                        </Paper>
-                      );
-                    })}
-                  </Stack>
-                )}
-
-                {/* Totales globales */}
-                {detalle.length > 0 && (
-                  <Paper withBorder radius="lg" p="sm" style={{ background: "#eff6ff", borderColor: "#93c5fd" }}>
-                    <Group gap={24} wrap="wrap">
-                      <Text size="sm" fw={700} c="blue">Totales importados</Text>
-                      <Text size="sm" c="dimmed">Gasto: <b style={{ color: "#2563eb" }}>{formatCOP(r.totales_importados.gasto ?? 0)}</b></Text>
-                      <Text size="sm" c="dimmed">Inversión: <b style={{ color: "#7c3aed" }}>{formatCOP(r.totales_importados.inversion ?? 0)}</b></Text>
-                      <Text size="sm" fw={700}>Total ejecutado: {formatCOP(r.totales_importados.presupuesto_ejecutado)}</Text>
-                    </Group>
-                  </Paper>
-                )}
-
-              </Stack>
-            );
-          })()}
-        </Paper>
       )}
 
       <MacroproyectoModal

@@ -44,6 +44,7 @@ import {
 import styles from "./AdminUsersPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { signIn, useSession } from "next-auth/react";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface User {
   _id: string;
@@ -91,6 +92,7 @@ interface PendingChange {
 
 const AdminUsersPage = () => {
   const { data: session } = useSession();
+  const { canManage } = useViewPermission("users");
   const sessionUser = session?.user as SessionUser | undefined;
   const [users, setUsers] = useState<User[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
@@ -468,42 +470,19 @@ const AdminUsersPage = () => {
       <Table.Td>{user.roles.join(", ")}</Table.Td>
       <Table.Td>
         <Stack gap={5}>
-          <Button variant="outline" onClick={() => handleEdit(user)}>
+          <Button variant="outline" onClick={() => handleEdit(user)} disabled={!canManage}>
             <IconEdit size={16} />
           </Button>
-          <Tooltip
-            label="Migrar Usuario de Dependencia"
-            position="top"
-            transitionProps={{ transition: "fade-up", duration: 300 }}
-          >
-            <Button
-              color="orange"
-              variant="outline"
-              onClick={() => {
-                fetchDependencies();
-                setMigrateModalOpened(true);
-                setSelectedUser(user);
-              }}
-            >
+          <Tooltip label="Migrar Usuario de Dependencia" position="top" transitionProps={{ transition: "fade-up", duration: 300 }}>
+            <Button color="orange" variant="outline" disabled={!canManage}
+              onClick={() => { fetchDependencies(); setMigrateModalOpened(true); setSelectedUser(user); }}>
               <IconSwitch3 size={16} />
             </Button>
           </Tooltip>
-          
-
-
           {session?.user?.email && (
-            <Tooltip
-              label="Impersonar usuario"
-              position="top"
-              transitionProps={{ transition: "fade-up", duration: 300 }}
-            >
-              <Button
-                color="green"
-                variant="outline"
-                onClick={() => {
-                  handleImpersonateUser(user._id);
-                }}
-              >
+            <Tooltip label="Impersonar usuario" position="top" transitionProps={{ transition: "fade-up", duration: 300 }}>
+              <Button color="green" variant="outline" disabled={!canManage}
+                onClick={() => { handleImpersonateUser(user._id); }}>
                 <IconUser size={16} />
               </Button>
             </Tooltip>
@@ -514,12 +493,11 @@ const AdminUsersPage = () => {
         <Center>
           <Switch
             checked={user.isActive}
-            onChange={(event) =>
-              handleToggleActive(user._id, event.currentTarget.checked)
-            }
+            onChange={(event) => canManage && handleToggleActive(user._id, event.currentTarget.checked)}
             label={user.isActive ? "Activo" : "Inactivo"}
             color="teal"
             ml="md"
+            disabled={!canManage}
           />
         </Center>
       </Table.Td>

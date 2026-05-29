@@ -74,18 +74,18 @@ const linksByRole: Record<Roles, LinkItem[]> = {
     { link: "/admin/dimensions", label: "Ámbitos" },
     { link: "/admin/dependencies", label: "Dependencias" },
     { link: "/admin/validations", label: "Validaciones" },
+    { link: "/apoyos-plantillas", label: "Cruce de apoyos" },
     { link: "/admin/users", label: "Usuarios" },
   ],
   Responsable: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/templates/published", label: "Plantillas publicadas" },
-    { link: "/responsible/reports", label: "Reportes" },
-    { link: "/responsible/dimension", label: "Ámbito" },
+    { link: "/reports", label: "Gestion de información" },
+    { link: "/pdi-modulo", label: "PDI" },
+    { link: "/responsible/admin", label: "Administración" },
   ],
   Productor: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/producer/templates", label: "Plantillas pendientes" },
-    { link: "/templates-with-filters", label: "Plantillas con filtros" },
+    { link: "/reports", label: "Gestion de información" },
   ],
 };
 
@@ -101,7 +101,7 @@ export default function Navbar() {
   const [opened, { toggle }] = useDisclosure(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const { userRole, setUserRole } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, setUserAccessProfiles } = useRole();
   const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
@@ -110,9 +110,10 @@ export default function Navbar() {
   const PERIOD_SELECTOR_PATHS = [
     "/snies", "/cna", "/reports", "/admin/templates", "/admin/reports",
     "/templates", "/producer", "/responsible", "/templates-with-filters",
-    "/dependency", "/traceability", "/reportproducers",
+    "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
     "/admin/templates-management", "/admin/logs", "/admin/audit",
-    "/admin/validations", "/validations",
+    "/admin/validations", "/validations", "/historico-docentes",
+    "/apoyos-plantillas",
   ];
   const showPeriodSelector =
     !!pathname &&
@@ -134,9 +135,6 @@ export default function Navbar() {
             (role: string) => role !== "Usuario"
           );
           setAvailableRoles(roles);
-          if (response.data.activeRole) {
-            setUserRole(response.data.activeRole as Roles);
-          }
         })
         .catch((error) => {
           console.error("Error fetching roles:", error);
@@ -151,7 +149,13 @@ export default function Navbar() {
         email: session.user.email,
         activeRole: role,
       });
+      const permResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
+        { params: { email: session.user.email } }
+      );
       setUserRole(role as Roles);
+      setViewPermissions(permResponse.data.viewPermissions || {});
+      setUserAccessProfiles(permResponse.data.accessProfiles || []);
       showNotification({
         title: "Rol actualizado",
         message: `Tu nuevo rol es ${role}`,
@@ -197,7 +201,48 @@ export default function Navbar() {
     });
   };
 
-  const links = linksByRole[userRole as Roles] || linksByRole.Usuario;
+  // Links base por rol
+  const baseLinks = linksByRole[userRole as Roles] || linksByRole.Usuario;
+
+  // Links extra desde viewPermissions del cargo (para roles sin privilegio o complementar)
+  const VIEW_LINK_MAP: Record<string, LinkItem> = {
+    dashboard:                { link: "/dashboard",                    label: "Inicio" },
+    adminTemplates:           { link: "/admin/templates",              label: "Plantillas" },
+    publishedTemplates:       { link: "/templates/published",          label: "Plantillas publicadas" },
+    producerTemplates:        { link: "/producer/templates",           label: "Plantillas pendientes" },
+    templatesWithFilters:     { link: "/templates-with-filters",       label: "Plantillas con filtros" },
+    adminReports:             { link: "/admin/reports",                label: "Configurar reportes" },
+    publishedReports:         { link: "/admin/reports/uploaded",       label: "Reportes publicados" },
+    producerReportsConfig:    { link: "/admin/reports/producers",      label: "Informes productores" },
+    producerReportsManagement:{ link: "/reportproducers",              label: "Gestionar informes" },
+    producerReports:          { link: "/producer/reports",             label: "Reportes productor" },
+    responsibleReports:       { link: "/responsible/reports",          label: "Reportes responsable" },
+    periods:                  { link: "/admin/periods",                label: "Periodos" },
+    dimensions:               { link: "/admin/dimensions",             label: "Ámbitos" },
+    dependencies:             { link: "/admin/dependencies",           label: "Dependencias" },
+    validations:              { link: "/admin/validations",            label: "Validaciones" },
+    users:                    { link: "/admin/users",                  label: "Usuarios" },
+    configuration:            { link: "/configuracion",                label: "Configuración" },
+    profiles:                 { link: "/configuracion/perfiles",       label: "Perfiles" },
+    snies:                    { link: "/snies/templates",              label: "SNIES" },
+    cna:                      { link: "/cna/templates",                label: "CNA" },
+    supportTemplates:         { link: "/apoyos-plantillas",            label: "Cruce de apoyos" },
+    pdi:                      { link: "/pdi",                          label: "PDI" },
+    pdiMine:                  { link: "/pdi/mis-indicadores",          label: "Mis indicadores PDI" },
+    pdiDashboard:             { link: "/pdi/dashboard",                label: "Tablero PDI" },
+    pdiForms:                 { link: "/pdi/formularios",              label: "Formularios PDI" },
+    pdiCharts:                { link: "/pdi/graficas",                 label: "Gráficas PDI" },
+  };
+
+  const permissionLinks = Object.entries(viewPermissions)
+    .filter(([, levels]) => Array.isArray(levels) && levels.length > 0)
+    .map(([key]) => VIEW_LINK_MAP[key])
+    .filter(Boolean) as LinkItem[];
+
+  // Combinar: base + permisos de cargo sin duplicar
+  const existingLinks = new Set(baseLinks.map((l) => l.link));
+  const extraLinks = permissionLinks.filter((l) => !existingLinks.has(l.link));
+  const links = [...baseLinks, ...extraLinks];
 
   const homeLink = home.map((link: LinkItem) => (
     <Link href={link.link} key={link.label} passHref>
