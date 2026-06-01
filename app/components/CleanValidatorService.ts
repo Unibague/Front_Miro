@@ -344,7 +344,7 @@ class CleanValidatorService {
     });
 
     if (!idColumn?.values || !descColumn?.values) {
-      console.log(`CleanValidator - Missing columns in '${validatorName}'`);
+      console.log(`CleanValidator - Missing columns in '${validator.name}'`);
       console.log('Available columns:', validator.columns.map((col: any) => ({
         name: col.name,
         isValidator: col.is_validator,
@@ -354,7 +354,7 @@ class CleanValidatorService {
       })));
       
       // Debug específico para TIPOLOGIA_CONVENIOS
-      if (validatorName === 'TIPOLOGIA_CONVENIOS') {
+      if (validator.name === "TIPOLOGIA_CONVENIOS") {
         console.log(`TIPOLOGIA_CONVENIOS STRUCTURE DEBUG:`);
         console.log(`  - ID Column found: ${!!idColumn}`);
         console.log(`  - ID Column has values: ${!!idColumn?.values}`);
@@ -387,7 +387,7 @@ class CleanValidatorService {
           label: `${value} - ${description}`
         };
       } else {
-        console.log(`CleanValidator - No description for value '${value}' in '${validatorName}'`);
+        console.log(`CleanValidator - No description for value '${value}' in '${validator.name}'`);
         return {
           value,
           label: value
