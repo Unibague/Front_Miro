@@ -812,7 +812,6 @@ export default function ConsultaInformacionPage() {
             onChange={e => setListSearch(e.currentTarget.value)}
             leftSection={<IconSearch size={16} />}
             style={{ maxWidth: 340 }}
-            clearable
           />
         )}
         {visibleFiles.length === 0 ? (
