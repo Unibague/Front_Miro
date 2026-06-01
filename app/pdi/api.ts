@@ -26,6 +26,7 @@ export const PDI_ROUTES = {
   cortesVigentes:          () => `${BASE()}/pdi/cortes/vigentes`,
   corte: (id: string)      => `${BASE()}/pdi/cortes/${id}`,
   corteResumen: (id: string) => `${BASE()}/pdi/cortes/${id}/resumen`,
+  corteNotificarUsuarios: (id: string) => `${BASE()}/pdi/cortes/${id}/notificar-usuarios`,
 
   // Formularios
   formularios:                          () => `${BASE()}/pdi/formularios`,

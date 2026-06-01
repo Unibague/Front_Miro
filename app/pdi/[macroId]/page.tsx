@@ -137,9 +137,17 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
   const avance = getIndicadorAvanceMostrado(ind);
   const avanceBarra = Math.min(Math.max(Number(avance), 0), 100);
 
+  const borderColor = admin
+    ? (ind.periodos ?? []).some(p => p.estado_reporte === "Aprobado")
+      ? "#12b886"
+      : (ind.periodos ?? []).some(p => p.estado_reporte === "Enviado")
+        ? "#f59f00"
+        : undefined
+    : undefined;
+
   return (
     <Paper withBorder radius="xl" p="lg" shadow="xs"
-      style={{ transition: "box-shadow .2s, transform .2s" }}
+      style={{ transition: "box-shadow .2s, transform .2s", ...(borderColor ? { borderColor, borderWidth: 2 } : {}) }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
     >
@@ -152,7 +160,7 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
               {SEMAFORO_LABEL[ind.semaforo]}
             </Badge>
           </Group>
-          <Text size="xl" fw={800} style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
+          <Text size="xl" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
         </div>
         <Group gap={4}>
           {admin && <>
@@ -161,6 +169,31 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
           </>}
         </Group>
       </Group>
+
+      {/* Pendientes de evaluación (solo admin) */}
+      {admin && (() => {
+        const pendientes = (ind.periodos ?? []).filter(p =>
+          p.estado_reporte === "Enviado" || p.estado_reporte === "Aprobado"
+        );
+        return pendientes.length > 0 ? (
+          <Group gap={4} mb="xs" wrap="wrap">
+            {pendientes.map(p => (
+              <Badge
+                key={p.periodo}
+                size="xs"
+                color={p.estado_reporte === "Aprobado" ? "teal" : "yellow"}
+                variant="filled"
+                radius="xl"
+                leftSection={<IconFlag size={9} />}
+              >
+                {p.estado_reporte === "Aprobado"
+                  ? `Revisar · ${p.periodo}`
+                  : `Pendiente evaluar · ${p.periodo}`}
+              </Badge>
+            ))}
+          </Group>
+        ) : null;
+      })()}
 
       {/* Avance grande + Meta */}
       <Group justify="space-between" align="flex-end" mb={6}>
@@ -345,7 +378,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
             <Text size="xl" fw={900} c="dark">{accion.codigo}</Text>
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
-          <Text size="xl" fw={700} lh={1.35}>{accion.nombre}</Text>
+          <Text size="xl" lh={1.35}>{accion.nombre}</Text>
           {pendientesBadges.length > 0 && (
             <Group gap={4} mt={8} wrap="wrap">
               {pendientesBadges.map((r) => (
@@ -912,7 +945,7 @@ export default function MacroproyectoDetallePage() {
                 </div>
               </Group>
 
-              <Group gap={8}>
+              <Group gap={8} style={{ marginLeft: "auto" }}>
                 {admin && (
                   <>
                     <Button

@@ -25,6 +25,7 @@ type BudgetDetail = {
   tercero?: string;
   descripcion?: string;
   responsableActivo?: string;
+  autorizacionFirmas?: string;
   documentos?: string;
   valor: number;
   causadoGasto: number;
@@ -152,6 +153,10 @@ function extractLinks(value?: string) {
     .split(/\s+/)
     .map((part) => part.trim().replace(/[),.;]+$/, ""))
     .filter((part) => /^https?:\/\//i.test(part));
+}
+
+function authorizationLinksValue(detail: BudgetDetail) {
+  return detail.autorizacionFirmas || detail.documentos || "";
 }
 
 function macroKey(row: PresupuestoRow) {
@@ -287,7 +292,7 @@ function BudgetDetailHover({
             </Badge>
           </Group>
           <Text size="xs" c="dimmed">
-            {rows.length} {rows.length === 1 ? "registro" : "registros"} con descripcion, documentos y accion estrategica.
+            {rows.length} {rows.length === 1 ? "registro" : "registros"} con descripcion, autorizacion y accion estrategica.
           </Text>
         </Box>
         <ScrollArea.Autosize mah={360} type="auto">
@@ -296,7 +301,7 @@ function BudgetDetailHover({
               <tr style={{ background: "#f8f9fa" }}>
                 <th style={popupThStyle}>Accion estrategica</th>
                 <th style={popupThStyle}>Descripcion</th>
-                <th style={popupThStyle}>Documentos</th>
+                <th style={popupThStyle}>Autorizacion</th>
                 <th style={{ ...popupThStyle, textAlign: "right" }}>
                   {metric === "causado" ? "Causado" : "Valor"}
                 </th>
@@ -304,7 +309,8 @@ function BudgetDetailHover({
             </thead>
             <tbody>
               {rows.map(({ detail, amount }) => {
-                const links = extractLinks(detail.documentos);
+                const autorizacionFirmas = authorizationLinksValue(detail);
+                const links = extractLinks(autorizacionFirmas);
                 return (
                   <tr key={`${detail.rowIndex}-${detail.codificacion}-${amount}`}>
                     <td style={{ ...popupTdStyle, minWidth: 190 }}>
@@ -322,7 +328,7 @@ function BudgetDetailHover({
                         <Box>
                           {links.slice(0, 2).map((link, index) => (
                             <Anchor key={`${link}-${index}`} href={link} target="_blank" rel="noreferrer" size="xs" style={{ display: "block" }}>
-                              Documento {index + 1}
+                              Autorizacion
                             </Anchor>
                           ))}
                           {links.length > 2 && (
@@ -331,7 +337,7 @@ function BudgetDetailHover({
                         </Box>
                       ) : (
                         <Text size="xs" c="dimmed" lineClamp={3}>
-                          {detail.documentos || "N/A"}
+                          {autorizacionFirmas || "N/A"}
                         </Text>
                       )}
                     </td>

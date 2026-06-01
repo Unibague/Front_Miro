@@ -205,7 +205,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     try {
       const periodosPayload = periodos.map((p) => ({
         periodo: p.periodo.trim(),
-        meta: p.meta !== "" ? (toNum(p.meta) !== null ? toNum(p.meta) : p.meta) : null,
+        meta: p.meta !== "" ? (p.meta.includes("%") ? p.meta : (toNum(p.meta) !== null ? toNum(p.meta) : p.meta)) : null,
         avance: p.avanceInicial ?? 0,
         fecha_inicio: p.fechaInicio ? p.fechaInicio.toISOString() : null,
         fecha_fin: p.fechaFin ? p.fechaFin.toISOString() : null,
@@ -226,7 +226,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         tipo_seguimiento: tipoSeguimiento.trim(),
         fecha_seguimiento: cortesSegimiento.join(", "),
         tipo_calculo: tipoCalculo,
-        meta_final_2029: metaFinal !== "" ? (toNum(metaFinal) !== null ? toNum(metaFinal) : metaFinal) : null,
+        meta_final_2029: metaFinal !== "" ? (metaFinal.includes("%") ? metaFinal : (toNum(metaFinal) !== null ? toNum(metaFinal) : metaFinal)) : null,
         accion_id: defaultAccionId,
         periodos: periodosPayload,
       };

@@ -868,7 +868,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
         </ThemeIcon>
         <div style={{ flex: 1, minWidth: 0, paddingRight: 80 }}>
           <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
-          <Text fw={700} size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
+          <Text size="sm" style={{ lineHeight: 1.3 }}>{ind.nombre}</Text>
         </div>
       </Group>
 
@@ -1419,7 +1419,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           </ThemeIcon>
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
-            <Text fw={700} size="lg" style={{ lineHeight: 1.25, WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{accion.nombre}</Text>
+            <Text size="lg" style={{ lineHeight: 1.25, WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{accion.nombre}</Text>
             {accion.responsable && (
               <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
             )}

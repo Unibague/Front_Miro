@@ -121,11 +121,7 @@ function formatFechaCorta(fecha?: string | null) {
   return date.toLocaleDateString("es-CO");
 }
 
-<<<<<<< HEAD
-const MAX_DOC_SIZE = 10 * 1024 * 1024;
-=======
 const MAX_EVIDENCE_TOTAL_SIZE = 10 * 1024 * 1024;
->>>>>>> a1915666984b23f61a89c28c746a8d0aa1031947
 const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".zip", ".rar"];
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
@@ -137,22 +133,12 @@ const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "image/tiff",
   "application/zip",
   "application/x-zip-compressed",
-<<<<<<< HEAD
-  "application/x-rar-compressed",
-  "application/vnd.rar",
-  "application/octet-stream",
-]);
-const EVIDENCE_ACCEPT =
-  "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,image/jpeg,image/png,.tif,.tiff,image/tiff,.zip,application/zip,.rar,application/x-rar-compressed";
-const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls), imágenes (.jpg, .jpeg, .png, .tif) y comprimidos (.zip, .rar)";
-=======
   "application/vnd.rar",
   "application/x-rar-compressed",
 ]);
 const EVIDENCE_ACCEPT =
   "application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.jpg,.jpeg,.png,.tif,.tiff,image/jpeg,image/png,image/tiff,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed";
 const EVIDENCE_FORMATS_TEXT = "PDF, Excel (.xlsx, .xls), im\u00e1genes (.jpg, .jpeg, .png, .tif), comprimidos (.zip, .rar) y enlaces institucionales";
->>>>>>> a1915666984b23f61a89c28c746a8d0aa1031947
 const SELECT_VALUE_SEPARATOR = " | ";
 const EVIDENCE_HELP_TEXT =
   "Adjunte uno o varios archivos que soporten y permitan verificar el resultado alcanzado frente al indicador. Las evidencias podrán cargarse en formato PDF, archivos de Excel (.xlsx, .xls), imágenes de alta resolución (.jpg, .jpeg, .png, .tif) y archivos comprimidos (.zip, .rar), y podrán corresponder a informes de resultados, matrices o bases consolidadas, reportes institucionales, certificaciones, productos finales validados, actas, listados de asistencia, capturas de plataformas institucionales u otros documentos que permitan comprobar el avance reportado frente a la meta o línea base.";

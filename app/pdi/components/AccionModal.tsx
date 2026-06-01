@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack, NumberInput,
-  Divider, Text, SimpleGrid, Tabs,
+  Divider, Text, SimpleGrid,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -62,7 +62,6 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     : (config.acciones_por_proyecto > 0 ? parseFloat((100 / config.acciones_por_proyecto).toFixed(6)) : 0);
 
   const totalPresupuesto = Object.values(presupuestoAnios).reduce<number>((s, v) => s + (Number(v) || 0), 0);
-  const totalEjecutado   = Object.values(ejecutadoAnios).reduce<number>((s, v) => s + (Number(v) || 0), 0);
 
   const toNumberMap = (m: Record<string, number | string>) =>
     Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Number(v) || 0]));
@@ -128,58 +127,28 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         {config.anios.length > 0 && (
           <>
             <Divider mt="xs" />
-            <Tabs defaultValue="asignado">
-              <Tabs.List>
-                <Tabs.Tab value="asignado">Presupuesto asignado por año</Tabs.Tab>
-                <Tabs.Tab value="ejecutado">Causado por año</Tabs.Tab>
-              </Tabs.List>
-
-              <Tabs.Panel value="asignado" pt="sm">
-                <SimpleGrid cols={cols} spacing="sm">
-                  {config.anios.map(anio => (
-                    <NumberInput
-                      key={anio}
-                      label={String(anio)}
-                      value={presupuestoAnios[String(anio)] ?? 0}
-                      onChange={v => { setPresupuestoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
-                      min={0}
-                      thousandSeparator="."
-                      decimalSeparator=","
-                      prefix="$ "
-                    />
-                  ))}
-                </SimpleGrid>
-                {totalPresupuesto > 0 && (
-                  <Text size="xs" c={totalPresupuesto > (Number(presupuesto) || 0) ? "red" : "dimmed"} ta="right" mt={6}>
-                    Total: $ {totalPresupuesto.toLocaleString("es-CO")}
-                    {Number(presupuesto) > 0 && ` / $ ${Number(presupuesto).toLocaleString("es-CO")}`}
-                    {totalPresupuesto > (Number(presupuesto) || 0) && "  ⚠ Supera el presupuesto global"}
-                  </Text>
-                )}
-              </Tabs.Panel>
-
-              <Tabs.Panel value="ejecutado" pt="sm">
-                <SimpleGrid cols={cols} spacing="sm">
-                  {config.anios.map(anio => (
-                    <NumberInput
-                      key={anio}
-                      label={String(anio)}
-                      value={ejecutadoAnios[String(anio)] ?? 0}
-                      onChange={v => { setEjecutadoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
-                      min={0}
-                      thousandSeparator="."
-                      decimalSeparator=","
-                      prefix="$ "
-                    />
-                  ))}
-                </SimpleGrid>
-                {totalEjecutado > 0 && (
-                  <Text size="xs" c="dimmed" ta="right" mt={6}>
-                    Total causado: $ {totalEjecutado.toLocaleString("es-CO")}
-                  </Text>
-                )}
-              </Tabs.Panel>
-            </Tabs>
+            <Text size="sm" fw={500} mt="xs">Presupuesto asignado por año</Text>
+            <SimpleGrid cols={cols} spacing="sm" mt={6}>
+              {config.anios.map(anio => (
+                <NumberInput
+                  key={anio}
+                  label={String(anio)}
+                  value={presupuestoAnios[String(anio)] ?? 0}
+                  onChange={v => { setPresupuestoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
+                  min={0}
+                  thousandSeparator="."
+                  decimalSeparator=","
+                  prefix="$ "
+                />
+              ))}
+            </SimpleGrid>
+            {totalPresupuesto > 0 && (
+              <Text size="xs" c={totalPresupuesto > (Number(presupuesto) || 0) ? "red" : "dimmed"} ta="right" mt={6}>
+                Total: $ {totalPresupuesto.toLocaleString("es-CO")}
+                {Number(presupuesto) > 0 && ` / $ ${Number(presupuesto).toLocaleString("es-CO")}`}
+                {totalPresupuesto > (Number(presupuesto) || 0) && "  ⚠ Supera el presupuesto global"}
+              </Text>
+            )}
           </>
         )}
       </Stack>

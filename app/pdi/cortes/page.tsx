@@ -10,6 +10,7 @@ import { DatePickerInput } from "@mantine/dates";
 import {
   IconCalendarStats, IconArrowLeft, IconPlus, IconEdit,
   IconTrash, IconCheck, IconX, IconLock, IconLockOpen, IconCopy,
+  IconSend,
 } from "@tabler/icons-react";
 
 import { modals } from "@mantine/modals";
@@ -28,6 +29,40 @@ interface Corte {
   orden: number;
   fecha_inicio: string | null;
   fecha_fin: string | null;
+}
+
+function formatFechaCorte(value?: string | null) {
+  if (!value) return "sin fecha definida";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "sin fecha definida";
+  return date.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function getDateKey(value?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return Number(`${year}${month}${day}`);
+}
+
+function corteEstaAbierto(corte: Corte) {
+  if (!corte.activo) return false;
+  if (!corte.fecha_inicio && !corte.fecha_fin) return true;
+  const today = getDateKey();
+  const start = corte.fecha_inicio ? getDateKey(corte.fecha_inicio) : null;
+  const end = corte.fecha_fin ? getDateKey(corte.fecha_fin) : null;
+  if (!today) return false;
+  if (start && today < start) return false;
+  if (end && today > end) return false;
+  return true;
 }
 
 function CorteModal({ opened, onClose, selected, onSaved }: {
@@ -147,6 +182,7 @@ export default function CortesPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);
   const [selected, setSelected] = useState<Corte | null>(null);
+  const [notifying, setNotifying] = useState(false);
 
   const buildDuplicateName = (baseName: string) => {
     const trimmed = baseName.trim();
@@ -206,6 +242,55 @@ export default function CortesPage() {
     setModal(true);
   };
 
+  const handleNotifyUsers = () => {
+    const corteAbierto = cortes.find(corteEstaAbierto);
+
+    if (!corteAbierto) {
+      showNotification({
+        title: "Sin corte abierto",
+        message: "Activa un corte y define fechas vigentes antes de notificar a los usuarios.",
+        color: "yellow",
+      });
+      return;
+    }
+
+    modals.openConfirmModal({
+      title: "Notificar usuarios PDI",
+      children: (
+        <Text size="sm">
+          Se enviara un correo a lideres de macroproyecto y responsables de proyecto para informar que el corte{" "}
+          <b>{corteAbierto.nombre}</b> esta abierto del{" "}
+          <b>{formatFechaCorte(corteAbierto.fecha_inicio)}</b> al{" "}
+          <b>{formatFechaCorte(corteAbierto.fecha_fin)}</b>.
+        </Text>
+      ),
+      labels: { confirm: "Enviar notificacion", cancel: "Cancelar" },
+      confirmProps: { color: "blue" },
+      onConfirm: async () => {
+        setNotifying(true);
+        try {
+          const res = await axios.post(PDI_ROUTES.corteNotificarUsuarios(corteAbierto._id));
+          const enviados = Number(res.data?.enviados) || 0;
+          const fallidos = Number(res.data?.fallidos) || 0;
+          const primerError = res.data?.errores?.[0]?.error;
+          showNotification({
+            title: "Notificacion enviada",
+            message: `Se enviaron ${enviados} correo(s)${fallidos ? ` y fallaron ${fallidos}${primerError ? `: ${primerError}` : ""}` : ""}.`,
+            color: fallidos ? "yellow" : "teal",
+          });
+        } catch (e: any) {
+          showNotification({
+            title: "Error",
+            message: e.response?.data?.error ?? "No se pudo enviar la notificacion",
+            color: "red",
+          });
+        } finally {
+          setNotifying(false);
+        }
+      },
+    });
+  };
+
   const activos   = cortes.filter(c => c.activo).length;
   const inactivos = cortes.filter(c => !c.activo).length;
 
@@ -228,14 +313,26 @@ export default function CortesPage() {
                 <Text size="xs" c="dimmed">Gestiona los periodos de corte disponibles para los indicadores</Text>
               </div>
             </Group>
-            <Button
-              leftSection={<IconPlus size={15} />}
-              color="violet"
-              onClick={() => { setSelected(null); setModal(true); }}
-              disabled={!canManage}
-            >
-              Nuevo corte
-            </Button>
+            <Group gap={8}>
+              <Button
+                leftSection={<IconSend size={15} />}
+                color="blue"
+                variant="light"
+                onClick={handleNotifyUsers}
+                loading={notifying}
+                disabled={!canManage || loading}
+              >
+                Notificar usuarios
+              </Button>
+              <Button
+                leftSection={<IconPlus size={15} />}
+                color="violet"
+                onClick={() => { setSelected(null); setModal(true); }}
+                disabled={!canManage}
+              >
+                Nuevo corte
+              </Button>
+            </Group>
           </Group>
 
           <Divider mb="lg" />
