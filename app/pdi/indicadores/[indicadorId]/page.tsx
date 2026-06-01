@@ -704,7 +704,7 @@ function LiderRevisionPanel({
                     </Group>
                   </Paper>
                   <Textarea
-                    placeholder="Comentario de evaluacion para el responsable (opcional)..."
+                    placeholder="Comentario de evaluación para el responsable (opcional)..."
                     value={comentarios[r._id] ?? ""}
                     onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
                     rows={3}
@@ -730,7 +730,7 @@ function LiderRevisionPanel({
                       leftSection={<IconShieldX size={14} />}
                       onClick={() => handleAval(r, "Rechazado")}
                     >
-                      Rechazar evaluacion
+                      Rechazar evaluación
                     </Button>
                     <Button
                       size="sm"
