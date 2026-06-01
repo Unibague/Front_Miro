@@ -323,7 +323,7 @@ class CleanValidatorService {
     }
 
     if (!validator.columns) {
-      console.log(`CleanValidator - Validator '${validatorName}' has no columns`);
+      console.log(`CleanValidator - Validator '${validator.name}' has no columns`);
       return basicOptions;
     }
 
