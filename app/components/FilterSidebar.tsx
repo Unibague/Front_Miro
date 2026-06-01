@@ -41,6 +41,15 @@ interface FilterSidebarProps {
   templates?: any[];
 }
 
+const FIELD_LABEL_FIXES: Record<string, string> = {
+  'Ano': 'Año',
+  'ANO': 'Año',
+  'ano': 'Año',
+};
+
+const fixFieldLabel = (label: string): string =>
+  FIELD_LABEL_FIXES[label] ?? label.split(' ').map(w => FIELD_LABEL_FIXES[w] ?? w).join(' ');
+
 const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templateData, savedFilters, templates }: FilterSidebarProps) => {
   const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
@@ -126,7 +135,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       filters.push({
         _id: `dynamic_${index}`,
         name: fieldName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-        label: fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        label: fixFieldLabel(fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())),
         type: 'select',
         source: 'template_fields',
         sourceField: fieldName,
@@ -184,7 +193,13 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                            fieldLower.includes('cantidad') ||
                            fieldLower.includes('monto') ||
                            fieldLower.includes('precio') ||
-                           fieldLower.includes('costo')) &&
+                           fieldLower.includes('costo') ||
+                           fieldLower.includes('horas') ||
+                           fieldLower.includes('porcent') ||
+                           fieldLower.includes('semestre') ||
+                           fieldLower.includes('credito') ||
+                           fieldLower.includes('nota') ||
+                           fieldLower.includes('porcentaje')) &&
                            !fieldLower.includes('beneficiarios');
     
     const fieldSuggestsValidator = !isExcludedField && (
@@ -221,7 +236,22 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                                   // Campos específicos de CONSULTORIAS
                                   fieldLower.includes('consultoria') ||
                                   fieldLower.includes('nivel') ||
-                                  fieldLower.includes('estudio')
+                                  fieldLower.includes('estudio') ||
+                                  // SNIES / Histórico Docentes / Gestión Humana
+                                  fieldLower.includes('dedicacion') ||
+                                  fieldLower.includes('dedicaci') ||
+                                  fieldLower.includes('contrato') ||
+                                  fieldLower.includes('capacitacion') ||
+                                  fieldLower.includes('capacitaci') ||
+                                  fieldLower.includes('metodologia') ||
+                                  fieldLower.includes('metodolog') ||
+                                  fieldLower.includes('ingreso') ||
+                                  fieldLower.includes('categoria') ||
+                                  fieldLower.includes('vinculacion') ||
+                                  fieldLower.includes('vinculaci') ||
+                                  fieldLower.includes('modalidad') ||
+                                  // Si tiene mapeo exacto en CleanValidatorService (captura todo lo demás)
+                                  CleanValidatorService.getInstance().hasMapping(fieldName)
                                   );
     
     console.log(`VALIDATOR DEBUG - Field: ${fieldName}`);
@@ -603,7 +633,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           
           // Usar el servicio limpio de validadores
           const cleanValidator = CleanValidatorService.getInstance();
-          const enrichedOptions = await cleanValidator.enrichWithDescriptions(fieldName, valuesArray);
+          const enrichedOptions = await cleanValidator.enrichWithDescriptions(fieldName, valuesArray, selectedPeriodId);
           return enrichedOptions;
         }
       } catch (error) {
@@ -642,6 +672,11 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     
     setFilterOptions(newOptions);
   };
+
+  // Resetear caché del servicio cuando cambia el periodo
+  useEffect(() => {
+    CleanValidatorService.getInstance().resetCache();
+  }, [selectedPeriodId]);
 
   useEffect(() => {
     if (templateData && templateData.length > 0) {

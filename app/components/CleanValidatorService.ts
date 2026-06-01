@@ -9,6 +9,7 @@ class CleanValidatorService {
   private static instance: CleanValidatorService;
   private validators: any[] = [];
   private isLoaded = false;
+  private loadedPeriodId: string | null = null;
 
   private constructor() {}
 
@@ -19,18 +20,40 @@ class CleanValidatorService {
     return CleanValidatorService.instance;
   }
 
-  async loadValidators(): Promise<void> {
-    if (this.isLoaded) return;
+  resetCache(): void {
+    this.isLoaded = false;
+    this.validators = [];
+    this.loadedPeriodId = null;
+  }
+
+  // Fuerza recarga (útil después de actualizar mapeos)
+  forceReload(): void {
+    this.resetCache();
+  }
+
+  // Verifica si un campo tiene mapeo exacto
+  hasMapping(fieldName: string): boolean {
+    return this.getValidatorName(fieldName) !== null;
+  }
+
+  async loadValidators(periodId?: string | null): Promise<void> {
+    // Recargar si cambia el periodo
+    if (this.isLoaded && this.loadedPeriodId === (periodId || null)) return;
 
     try {
+      const params: Record<string, any> = { page: 1, limit: 200 };
+      if (periodId) params.periodId = periodId;
+
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination?page=1&limit=200`
+        `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination`,
+        { params }
       );
-      
+
       if (response.data?.validators) {
         this.validators = response.data.validators;
         this.isLoaded = true;
-        console.log(`CleanValidator - Loaded ${this.validators.length} validators`);
+        this.loadedPeriodId = periodId || null;
+        console.log(`CleanValidator - Loaded ${this.validators.length} validators (period: ${periodId || 'global'})`);
       }
     } catch (error) {
       console.error('CleanValidator - Error loading validators:', error);
@@ -56,13 +79,20 @@ class CleanValidatorService {
       'ESTADO_CIVIL': 'ESTADO_CIVIL',
       
       // PAISES
+      'ID PAIS': 'PAIS',
+      'ID_PAIS': 'PAIS',
+      'PAIS': 'PAIS',
       'ID_PAIS_PROCEDENCIA': 'PAIS',
+      'ID PAIS PROCEDENCIA': 'PAIS',
       'ID_PAIS_FINANCIADOR': 'PAIS',
+      'ID PAIS FINANCIADOR': 'PAIS',
       'ID_PAIS_INSTITUCIONAL_ASOCIADO': 'PAIS',
       'ID PAIS INSTITUCION ASOCIADA': 'PAIS',
       'ID_PAIS_INSTITUCION_ASOCIADA': 'PAIS',
       'ID_PAIS_NACIMIENTO': 'PAIS',
+      'ID PAIS NACIMIENTO': 'PAIS',
       'ID_PAIS_DESTINO': 'PAIS',
+      'ID PAIS DESTINO': 'PAIS',
       'PAIS_INSTITUCIONAL_ASOCIADO': 'PAIS',
       
       // CONVENIOS
@@ -188,15 +218,41 @@ class CleanValidatorService {
       'ID_TIPO_ESTIMULO' : 'TIPO_ESTIMULO',
       'TIPO_ESTIMULO' : 'TIPO_ESTIMULO',
       'NOMBRE_ESTIMULO' : 'NOMBRE_ESTIMULO',
- //dedicación
-      'ID_DEDICACION' : 'DEDICACION'
+      // DEDICACIÓN
+      'ID_DEDICACION': 'DEDICACION',
+      'DEDICACION': 'DEDICACION',
+      'Dedicacion': 'DEDICACION',
+
+      // CONTRATO (SNIES / Histórico Docentes)
+      'Tipo Contrato': 'TIPO_CONTRATO',
+      'TIPO_CONTRATO': 'TIPO_CONTRATO',
+      'Tipo_Contrato': 'TIPO_CONTRATO',
+      'Metodologia Contrato': 'METODOLOGIA_CONTRATO',
+      'METODOLOGIA_CONTRATO': 'METODOLOGIA_CONTRATO',
+      'Metodologia_Contrato': 'METODOLOGIA_CONTRATO',
+      'Nivel Contrato': 'NIVEL_DOCENTE',
+      'NIVEL_CONTRATO': 'NIVEL_DOCENTE',
+      'Nivel_Contrato': 'NIVEL_DOCENTE',
+      'Ingreso Contrato': 'TIPO_VINCULACION',
+      'INGRESO_CONTRATO': 'TIPO_VINCULACION',
+      'Ingreso_Contrato': 'TIPO_VINCULACION',
+
+      // CAPACITACIÓN (Gestión Humana)
+      'ID_TIPO_CAPACITACION': 'TIPO_CAPACITACION_GH',
+      'ID TIPO CAPACITACION': 'TIPO_CAPACITACION_GH',
+      'ID_TIPO_CURSO': 'TIPO_CURSO_GH',
+      'ID TIPO CURSO': 'TIPO_CURSO_GH',
+      'ID_TEMA_CURSO': 'TEMA_CURSO',
+      'ID TEMA CURSO': 'TEMA_CURSO',
+      'CATEGORIA_GESTION_CURRICULAR': 'CATEGORIA_GESTION_CURRICULAR',
+      'CATEGORIA_GESTION_': 'CATEGORIA_GESTION_CURRICULAR',
     };
 
     return exactMappings[fieldName] || null;
   }
 
-  async enrichWithDescriptions(fieldName: string, actualValues: string[]): Promise<FilterOption[]> {
-    await this.loadValidators();
+  async enrichWithDescriptions(fieldName: string, actualValues: string[], periodId?: string | null): Promise<FilterOption[]> {
+    await this.loadValidators(periodId);
 
     // Opciones básicas
     const basicOptions: FilterOption[] = actualValues.map(value => ({
@@ -220,25 +276,49 @@ class CleanValidatorService {
       return basicOptions;
     }
 
-    // Obtener validador específico
-    const validatorName = this.getValidatorName(fieldName);
-    if (!validatorName) {
-      console.log(`CleanValidator - No mapping for field: ${fieldName}`);
-      return basicOptions;
-    }
+    // Buscar validador: primero por mapeo exacto, luego dinámicamente por coincidencia de valores
+    const mappedName = this.getValidatorName(fieldName);
+    let validator = mappedName ? this.validators.find(v => v.name === mappedName) : null;
 
-    console.log(`CleanValidator - Field '${fieldName}' -> Validator '${validatorName}'`);
-    
-    // Debug específico para TIPOLOGIA_CONVENIO
-    if (fieldName.includes('TIPOLOGIA') && fieldName.includes('CONVENIO')) {
-      console.log(`TIPOLOGIA_CONVENIO DEBUG - Field: ${fieldName}`);
-      console.log(`TIPOLOGIA_CONVENIO DEBUG - Validator: ${validatorName}`);
-      console.log(`TIPOLOGIA_CONVENIO DEBUG - Values to process:`, actualValues);
-    }
-
-    const validator = this.validators.find(v => v.name === validatorName);
     if (!validator) {
-      console.log(`CleanValidator - Validator '${validatorName}' not found`);
+      // Normaliza el nombre del campo para comparar con nombres de validadores
+      const fieldNorm = fieldName.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
+      // Paso 1: buscar por similitud de nombre del campo Y coincidencia de valores
+      const nameAndValueMatches: { v: any; score: number }[] = [];
+      for (const v of this.validators) {
+        const idCol = v.columns?.find((c: any) => c.is_validator === true);
+        if (!idCol?.values || idCol.values.length === 0) continue;
+        const idSet = new Set(idCol.values.map((x: any) => String(x).trim()));
+        const allMatch = actualValues.every(val => idSet.has(String(val).trim()));
+        if (!allMatch) continue;
+
+        // Puntaje de similitud entre el nombre del campo y el nombre del validador
+        const vNorm = v.name.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+        const fieldTokens = fieldNorm.split('_').filter(Boolean);
+        const vTokens = vNorm.split('_').filter(Boolean);
+        const matchedTokens = fieldTokens.filter(t => vTokens.includes(t)).length;
+        const score = matchedTokens / Math.max(fieldTokens.length, 1);
+        if (score > 0) nameAndValueMatches.push({ v, score });
+      }
+
+      if (nameAndValueMatches.length > 0) {
+        // Usar el validador con mayor similitud de nombre
+        nameAndValueMatches.sort((a, b) => b.score - a.score);
+        validator = nameAndValueMatches[0].v;
+      } else if (actualValues.length >= 5) {
+        // Solo como último recurso con conjuntos de valores grandes (menos ambiguo)
+        for (const v of this.validators) {
+          const idCol = v.columns?.find((c: any) => c.is_validator === true);
+          if (!idCol?.values || idCol.values.length === 0) continue;
+          const idSet = new Set(idCol.values.map((x: any) => String(x).trim()));
+          const allMatch = actualValues.every(val => idSet.has(String(val).trim()));
+          if (allMatch) { validator = v; break; }
+        }
+      }
+    }
+
+    if (!validator) {
       return basicOptions;
     }
 

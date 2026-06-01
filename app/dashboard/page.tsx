@@ -41,7 +41,7 @@ const DashboardPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [isVisualizer, setIsVisualizer] = useState(false);
   const userEmail = session?.user?.email ?? "";
-  const showSupportTemplatesModule = false;
+  const showSupportTemplatesModule = true;
 
   const hasViewPermission = (key: string) =>
     Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
