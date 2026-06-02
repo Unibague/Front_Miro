@@ -11,7 +11,7 @@ export const shouldAddWorksheet = (workbook: ExcelJS.Workbook, sheetName: string
 
 interface FieldWithValidator {
   name: string;
-  validate_with?: string;
+  validate_with?: string | { id?: string; name?: string };
   multiple?: boolean;
   comment?: string;
   dropdown_options?: string[];
@@ -22,6 +22,7 @@ interface FieldWithValidator {
 interface ValidatorOptionSource {
   name: string;
   values: Record<string, unknown>[];
+  columns?: { name: string; is_validator?: boolean; type?: string }[];
 }
 
 interface WorkbookSheetWithFields {
@@ -42,6 +43,25 @@ const getConfiguredFieldPosition = (field: FieldWithValidator, fieldIndex: numbe
       : 1,
   };
 };
+
+const getValidateWithText = (validateWith: FieldWithValidator["validate_with"]): string => {
+  if (!validateWith) return "";
+  if (typeof validateWith === "string") return validateWith.trim();
+  return String(validateWith.name || validateWith.id || "").trim();
+};
+
+const splitValidateWithReference = (validateWith: FieldWithValidator["validate_with"]) => {
+  const text = getValidateWithText(validateWith);
+  const parts = text.split(" - ");
+  return {
+    text,
+    validatorName: (parts[0] || "").trim(),
+    columnName: parts.slice(1).join(" - ").trim(),
+  };
+};
+
+const findValidatorByName = (validators: ValidatorOptionSource[], name = "") =>
+  validators.find((item) => normalizeToken(item.name) === normalizeToken(name));
 
 const getFieldCommentForNote = (field: FieldWithValidator): string => {
   const comment = field.comment
@@ -279,7 +299,13 @@ const getValidatorOptions = (
       ? keys.find((key) => normalizeToken(key) === normalizeToken(preferredColumnName))
       : undefined;
 
-    const idKey = preferredKey || keys[0];
+    const configuredValidatorKey = validator.columns
+      ?.find((column) => column?.is_validator)
+      ?.name;
+    const validatorKey = configuredValidatorKey
+      ? keys.find((key) => normalizeToken(key) === normalizeToken(configuredValidatorKey))
+      : undefined;
+    const idKey = preferredKey || validatorKey || keys[0];
     const idValue = resolveValueByKey(row, idKey);
     if (idValue === null || idValue === undefined) return;
 
@@ -418,23 +444,32 @@ export const applyValidatorDropdowns = ({
     let options: { value: string; displayLabel: string }[] = [];
 
     if (field.validate_with) {
-      const validateWithParts = field.validate_with.split(" - ");
-      const validatorName = validateWithParts[0]?.trim();
-      const validatorColumnName = validateWithParts.slice(1).join(" - ").trim();
+      const { validatorName, columnName } = splitValidateWithReference(field.validate_with);
       if (!validatorName) {
         options = [];
       } else {
-        const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
-        options = validator ? getValidatorOptions(validator, validatorColumnName) : [];
+        const validator = findValidatorByName(validators, validatorName);
+        options = validator ? getValidatorOptions(validator, columnName) : [];
       }
-    } else if (field.comment) {
+    } else {
+      const validator = findValidatorByName(validators, field.name);
+      if (validator) {
+        options = getValidatorOptions(validator);
+      }
+    }
+
+    if (options.length === 0 && !field.validate_with && field.comment) {
       const commentOptions = extractOptionsFromCommentValidators(field.comment);
       if (commentOptions.length === 0) {
         applyHeaderCommentNote(worksheet, field, fieldIndex, []);
         return;
       }
       options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
-    } else if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+    } else if (field.comment) {
+      // Keep comment notes even when options came from a validator matched by field name.
+    }
+
+    if (options.length === 0 && !field.validate_with && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
       const seenStaticOptions = new Set<string>();
       options = field.dropdown_options
         .map((option) => String(option || "").trim())
@@ -444,7 +479,9 @@ export const applyValidatorDropdowns = ({
           return true;
         })
         .map((option) => ({ value: option, displayLabel: option }));
-    } else {
+    }
+
+    if (options.length === 0) {
       applyHeaderCommentNote(worksheet, field, fieldIndex, []);
       return;
     }

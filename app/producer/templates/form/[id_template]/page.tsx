@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Container,
   Button,
@@ -23,7 +23,7 @@ import {
   Tabs,
   Alert,
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -62,13 +62,35 @@ interface Template {
   shared?: boolean;
 }
 
+interface FilledFieldEntry {
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
+  field_name: string;
+  values: any[];
+}
+
 interface QrDraftEntry {
   dependency: string;
   dependency_code?: string;
   dependency_name?: string;
   sender_name?: string;
   sender_email?: string | null;
-  filled_data: { sheet_name?: string; sheet?: string; sheetName?: string; field_name: string; values: any[] }[];
+  filled_data: FilledFieldEntry[];
+}
+
+interface ProducerLoadedEntry {
+  dependency: string;
+  dependency_code?: string;
+  dependency_name?: string;
+  sender_name?: string;
+  sender_email?: string | null;
+  send_by?: {
+    full_name?: string;
+    name?: string;
+    email?: string;
+  };
+  filled_data: FilledFieldEntry[];
 }
 
 interface QrRowSource {
@@ -83,6 +105,8 @@ interface PublishedTemplateResponse {
   template: Template;
   publishedTemplate?: {
     period?: string | { _id: string; name?: string };
+    loaded_data?: ProducerLoadedEntry[];
+    responsible_producers?: string[];
   };
   qr_draft_data?: QrDraftEntry[];
   shared_sheets_data?: Record<string, Record<string, any>[]>;
@@ -98,6 +122,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const { id_template } = params;
   const { data: session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromUploaded = searchParams?.get('from') === 'uploaded';
   const [publishedTemplateName, setPublishedTemplateName] = useState<string>("");
   const [template, setTemplate] = useState<Template | null>(null);
   const [allSheets, setAllSheets] = useState<WorkbookSheet[]>([]);
@@ -109,6 +135,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [rows, setRows] = useState<Record<string, any>[]>([{}]);
   const [rowSources, setRowSources] = useState<(QrRowSource | null)[]>([]);
   const [sheetRowSources, setSheetRowSources] = useState<Record<string, (QrRowSource | null)[]>>({});
+  const [userSource, setUserSource] = useState<QrRowSource | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [validatorModalOpen, setValidatorModalOpen] = useState(false);
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
@@ -125,8 +152,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
 
-  const getDraftFieldSheetName = (fieldData: QrDraftEntry["filled_data"][number]) =>
+  const getDraftFieldSheetName = (fieldData: FilledFieldEntry) =>
     fieldData.sheet_name || fieldData.sheet || fieldData.sheetName || null;
+
+  const getEntryDependencyCode = (entry: { dependency?: string; dependency_code?: string }) =>
+    entry.dependency_code || entry.dependency || "";
 
   const getDraftRowSource = (draft: QrDraftEntry): QrRowSource => ({
     dependencyCode: draft.dependency_code || draft.dependency,
@@ -135,11 +165,23 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     senderEmail: draft.sender_email,
   });
 
+  const getLoadedRowSource = (entry: ProducerLoadedEntry): QrRowSource => {
+    const sender = entry.send_by || {};
+    const dependencyCode = getEntryDependencyCode(entry);
+
+    return {
+      dependencyCode,
+      dependencyName: entry.dependency_name || dependencyCode,
+      senderName: entry.sender_name || sender.full_name || sender.name || sender.email,
+      senderEmail: entry.sender_email ?? sender.email ?? null,
+    };
+  };
+
   const isBlankQrValue = (value: any) => (
     value === null || value === undefined || value === ""
   );
 
-  const buildRowsFromFilledData = (filledData: QrDraftEntry["filled_data"]) => {
+  const buildRowsFromFilledData = (filledData: FilledFieldEntry[]) => {
     const maxLen = Math.max(...filledData.map((fieldData) => fieldData.values?.length || 0), 1);
     return Array.from({ length: maxLen }, (_, rowIndex) => {
       const row: Record<string, any> = {};
@@ -156,12 +198,23 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
   const buildRowsAndSourcesFromDraft = (
     draft: QrDraftEntry,
-    filledData: QrDraftEntry["filled_data"] = draft.filled_data
+    filledData: FilledFieldEntry[] = draft.filled_data
   ) => {
     const draftRows = buildRowsFromFilledData(filledData);
     return {
       rows: draftRows,
       sources: draftRows.map(() => getDraftRowSource(draft)),
+    };
+  };
+
+  const buildRowsAndSourcesFromLoadedEntry = (
+    entry: ProducerLoadedEntry,
+    filledData: FilledFieldEntry[] = entry.filled_data
+  ) => {
+    const loadedRows = buildRowsFromFilledData(filledData);
+    return {
+      rows: loadedRows,
+      sources: loadedRows.map(() => getLoadedRowSource(entry)),
     };
   };
 
@@ -175,13 +228,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = response.data.template.workbook_sheets || [];
-      const templateShared = response.data.template?.shared ?? false;
 
-      const periodObj = response.data.publishedTemplate?.period;
-      const periodName = typeof periodObj === "object" ? (periodObj?.name || "") : "";
-      const periodMatch = periodName.match(/(\d{4})[_\-\s]*([AB])/i);
-      const prefilledYear = periodMatch ? parseInt(periodMatch[1]) : null;
-      const prefilledSemester = periodMatch ? (periodMatch[2].toUpperCase() === 'A' ? 1 : 2) : null;
+      const _now = new Date();
+      const prefilledYear = _now.getFullYear();
+      const prefilledSemester = _now.getMonth() < 6 ? 1 : 2;
 
       // Conjunto de hojas accesibles para este productor — usado también al cargar borradores
       let editableSheetNames = new Set<string>();
@@ -190,6 +240,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       if (wbSheets.length > 0) {
         setAllSheets(wbSheets);
         let editable: WorkbookSheet[] = wbSheets;
+        let userSrc: QrRowSource | null = null;
         try {
           if (session?.user?.email) {
             const userRes = await axios.get(
@@ -206,6 +257,14 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               .filter((d: any) => allDepCodes.includes(d.dep_code))
               .map((d: any) => d._id?.toString());
             currentUserDepIds = userDepIds;
+            const primaryDep = allDeps.find((d: any) => d.dep_code === user.dep_code);
+            userSrc = {
+              dependencyCode: user.dep_code || '',
+              dependencyName: primaryDep?.name || user.dep_code || '',
+              senderName: user.name || session?.user?.name || undefined,
+              senderEmail: session?.user?.email || null,
+            };
+            setUserSource(userSrc);
             editable = wbSheets.filter((sheet: WorkbookSheet) => {
               if (!sheet.fields?.length) return false;
               if (!sheet.producers?.length) return true;
@@ -222,15 +281,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         const initialSources: Record<string, (QrRowSource | null)[]> = {};
         editable.forEach((s: WorkbookSheet) => {
           const prefilled: Record<string, any> = {};
-          if (prefilledYear !== null && s.fields?.some((f: Field) => f.name.toUpperCase() === 'AÑO'))
+          if (s.fields?.some((f: Field) => f.name.toUpperCase() === 'AÑO'))
             prefilled['AÑO'] = prefilledYear;
-          if (prefilledSemester !== null && s.fields?.some((f: Field) => f.name.toUpperCase() === 'SEMESTRE'))
+          if (s.fields?.some((f: Field) => f.name.toUpperCase() === 'SEMESTRE'))
             prefilled['SEMESTRE'] = prefilledSemester;
           initialRows[s.name] = [prefilled];
-          initialSources[s.name] = [null];
+          initialSources[s.name] = [userSrc];
         });
-        // Si template.shared=true, hojas no editables muestran datos de otros productores
-        if (templateShared) {
+        // Hojas no editables siempre muestran los datos ya enviados por otros productores (lectura)
+        {
           wbSheets
             .filter((s: WorkbookSheet) => !editable.some((e: WorkbookSheet) => e.name === s.name))
             .forEach((s: WorkbookSheet) => {
@@ -264,6 +323,78 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           ? response.data.publishedTemplate.period
           : response.data.publishedTemplate?.period?._id || "";
       setTemplatePeriodId(periodId);
+
+      // Pre-cargar datos ya enviados para que la edicion en linea conserve la informacion cargada.
+      if (session?.user?.email) {
+        try {
+          const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+            params: { email: session.user.email },
+          });
+          const userDepCode: string = userRes.data?.dep_code || '';
+          const allDepCodes: string[] = [userDepCode, ...(userRes.data?.additional_dependencies || [])].filter(Boolean);
+          const loadedEntries = (response.data.publishedTemplate?.loaded_data || [])
+            .filter((entry: ProducerLoadedEntry) =>
+              allDepCodes.includes(getEntryDependencyCode(entry)) && entry.filled_data?.length
+            );
+
+          if (loadedEntries.length) {
+            const wbSheets = response.data.template.workbook_sheets || [];
+
+            if (wbSheets.length) {
+              const loadedSheetRows: Record<string, Record<string, any>[]> = {};
+              const loadedSheetSources: Record<string, (QrRowSource | null)[]> = {};
+              let firstLoadedSheetName: string | null = null;
+
+              loadedEntries.forEach((entry) => {
+                const hasSheetTaggedFields = entry.filled_data.some((fieldData) => getDraftFieldSheetName(fieldData));
+                let legacyCursor = 0;
+
+                wbSheets.forEach((sheet: WorkbookSheet) => {
+                  const isAccessible = !editableSheetNames.size || editableSheetNames.has(sheet.name);
+                  const sheetFields = sheet.fields || [];
+                  const sheetFieldNames = new Set(sheetFields.map((f: Field) => f.name));
+                  const sheetFilled = hasSheetTaggedFields
+                    ? entry.filled_data.filter((fieldData) => getDraftFieldSheetName(fieldData) === sheet.name)
+                    : entry.filled_data
+                        .slice(legacyCursor, legacyCursor + sheetFields.length)
+                        .filter((fieldData) => sheetFieldNames.has(fieldData.field_name));
+
+                  if (!hasSheetTaggedFields && sheetFilled.length) {
+                    legacyCursor += sheetFields.length;
+                  }
+
+                  if (isAccessible && sheetFilled.length) {
+                    const built = buildRowsAndSourcesFromLoadedEntry(entry, sheetFilled);
+                    loadedSheetRows[sheet.name] = [...(loadedSheetRows[sheet.name] || []), ...built.rows];
+                    loadedSheetSources[sheet.name] = [...(loadedSheetSources[sheet.name] || []), ...built.sources];
+                    if (!firstLoadedSheetName) firstLoadedSheetName = sheet.name;
+                  }
+                });
+              });
+
+              if (Object.keys(loadedSheetRows).length) {
+                setSheetRows(prev => ({ ...prev, ...loadedSheetRows }));
+                setSheetRowSources(prev => ({ ...prev, ...loadedSheetSources }));
+                setActiveSheet(firstLoadedSheetName);
+              }
+            } else {
+              const loadedRows: Record<string, any>[] = [];
+              const loadedSources: (QrRowSource | null)[] = [];
+
+              loadedEntries.forEach((entry) => {
+                const built = buildRowsAndSourcesFromLoadedEntry(entry);
+                loadedRows.push(...built.rows);
+                loadedSources.push(...built.sources);
+              });
+
+              if (loadedRows.length) {
+                setRows(loadedRows);
+                setRowSources(loadedSources);
+              }
+            }
+          }
+        } catch { /* ignorar error de pre-carga de datos enviados */ }
+      }
 
       // Pre-cargar datos del borrador QR si existen para la dependencia del usuario
       const qrDrafts = response.data.qr_draft_data || [];
@@ -501,8 +632,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const addSheetRow = (sheetName: string) => {
-    setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), {}] }));
-    setSheetRowSources(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), null] }));
+    const now = new Date();
+    const year = now.getFullYear();
+    const semester = now.getMonth() < 6 ? 1 : 2;
+    const sheet = accessibleSheets.find(s => s.name === sheetName);
+    const prefilled: Record<string, any> = {};
+    if (sheet?.fields?.some(f => f.name.toUpperCase() === 'AÑO')) prefilled['AÑO'] = String(year);
+    if (sheet?.fields?.some(f => f.name.toUpperCase() === 'SEMESTRE')) prefilled['SEMESTRE'] = semester;
+    setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), prefilled] }));
+    setSheetRowSources(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), userSource] }));
   };
 
   const saveDraftRows = async (
@@ -648,13 +786,14 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         pubTem_id: id_template,
         data: useSheetSubmission ? undefined : formattedRows,
         sheetsData: useSheetSubmission ? sheetsData : undefined,
-        asDraft: true,
+        asDraft: false,
       });
       showNotification({
-        title: "Borrador guardado",
-        message: "Los datos se guardaron. Usa el botón 'Enviar al SNIES' en la lista de plantillas para enviar definitivamente.",
+        title: "Información enviada",
+        message: "Los datos se enviaron correctamente.",
         color: "teal",
       });
+      router.push('/producer/templates');
     } catch (error) {
       console.error("Error submitting data:", error);
       if (axios.isAxiosError(error) && error.response?.status === 400) {
@@ -1006,7 +1145,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
   const useSheets = allSheets.length > 0;
   const accessibleSheetNames = new Set(accessibleSheets.map(s => s.name));
-  const templateSharedUI = template?.shared ?? false;
+  // Mostrar ícono de lectura en hojas de otros productores (independiente del flag shared)
+  const templateSharedUI = allSheets.length > 0;
 
   return (
     <Container size="xl">
@@ -1014,7 +1154,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       {hasQrDraft && (
         <Alert icon={<IconInfoCircle size={16} />} color="yellow" mb="md" title="Datos enviados por QR">
-          Se han cargado datos enviados mediante el formulario QR. Revisa y haz clic en <strong>Guardar</strong> para confirmar.
+          Se han cargado datos enviados mediante el formulario QR. Revisa y haz clic en <strong>Enviar</strong> para confirmar.
         </Alert>
       )}
 
@@ -1083,20 +1223,22 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           Cancelar
         </Button>
         <Group>
-          <Button 
-            variant="light" 
+          <Button
+            variant="light"
             onClick={addRow}
             leftSection={<IconPlus/>}
           >
             Agregar Fila
           </Button>
-          <Button
-            onClick={handleSubmit}
-            rightSection={<IconDeviceFloppy size={16}/>}
-            loading={loading}
-          >
-            Guardar
-          </Button>
+          {!fromUploaded && (
+            <Button
+              onClick={handleSubmit}
+              rightSection={<IconSend size={16}/>}
+              loading={loading}
+            >
+              Enviar
+            </Button>
+          )}
         </Group>
         
       </Group>

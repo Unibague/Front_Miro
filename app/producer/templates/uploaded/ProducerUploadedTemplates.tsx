@@ -23,11 +23,13 @@ import {
   IconArrowBigUpFilled,
   IconArrowLeft,
   IconArrowsTransferDown,
+  IconChecks,
   IconDownload,
   IconEdit,
   IconPencil,
   IconTrash,
 } from "@tabler/icons-react";
+import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
@@ -38,7 +40,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils"; 
+import { applyFieldCommentNote, applyValidatorDropdowns, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -54,6 +56,24 @@ interface Field {
   required: boolean;
   validate_with?: string;
   comment?: string;
+  header_row?: number;
+  column?: number;
+  dropdown_options?: string[];
+}
+
+interface SheetCellNote {
+  row: number;
+  col: number;
+  note: string;
+}
+
+interface WorkbookSheet {
+  name: string;
+  fields?: Field[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  cellNotes?: SheetCellNote[];
+  columnWidths?: number[];
 }
 
 interface Template {
@@ -63,12 +83,17 @@ interface Template {
   dimensions: [any];
   file_description: string;
   fields: Field[];
+  workbook_sheets?: WorkbookSheet[];
+  original_workbook_base64?: string;
   active: boolean;
 }
 
 interface FilledFieldData {
   field_name: string;
   values: any[];
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
 }
 
 interface ProducerData {
@@ -100,6 +125,10 @@ interface PublishedTemplate {
   updatedAt: string;
   loaded_data: ProducerData[];
   validators: Validator[];
+  responsible_producers?: string[];
+  final_submitted?: boolean;
+  final_submitted_date?: string;
+  isEncargado?: boolean;
 }
 
 interface ProducerUploadedTemplatesPageProps {
@@ -107,6 +136,49 @@ interface ProducerUploadedTemplatesPageProps {
   selectedDependency?: string;
   userDependencies?: {value: string, label: string}[];
 }
+
+const cloneExcelValue = <T,>(value: T): T => {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+};
+
+const getConfiguredFieldPosition = (field: Field, fieldIndex: number) => {
+  const configuredColumn = Number(field.column);
+  const configuredHeaderRow = Number(field.header_row);
+
+  return {
+    col: Number.isFinite(configuredColumn) && configuredColumn > 0
+      ? configuredColumn
+      : fieldIndex + 1,
+    headerRow: Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0
+      ? configuredHeaderRow
+      : 1,
+  };
+};
+
+const getSheetDataStartRow = (fields: Field[]) => {
+  const headerRows = fields
+    .map((field, index) => getConfiguredFieldPosition(field, index).headerRow)
+    .filter((row) => Number.isFinite(row) && row > 0);
+
+  return (headerRows.length ? Math.min(...headerRows) : 1) + 1;
+};
+
+const copyCellPresentation = (target: ExcelJS.Cell, source: ExcelJS.Cell) => {
+  target.style = cloneExcelValue(source.style || {});
+  if (source.dataValidation) target.dataValidation = cloneExcelValue(source.dataValidation);
+  if (source.note) target.note = cloneExcelValue(source.note);
+};
+
+const toExcelCellValue = (value: any): ExcelJS.CellValue => {
+  if (value === undefined || value === null || value === "") return null;
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") {
+    if ("text" in value || "hyperlink" in value) return value as ExcelJS.CellValue;
+    return JSON.stringify(value);
+  }
+  return value as ExcelJS.CellValue;
+};
 
 const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDependencies }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
@@ -126,6 +198,45 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
+
+  const isResponsibleForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
+    if (typeof publishedTemplate.isEncargado === 'boolean') return publishedTemplate.isEncargado;
+    const responsibleIds = publishedTemplate.responsible_producers || [];
+    if (responsibleIds.length === 0) return false;
+    const depId = (publishedTemplate.template as any)?.producers?.find(
+      (p: any) => p.dep_code === selectedDependency
+    )?._id;
+    return depId ? responsibleIds.includes(depId) : false;
+  };
+
+  const handleConfirmFinalSubmit = async (pubTemId: string) => {
+    modals.openConfirmModal({
+      title: "Confirmar envío final al SNIES",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas realizar el <strong>envío final al módulo SNIES</strong>?
+          <br /><br />
+          Esta acción confirma que toda la información ha sido consolidada y está lista para ser procesada en el SNIES.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar al SNIES", cancel: "Cancelar" },
+      confirmProps: { color: "blue" },
+      onConfirm: async () => {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmFinalSubmit`, {
+            pubTem_id: pubTemId,
+            email: session?.user?.email,
+          });
+          showNotification({ title: "Enviado al SNIES", message: "El envío final al módulo SNIES se realizó exitosamente", color: "blue" });
+          fetchTemplates(page, search);
+        } catch (error: any) {
+          const msg = error?.response?.data?.status || "Hubo un error al realizar el envío final";
+          showNotification({ title: "Error", message: msg, color: "red" });
+        }
+      },
+    });
+  };
 
   const fetchTemplates = async (page: number, search: string, filterByDependency?: string, limit?: number) => {
     try {
@@ -163,10 +274,13 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
       } else {
+        setTemplates([]);
+        setTotalPages(1);
         setProducerEndDate(undefined);
       }
     } catch (error) {
       setTemplates([]);
+      setTotalPages(1);
     }
   };
 
@@ -197,305 +311,148 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   }, [search]);
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
-    const { template } = publishedTemplate;
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(template.name);
-    // Campos de tipo fecha para formatear correctamente
-    const dateFields = new Set(
-      template.fields
-        .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
-        .map(f => f.name)
-    );
-
-    // Obtener el dep_code del usuario y los validadores frescos en paralelo
+    // Obtener dep_code del usuario y plantilla fresca en paralelo
     const [userResp, freshTemplateResponse] = await Promise.all([
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users?email=${session?.user?.email}`),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
     ]);
-    const depCode = userResp.data.dep_code;
-    const validators =
-      freshTemplateResponse.data.template?.validators ??
-      publishedTemplate.validators;
+    const depCode: string = userResp.data.dep_code;
+    const freshTemplate = freshTemplateResponse.data.template;
+    const validators = freshTemplate?.validators ?? publishedTemplate.validators;
 
-    // Buscar en loaded_data el bloque correcto
+    // Buscar datos del usuario
     const filledData: any = publishedTemplate.loaded_data.find(
-      (entry) => entry.dependency === depCode
+      (entry) => entry.dependency === depCode || (entry as any).dependency_code === depCode
     );
 
     if (!filledData) {
-      showNotification({
-        title: "Sin datos cargados",
-        message: "No se encontraron datos cargados para tu dependencia.",
-        color: "yellow",
-      });
+      showNotification({ title: "Sin datos cargados", message: "No se encontraron datos cargados para tu dependencia.", color: "yellow" });
       return;
     }
 
-    // Usar la misma lógica que published templates - crear headers con los campos de la plantilla
-    const headerRow = worksheet.addRow(
-      template.fields.map((field) => field.name)
-    );
+    const allFilledData: FilledFieldData[] = filledData.filled_data || [];
+
+    // Fill the saved data into the configured cells while preserving the base worksheet content.
+    const populateSheet = (ws: ExcelJS.Worksheet, fields: any[], sheetName?: string) => {
+      if (!fields?.length) return;
+
+      let relevant = sheetName
+        ? allFilledData.filter(fd => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
+        : allFilledData;
+      if (relevant.length === 0 && sheetName) {
+        const sheetFieldNames = new Set(fields.map((field: Field) => field.name));
+        relevant = allFilledData.filter(fd => sheetFieldNames.has(fd.field_name));
+      }
+
+      const numRows = relevant.reduce((max, fd) => (
+        Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0)
+      ), 0);
+      if (!numRows) return;
+
+      const startRow = getSheetDataStartRow(fields);
+      const templateRow = ws.getRow(startRow);
+
+      if (numRows > 1) {
+        ws.insertRows(startRow + 1, Array.from({ length: numRows - 1 }, () => []));
+      }
+
+      for (let i = 0; i < numRows; i++) {
+        const dataRow = startRow + i;
+        fields.forEach((field: any, colIdx: number) => {
+          const { col: fieldCol } = getConfiguredFieldPosition(field, colIdx);
+          const fd = relevant.find((d: FilledFieldData) => d.field_name === field.name);
+          const val = fd?.values?.[i] ?? null;
+          const targetCell = ws.getCell(dataRow, fieldCol);
+          copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
+          targetCell.value = toExcelCellValue(val);
+        });
+      }
+    };
+
+    // === RUTA 1: workbook base64 (preserva estructura original) ===
+    if (freshTemplate?.original_workbook_base64) {
+      const workbook = await loadWorkbookFromBase64(freshTemplate.original_workbook_base64);
+      const commentsBySheet = await extractWorkbookCommentsFromBase64(freshTemplate.original_workbook_base64);
+      for (const [sheetName, sheetComments] of commentsBySheet.entries()) {
+        const ws = workbook.getWorksheet(sheetName);
+        if (!ws) continue;
+        for (const [cellRef, noteText] of sheetComments.entries()) {
+          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText);
+        }
+      }
+      const workbookSheets: any[] = freshTemplate.workbook_sheets || [];
+      if (workbookSheets.length > 0) {
+        for (const sheet of workbookSheets) {
+          const ws = workbook.getWorksheet(sheet.name);
+          if (!ws || !sheet.fields?.length) continue;
+          populateSheet(ws, sheet.fields, sheet.name);
+        }
+      } else if (freshTemplate.fields?.length) {
+        const ws = workbook.getWorksheet(freshTemplate.name) || workbook.worksheets[0];
+        if (ws) populateSheet(ws, freshTemplate.fields);
+      }
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${freshTemplate.file_name || publishedTemplate.name}.xlsx`);
+      return;
+    }
+
+    // === RUTA 2: multi-hoja sin base64 ===
+    const workbookSheets: any[] = freshTemplate?.workbook_sheets || [];
+    if (workbookSheets.length > 0) {
+      const workbook = new ExcelJS.Workbook();
+      for (const sheet of workbookSheets) {
+        if (sheet.preserveOriginalContent) {
+          const ws = workbook.addWorksheet(sheet.name);
+          (sheet.rawRows || []).forEach((row: any) => ws.addRow(row || []));
+          (sheet.columnWidths || []).forEach((width: number, index: number) => {
+            ws.getColumn(index + 1).width = width || 20;
+          });
+          (sheet.cellNotes || []).forEach((note: SheetCellNote) => {
+            if (note?.row && note?.col && note?.note) {
+              applyFieldCommentNote(ws.getCell(note.row, note.col), note.note);
+            }
+          });
+          populateSheet(ws, sheet.fields || [], sheet.name);
+          applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields || [], validators, startRow: 2, endRow: 1000 });
+          continue;
+        }
+        const ws = workbook.addWorksheet(sheet.name);
+        const headerRow = ws.addRow(sheet.fields.map((f: Field) => f.name));
+        headerRow.eachCell((cell, colIdx) => {
+          cell.font = { bold: true, color: { argb: "FFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          applyFieldCommentNote(cell, sheet.fields[colIdx - 1]?.comment);
+        });
+        ws.columns.forEach(c => { c.width = 20; });
+        populateSheet(ws, sheet.fields, sheet.name);
+        applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+      }
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${freshTemplate?.file_name || publishedTemplate.name}.xlsx`);
+      return;
+    }
+
+    // === RUTA 3: hoja única (lógica anterior) ===
+    const { template } = publishedTemplate;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(template.name);
+
+    const headerRow = worksheet.addRow(template.fields.map((field) => field.name));
     headerRow.eachCell((cell, colNumber) => {
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "0f1f39" },
-      };
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
+      cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-
-      const field = template.fields[colNumber - 1];
-      applyFieldCommentNote(cell, field.comment);
+      applyFieldCommentNote(cell, template.fields[colNumber - 1]?.comment);
     });
+    worksheet.columns.forEach(c => { c.width = 20; });
 
-    worksheet.columns.forEach((column) => {
-      column.width = 20;
-    });
-
-    if (filledData) {
-      console.log('=== DEBUGGING DOWNLOAD ===');
-      console.log('Template fields:', template.fields.map(f => f.name));
-      console.log('Filled data fields:', filledData.filled_data.map((fd: any) => fd.field_name));
-      console.log('ALL filled data:', filledData.filled_data);
-      console.log('Total template fields:', template.fields.length);
-      console.log('Total filled data fields:', filledData.filled_data.length);
-      
-      const firstFilled = filledData?.filled_data.find((fd: any) => Array.isArray(fd.values) && fd.values.length > 0);
-      const numRows = firstFilled ? firstFilled.values.length : 0;
-      console.log('Number of rows to process:', numRows);
-      
-      for (let i = 0; i < numRows; i++) {
-        const rowValues = template.fields.map((field) => {
-          // Búsqueda exacta primero
-          let fieldData = filledData.filled_data.find(
-            (data: FilledFieldData) => data.field_name === field.name
-          );
-          
-          // Si no encuentra coincidencia exacta, buscar de forma flexible
-          if (!fieldData) {
-            const normalizedFieldName = field.name.toLowerCase().trim();
-            fieldData = filledData.filled_data.find(
-              (data: FilledFieldData) => data.field_name.toLowerCase().trim() === normalizedFieldName
-            );
-          }
-
-          let value = (fieldData?.values && fieldData.values[i] !== undefined)
-            ? fieldData.values[i]
-            : null;
-            
-          // Debug para campos específicos
-          if (field.name.includes('ESTRATEGIA') || field.name.includes('FLEXIBILIZACIÓN')) {
-            console.log(`Field: ${field.name}`);
-            console.log(`Found fieldData:`, fieldData);
-            console.log(`Value at index ${i}:`, value);
-          }
-
-          // Manejar hipervínculos de Excel y objetos complejos
-          if (value && typeof value === 'object' && value !== null) {
-            // Manejar hipervínculos de Excel primero
-            if (value.hyperlink || value.text || value.formula) {
-              value = value.text || value.hyperlink || value.formula;
-            }
-            // Si es un array, unir elementos
-            else if (Array.isArray(value)) {
-              if (value.length === 0) {
-                value = '';
-              } else {
-                value = value.map(item => {
-                  if (typeof item === 'object' && item !== null) {
-                    // Manejar hipervínculos de Excel en arrays
-                    if (item.hyperlink || item.text || item.formula) {
-                      return item.text || item.hyperlink || item.formula;
-                    }
-                    const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
-                    const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
-                    return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
-                  }
-                  return item;
-                }).join(', ');
-              }
-            }
-            // Buscar propiedades de email de forma más exhaustiva
-            else {
-              const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
-              const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
-              
-              if (emailKey) {
-                value = value[emailKey];
-              } else {
-                // Intentar extraer cualquier valor string del objeto
-                const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
-                if (objectValues.length > 0) {
-                  const firstStringValue = objectValues[0] as string;
-                  // Si parece un email, usarlo
-                  if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
-                    value = firstStringValue;
-                  } else {
-                    value = JSON.stringify(value);
-                  }
-                } else {
-                  value = JSON.stringify(value);
-                }
-              }
-            }
-          }
-
-          if (
-            value &&
-            (field.datatype === "Fecha" || field.datatype === "Fecha Inicial / Fecha Final")
-          ) {
-            try {
-              const date = new Date(value);
-              if (!isNaN(date.getTime())) {
-                value = date.toISOString().slice(0, 10); // YYYY-MM-DD
-              }
-            } catch {
-              // Si falla el parseo, deja el valor tal cual
-            }
-          }
-
-          return value;
-        });
-        
-        // Solo agregar la fila si tiene al menos un valor no vacío
-        const hasNonEmptyValue = rowValues.some(val => 
-          val !== null && val !== undefined && val !== '' && val !== 'null'
-        );
-        
-        if (hasNonEmptyValue) {
-          worksheet.addRow(rowValues);
-        }
-      }
-    } 
-
-    template.fields.forEach((field, index) => {
-      const colNumber = index + 1;
-      const maxRows = 1000;
-      for (let i = 2; i <= maxRows; i++) {
-        const row = worksheet.getRow(i);
-        const cell = row.getCell(colNumber);
-    
-        switch (field.datatype) {
-          case 'Entero':
-            cell.dataValidation = {
-              type: 'whole',
-              operator: 'between',
-              formulae: [1, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número entero.'
-            };
-            break;
-          case 'Decimal':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal.'
-            };
-            break;
-          case 'Porcentaje':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 100.0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal entre 0.0 y 100.0.'
-            };
-            break;
-          case 'Texto Corto':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [60],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 60 caracteres.'
-            };
-            break;
-          case 'Texto Largo':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [500],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 500 caracteres.'
-            };
-            break;
-          case 'True/False':
-            cell.dataValidation = {
-              type: 'list',
-              allowBlank: true,
-              formulae: ['"Si,No"'],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, selecciona Si o No.'
-            };
-            break;
-          case 'Fecha':
-          case 'Fecha Inicial / Fecha Final':
-            cell.dataValidation = {
-              type: 'date',
-              operator: 'between',
-              formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce una fecha válida en el formato DD/MM/AAAA.'
-            };
-            cell.numFmt = 'DD/MM/YYYY';
-            break;
-          case 'Link':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'greaterThan',
-              formulae: [0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un enlace válido.'
-            };
-            break;
-          default:
-            break;
-        }
-
-        if (field.comment && cell.dataValidation) {
-          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-          const promptBase = normalizedComment.slice(0, 220);
-          const promptText = normalizedComment.length > 220
-            ? `${promptBase}...`
-            : promptBase;
-          cell.dataValidation = {
-            ...cell.dataValidation,
-            showInputMessage: true,
-            promptTitle: field.name.slice(0, 32),
-            prompt: promptText,
-          };
-        }
-      }
-    });
-
-    applyValidatorDropdowns({
-      workbook,
-      worksheet,
-      fields: template.fields,
-      validators,
-      startRow: 2,
-      endRow: 1000,
-    });
+    populateSheet(worksheet, template.fields);
+    applyValidatorDropdowns({ workbook, worksheet, fields: template.fields, validators, startRow: 2, endRow: 1000 });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${template.file_name}.xlsx`);
+    saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template.file_name}.xlsx`);
   };
 
   const handleEditClick = (publishedTemplateId: string) => {
@@ -535,7 +492,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
   };
 
   const handleDirectEditClick = (publishedTemplateId: string) => {
-    router.push(`/producer/templates/form/update/${publishedTemplateId}`);
+    router.push(`/producer/templates/form/${publishedTemplateId}?from=uploaded`);
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
@@ -614,6 +571,26 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
                   <IconPencil size={16} />
                 </Button>
               </Tooltip>
+              {isResponsibleForTemplate(publishedTemplate) && (
+                <Tooltip
+                  label={
+                    publishedTemplate.final_submitted
+                      ? "Ya se realizó el envío final al SNIES"
+                      : "Envío final al SNIES"
+                  }
+                  position="top"
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant={publishedTemplate.final_submitted ? "filled" : "outline"}
+                    color="blue"
+                    onClick={() => handleConfirmFinalSubmit(publishedTemplate._id)}
+                    disabled={!!publishedTemplate.final_submitted}
+                  >
+                    <IconChecks size={16} />
+                  </Button>
+                </Tooltip>
+              )}
             </Group>
           </Center>
         </Table.Td>

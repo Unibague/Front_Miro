@@ -62,9 +62,17 @@ export default function PublicFormPage() {
         const fd: FormData = res.data;
         setFormData(fd);
 
-        // Inicializar una fila vacía por hoja
+        // Inicializar una fila por hoja con AÑO y SEMESTRE prellenados
+        const _now = new Date();
+        const _year = _now.getFullYear();
+        const _semester = _now.getMonth() < 6 ? 1 : 2;
         const initialRows: Record<string, Record<string, any>[]> = {};
-        fd.sheets.forEach(s => { initialRows[s.name] = [{}]; });
+        fd.sheets.forEach(s => {
+          const prefilled: Record<string, any> = {};
+          if (s.fields?.some(f => f.name.toUpperCase() === 'AÑO')) prefilled['AÑO'] = _year;
+          if (s.fields?.some(f => f.name.toUpperCase() === 'SEMESTRE')) prefilled['SEMESTRE'] = _semester;
+          initialRows[s.name] = [prefilled];
+        });
         setSheetRows(initialRows);
         if (fd.sheets.length > 0) setActiveTab(fd.sheets[0].name);
 
@@ -113,8 +121,16 @@ export default function PublicFormPage() {
     });
   };
 
-  const addRow = (sheetName: string) =>
-    setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), {}] }));
+  const addRow = (sheetName: string) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const semester = now.getMonth() < 6 ? 1 : 2;
+    const sheet = formData?.sheets.find(s => s.name === sheetName);
+    const prefilled: Record<string, any> = {};
+    if (sheet?.fields?.some(f => f.name.toUpperCase() === 'AÑO')) prefilled['AÑO'] = year;
+    if (sheet?.fields?.some(f => f.name.toUpperCase() === 'SEMESTRE')) prefilled['SEMESTRE'] = semester;
+    setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), prefilled] }));
+  };
 
   const removeRow = (sheetName: string, idx: number) =>
     setSheetRows(prev => ({ ...prev, [sheetName]: (prev[sheetName] || []).filter((_, i) => i !== idx) }));

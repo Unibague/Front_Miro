@@ -8,6 +8,7 @@ import {
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, LabelList, CartesianGrid,
   Tooltip as ReTooltip, PieChart, Pie, Cell,
+  LineChart, Line, Legend,
 } from "recharts";
 import {
   IconX, IconCurrencyDollar, IconTrendingUp, IconTarget, IconBulb,
@@ -224,6 +225,10 @@ type PresupuestoChartDatum = {
   causadoPct: number;
 };
 
+type PresupuestoStack = "pres" | "comp" | "caus";
+type PresupuestoPart = "gasto" | "inversion";
+type PresupuestoSelection = { label: string; stack: PresupuestoStack; part: PresupuestoPart };
+
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -337,6 +342,281 @@ function compareBudgetLabels(a: string, b: string) {
   return a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
 }
 
+function MacroEntityCard({
+  entity, data, dataPeriodo, color,
+}: {
+  entity: { _id: string; codigo: string; nombre: string; avance: number; semaforo: string };
+  data: { anio: string | number; meta: number; avance: number }[];
+  dataPeriodo: { corte: string; meta: number; avance: number }[];
+  color: string;
+}) {
+  const anios = data.map((d) => String(d.anio));
+  const [selectedAnio, setSelectedAnio] = useState<string>(anios[0] ?? "");
+  const activeAnio = selectedAnio && anios.includes(selectedAnio) ? selectedAnio : (anios[0] ?? "");
+  const activeData = data.find((d) => String(d.anio) === activeAnio);
+
+  const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
+  const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
+
+  const meta   = Number(activeData?.meta   ?? 0);
+  const avance = Number(activeData?.avance ?? 0);
+  const pctAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
+  const restante = Math.max(meta - avance, 0);
+  const pieColor = pctAnio >= 80 ? "#16a34a" : pctAnio >= 50 ? "#d97706" : "#dc2626";
+  const pieData = [
+    { name: "Ejecutado", value: avance, fill: pieColor },
+    { name: "Programado restante", value: restante, fill: "#e9ecef" },
+  ];
+
+  return (
+    <Paper withBorder radius="xl" p="md">
+      {/* Encabezado */}
+      <Group gap={10} mb="md" align="center" wrap="nowrap">
+        <Box w={12} h={12} style={{ borderRadius: 3, background: color, flexShrink: 0 }} />
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Group justify="space-between" align="center" wrap="nowrap">
+            <Box style={{ minWidth: 0 }}>
+              <Text size="md" fw={800}>{entity.codigo}</Text>
+              <Text size="sm" c="dimmed" lineClamp={1}>{entity.nombre}</Text>
+            </Box>
+            <Group gap={8} align="center" style={{ flexShrink: 0 }}>
+              <Text fw={900} size="xl" lh={1} style={{ color: SEMAFORO_COLOR[entity.semaforo] ?? color }}>
+                {Math.round(Number(entity.avance) || 0)}%
+              </Text>
+              <Badge color={SEMAFORO_BADGE[entity.semaforo] ?? "gray"} variant="light" size="sm">
+                {SEMAFORO_LABEL[entity.semaforo] ?? entity.semaforo}
+              </Badge>
+            </Group>
+          </Group>
+          <Progress
+            value={Math.min(Math.round(Number(entity.avance) || 0), 100)}
+            size="xs" radius="xl" mt={6}
+            color={SEMAFORO_BADGE[entity.semaforo] ?? "blue"}
+          />
+        </Box>
+      </Group>
+
+      <Grid gutter="sm">
+        {/* ── Programado vs Ejecutado por Año ── */}
+        <Grid.Col span={12}>
+          <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año</Text>
+          {!hasAnio ? (
+            <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
+          ) : (
+            <Grid gutter="sm" align="center">
+              {/* Filtro de años + Donut */}
+              <Grid.Col span={{ base: 12, sm: 4 }}>
+                {/* Pills de año */}
+                <Group gap={6} mb={10} wrap="wrap">
+                  {anios.map((a) => (
+                    <Box
+                      key={a}
+                      onClick={() => setSelectedAnio(a)}
+                      style={{
+                        cursor: "pointer",
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: activeAnio === a ? color : "var(--mantine-color-default-hover)",
+                        color: activeAnio === a ? "#fff" : undefined,
+                        transition: "all .15s",
+                      }}
+                    >
+                      {a}
+                    </Box>
+                  ))}
+                </Group>
+                {/* Donut */}
+                <Box style={{ position: "relative", width: 140, height: 140, margin: "0 auto" }}>
+                  <PieChart width={140} height={140}>
+                    <Pie data={pieData} cx={65} cy={65} innerRadius={42} outerRadius={62}
+                      startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                      {pieData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                    </Pie>
+                  </PieChart>
+                  <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{pctAnio}%</Text>
+                    <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
+                  </Box>
+                </Box>
+                <Box mt={8} style={{ textAlign: "center" }}>
+                  <Group justify="center" gap={8}>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Ejecutado: {avance.toLocaleString("es-CO")}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Prog.: {meta.toLocaleString("es-CO")}</Text></Group>
+                  </Group>
+                </Box>
+              </Grid.Col>
+
+              {/* Líneas por año */}
+              <Grid.Col span={{ base: 12, sm: 8 }}>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                    <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                    <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
+                    <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: color }} />
+                    <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 4, fill: pieColor }}
+                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Grid.Col>
+            </Grid>
+          )}
+        </Grid.Col>
+
+        {/* ── Programado vs Ejecutado por Periodo ── */}
+        <Grid.Col span={12}>
+          <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Periodo</Text>
+          {!hasPeriodo ? (
+            <Center h={120}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={dataPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <XAxis dataKey="corte" tick={{ fontSize: 10, fontWeight: 600 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
+                <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: color }} />
+                <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 3, fill: pieColor }}
+                  label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </Grid.Col>
+      </Grid>
+    </Paper>
+  );
+}
+
+function AccionMetaAvanceCard({
+  accion, data, dataPeriodo, color,
+}: {
+  accion: { _id: string; codigo: string; nombre: string };
+  data: { anio: string | number; meta: number; avance: number }[];
+  dataPeriodo: { corte: string; meta: number; avance: number }[];
+  color: string;
+}) {
+  const anios = data.map((d) => String(d.anio));
+  const [selectedAnio, setSelectedAnio] = useState<string>(anios[0] ?? "");
+  const activeAnio = selectedAnio && anios.includes(selectedAnio) ? selectedAnio : (anios[0] ?? "");
+  const activeData = data.find((d) => String(d.anio) === activeAnio);
+
+  const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
+  const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
+
+  const meta    = Number(activeData?.meta   ?? 0);
+  const avance  = Number(activeData?.avance ?? 0);
+  const pctAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
+  const restante = Math.max(meta - avance, 0);
+  const pieColor = pctAnio >= 80 ? "#16a34a" : pctAnio >= 50 ? "#d97706" : "#dc2626";
+  const pieData = [
+    { name: "Avance", value: avance, fill: pieColor },
+    { name: "Meta restante", value: restante, fill: "#e9ecef" },
+  ];
+
+  return (
+    <Paper withBorder radius="xl" p="md">
+      <Group gap={10} mb="sm" align="center" wrap="nowrap">
+        <Box w={12} h={12} style={{ borderRadius: 3, background: color, flexShrink: 0 }} />
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Text size="sm" fw={800}>{accion.codigo}</Text>
+          <Text size="xs" c="dimmed" lineClamp={1}>{accion.nombre}</Text>
+        </Box>
+      </Group>
+
+      <Grid gutter="sm">
+        <Grid.Col span={12}>
+          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Año</Text>
+          {!hasAnio ? (
+            <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
+          ) : (
+            <Grid gutter="sm" align="center">
+              <Grid.Col span={{ base: 12, sm: 4 }}>
+                <Group gap={6} mb={10} wrap="wrap">
+                  {anios.map((a) => (
+                    <Box
+                      key={a}
+                      onClick={() => setSelectedAnio(a)}
+                      style={{
+                        cursor: "pointer",
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        background: activeAnio === a ? color : "var(--mantine-color-default-hover)",
+                        color: activeAnio === a ? "#fff" : undefined,
+                        transition: "all .15s",
+                      }}
+                    >
+                      {a}
+                    </Box>
+                  ))}
+                </Group>
+                <Box style={{ position: "relative", width: 140, height: 140, margin: "0 auto" }}>
+                  <PieChart width={140} height={140}>
+                    <Pie data={pieData} cx={65} cy={65} innerRadius={42} outerRadius={62}
+                      startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                      {pieData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                    </Pie>
+                  </PieChart>
+                  <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{pctAnio}%</Text>
+                    <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
+                  </Box>
+                </Box>
+                <Box mt={8} style={{ textAlign: "center" }}>
+                  <Group justify="center" gap={8}>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Avance: {avance.toLocaleString("es-CO")}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Meta: {meta.toLocaleString("es-CO")}</Text></Group>
+                  </Group>
+                </Box>
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, sm: 8 }}>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                    <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
+                    <Legend formatter={(name) => name === "meta" ? "Meta" : "Avance"} />
+                    <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: color }} />
+                    <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 4, fill: pieColor }}
+                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Grid.Col>
+            </Grid>
+          )}
+        </Grid.Col>
+
+        <Grid.Col span={12}>
+          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Periodo</Text>
+          {!hasPeriodo ? (
+            <Center h={120}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
+          ) : (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={dataPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <XAxis dataKey="corte" tick={{ fontSize: 10, fontWeight: 600 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
+                <Legend formatter={(name) => name === "meta" ? "Meta" : "Avance"} />
+                <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: color }} />
+                <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 3, fill: pieColor }}
+                  label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </Grid.Col>
+      </Grid>
+    </Paper>
+  );
+}
+
 export default function PdiGraficas() {
   const [pdiData, setPdiData] = useState<{
     macros: Macroproyecto[]; proyectos: Proyecto[]; acciones: Accion[]; indicadores: Indicador[];
@@ -349,6 +629,8 @@ export default function PdiGraficas() {
   const [selectedAccion,   setSelectedAccion]   = useState<string | null>("todos");
 
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSourceRow[]>([]);
+  const [selectedPres, setSelectedPres] = useState<PresupuestoSelection | null>(null);
+  const [hoveredPres, setHoveredPres] = useState<PresupuestoSelection | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -945,97 +1227,375 @@ export default function PdiGraficas() {
 
             {/* Derecha: barras según el filtro activo */}
             <Box style={{ flex: 1, minWidth: 0 }}>
-          <ResponsiveContainer width="100%" height={Math.max(260, presupuestoChartData.length * 56)}>
-            <BarChart data={presupuestoChartData} margin={{ top: 14, right: 24, left: 10, bottom: 8 }} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-              <XAxis dataKey="label" tick={{ fontSize: 12, fontWeight: 700 }} interval={0} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} width={60} />
-              <ReTooltip
-                allowEscapeViewBox={{ x: true, y: true }}
-                wrapperStyle={{ pointerEvents: "none", zIndex: 30 }}
-                content={({ active, payload, label }) => {
-                  if (!active || !payload?.length) return null;
-                  const d = presupuestoChartData.find(x => x.label === label);
-                  if (!d) return null;
-                  const pctOfBudget = (value: number) => d.presupuesto > 0
-                    ? Math.min(Math.round((value / d.presupuesto) * 100), 100)
-                    : 0;
-                  const row = (title: string, g: number, inv: number, total: number, color: string, percentage = pctOfBudget(total)) => (
-                    <Box key={title} py={5} style={{ borderTop: "1px solid #edf2f7" }}>
-                      <Group justify="space-between" gap={10} wrap="nowrap">
-                        <Text size="xs" fw={900} c={color}>{title}</Text>
-                        <Text size="xs" fw={900}>{fmtCompactCOP(total)}</Text>
-                      </Group>
-                      <Group gap={8} wrap="nowrap" mt={2}>
-                        <Text size="0.68rem" c="dimmed">G: <b style={{ color }}>{fmtCompactCOP(g)}</b></Text>
-                        <Text size="0.68rem" c="dimmed">I: <b style={{ color }}>{fmtCompactCOP(inv)}</b></Text>
-                        <Text size="0.68rem" c="dimmed"><b style={{ color }}>{percentage}%</b></Text>
-                      </Group>
-                    </Box>
-                  );
-                  return (
-                    <Paper withBorder p="xs" radius="md" shadow="md" style={{ width: 300, maxWidth: "calc(100vw - 32px)" }}>
-                      <Text size="xs" fw={900} lh={1.2}>{label}</Text>
-                      <Text size="0.68rem" c="dimmed" mb={4} lineClamp={2}>{d.nombre}</Text>
-                      {row("Presupuesto", d.presupuestoGasto, d.presupuestoInversion, d.presupuesto, "#868e96", d.presupuesto > 0 ? 100 : 0)}
-                      {row("Comprometido", d.comprometidoGasto, d.comprometidoInversion, d.comprometido, BLUE)}
-                      {row("Causado", d.causadoGasto, d.causadoInversion, d.causado, TEAL)}
-                    </Paper>
-                  );
-                }}
-              />
-              {/* Presupuesto — gasto + inversión apilados (etiqueta en el tope) */}
-              <Bar dataKey="presupuestoGasto" name="Pres. Gasto" stackId="pres" fill="#adb5bd" barSize={22} />
-              <Bar dataKey="presupuestoInversion" name="Pres. Inversión" stackId="pres" fill="#dee2e6" radius={[4, 4, 0, 0]} barSize={22}>
-                <LabelList dataKey="presupuesto" position="top" style={{ fontSize: 10, fill: "#868e96", fontWeight: 700 }}
-                  formatter={(v: any) => v > 0 ? `$${(Number(v) / 1_000_000).toFixed(0)}M` : ""} />
-              </Bar>
-              {/* Comprometido — gasto + inversión apilados */}
-              <Bar dataKey="comprometidoGasto" name="Comp. Gasto" stackId="comp" fill={BLUE} barSize={22} />
-              <Bar dataKey="comprometidoInversion" name="Comp. Inversión" stackId="comp" fill="#74c0fc" radius={[4, 4, 0, 0]} barSize={22}>
-                <LabelList dataKey="comprometido" position="top" style={{ fontSize: 10, fill: BLUE, fontWeight: 700 }}
-                  formatter={(v: any) => v > 0 ? `$${(Number(v) / 1_000_000).toFixed(0)}M` : ""} />
-              </Bar>
-              {/* Causado — gasto + inversión apilados */}
-              <Bar dataKey="causadoGasto" name="Caus. Gasto" stackId="caus" fill={TEAL} barSize={22} />
-              <Bar dataKey="causadoInversion" name="Caus. Inversión" stackId="caus" fill="#63e6be" radius={[4, 4, 0, 0]} barSize={22}>
-                <LabelList dataKey="causadoPct" position="top" style={{ fontSize: 10, fill: TEAL, fontWeight: 700 }}
-                  formatter={(v: any) => Number(v) > 0 ? `${Number(v)}%` : ""} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {/* Paleta de colores por macro: presupuesto=claro, comprometido=medio, causado=sólido */}
+          {(() => {
+            const MACRO_PALETTES = [
+              { light: "#93c5fd", mid: "#3b82f6", solid: "#1d4ed8" },
+              { light: "#86efac", mid: "#22c55e", solid: "#15803d" },
+              { light: "#fdba74", mid: "#f97316", solid: "#c2410c" },
+              { light: "#c4b5fd", mid: "#8b5cf6", solid: "#6d28d9" },
+              { light: "#fda4af", mid: "#f43f5e", solid: "#be123c" },
+              { light: "#67e8f9", mid: "#06b6d4", solid: "#0e7490" },
+            ];
+            const paletteIndex = (d: PresupuestoChartDatum, fallback: number) => {
+              const macroCode = macroCodeFromText(d.label);
+              const index = macros.findIndex((macro) => normalizeBudgetCode(macro.codigo) === macroCode);
+              return index >= 0 ? index : fallback;
+            };
+            const palette = (d: PresupuestoChartDatum, i: number) =>
+              MACRO_PALETTES[paletteIndex(d, i) % MACRO_PALETTES.length];
 
-          {/* Leyenda */}
-          <Group gap={20} justify="center" mt="sm" wrap="wrap">
-            <Group gap={4}>
-              <Box w={10} h={10} style={{ background: "#adb5bd", borderRadius: 2 }} />
-              <Box w={10} h={10} style={{ background: "#dee2e6", borderRadius: 2 }} />
-              <Text size="xs" fw={600} c="dimmed">Presupuesto (Gasto / Inv)</Text>
-            </Group>
-            <Group gap={4}>
-              <Box w={10} h={10} style={{ background: BLUE, borderRadius: 2 }} />
-              <Box w={10} h={10} style={{ background: "#74c0fc", borderRadius: 2 }} />
-              <Text size="xs" fw={600}>Comprometido (Gasto / Inv)</Text>
-            </Group>
-            <Group gap={4}>
-              <Box w={10} h={10} style={{ background: TEAL, borderRadius: 2 }} />
-              <Box w={10} h={10} style={{ background: "#63e6be", borderRadius: 2 }} />
-              <Text size="xs" fw={600} c="teal">Causado (Gasto / Inv)</Text>
-            </Group>
-          </Group>
+            const fmtM = (v: number) => v >= 1_000_000
+              ? `$${(v / 1_000_000).toFixed(1)}M`
+              : v > 0 ? `$${v.toLocaleString("es-CO")}` : "$0";
 
-          {/* Elementos del gráfico */}
-          <Group gap="lg" mt="sm" wrap="wrap" justify="center">
-            {presupuestoChartData.map((d, i) => (
-              <Group key={d.label} gap={6} align="flex-start" wrap="nowrap" style={{ minWidth: 160 }}>
-                <Box w={8} h={8} style={{ borderRadius: "50%", background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0, marginTop: 3 }} />
-                <Box style={{ minWidth: 0 }}>
-                  <Text size="xs" fw={700} c="blue" lh={1.2}>{d.label}</Text>
-                  <Text size="xs" c="dimmed" lh={1.3}>{d.nombre}</Text>
+            const pct = (num: number, den: number) =>
+              den > 0 ? Math.round((num / den) * 100) : 0;
+
+            const isDimmed = (d: PresupuestoChartDatum, stack: PresupuestoStack, part: PresupuestoPart) => {
+              if (selectedPres) {
+                return selectedPres.label !== d.label || selectedPres.stack !== stack || selectedPres.part !== part;
+              }
+              if (hoveredPres) {
+                return hoveredPres.label !== d.label || hoveredPres.stack !== stack || hoveredPres.part !== part;
+              }
+              return false;
+            };
+
+            const handleBarHover = (stack: PresupuestoStack, part: PresupuestoPart) =>
+              (barData: any, index: number) => {
+                const lbl = presupuestoChartData[index]?.label || barData?.payload?.label;
+                if (!lbl) return;
+                setHoveredPres({ label: lbl, stack, part });
+              };
+
+            const handleBarMouseDown = (_barData: any, _index: number, event: any) => {
+              event?.preventDefault?.();
+              event?.stopPropagation?.();
+              event?.currentTarget?.blur?.();
+            };
+
+            const handleBarClick = (stack: PresupuestoStack, part: PresupuestoPart) =>
+              (barData: any, index: number, event: any) => {
+                event?.preventDefault?.();
+                event?.stopPropagation?.();
+                event?.currentTarget?.blur?.();
+                const lbl = presupuestoChartData[index]?.label || barData?.payload?.label;
+                if (!lbl) return;
+                setSelectedPres((current) =>
+                  current && current.label === lbl && current.stack === stack && current.part === part
+                    ? null
+                    : { label: lbl, stack, part }
+                );
+              };
+
+            const stackLabel: Record<PresupuestoStack, string> = {
+              pres: "Presupuesto",
+              comp: "Comprometido",
+              caus: "Causado",
+            };
+
+            const partLabel = (partValue: PresupuestoPart) =>
+              partValue === "gasto" ? "Gasto" : "Inversión";
+
+            const stackTotal = (d: PresupuestoChartDatum, stackValue: PresupuestoStack) => {
+              if (stackValue === "pres") return d.presupuesto;
+              if (stackValue === "comp") return d.comprometido;
+              return d.causado;
+            };
+
+            const stackPartAmount = (
+              d: PresupuestoChartDatum,
+              stackValue: PresupuestoStack,
+              partValue: PresupuestoPart,
+            ) => {
+              if (stackValue === "pres") {
+                return partValue === "gasto" ? d.presupuestoGasto : d.presupuestoInversion;
+              }
+              if (stackValue === "comp") {
+                return partValue === "gasto" ? d.comprometidoGasto : d.comprometidoInversion;
+              }
+              return partValue === "gasto" ? d.causadoGasto : d.causadoInversion;
+            };
+
+            const compPct  = (d: PresupuestoChartDatum) => pct(d.causado, d.comprometido);
+            const causPct  = (d: PresupuestoChartDatum) => pct(d.causado,      d.presupuesto);
+
+            const budgetDatumFromShape = (props: any) => {
+              const label = props?.payload?.label;
+              if (label) {
+                const byLabel = presupuestoChartData.find((item) => item.label === label);
+                if (byLabel) return byLabel;
+              }
+              const index = Number(props.index);
+              return presupuestoChartData[index];
+            };
+
+            const renderBudgetBarShape = (stack: PresupuestoStack, part: PresupuestoPart) => (props: any) => {
+              const d = budgetDatumFromShape(props);
+              if (!d) return null;
+
+              const x = Number(props.x);
+              const y = Number(props.y);
+              const width = Number(props.width);
+              const height = Number(props.height);
+              const segmentAmount = stackPartAmount(d, stack, part);
+              if (segmentAmount <= 0 || width <= 0 || height === 0) return null;
+
+              const inversionAmount = stackPartAmount(d, stack, "inversion");
+              const isTopPart = part === "inversion" ? segmentAmount > 0 : inversionAmount <= 0;
+              const isSelected = selectedPres?.label === d.label && selectedPres?.stack === stack;
+              const selectedPart = isSelected && selectedPres ? selectedPres.part : part;
+              const selectedAmount = stackPartAmount(d, stack, selectedPart);
+              const selectedCausedPart = stackPartAmount(d, "caus", selectedPart);
+              const selectedPctText = stack === "pres"
+                ? `Causado: ${fmtM(d.causado)} (${causPct(d)}%)`
+                : stack === "comp"
+                  ? `Causado: ${fmtM(selectedCausedPart)} (${pct(selectedCausedPart, selectedAmount)}%)`
+                  : `${causPct(d)}% del presupuesto`;
+
+              const gastoAmt   = stackPartAmount(d, stack, "gasto");
+              const invAmt     = stackPartAmount(d, stack, "inversion");
+
+              // Líneas de label: total siempre, + gasto/inv + % si está seleccionado
+              const lines: { text: string; color: string; size: number; weight: number }[] = [];
+              if (isTopPart && !isSelected) {
+                lines.push({ text: fmtM(stackTotal(d, stack)), color: "#0f172a", size: 12, weight: 900 });
+                if (stack === "pres") lines.push({ text: `${causPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
+                if (stack === "comp") lines.push({ text: `${compPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
+                if (stack === "caus") lines.push({ text: `${causPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
+              }
+
+              const lineHeight = 14;
+              const totalLabelHeight = lines.length * lineHeight;
+              const labelBaseY = Math.max(y - 6, totalLabelHeight + 4);
+              const cardWidth = 238;
+              const cardHeight = 78;
+              const cardX = Math.max(112, x + width / 2 - cardWidth / 2);
+              const cardY = Math.max(10, y - cardHeight - 14);
+              const fill = props.fill || "#94a3b8";
+
+              return (
+                <g>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={Math.abs(height)}
+                    fill={fill}
+                    fillOpacity={props.fillOpacity ?? 1}
+                    opacity={props.opacity ?? 1}
+                    rx={isTopPart ? 4 : 0}
+                    ry={isTopPart ? 4 : 0}
+                    stroke="transparent"
+                    strokeWidth={0}
+                    focusable="false"
+                  />
+                  {lines.length > 0 && (
+                    <text textAnchor="middle" pointerEvents="none">
+                      {lines.map((line, idx) => (
+                        <tspan
+                          key={idx}
+                          x={x + width / 2}
+                          y={labelBaseY - (lines.length - 1 - idx) * lineHeight}
+                          fontSize={line.size}
+                          fontWeight={line.weight}
+                          fill={line.color}
+                        >
+                          {line.text}
+                        </tspan>
+                      ))}
+                    </text>
+                  )}
+                  {isTopPart && isSelected && (
+                    <g pointerEvents="none">
+                      <rect
+                        x={cardX}
+                        y={cardY}
+                        width={cardWidth}
+                        height={cardHeight}
+                        rx={8}
+                        ry={8}
+                        fill="#fff"
+                        stroke="#dbe3ef"
+                        strokeWidth={1}
+                      />
+                      <text x={cardX + 12} y={cardY + 18} fontSize={12} fontWeight={900} fill="#0f172a">
+                        {stackLabel[stack]}
+                      </text>
+                      <text x={cardX + 12} y={cardY + 39} fontSize={15} fontWeight={900} fill="#020617">
+                        {fmtM(selectedAmount)}
+                      </text>
+                      <text x={cardX + 12} y={cardY + 54} fontSize={10} fontWeight={800} fill="#64748b">
+                        {selectedPctText}
+                      </text>
+                      <text x={cardX + 12} y={cardY + 68} fontSize={10} fontWeight={700} fill="#475569">
+                        {`Gasto: ${fmtM(gastoAmt)}  Inversion: ${fmtM(invAmt)}`}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            };
+
+            return (
+              <>
+                <style jsx global>{`
+                  .pdi-budget-chart,
+                  .pdi-budget-chart *,
+                  .pdi-budget-chart *:focus,
+                  .pdi-budget-chart *:focus-visible,
+                  .pdi-budget-chart .recharts-surface,
+                  .pdi-budget-chart .recharts-wrapper,
+                  .pdi-budget-chart .recharts-layer,
+                  .pdi-budget-chart .recharts-rectangle,
+                  .pdi-budget-chart .recharts-active-bar,
+                  .pdi-budget-chart .recharts-active-bar * {
+                    outline: none !important;
+                  }
+
+                  .pdi-budget-chart .recharts-tooltip-cursor {
+                    fill: transparent !important;
+                    stroke: transparent !important;
+                    stroke-width: 0 !important;
+                  }
+
+                  .pdi-budget-chart .recharts-active-bar .recharts-rectangle,
+                  .pdi-budget-chart .recharts-active-bar path {
+                    stroke: transparent !important;
+                    stroke-width: 0 !important;
+                  }
+                `}</style>
+
+                <Box className="pdi-budget-chart" onClick={() => setSelectedPres(null)}>
+                <ResponsiveContainer width="100%" height={Math.max(360, presupuestoChartData.length * 76)}>
+                  <BarChart
+                    data={presupuestoChartData}
+                    margin={{ top: 88, right: 38, left: 18, bottom: 18 }}
+                    barCategoryGap="24%"
+                    barGap={10}
+                    accessibilityLayer={false}
+                    style={{ cursor: "pointer", outline: "none" }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                    <XAxis dataKey="label" tick={{ fontSize: 14, fontWeight: 800 }} interval={0} />
+                    <YAxis tick={{ fontSize: 12, fontWeight: 600 }} tickFormatter={(v) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(0)}M` : `$${v}`} width={72} />
+
+                    {/* Presupuesto — color claro por macro */}
+                    <Bar dataKey="presupuestoGasto" name="Pres. Gasto" stackId="pres" barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("pres", "gasto")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("pres", "gasto")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("pres", "gasto")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).light}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "pres", "gasto") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="presupuestoInversion" name="Pres. Inversión" stackId="pres" radius={[4, 4, 0, 0]} barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("pres", "inversion")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("pres", "inversion")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("pres", "inversion")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).light} fillOpacity={0.62}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "pres", "inversion") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+
+                    {/* Comprometido — color medio por macro */}
+                    <Bar dataKey="comprometidoGasto" name="Comp. Gasto" stackId="comp" barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("comp", "gasto")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("comp", "gasto")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("comp", "gasto")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).mid}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "comp", "gasto") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="comprometidoInversion" name="Comp. Inversión" stackId="comp" radius={[4, 4, 0, 0]} barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("comp", "inversion")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("comp", "inversion")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("comp", "inversion")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).mid} fillOpacity={0.7}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "comp", "inversion") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+
+                    {/* Causado — color sólido por macro */}
+                    <Bar dataKey="causadoGasto" name="Caus. Gasto" stackId="caus" barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("caus", "gasto")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("caus", "gasto")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("caus", "gasto")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).solid}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "caus", "gasto") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="causadoInversion" name="Caus. Inversión" stackId="caus" radius={[4, 4, 0, 0]} barSize={30} activeBar={false}
+                      shape={renderBudgetBarShape("caus", "inversion")}
+                      focusable="false" tabIndex={-1}
+                      onMouseEnter={handleBarHover("caus", "inversion")}
+                      onMouseDown={handleBarMouseDown}
+                      onMouseLeave={() => setHoveredPres(null)}
+                      onClick={handleBarClick("caus", "inversion")}>
+                      {presupuestoChartData.map((d, i) => (
+                        <Cell key={i} fill={palette(d, i).solid} fillOpacity={0.72}
+                          stroke="transparent" strokeWidth={0} focusable="false"
+                          opacity={isDimmed(d, "caus", "inversion") ? 0.42 : 1} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
                 </Box>
-              </Group>
-            ))}
-          </Group>
+
+                {/* Leyenda por macro */}
+                <Text size="xs" fw={800} c="dimmed" mt="sm" mb={6}>
+                  Colores por macroproyecto
+                </Text>
+                <Box style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 8,
+                }}>
+                  {presupuestoChartData.map((d, i) => (
+                    <Group key={d.label} gap={8} align="flex-start" wrap="nowrap" style={{
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      background: "#fff",
+                      minWidth: 0,
+                    }}>
+                      <Box w={16} h={16} style={{ borderRadius: 4, background: palette(d, i).solid, flexShrink: 0, marginTop: 1 }} />
+                      <Box style={{ minWidth: 0 }}>
+                        <Text size="xs" fw={700} lh={1.2} style={{ color: palette(d, i).solid }}>{d.label}</Text>
+                        <Text size="xs" c="dimmed" lh={1.3}>{d.nombre}</Text>
+                      </Box>
+                    </Group>
+                  ))}
+                </Box>
+              </>
+            );
+          })()}
             </Box>{/* fin columna derecha */}
           </Box>{/* fin flex container */}
         </Paper>
@@ -1044,84 +1604,15 @@ export default function PdiGraficas() {
       {/* ── Gráficas separadas por entidad (macro o proyecto) ────────── */}
       {!proyectoActual && (
         <Stack gap="md">
-          {entidadesDataAnio.map(({ entity, data }, i) => {
-            const dataPeriodo = entidadesDataPeriodo[i]?.data ?? [];
-            const color = CHART_COLORS[i % CHART_COLORS.length];
-            const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
-            const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
-            return (
-              <Paper key={entity._id} withBorder radius="xl" p="md">
-                <Group gap={10} mb="xs" align="center" wrap="nowrap">
-                  <Box w={12} h={12} style={{ borderRadius: 3, background: color, flexShrink: 0 }} />
-                  <Box style={{ minWidth: 0, flex: 1 }}>
-                    <Group justify="space-between" align="center" wrap="nowrap">
-                      <Box style={{ minWidth: 0 }}>
-                        <Text size="md" fw={800}>{entity.codigo}</Text>
-                        <Text size="sm" c="dimmed" lineClamp={1}>{entity.nombre}</Text>
-                      </Box>
-                      <Group gap={8} align="center" style={{ flexShrink: 0 }}>
-                        <Text fw={900} size="xl" lh={1} style={{ color: SEMAFORO_COLOR[entity.semaforo] ?? color }}>
-                          {Math.round(Number(entity.avance) || 0)}%
-                        </Text>
-                        <Badge color={SEMAFORO_BADGE[entity.semaforo] ?? "gray"} variant="light" size="sm">
-                          {SEMAFORO_LABEL[entity.semaforo] ?? entity.semaforo}
-                        </Badge>
-                      </Group>
-                    </Group>
-                    <Progress
-                      value={Math.min(Math.round(Number(entity.avance) || 0), 100)}
-                      size="xs" radius="xl" mt={6}
-                      color={SEMAFORO_BADGE[entity.semaforo] ?? "blue"}
-                    />
-                  </Box>
-                </Group>
-                <Grid gutter="sm">
-                  <Grid.Col span={{ base: 12, md: 6 }}>
-                    <Text size="sm" fw={700} mb={4}>Meta vs Avance por Año</Text>
-                    {!hasAnio ? (
-                      <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
-                    ) : (
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={data} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                          <XAxis dataKey="anio" tick={{ fontSize: 13, fontWeight: 600 }} />
-                          <YAxis tick={{ fontSize: 12 }} />
-                          <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                          <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={22} />
-                          <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={22}>
-                            <LabelList dataKey="avance" position="top"
-                              style={{ fontSize: 12, fontWeight: 700, fill: "#555" }}
-                              formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 6 }}>
-                    <Text size="sm" fw={700} mb={4}>Meta vs Avance por Periodo</Text>
-                    {!hasPeriodo ? (
-                      <Center h={160}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
-                    ) : (
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={dataPeriodo} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                          <XAxis dataKey="corte" tick={{ fontSize: 11, fontWeight: 600 }} />
-                          <YAxis tick={{ fontSize: 12 }} />
-                          <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                          <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={16} />
-                          <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={16}>
-                            <LabelList dataKey="avance" position="top"
-                              style={{ fontSize: 11, fontWeight: 700, fill: "#555" }}
-                              formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </Grid.Col>
-                </Grid>
-              </Paper>
-            );
-          })}
+          {entidadesDataAnio.map(({ entity, data }, i) => (
+            <MacroEntityCard
+              key={entity._id}
+              entity={entity}
+              data={data}
+              dataPeriodo={entidadesDataPeriodo[i]?.data ?? []}
+              color={CHART_COLORS[i % CHART_COLORS.length]}
+            />
+          ))}
         </Stack>
       )}
 
@@ -1238,23 +1729,21 @@ export default function PdiGraficas() {
           <Grid gutter="sm">
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
-                <Text size="sm" fw={700} mb={2}>Meta vs Avance del Proyecto por Año</Text>
+                <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año</Text>
                 {proyectoAvancePorAnio.length === 0 ? (
                   <Center h={180}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
                 ) : (
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={proyectoAvancePorAnio} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
+                    <LineChart data={proyectoAvancePorAnio} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                      <XAxis dataKey="anio" tick={{ fontSize: 11 }} />
+                      <XAxis dataKey="anio" tick={{ fontSize: 11, fontWeight: 600 }} />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                      <Bar dataKey="meta" name="meta" fill={PURPLE} fillOpacity={0.2} stroke={PURPLE} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={22} />
-                      <Bar dataKey="avance" name="avance" fill={PURPLE} radius={[4, 4, 0, 0]} barSize={22}>
-                        <LabelList dataKey="avance" position="top"
-                          style={{ fontSize: 10, fontWeight: 700, fill: "#555" }}
-                          formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                      </Bar>
-                    </BarChart>
+                      <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                      <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
+                      <Line type="monotone" dataKey="meta" name="meta" stroke={PURPLE} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: PURPLE }} />
+                      <Line type="monotone" dataKey="avance" name="avance" stroke={TEAL} strokeWidth={2.5} dot={{ r: 4, fill: TEAL }}
+                        label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? Number(v).toLocaleString("es-CO") : "" }} />
+                    </LineChart>
                   </ResponsiveContainer>
                 )}
               </Paper>
@@ -1262,23 +1751,21 @@ export default function PdiGraficas() {
 
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
-                <Text size="sm" fw={700} mb={2}>Meta vs Avance del Proyecto por Periodo</Text>
+                <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Periodo</Text>
                 {proyectoAvancePorPeriodo.length === 0 ? (
                   <Center h={180}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
                 ) : (
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={proyectoAvancePorPeriodo} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
+                    <LineChart data={proyectoAvancePorPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                      <XAxis dataKey="corte" tick={{ fontSize: 9 }} />
+                      <XAxis dataKey="corte" tick={{ fontSize: 9, fontWeight: 600 }} />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                      <Bar dataKey="meta" name="meta" fill={BLUE} fillOpacity={0.2} stroke={BLUE} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={16} />
-                      <Bar dataKey="avance" name="avance" fill={BLUE} radius={[4, 4, 0, 0]} barSize={16}>
-                        <LabelList dataKey="avance" position="top"
-                          style={{ fontSize: 9, fontWeight: 700, fill: "#555" }}
-                          formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                      </Bar>
-                    </BarChart>
+                      <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                      <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
+                      <Line type="monotone" dataKey="meta" name="meta" stroke={BLUE} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: BLUE }} />
+                      <Line type="monotone" dataKey="avance" name="avance" stroke={TEAL} strokeWidth={2.5} dot={{ r: 3, fill: TEAL }}
+                        label={{ position: "top", fontSize: 9, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? Number(v).toLocaleString("es-CO") : "" }} />
+                    </LineChart>
                   </ResponsiveContainer>
                 )}
               </Paper>
@@ -1298,6 +1785,10 @@ export default function PdiGraficas() {
                   const hex = av >= 90 ? GREEN : av >= 60 ? YELLOW : RED;
                   const semBadge = SEMAFORO_BADGE[a.semaforo] ?? "gray";
                   const semLabel = SEMAFORO_LABEL[a.semaforo] ?? a.semaforo;
+                  const pieDataAc = [
+                    { value: av, fill: hex },
+                    { value: Math.max(100 - av, 0), fill: "#e9ecef" },
+                  ];
                   return (
                     <Paper key={a._id} withBorder radius="xl" p="lg">
                       <Group justify="space-between" align="flex-start" mb={8} wrap="nowrap">
@@ -1309,15 +1800,19 @@ export default function PdiGraficas() {
                           {semLabel}
                         </Badge>
                       </Group>
-                      <Box mt={12}>
-                        <Group justify="space-between" mb={6}>
-                          <Text size="sm" c="dimmed" fw={600}>Avance</Text>
-                          <Text size="xl" fw={900} lh={1} style={{ color: hex }}>{av}%</Text>
-                        </Group>
-                        <Box style={{ height: 10, borderRadius: 99, background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
-                          <Box style={{ height: "100%", width: `${av}%`, background: hex, borderRadius: 99, transition: "width .4s" }} />
+                      <Group justify="center" mt={8}>
+                        <Box style={{ position: "relative", width: 90, height: 90 }}>
+                          <PieChart width={90} height={90}>
+                            <Pie data={pieDataAc} cx={40} cy={40} innerRadius={28} outerRadius={40}
+                              startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                              {pieDataAc.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                            </Pie>
+                          </PieChart>
+                          <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+                            <Text fw={900} size="sm" lh={1} style={{ color: hex }}>{av}%</Text>
+                          </Box>
                         </Box>
-                      </Box>
+                      </Group>
                     </Paper>
                   );
                 })}
@@ -1327,67 +1822,15 @@ export default function PdiGraficas() {
 
           {/* 5. Avance de acciones — gráficas separadas por acción */}
           <Stack gap="md">
-            {accionesDataAnio.map(({ accion, data }, i) => {
-              const dataPeriodo = accionesDataPeriodo[i]?.data ?? [];
-              const color = CHART_COLORS[i % CHART_COLORS.length];
-              const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
-              const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
-              return (
-                <Paper key={accion._id} withBorder radius="xl" p="md">
-                  <Group gap={10} mb="sm" align="center" wrap="nowrap">
-                    <Box w={12} h={12} style={{ borderRadius: 3, background: color, flexShrink: 0 }} />
-                    <Box style={{ minWidth: 0, flex: 1 }}>
-                      <Text size="sm" fw={800}>{accion.codigo}</Text>
-                      <Text size="xs" c="dimmed" lineClamp={1}>{accion.nombre}</Text>
-                    </Box>
-                  </Group>
-                  <Grid gutter="sm">
-                    <Grid.Col span={{ base: 12, md: 6 }}>
-                      <Text size="sm" fw={700} mb={4}>Meta vs Avance por Año</Text>
-                      {!hasAnio ? (
-                        <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={180}>
-                          <BarChart data={data} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                            <XAxis dataKey="anio" tick={{ fontSize: 13, fontWeight: 600 }} />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                            <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={22} />
-                            <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={22}>
-                              <LabelList dataKey="avance" position="top"
-                                style={{ fontSize: 12, fontWeight: 700, fill: "#555" }}
-                                formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </Grid.Col>
-                    <Grid.Col span={{ base: 12, md: 6 }}>
-                      <Text size="sm" fw={700} mb={4}>Meta vs Avance por Periodo</Text>
-                      {!hasPeriodo ? (
-                        <Center h={160}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={180}>
-                          <BarChart data={dataPeriodo} margin={{ top: 18, right: 8, left: -10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                            <XAxis dataKey="corte" tick={{ fontSize: 11, fontWeight: 600 }} />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <ReTooltip formatter={(v: any, name: any) => [v.toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                            <Bar dataKey="meta" name="meta" fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} barSize={16} />
-                            <Bar dataKey="avance" name="avance" fill={color} radius={[4, 4, 0, 0]} barSize={16}>
-                              <LabelList dataKey="avance" position="top"
-                                style={{ fontSize: 11, fontWeight: 700, fill: "#555" }}
-                                formatter={(v: any) => v > 0 ? v.toLocaleString("es-CO") : ""} />
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </Grid.Col>
-                  </Grid>
-                </Paper>
-              );
-            })}
+            {accionesDataAnio.map(({ accion, data }, i) => (
+              <AccionMetaAvanceCard
+                key={accion._id}
+                accion={accion}
+                data={data}
+                dataPeriodo={accionesDataPeriodo[i]?.data ?? []}
+                color={CHART_COLORS[i % CHART_COLORS.length]}
+              />
+            ))}
           </Stack>
 
           {/* 6. Indicadores del período del proyecto + Semaforización */}

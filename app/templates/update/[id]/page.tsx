@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "dayjs/locale/es";
 import axios from "axios";
@@ -106,6 +106,7 @@ const UpdateTemplatePage = () => {
   const [fechaFinalResponsables, setFechaFinalResponsables] = useState<Date | null>(null);
   const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
   const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
+  const [notifyProducers, setNotifyProducers] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -901,7 +902,7 @@ router.back();
         label="Ámbitos"
         placeholder="Seleccionar ámbitos"
         data={dimensions.map((dim) => ({ value: dim._id, label: dim.name }))}
-        onChange={setSelectedDimensions}
+        onChange={(v) => { setSelectedDimensions(v); setHasChanges(true); }}
         value={selectedDimensions}
         searchable
       />
@@ -945,7 +946,7 @@ router.back();
       <Switch
         label="Activo"
         checked={active}
-        onChange={(event) => setActive(event.currentTarget.checked)}
+        onChange={(event) => { setActive(event.currentTarget.checked); setHasChanges(true); }}
         mb="sm"
       />
       <Switch
@@ -954,7 +955,7 @@ router.back();
         checked={shared}
         onChange={(e) => {
           const checked = e.currentTarget.checked;
-          setShared(checked);
+          setShared(checked); setHasChanges(true);
         }}
         mb="sm"
       />
@@ -964,7 +965,7 @@ router.back();
         checked={allowsQr}
         onChange={(e) => {
           const checked = e.currentTarget.checked;
-          setAllowsQr(checked);
+          setAllowsQr(checked); setHasChanges(true);
         }}
         mb="md"
       />
@@ -976,7 +977,7 @@ router.back();
           locale="es"
           placeholder="Seleccionar fecha"
           value={fechaInicio}
-          onChange={setFechaInicio}
+          onChange={(v) => { setFechaInicio(v); setHasChanges(true); }}
           clearable
           valueFormat="DD/MM/YYYY"
         />
@@ -986,7 +987,7 @@ router.back();
           locale="es"
           placeholder="Seleccionar fecha"
           value={fechaFinalProductores}
-          onChange={setFechaFinalProductores}
+          onChange={(v) => { setFechaFinalProductores(v); setHasChanges(true); }}
           minDate={fechaInicio ?? undefined}
           clearable
           valueFormat="DD/MM/YYYY"
@@ -999,7 +1000,7 @@ router.back();
           locale="es"
           placeholder="Seleccionar fecha"
           value={fechaFinalResponsables}
-          onChange={setFechaFinalResponsables}
+          onChange={(v) => { setFechaFinalResponsables(v); setHasChanges(true); }}
           minDate={fechaFinalProductores ?? fechaInicio ?? undefined}
           clearable
           valueFormat="DD/MM/YYYY"
@@ -1010,7 +1011,7 @@ router.back();
           locale="es"
           placeholder="Seleccionar fecha"
           value={fechaFinal}
-          onChange={setFechaFinal}
+          onChange={(v) => { setFechaFinal(v); setHasChanges(true); }}
           minDate={fechaFinalResponsables ?? fechaFinalProductores ?? fechaInicio ?? undefined}
           clearable
           valueFormat="DD/MM/YYYY"
@@ -1023,10 +1024,35 @@ router.back();
         placeholder="Seleccionar productor encargado"
         data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
         value={responsibleProducers[0] ?? null}
-        onChange={(val) => setResponsibleProducers(val ? [val] : [])}
+        onChange={(val) => { setResponsibleProducers(val ? [val] : []); setHasChanges(true); }}
         searchable
         clearable
       />
+      <Tooltip
+        label="Funcionalidad en desarrollo — próximamente los productores recibirán un correo al subir su información"
+        withArrow
+        multiline
+        w={320}
+      >
+        <Box mb="md">
+          <Switch
+            checked={notifyProducers}
+            onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
+            label={
+              <Stack gap={2}>
+                <Group gap="xs" align="center">
+                  <Text size="sm" fw={500}>Notificar a productores</Text>
+                  <Badge size="xs" color="orange" variant="light">Próximamente</Badge>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  Cuando esté activo, los productores asignados a cada hoja recibirán un correo de confirmación al subir su información.
+                </Text>
+              </Stack>
+            }
+          />
+        </Box>
+      </Tooltip>
+
       {hasWorkbookSheets && (
         <>
           <Text size="sm" c="dimmed" mt="md">
@@ -1062,6 +1088,7 @@ router.back();
                       setWorkbookSheets(prev => prev.map(s =>
                         s.name === activeSheet ? { ...s, producers: allIds } : s
                       ));
+                      setHasChanges(true);
                     }}
                     disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
                   >
@@ -1076,6 +1103,7 @@ router.back();
                         setWorkbookSheets(prev => prev.map(s =>
                           s.name === activeSheet ? { ...s, producers: [] } : s
                         ));
+                        setHasChanges(true);
                       }}
                     >
                       Limpiar
@@ -1091,6 +1119,7 @@ router.back();
                   setWorkbookSheets(prev => prev.map(s =>
                     s.name === activeSheet ? { ...s, producers: values } : s
                   ));
+                  setHasChanges(true);
                 }}
                 searchable
                 mb="xs"

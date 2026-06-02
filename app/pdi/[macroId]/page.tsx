@@ -414,16 +414,17 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       </Group>
 
       {/* Cajas de stats */}
-      <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="md">
+      <SimpleGrid cols={{ base: 2, sm: 6 }} spacing="sm" mb="md">
         {[
-          { label: "Avance", value: `${avanceAccion}%` },
-          { label: "Peso", value: `${Number(accion.peso).toFixed(2)}%` },
-          { label: "Indicadores", value: loaded ? indicadores.length : (indicadoresCount ?? "—") },
-          { label: "Presupuesto", value: formatCOP(Number(accion.presupuesto)) },
-          { label: "Causado", value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0" },
+          { label: "Avance",     value: `${avanceAccion}%`,                                                                    color: undefined },
+          { label: "Peso",       value: `${Number(accion.peso).toFixed(2)}%`,                                                  color: undefined },
+          { label: "Indicadores",value: loaded ? indicadores.length : (indicadoresCount ?? "—"),                               color: undefined },
+          { label: "Gasto",      value: Number(accion.gasto) > 0 ? formatCOP(Number(accion.gasto)) : "$ 0",                   color: "#2563eb" },
+          { label: "Inversión",  value: Number(accion.inversion) > 0 ? formatCOP(Number(accion.inversion)) : "$ 0",           color: "#7c3aed" },
+          { label: "Causado",    value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0", color: "#0d9488" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "10px 6px" }}>
-            <Text fw={800} size="lg" lh={1}>{item.value}</Text>
+            <Text fw={800} size="lg" lh={1} style={item.color ? { color: item.color } : undefined}>{item.value}</Text>
             <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
           </Box>
         ))}
@@ -431,10 +432,16 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
 
       {/* Distribución presupuestal por año */}
       {(() => {
-        const ppa = accion.presupuesto_por_anio ?? {};
-        const epa = accion.presupuesto_ejecutado_por_anio ?? {};
+        const ppa  = accion.presupuesto_por_anio ?? {};
+        const epa  = accion.presupuesto_ejecutado_por_anio ?? {};
         const anios = Array.from(new Set([...Object.keys(ppa), ...Object.keys(epa)])).sort();
         if (!anios.length) return null;
+
+        // Proporción gasto/inversión del total para distribuir por año
+        const totalPres = Number(accion.presupuesto) || 1;
+        const gastoRatio    = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
+        const inversionRatio = Math.max(Number(accion.inversion) || 0, 0) / totalPres;
+
         return (
           <Box mb="sm">
             <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
@@ -442,6 +449,8 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
               {anios.map(anio => {
                 const asignado  = Number(ppa[anio] ?? 0);
                 const ejecutado = Number(epa[anio] ?? 0);
+                const gastoAnio     = Math.round(asignado * gastoRatio);
+                const inversionAnio = Math.round(asignado * inversionRatio);
                 const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                 const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                 return (
@@ -453,10 +462,14 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                     <Box style={{ height: 6, borderRadius: 99, background: "rgba(0,0,0,0.08)", overflow: "hidden", marginBottom: 8 }}>
                       <Box style={{ height: "100%", width: `${pct}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
                     </Box>
-                    <Group justify="space-between">
+                    <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
-                        <Text size="xs" c="dimmed" lh={1}>Asignado</Text>
-                        <Text size="xs" fw={700} c="blue">{formatCOP(asignado)}</Text>
+                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
+                        <Text size="xs" fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
+                        <Text size="xs" fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <Text size="xs" c="dimmed" lh={1}>Causado</Text>

@@ -387,12 +387,37 @@ const ProducerTemplatesPage = () => {
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     const { template } = publishedTemplate;
-    const freshTemplateResponse = await axios.get(
-      `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
-    );
+    const [freshTemplateResponse, userResp] = await Promise.all([
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session?.user?.email } }),
+    ]);
     const validators =
       freshTemplateResponse.data.template?.validators ??
       publishedTemplate.validators;
+
+    // Datos ya enviados por el usuario (para pre-poblar el Excel)
+    const userDepCode: string = userResp.data.dep_code || '';
+    const userLoadedEntry = (publishedTemplate.loaded_data || []).find(
+      (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
+    );
+    const userFilledData: FilledFieldData[] = userLoadedEntry?.filled_data || [];
+
+    // Helper: poblar hoja con datos existentes
+    const populateSheetWithData = (ws: ExcelJS.Worksheet, fields: Field[], sheetName?: string) => {
+      const relevant = sheetName
+        ? userFilledData.filter(fd => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
+        : userFilledData;
+      if (!relevant.length) return;
+      const firstFilled = relevant.find(fd => Array.isArray(fd.values) && fd.values.length > 0);
+      const numRows = firstFilled?.values.length ?? 0;
+      for (let i = 0; i < numRows; i++) {
+        const rowValues = fields.map(field => {
+          const fd = relevant.find(d => d.field_name === field.name);
+          return fd?.values?.[i] ?? null;
+        });
+        ws.addRow(rowValues);
+      }
+    };
     const workbookSheets = (template.workbook_sheets || []).filter(
       (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
     );
@@ -420,18 +445,18 @@ const ProducerTemplatesPage = () => {
       ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
     };
 
-    const periodMatch = (publishedTemplate.period?.name || "").match(/(\d{4})[_\-\s]*([AB])/i);
-    const prefilledYear = periodMatch ? parseInt(periodMatch[1]) : null;
-    const prefilledSemester = periodMatch ? (periodMatch[2].toUpperCase() === 'A' ? 1 : 2) : null;
+    const _now = new Date();
+    const prefilledYear = _now.getFullYear();
+    const prefilledSemester = _now.getMonth() < 6 ? 1 : 2; // ene-jun = 1, jul-dic = 2
     const applyPeriodPrefill = (ws: ExcelJS.Worksheet, fields: Field[]) => {
       fields.forEach((field, idx) => {
         const col = (Number.isFinite(Number(field.column)) && Number(field.column) > 0) ? Number(field.column) : idx + 1;
         const dataRow = (Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0) ? Number(field.header_row) + 1 : 2;
-        if (field.name.toUpperCase() === 'AÑO' && prefilledYear !== null) {
+        if (field.name.toUpperCase() === 'AÑO') {
           const cell = ws.getCell(dataRow, col);
           if (!cell.value) cell.value = prefilledYear;
         }
-        if (field.name.toUpperCase() === 'SEMESTRE' && prefilledSemester !== null) {
+        if (field.name.toUpperCase() === 'SEMESTRE') {
           const cell = ws.getCell(dataRow, col);
           if (!cell.value) cell.value = prefilledSemester;
         }
@@ -470,11 +495,13 @@ const ProducerTemplatesPage = () => {
         originalCommentsBySheet,
       });
 
-      // Pre-llenar AÑO y SEMESTRE en hojas editables
+      // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables
       for (const sheet of workbookSheets) {
         if (!canUserEditSheet(sheet)) continue;
         const ws = workbook.getWorksheet(sheet.name);
-        if (ws && sheet.fields?.length) applyPeriodPrefill(ws, sheet.fields);
+        if (!ws || !sheet.fields?.length) continue;
+        populateSheetWithData(ws, sheet.fields, sheet.name);
+        applyPeriodPrefill(ws, sheet.fields);
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos
@@ -566,7 +593,10 @@ const ProducerTemplatesPage = () => {
           endRow: 1000,
         });
 
-        if (canUserEditSheet(sheet)) applyPeriodPrefill(worksheet, sheet.fields);
+        if (canUserEditSheet(sheet)) {
+          populateSheetWithData(worksheet, sheet.fields, sheet.name);
+          applyPeriodPrefill(worksheet, sheet.fields);
+        }
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos
@@ -742,6 +772,9 @@ if (field.multiple) {
       startRow: 2,
       endRow: 1000,
     });
+
+    // Pre-poblar con datos ya enviados
+    populateSheetWithData(worksheet, template.fields);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/octet-stream" });
@@ -1030,9 +1063,10 @@ if (field.multiple) {
           ?? publishedTemplate.template?.fecha_final
           ?? publishedTemplate.deadline
           ?? publishedTemplate.period.producer_end_date);
-    const d = new Date(raw);
-    d.setHours(23, 59, 59, 999);
-    return d;
+    // Deadline: 1:00 AM hora Colombia (UTC-5) del día límite
+    const colDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(raw));
+    const colMidnight = new Date(`${colDateStr}T00:00:00.000-05:00`);
+    return new Date(colMidnight.getTime() + 60 * 60 * 1000); // medianoche Colombia + 1 hora
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
@@ -1085,9 +1119,11 @@ if (field.multiple) {
                   ?? publishedTemplate.template?.fecha_final
                   ?? publishedTemplate.deadline
                   ?? publishedTemplate.period.producer_end_date);
+            const colFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' });
+            const isDeadlineToday = colFmt.format(new Date(fecha)) === colFmt.format(new Date());
             return (
               <Stack gap={2}>
-                <Text size="sm" fw={700}>{dateToGMT(fecha)}</Text>
+                <Text size="sm" fw={700} c={isDeadlineToday ? 'red' : 'blue'}>{dateToGMT(fecha)}</Text>
                 {isEncargado && (
                   <Badge size="xs" color="blue" variant="light">Productor encargado</Badge>
                 )}
@@ -1184,25 +1220,28 @@ if (field.multiple) {
                   <IconPencil size={16} />
                 </Button>
               </Tooltip>
-              {isResponsibleForTemplate(publishedTemplate) && (
-                <Tooltip
-                  label={
-                    publishedTemplate.final_submitted
-                      ? "Ya se realizó el envío final al SNIES"
-                      : "Envío final al SNIES (solo productor encargado)"
+              <Tooltip
+                label={
+                  uploadDisable
+                    ? "El periodo ya se encuentra cerrado"
+                    : "Enviar información"
+                }
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="filled"
+                  color="green"
+                  onClick={() =>
+                    router.push(
+                      `/producer/templates/form/${publishedTemplate._id}`
+                    )
                   }
-                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                  disabled={uploadDisable}
+                  leftSection={<IconUpload size={14} />}
                 >
-                  <Button
-                    variant={publishedTemplate.final_submitted ? "filled" : "outline"}
-                    color="blue"
-                    onClick={() => handleConfirmFinalSubmit(publishedTemplate._id)}
-                    disabled={!!publishedTemplate.final_submitted}
-                  >
-                    <IconChecks size={16} />
-                  </Button>
-                </Tooltip>
-              )}
+                  Enviar
+                </Button>
+              </Tooltip>
             </Group>
           </Center>
         </Table.Td>

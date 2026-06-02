@@ -940,7 +940,7 @@ const DashboardPage = () => {
 
   const renderSniesCards = () => {
     return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
         <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/snies/templates")} style={{ cursor: "pointer" }}>
           <Center>
             <IconFileUpload size={80} />
@@ -967,7 +967,7 @@ const DashboardPage = () => {
 
   const renderCnaCards = () => {
     return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
         <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/cna/templates")} style={{ cursor: "pointer" }}>
           <Center>
             <IconReport size={80} />
@@ -999,7 +999,7 @@ const DashboardPage = () => {
 
     return (
       <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/users")} style={{ cursor: "pointer" }}>
             <Center>
               <IconUserHexagon size={80} />
@@ -1017,7 +1017,7 @@ const DashboardPage = () => {
         </Grid.Col>
 
 
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
             <Center>
               <IconShield size={80} />
@@ -1034,7 +1034,7 @@ const DashboardPage = () => {
           </Card>
         </Grid.Col>
 
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/homeSettings")} style={{ cursor: "pointer" }}>
             <Center>
               <IconHomeCog size={80} />
@@ -1066,7 +1066,7 @@ const DashboardPage = () => {
     }
 
     return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
         <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/pdi/mis-indicadores")} style={{ cursor: "pointer" }}>
           <Center>
             <IconTarget size={80} />
@@ -1098,7 +1098,7 @@ const DashboardPage = () => {
 
     return (
       <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency")} style={{ cursor: "pointer" }}>
             <Center>
               <IconUserStar size={80} />
@@ -1115,7 +1115,7 @@ const DashboardPage = () => {
           </Card>
         </Grid.Col>
 
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/templates")} style={{ cursor: "pointer" }}>
             <Center>
               <IconHierarchy2 size={80} />
@@ -1132,7 +1132,7 @@ const DashboardPage = () => {
           </Card>
         </Grid.Col>
 
-        <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/reports")} style={{ cursor: "pointer" }}>
             <Center>
               <IconClipboardData size={80} />
@@ -1167,7 +1167,7 @@ const DashboardPage = () => {
       <>
         {canSee("dateReview", ["Administrador"]) && (
           <>
-            <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Center><IconCalendarMonth size={80} /></Center>
                 <Group mt="md" mb="xs">
@@ -1181,7 +1181,7 @@ const DashboardPage = () => {
                 </Button>
               </Card>
             </Grid.Col>
-            <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card shadow="sm" padding="lg" radius="md" withBorder>
                 <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
                 <Group mt="md" mb="xs">
@@ -1205,7 +1205,7 @@ const DashboardPage = () => {
         )}
 
         {["Responsable", "Productor"].includes(userRole) && (
-          <Grid.Col span={{ base: 12, md: 6, lg: 4 }}>
+          <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconCalendarMonth size={80} /></Center>
               <Group mt="md" mb="xs">
@@ -1232,6 +1232,10 @@ const DashboardPage = () => {
 
   return (
     <>
+      <style>{`
+        .module-card { transition: transform 0.22s ease, box-shadow 0.22s ease !important; }
+        .module-card:hover { transform: translateY(-6px) !important; box-shadow: 0 28px 64px rgba(0,0,0,0.28) !important; }
+      `}</style>
       <Container py="xl">
         <Stack gap="xl">
         {renderMessage()}
@@ -1255,29 +1259,33 @@ const DashboardPage = () => {
               <Card
                 radius="xl"
                 p="xl"
+                className="module-card"
                 onClick={() => router.push("/dashboard?view=gestion")}
                 style={{
                   cursor: "pointer",
-                  minHeight: 260,
+                  height: 340,
                   color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                   background: "linear-gradient(135deg, #0f4c75 0%, #1b6ca8 100%)",
                   boxShadow: "0 18px 45px rgba(15, 76, 117, 0.22)",
                 }}
               >
                 <Stack justify="space-between" h="100%" align="center">
                   <Stack align="center" gap="md">
-                    <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                      <IconReportSearch size={28} />
+                    <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                      <IconReportSearch size={34} />
                     </ThemeIcon>
-                    <Title order={2} c="white" ta="center">
+                    <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                       Gestión de reportes
                     </Title>
-                    <Text c="rgba(255,255,255,0.82)" ta="center">
+                    <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                       Plantillas, reportes, SNIES, CNA y consulta de información.
                     </Text>
                   </Stack>
-                  <Button variant="white" color="blue" radius="xl">
+                  <Button variant="white" color="blue" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                     Abrir módulo
                   </Button>
                 </Stack>
@@ -1292,29 +1300,33 @@ const DashboardPage = () => {
                     <Card
                       radius="xl"
                       p="xl"
+                      className="module-card"
                       onClick={() => router.push("/apoyos-plantillas")}
                       style={{
                         cursor: "pointer",
-                        minHeight: 260,
+                        height: 340,
                         color: "white",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        border: "none",
+                        overflow: "hidden",
+                        transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                        position: "relative" as const,
                         background: "linear-gradient(135deg, #164e63 0%, #0891b2 100%)",
                         boxShadow: "0 18px 45px rgba(8, 145, 178, 0.22)",
                       }}
                     >
                       <Stack justify="space-between" h="100%" align="center">
-                        <Stack align="center" gap="md">
-                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                            <IconDatabase size={28} />
+                        <Stack align="center" gap="xs">
+                          <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                            <IconDatabase size={34} />
                           </ThemeIcon>
-                          <Title order={2} c="white" ta="center">
+                          <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                             Cruce de apoyos SIGA/Iceberg
                           </Title>
-                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                          <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                             Cruza plantillas de apoyos con SIGA/Iceberg e historial de periodos.
                           </Text>
                         </Stack>
-                        <Button variant="white" color="cyan" radius="xl">
+                        <Button variant="white" color="cyan" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                           Abrir modulo
                         </Button>
                       </Stack>
@@ -1329,6 +1341,7 @@ const DashboardPage = () => {
                 <Card
                   radius="xl"
                   p="xl"
+                  className="module-card"
                   onClick={() =>
                     userRole === "Administrador"
                       ? setAvRcOpen(true)
@@ -1336,22 +1349,25 @@ const DashboardPage = () => {
                   }
                   style={{
                     cursor: "pointer",
-                    minHeight: 260,
+                    height: 340,
                     color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                     background: "linear-gradient(135deg, #1a3a2a 0%, #2e7d52 100%)",
                     boxShadow: "0 18px 45px rgba(26, 58, 42, 0.22)",
                   }}
                 >
                   <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconCalendarMonth size={28} />
+                    <Stack align="center" gap="xs">
+                      <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                        <IconCalendarMonth size={34} />
                       </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
+                      <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                         Procesos de calidad MEN
                       </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                      <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         {userRole === "Administrador"
                           ? "RC, AV y comunicaciones MEN."
                           : "Estado de fases y actividades de los programas de tu facultad."}
@@ -1380,31 +1396,35 @@ const DashboardPage = () => {
                 <Card
                   radius="xl"
                   p="xl"
+                  className="module-card"
                   onClick={() => router.push(userRole === "Responsable" ? "/pdi-modulo" : "/pdi")}
                   style={{
                     cursor: "pointer",
-                    minHeight: 260,
+                    height: 340,
                     color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                     background: "linear-gradient(135deg, #9d0c0c 0%, #c73a3a 100%)",
                     boxShadow: "0 18px 45px rgba(101, 29, 29, 0.22)",
                   }}
                 >
                   <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconChartBarPopular size={28} />
+                    <Stack align="center" gap="xs">
+                      <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                        <IconChartBarPopular size={34} />
                       </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
+                      <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                         PDI
                       </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                      <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         {userRole === "Responsable"
                           ? "Seguimiento de tus proyectos, acciones e indicadores PDI."
                           : "Plan de Desarrollo Institucional."}
                       </Text>
                     </Stack>
-                    <Button variant="white" color="violet" radius="xl">
+                    <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                       Abrir módulo
                     </Button>
                   </Stack>
@@ -1418,29 +1438,33 @@ const DashboardPage = () => {
                 <Card
                   radius="xl"
                   p="xl"
+                  className="module-card"
                   onClick={() => router.push("/responsible/admin")}
                   style={{
                     cursor: "pointer",
-                    minHeight: 260,
+                    height: 340,
                     color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                     background: "linear-gradient(135deg, #263238 0%, #607d8b 100%)",
                     boxShadow: "0 18px 45px rgba(38, 50, 56, 0.22)",
                   }}
                 >
                   <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconBuilding size={28} />
+                    <Stack align="center" gap="xs">
+                      <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                        <IconBuilding size={34} />
                       </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
+                      <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                         Administración
                       </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                      <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         Dependencia y visualizadores de dependencias hijo.
                       </Text>
                     </Stack>
-                    <Button variant="white" color="gray" radius="xl">
+                    <Button variant="white" color="gray" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                       Abrir módulo
                     </Button>
                   </Stack>
@@ -1454,29 +1478,33 @@ const DashboardPage = () => {
                 <Card
                   radius="xl"
                   p="xl"
+                  className="module-card"
                   onClick={() => router.push("/configuracion")}
                   style={{
                     cursor: "pointer",
-                    minHeight: 260,
+                    height: 340,
                     color: "white",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                     background: "linear-gradient(135deg, #263238 0%, #546e7a 100%)",
                     boxShadow: "0 18px 45px rgba(38, 50, 56, 0.22)",
                   }}
                 >
                   <Stack justify="space-between" h="100%" align="center">
-                    <Stack align="center" gap="md">
-                      <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                        <IconHomeCog size={28} />
+                    <Stack align="center" gap="xs">
+                      <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                        <IconHomeCog size={34} />
                       </ThemeIcon>
-                      <Title order={2} c="white" ta="center">
+                      <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                       Configuración
                       </Title>
-                      <Text c="rgba(255,255,255,0.82)" ta="center">
+                      <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         Perfiles y permisos de vistas.
                       </Text>
                     </Stack>
-                    <Button variant="white" color="gray" radius="xl">
+                    <Button variant="white" color="gray" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                       Abrir módulo
                     </Button>
                   </Stack>
@@ -1517,31 +1545,35 @@ const DashboardPage = () => {
                     <Card
                       radius="xl"
                       p="xl"
+                      className="module-card"
                       onClick={() => router.push("/reports")}
                       style={{
                         cursor: "pointer",
-                        minHeight: 260,
+                        height: 340,
                         color: "white",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        border: "none",
+                        overflow: "hidden",
+                        transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                        position: "relative" as const,
                         background: "linear-gradient(135deg, #0f1f39 0%, #1f4f82 100%)",
                         boxShadow: "0 18px 45px rgba(15, 31, 57, 0.22)",
                       }}
                     >
                       <Stack justify="space-between" h="100%" align="center">
-                        <Stack align="center" gap="md">
-                          <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                            <IconFileAnalytics size={28} />
+                        <Stack align="center" gap="xs">
+                          <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                            <IconFileAnalytics size={34} />
                           </ThemeIcon>
-                          <Title order={2} c="white" ta="center">
+                          <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                             Plantillas y reportes
                           </Title>
-                          <Text c="rgba(255,255,255,0.82)" ta="center">
+                          <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                             {userRole === "Administrador"
                               ? "Gestión plantillas y reportes."
                               : "Plantillas, informes, filtros, validaciones e historial."}
                           </Text>
                         </Stack>
-                        <Button variant="white" color="blue" radius="xl">
+                        <Button variant="white" color="blue" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                           Abrir módulo
                         </Button>
                       </Stack>
@@ -1554,29 +1586,33 @@ const DashboardPage = () => {
                         <Card
                           radius="xl"
                           p="xl"
+                          className="module-card"
                           onClick={() => router.push("/snies")}
                           style={{
                             cursor: "pointer",
-                            minHeight: 260,
+                            height: 340,
                             color: "white",
-                            border: "1px solid rgba(255,255,255,0.12)",
+                            border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                             background: "linear-gradient(135deg, #0c7a6b 0%, #27b39d 100%)",
                             boxShadow: "0 18px 45px rgba(12, 122, 107, 0.22)",
                           }}
                         >
                           <Stack justify="space-between" h="100%" align="center">
-                            <Stack align="center" gap="md">
-                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                                <IconHexagon3d size={28} />
+                            <Stack align="center" gap="xs">
+                              <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                                <IconHexagon3d size={34} />
                               </ThemeIcon>
-                              <Title order={2} c="white" ta="center">
+                              <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                                 SNIES
                               </Title>
-                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                              <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                                 Gestión SNIES.
                               </Text>
                             </Stack>
-                            <Button variant="white" color="teal" radius="xl">
+                            <Button variant="white" color="teal" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                               Abrir módulo
                             </Button>
                           </Stack>
@@ -1587,29 +1623,33 @@ const DashboardPage = () => {
                         <Card
                           radius="xl"
                           p="xl"
+                          className="module-card"
                           onClick={() => router.push("/cna")}
                           style={{
                             cursor: "pointer",
-                            minHeight: 260,
+                            height: 340,
                             color: "white",
-                            border: "1px solid rgba(255,255,255,0.12)",
+                            border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                             background: "linear-gradient(135deg, #7a3e0c 0%, #d98a2b 100%)",
                             boxShadow: "0 18px 45px rgba(122, 62, 12, 0.22)",
                           }}
                         >
                           <Stack justify="space-between" h="100%" align="center">
-                            <Stack align="center" gap="md">
-                              <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                                <IconReport size={28} />
+                            <Stack align="center" gap="xs">
+                              <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                                <IconReport size={34} />
                               </ThemeIcon>
-                              <Title order={2} c="white" ta="center">
+                              <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                                 CNA
                               </Title>
-                              <Text c="rgba(255,255,255,0.82)" ta="center">
+                              <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                                 Gestión CNA.
                               </Text>
                             </Stack>
-                            <Button variant="white" color="orange" radius="xl">
+                            <Button variant="white" color="orange" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                               Abrir módulo
                             </Button>
                           </Stack>
@@ -1623,29 +1663,33 @@ const DashboardPage = () => {
                       <Card
                         radius="xl"
                         p="xl"
+                        className="module-card"
                         onClick={() => router.push("/historico-docentes")}
                         style={{
                           cursor: "pointer",
-                          minHeight: 260,
+                          height: 340,
                           color: "white",
-                          border: "1px solid rgba(255,255,255,0.12)",
+                          border: "none",
+                  overflow: "hidden",
+                  transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                  position: "relative" as const,
                           background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
                           boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
                         }}
                       >
                         <Stack justify="space-between" h="100%" align="center">
-                          <Stack align="center" gap="md">
-                            <ThemeIcon size={56} radius="xl" color="rgba(255,255,255,0.15)">
-                              <IconUsersGroup size={28} />
+                          <Stack align="center" gap="xs">
+                            <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                              <IconUsersGroup size={34} />
                             </ThemeIcon>
-                            <Title order={2} c="white" ta="center">
+                            <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
                               Consulta de Información
                             </Title>
-                            <Text c="rgba(255,255,255,0.82)" ta="center">
+                            <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                               Consulta plantillas, informes e histórico docentes (SNIES).
                             </Text>
                           </Stack>
-                          <Button variant="white" color="violet" radius="xl">
+                          <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                             Abrir módulo
                           </Button>
                         </Stack>
