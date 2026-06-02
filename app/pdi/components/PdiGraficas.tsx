@@ -1331,6 +1331,7 @@ export default function PdiGraficas() {
               return presupuestoChartData[index];
             };
 
+            // eslint-disable-next-line react/display-name
             const renderBudgetBarShape = (stack: PresupuestoStack, part: PresupuestoPart) => (props: any) => {
               const d = budgetDatumFromShape(props);
               if (!d) return null;
