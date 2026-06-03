@@ -117,7 +117,7 @@ const UploadedTemplatePage = () => {
         })
         setResumeData(sentDepedencies)
         
-        const depCodes = sentDepedencies.map(d => d.dependency).filter(Boolean);
+        const depCodes = sentDepedencies.map((d: any) => d.dependency).filter(Boolean);
         console.log('Dependency codes for lookup:', depCodes);
         if (depCodes.length > 0) {
           const depNames = await fetchDependenciesNames(depCodes);
