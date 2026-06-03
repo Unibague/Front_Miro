@@ -7,7 +7,16 @@ import {
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { showNotification } from "@mantine/notifications";
-import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconGripVertical } from "@tabler/icons-react";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, sortableKeyboardCoordinates,
+  verticalListSortingStrategy, useSortable, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import axios from "axios";
 import "dayjs/locale/es";
 import { useSession } from "next-auth/react";
@@ -30,6 +39,52 @@ interface PeriodoForm {
   avanceInicial: number | string | null;
   fechaInicio: Date | null;
   fechaFin: Date | null;
+}
+
+function SortablePeriodoItem({ id, p, idx, periodoOptions, onUpdatePeriodo, onRemovePeriodo }: {
+  id: string;
+  p: PeriodoForm;
+  idx: number;
+  periodoOptions: { value: string; label: string }[];
+  onUpdatePeriodo: (idx: number, field: keyof PeriodoForm, value: string) => void;
+  onRemovePeriodo: (idx: number) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <Paper ref={setNodeRef} style={style} withBorder radius="md" p="sm">
+      <Group align="end" wrap="nowrap">
+        <ActionIcon variant="subtle" color="gray" style={{ cursor: "grab", touchAction: "none" }} {...attributes} {...listeners}>
+          <IconGripVertical size={16} />
+        </ActionIcon>
+        <Select
+          label="Periodo"
+          placeholder={periodoOptions.length ? "Selecciona un corte" : "Sin cortes activos"}
+          data={periodoOptions}
+          value={p.periodo || null}
+          onChange={(value) => onUpdatePeriodo(idx, "periodo", value ?? "")}
+          style={{ flex: 1 }}
+          searchable
+          clearable
+          nothingFoundMessage="Sin cortes disponibles"
+        />
+        <TextInput
+          label="Meta"
+          placeholder="Meta"
+          value={p.meta}
+          onChange={(e) => onUpdatePeriodo(idx, "meta", e.currentTarget.value)}
+          style={{ width: 120 }}
+        />
+        <ActionIcon color="red" variant="light" onClick={() => onRemovePeriodo(idx)}>
+          <IconTrash size={16} />
+        </ActionIcon>
+      </Group>
+    </Paper>
+  );
 }
 
 export default function IndicadorModal({ opened, onClose, selected, defaultAccionId, onSaved }: Props) {
@@ -246,6 +301,23 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     }
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setPeriodos((items) => {
+        const oldIdx = items.findIndex((_, i) => `periodo-${i}` === active.id);
+        const newIdx = items.findIndex((_, i) => `periodo-${i}` === over.id);
+        setHasChanges(true);
+        return arrayMove(items, oldIdx, newIdx);
+      });
+    }
+  };
+
   return (
     <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Indicador" : "Nuevo Indicador"} centered size="lg">
       <Tabs defaultValue="general">
@@ -330,33 +402,24 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
 
         <Tabs.Panel value="periodos">
           <Stack gap="sm">
-            {periodos.map((p, idx) => (
-              <Paper key={idx} withBorder radius="md" p="sm">
-                <Group align="end" wrap="nowrap">
-                  <Select
-                    label="Periodo"
-                    placeholder={periodoSelectOptions.length ? "Selecciona un corte" : "Sin cortes activos"}
-                    data={getPeriodoOptions(idx)}
-                    value={p.periodo || null}
-                    onChange={(value) => updatePeriodo(idx, "periodo", value ?? "")}
-                    style={{ flex: 1 }}
-                    searchable
-                    clearable
-                    nothingFoundMessage="Sin cortes disponibles"
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext
+                items={periodos.map((_, i) => `periodo-${i}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                {periodos.map((p, idx) => (
+                  <SortablePeriodoItem
+                    key={`periodo-${idx}`}
+                    id={`periodo-${idx}`}
+                    p={p}
+                    idx={idx}
+                    periodoOptions={getPeriodoOptions(idx)}
+                    onUpdatePeriodo={updatePeriodo}
+                    onRemovePeriodo={removePeriodo}
                   />
-                  <TextInput
-                    label="Meta"
-                    placeholder="Meta"
-                    value={p.meta}
-                    onChange={(e) => updatePeriodo(idx, "meta", e.currentTarget.value)}
-                    style={{ width: 120 }}
-                  />
-                  <ActionIcon color="red" variant="light" onClick={() => removePeriodo(idx)}>
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-            ))}
+                ))}
+              </SortableContext>
+            </DndContext>
             <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addPeriodo} disabled={!canAddPeriodo}>
               Agregar periodo
             </Button>

@@ -22,6 +22,7 @@ import {
   Select,
   Tabs,
   Alert,
+  Badge,
 } from "@mantine/core";
 import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
@@ -35,6 +36,7 @@ import {
   buildValidatorOptions,
   getPreferredValidatorColumnName,
 } from "../../../../utils/validatorOptions";
+import { getEffectiveRequired, isBlankRequiredValue } from "../../../../utils/requiredFields";
 
 interface Field {
   name: string;
@@ -118,6 +120,22 @@ interface ValidatorData {
   columns: { name: string; is_validator: boolean; values: any[] }[];
 }
 
+const normalizeFieldRequired = (field: Field): Field => ({
+  ...field,
+  required: getEffectiveRequired(field),
+});
+
+const normalizeSheetRequired = (sheet: WorkbookSheet): WorkbookSheet => ({
+  ...sheet,
+  fields: (sheet.fields || []).map(normalizeFieldRequired),
+});
+
+const normalizeTemplateRequired = (template: Template): Template => ({
+  ...template,
+  fields: (template.fields || []).map(normalizeFieldRequired),
+  workbook_sheets: (template.workbook_sheets || []).map(normalizeSheetRequired),
+});
+
 const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } }) => {
   const { id_template } = params;
   const { data: session } = useSession();
@@ -151,6 +169,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
+
+  const getScopedFieldKey = (fieldName: string, sheetName?: string | null) =>
+    sheetName ? `${sheetName}::${fieldName}` : fieldName;
+
+  const clearFieldError = (fieldName: string, sheetName?: string | null) => {
+    const errorKey = getScopedFieldKey(fieldName, sheetName);
+    setErrors(prev => {
+      if (!prev[errorKey]) return prev;
+      const next = { ...prev };
+      delete next[errorKey];
+      return next;
+    });
+  };
 
   const getDraftFieldSheetName = (fieldData: FilledFieldEntry) =>
     fieldData.sheet_name || fieldData.sheet || fieldData.sheetName || null;
@@ -224,10 +255,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${id_template}`
       );
       setPublishedTemplateName(response.data.name);
-      setTemplate(response.data.template);
+      const normalizedTemplate = normalizeTemplateRequired(response.data.template);
+      setTemplate(normalizedTemplate);
 
       // Cargar todas las hojas y determinar cuáles son editables
-      const wbSheets = response.data.template.workbook_sheets || [];
+      const wbSheets = normalizedTemplate.workbook_sheets || [];
 
       const _now = new Date();
       const prefilledYear = _now.getFullYear();
@@ -338,7 +370,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             );
 
           if (loadedEntries.length) {
-            const wbSheets = response.data.template.workbook_sheets || [];
+            const wbSheets = normalizedTemplate.workbook_sheets || [];
 
             if (wbSheets.length) {
               const loadedSheetRows: Record<string, Record<string, any>[]> = {};
@@ -411,7 +443,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           const draftsWithData = matchingDrafts.filter((draft) => draft.filled_data?.length);
 
           if (draftsWithData.length) {
-            const wbSheets = response.data.template.workbook_sheets || [];
+            const wbSheets = normalizedTemplate.workbook_sheets || [];
 
             if (wbSheets.length) {
               const draftSheetRows: Record<string, Record<string, any>[]> = {};
@@ -485,7 +517,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             // Solo mostrar el banner "Datos enviados por QR" al productor encargado
             const responsibleIds: string[] = (
               (response.data.publishedTemplate as any)?.responsible_producers ||
-              (response.data.template as any)?.responsible_producers ||
+              (normalizedTemplate as any)?.responsible_producers ||
               []
             ).map((id: any) => String(id));
             const isResponsible =
@@ -498,8 +530,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       // Recolectar campos de top-level + todos los workbook_sheets
       const allTemplateFields: Field[] = [
-        ...(response.data.template.fields || []),
-        ...((response.data.template.workbook_sheets || []).flatMap((s: WorkbookSheet) => s.fields || [])),
+        ...(normalizedTemplate.fields || []),
+        ...((normalizedTemplate.workbook_sheets || []).flatMap((s: WorkbookSheet) => s.fields || [])),
       ];
 
       const validatorCheckPromises = allTemplateFields.map(async (field) => {
@@ -629,6 +661,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       rows[rowIdx] = { ...rows[rowIdx], [fieldName]: value };
       return { ...prev, [sheetName]: rows };
     });
+    clearFieldError(fieldName, sheetName);
   };
 
   const addSheetRow = (sheetName: string) => {
@@ -700,11 +733,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   
     setRows(updatedRows);
 
-    const updatedErrors = { ...errors };
-    if (updatedErrors[fieldName]) {
-      delete updatedErrors[fieldName];
-      setErrors(updatedErrors);
-    }
+    clearFieldError(fieldName);
   };
 
   const addRow = () => {
@@ -727,6 +756,30 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     setRows(updated);
     setRowSources(prev => prev.filter((_, i) => i !== index));
     saveDraftRows(updated);
+  };
+
+  const collectRequiredErrors = (
+    rowsToValidate: Record<string, any>[],
+    fields: Field[],
+    nextErrors: Record<string, string[]>,
+    sheetName?: string | null
+  ) => {
+    let hasErrors = false;
+
+    fields.forEach((field) => {
+      if (!getEffectiveRequired(field)) return;
+      const errorKey = getScopedFieldKey(field.name, sheetName);
+
+      rowsToValidate.forEach((row, rowIndex) => {
+        if (!isBlankRequiredValue(row?.[field.name])) return;
+
+        if (!nextErrors[errorKey]) nextErrors[errorKey] = [];
+        nextErrors[errorKey][rowIndex] = "Este campo es obligatorio";
+        hasErrors = true;
+      });
+    });
+
+    return hasErrors;
   };
 
   const handleValidatorOpen = async (validatorId: string, rowIndex: number, fieldName: string) => {
@@ -757,17 +810,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       const formatRows = (rowsToFormat: Record<string, any>[], fields: Field[]) => rowsToFormat.map(row => {
         const formattedRow: Record<string, any> = {};
 
-        Object.keys(row).forEach(fieldName => {
-          const field = fields.find(f => f.name === fieldName);
-
-          if (field?.multiple && Array.isArray(row[fieldName])) {
+        // Envía TODOS los campos del template: null si vacío → permite validar obligatorios
+        fields.forEach(field => {
+          const fieldName = field.name;
+          const value = row[fieldName];
+          if (field?.multiple && Array.isArray(value)) {
             const isNumericField = multiSelectOptions[fieldName]?.every(v => !isNaN(Number(v)));
-
-            formattedRow[fieldName] = isNumericField
-              ? row[fieldName].map((v: any) => Number(v))
-              : row[fieldName];
+            formattedRow[fieldName] = isNumericField ? value.map((v: any) => Number(v)) : value;
           } else {
-            formattedRow[fieldName] = row[fieldName];
+            formattedRow[fieldName] = value !== undefined ? value : null;
           }
         });
 
@@ -775,10 +826,55 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       });
 
       const useSheetSubmission = allSheets.length > 0;
-      const formattedRows = formatRows(rows, template?.fields || []);
+      // Resolver displayValues en el row antes de formatear
+      const resolveDisplayValues = (rowsToResolve: Record<string, any>[], fields: Field[], sheetName?: string | null) =>
+        rowsToResolve.map((row, rowIdx) => {
+          const resolved = { ...row };
+          const dv = displayValues[rowIdx] || {};
+          fields.forEach(field => {
+            const displayKey = getScopedFieldKey(field.name, sheetName);
+            const displayValue = dv[displayKey] ?? (!sheetName ? dv[field.name] : undefined);
+            if (displayValue && (resolved[field.name] === undefined || resolved[field.name] === null)) {
+              // Si hay un displayValue pero no hay valor en el row, buscar el valor del select
+              const opts = selectOptions[field.name] || [];
+              const matchingOpt = opts.find(o => o.label === displayValue);
+              if (matchingOpt) resolved[field.name] = matchingOpt.value;
+              else resolved[field.name] = displayValue;
+            }
+          });
+          return resolved;
+        });
+
+      const resolvedRows = resolveDisplayValues(rows, template?.fields || []);
+      const requiredErrors: Record<string, string[]> = {};
+      let hasRequiredErrors = false;
+
+      if (useSheetSubmission) {
+        accessibleSheets.forEach((sheet) => {
+          const resolvedSheetRows = resolveDisplayValues(sheetRows[sheet.name] || [{}], sheet.fields || [], sheet.name);
+          if (collectRequiredErrors(resolvedSheetRows, sheet.fields || [], requiredErrors, sheet.name)) {
+            hasRequiredErrors = true;
+          }
+        });
+      } else if (collectRequiredErrors(resolvedRows, template?.fields || [], requiredErrors)) {
+        hasRequiredErrors = true;
+      }
+
+      if (hasRequiredErrors) {
+        setErrors(requiredErrors);
+        showNotification({
+          title: "Campos obligatorios sin completar",
+          message: "Revisa los campos marcados en rojo antes de enviar.",
+          color: "red",
+          autoClose: 5000,
+        });
+        return;
+      }
+
+      const formattedRows = formatRows(resolvedRows, template?.fields || []);
       const sheetsData = accessibleSheets.map((sheet) => ({
         name: sheet.name,
-        data: formatRows(sheetRows[sheet.name] || [{}], sheet.fields || []),
+        data: formatRows(resolveDisplayValues(sheetRows[sheet.name] || [{}], sheet.fields || [], sheet.name), sheet.fields || []),
       }));
 
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
@@ -800,20 +896,25 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         const validationErrors = error.response.data.details;
         const errorObject: Record<string, string[]> = {};
 
-        validationErrors.forEach((error: { column: string, errors: { register: number, message: string }[] }) => {
+        validationErrors.forEach((error: { column: string, sheet_name?: string, errors: { register: number, message: string }[] }) => {
+          const errorKey = getScopedFieldKey(error.column, error.sheet_name);
           error.errors.forEach(err => {
-            if (!errorObject[error.column]) {
-              errorObject[error.column] = [];
+            if (!errorObject[errorKey]) {
+              errorObject[errorKey] = [];
             }
-            errorObject[error.column][err.register - 1] = err.message;
+            errorObject[errorKey][err.register - 1] = err.message;
           });
         });
 
         setErrors(errorObject);
+        const camposObligatorios = validationErrors
+          .filter((e: any) => e.errors?.some((err: any) => err.message?.includes('obligatorio')))
+          .map((e: any) => e.column);
         showNotification({
-          title: "Error de Validación",
-          message: "Algunos campos contienen errores. Por favor revisa y corrige.",
+          title: "Campos obligatorios sin completar",
+          message: `Revisa los campos marcados en rojo (${camposObligatorios.length} campo${camposObligatorios.length !== 1 ? 's' : ''}).`,
           color: "red",
+          autoClose: 5000,
         });
       }
     } finally {
@@ -821,9 +922,38 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
   };
 
-  const renderInputField = (field: Field, row: Record<string, any>, rowIndex: number, onInputChange?: (rowIndex: number, fieldName: string, value: any) => void, readOnly = false) => {
+  const renderInputField = (
+    field: Field,
+    row: Record<string, any>,
+    rowIndex: number,
+    onInputChange?: (rowIndex: number, fieldName: string, value: any) => void,
+    readOnly = false,
+    sheetName?: string
+  ) => {
     const inputChange = onInputChange || handleInputChange;
-    const fieldError = readOnly ? undefined : errors[field.name]?.[rowIndex];
+    const scopedFieldKey = getScopedFieldKey(field.name, sheetName);
+    const rowDisplayValues = displayValues[rowIndex] || {};
+    const storedDisplayValue = rowDisplayValues[scopedFieldKey] ?? (!sheetName ? rowDisplayValues[field.name] : undefined);
+    const rawError = readOnly ? undefined : errors[scopedFieldKey]?.[rowIndex];
+    const fieldError = rawError?.includes('obligatorio') ? 'Este campo es obligatorio' : rawError;
+
+    const clearDisplayValue = () => {
+      setDisplayValues(prev => {
+        if (!prev[rowIndex]?.[scopedFieldKey] && (sheetName || !prev[rowIndex]?.[field.name])) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        const rowValues = { ...(next[rowIndex] || {}) };
+        delete rowValues[scopedFieldKey];
+        if (!sheetName) delete rowValues[field.name];
+
+        if (Object.keys(rowValues).length > 0) next[rowIndex] = rowValues;
+        else delete next[rowIndex];
+
+        return next;
+      });
+    };
 
     const wrapWithTooltip = (input: React.ReactNode) => {
       return field.comment ? (
@@ -839,7 +969,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     };
 
     const commonProps = {
-      required: field.required,
+      required: getEffectiveRequired(field),
       placeholder: field.comment,
       style: { minWidth: "280px", width: "100%" },
       error: fieldError || undefined,
@@ -859,17 +989,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           searchable
           clearable
           placeholder="Seleccione opciones"
-          style={{ width: "100%" }}
+          style={{ minWidth: "280px", width: "100%" }}
           error={fieldError || undefined}
           disabled={readOnly}
+          required={getEffectiveRequired(field)}
         />
       );
     }
     
     // Si el campo tiene validador pero NO es múltiple, usar Select
     if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
-      const selectDisplayValue = displayValues[rowIndex]?.[field.name]
-        ? opts.find(opt => opt.label === displayValues[rowIndex][field.name])?.value || row[field.name]
+      const selectDisplayValue = storedDisplayValue
+        ? opts.find(opt => opt.label === storedDisplayValue)?.value || row[field.name]
         : row[field.name];
 
       return wrapWithTooltip(
@@ -877,11 +1008,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           {...commonProps}
           value={selectDisplayValue ? String(selectDisplayValue) : null}
           onChange={(value) => {
-            if (displayValues[rowIndex]?.[field.name]) {
-              const updatedDisplayValues = { ...displayValues };
-              delete updatedDisplayValues[rowIndex][field.name];
-              setDisplayValues(updatedDisplayValues);
-            }
+            if (storedDisplayValue) clearDisplayValue();
             inputChange(rowIndex, field.name, value);
           }}
           data={opts}
@@ -898,8 +1025,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Decimal":
       case "Porcentaje":
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
-        const numericDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? displayValues[rowIndex][field.name] 
+        const numericDisplayValue = field.validate_with && storedDisplayValue
+          ? storedDisplayValue
           : (typeof row[field.name] === 'number' ? row[field.name] : "");
           
         return wrapWithTooltip(
@@ -908,11 +1035,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             value={String(numericDisplayValue)}
             onChange={(e) => {
               // Si el usuario edita manualmente, limpiar la descripción guardada
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               const numValue = parseFloat(e.target.value);
               inputChange(rowIndex, field.name, isNaN(numValue) ? null : numValue);
             }}
@@ -920,8 +1043,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         );
   
       case "Texto Largo":
-        const textareaDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? displayValues[rowIndex][field.name] 
+        const textareaDisplayValue = field.validate_with && storedDisplayValue
+          ? storedDisplayValue
           : (row[field.name] === null ? "" : row[field.name]);
           
         return wrapWithTooltip(
@@ -932,11 +1055,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             maxRows={6}
             value={textareaDisplayValue}
             onChange={(e) => {
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, e.target.value);
             }}
           />
@@ -945,8 +1064,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Texto Corto":
       case "Link":
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
-        const displayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? displayValues[rowIndex][field.name] 
+        const displayValue = field.validate_with && storedDisplayValue
+          ? storedDisplayValue
           : (row[field.name] === null ? "" : row[field.name]);
           
         return wrapWithTooltip(
@@ -955,19 +1074,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             value={displayValue}
             onChange={(e) => {
               // Si el usuario edita manualmente, limpiar la descripción guardada
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
 
       case "True/False":
-        const switchDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name]
-          ? displayValues[rowIndex][field.name]
+        const switchDisplayValue = field.validate_with && storedDisplayValue
+          ? storedDisplayValue
           : row[field.name];
 
         return wrapWithTooltip(
@@ -976,19 +1091,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             disabled={readOnly}
             onChange={(event) => {
               if (readOnly) return;
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, event.currentTarget.checked);
             }}
           />
         );
   
       case "Fecha":
-        const dateDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? new Date(displayValues[rowIndex][field.name]) 
+        const dateDisplayValue = field.validate_with && storedDisplayValue
+          ? new Date(storedDisplayValue)
           : (row[field.name] ? new Date(row[field.name]) : null);
           
         return wrapWithTooltip(
@@ -998,11 +1109,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             locale="es"
             valueFormat="DD/MM/YYYY"
             onChange={(date) => {
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, date);
             }}
           />
@@ -1010,8 +1117,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   
       default:
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
-        const defaultDisplayValue = field.validate_with && displayValues[rowIndex]?.[field.name] 
-          ? displayValues[rowIndex][field.name] 
+        const defaultDisplayValue = field.validate_with && storedDisplayValue
+          ? storedDisplayValue
           : (row[field.name] === null ? "" : row[field.name]);
           
         return wrapWithTooltip(
@@ -1020,11 +1127,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             value={defaultDisplayValue}
             onChange={(e) => {
               // Si el usuario edita manualmente, limpiar la descripción guardada
-              if (field.validate_with && displayValues[rowIndex]?.[field.name]) {
-                const updatedDisplayValues = { ...displayValues };
-                delete updatedDisplayValues[rowIndex][field.name];
-                setDisplayValues(updatedDisplayValues);
-              }
+              if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, e.target.value);
             }}
           />
@@ -1074,7 +1177,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 {fields.map((field) => (
                   <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                     <Group>
-                      {field.name} {field.required && <Text span c="red">*</Text>}
+                      {field.name} {getEffectiveRequired(field) && <Text span c="red">*</Text>}
                     </Group>
                   </Table.Th>
                 ))}
@@ -1089,10 +1192,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                       {renderRowSource(currentRowSources[rowIndex])}
                     </Table.Td>
                   )}
-                  {fields.map((field) => (
-                    <Table.Td key={field.name} style={{ minWidth: '250px' }}>
+                  {fields.map((field) => {
+                    const cellError = !readOnly ? errors[getScopedFieldKey(field.name, sheetName)]?.[rowIndex] : undefined;
+                    return (
+                    <Table.Td key={field.name} style={{ minWidth: '250px', background: cellError ? 'var(--mantine-color-red-0)' : undefined }}>
                       <Group align="center">
-                        {renderInputField(field, row, rowIndex, onInputChange, readOnly)}
+                        {renderInputField(field, row, rowIndex, onInputChange, readOnly, sheetName)}
                         {field.validate_with && !readOnly && (
                           <ActionIcon
                             size="sm"
@@ -1120,7 +1225,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                         )}
                       </Group>
                     </Table.Td>
-                  ))}
+                  );
+                  })}
                   {!readOnly && (
                     <Table.Td maw={rem(120)}>
                       <Center>
@@ -1158,18 +1264,22 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         </Alert>
       )}
 
+
       {useSheets ? (
         <Tabs value={activeSheet} onChange={setActiveSheet} keepMounted={false}>
           <Tabs.List mb="md">
             {allSheets.map(sheet => {
               const canEdit = accessibleSheetNames.has(sheet.name);
+              const fieldsWithErrors = (sheet.fields || []).filter(f => (errors[getScopedFieldKey(f.name, sheet.name)]?.length ?? 0) > 0);
+              const sheetHasErrors = canEdit && fieldsWithErrors.length > 0;
               return (
                 <Tabs.Tab
                   key={sheet.name}
                   value={sheet.name}
                   fw={600}
                   leftSection={!canEdit ? (templateSharedUI ? <IconEye size={13} /> : <IconLock size={13} />) : undefined}
-                  color={!canEdit ? (templateSharedUI ? "blue" : "gray") : undefined}
+                  color={sheetHasErrors ? "red" : (!canEdit ? (templateSharedUI ? "blue" : "gray") : undefined)}
+                  rightSection={sheetHasErrors ? <Badge size="xs" color="red" circle>{fieldsWithErrors.length}</Badge> : undefined}
                 >
                   {sheet.name}
                 </Tabs.Tab>
@@ -1261,14 +1371,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               const updatedRows = [...rows];
               updatedRows[activeRowIndex][activeFieldName] = value;
               setRows(updatedRows);
+              clearFieldError(activeFieldName);
             }
 
             if (description) {
+              const displayKey = getScopedFieldKey(activeFieldName, activeSheetForValidator);
               const updatedDisplayValues = { ...displayValues };
               if (!updatedDisplayValues[activeRowIndex]) {
                 updatedDisplayValues[activeRowIndex] = {};
               }
-              updatedDisplayValues[activeRowIndex][activeFieldName] = description;
+              updatedDisplayValues[activeRowIndex][displayKey] = description;
               setDisplayValues(updatedDisplayValues);
             }
           }

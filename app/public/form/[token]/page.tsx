@@ -15,6 +15,7 @@ import {
   IconAlertCircle, IconForms, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
 import { buildValidatorOptions, getPreferredValidatorColumnName } from "../../../utils/validatorOptions";
+import { getEffectiveRequired, isBlankRequiredValue } from "../../../utils/requiredFields";
 
 interface Field {
   name: string;
@@ -142,7 +143,7 @@ export default function PublicFormPage() {
       const rows = sheetRows[sheet.name] || [];
       for (let i = 0; i < rows.length; i++) {
         for (const field of sheet.fields) {
-          if (field.required && !rows[i][field.name]) {
+          if (getEffectiveRequired(field) && isBlankRequiredValue(rows[i][field.name])) {
             showNotification({
               title: "Campo requerido",
               message: `"${field.name}" es obligatorio en la hoja "${sheet.name}", fila ${i + 1}`,
@@ -312,7 +313,7 @@ export default function PublicFormPage() {
                                 <Table.Th style={{ width: 36, textAlign: "center" }}>#</Table.Th>
                                 {sheet.fields.map(f => (
                                   <Table.Th key={f.name} style={{ whiteSpace: "nowrap" }}>
-                                    {f.name}{f.required && <Text span c="red" ml={3}>*</Text>}
+                                    {f.name}{getEffectiveRequired(f) && <Text span c="red" ml={3}>*</Text>}
                                   </Table.Th>
                                 ))}
                                 <Table.Th style={{ width: 36 }} />
@@ -379,7 +380,7 @@ export default function PublicFormPage() {
 
   function renderCell(field: Field, value: any, onChange: (v: any) => void, withLabel = false) {
     const options = validatorOptions[field.name];
-    const label   = withLabel ? `${field.name}${field.required ? " *" : ""}` : undefined;
+    const label   = withLabel ? `${field.name}${getEffectiveRequired(field) ? " *" : ""}` : undefined;
 
     if (options?.length) {
       return (
