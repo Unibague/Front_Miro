@@ -18,6 +18,7 @@ import { PDI_ROUTES } from "@/app/pdi/api";
 import type { Indicador, Periodo } from "@/app/pdi/types";
 import PdiSidebar from "@/app/pdi/components/PdiSidebar";
 import { usePdiConfig } from "@/app/pdi/hooks/usePdiConfig";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 // ── Tipos locales ────────────────────────────────────────────────────────────
 
@@ -248,8 +249,24 @@ export default function SubirEvidenciasPage() {
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
+  const { setHasChanges } = useUnsavedChanges();
 
-  // Busca el corte vigente que coincide con un período real del indicador.
+  // Activar protección de cambios sin guardar
+  useEffect(() => {
+    const tieneChanges = 
+      Object.keys(avancesStr).some((periodo) => {
+        const original = indicador?.periodos.find((p: Periodo) => p.periodo === periodo);
+        const originalVal = original?.avance != null ? String(original.avance) : "";
+        return avancesStr[periodo] !== originalVal;
+      }) || 
+      Object.keys(textos).length > 0 || 
+      Object.keys(otrosTextos).length > 0 || 
+      Object.keys(justificaciones).length > 0;
+    
+    setHasChanges(tieneChanges && !sending && !savingDraft);
+  }, [avancesStr, textos, otrosTextos, justificaciones, sending, savingDraft, indicador, setHasChanges]);
+
+  // ── Busca el corte vigente que coincide con un período real del indicador ──────
   // Si no hay coincidencia, el indicador no debe quedar abierto para reportar.
   const corteQueCoincide = indicador
     ? (cortesVigentes.find(c =>
@@ -257,8 +274,6 @@ export default function SubirEvidenciasPage() {
       )?.nombre ?? "")
     : "";
   const corteActivo = corteQueCoincide;
-
-  // ── Superó meta del corte activo (para lógica condicional de campos) ──────
   const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;

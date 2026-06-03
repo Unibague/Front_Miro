@@ -73,12 +73,22 @@ const UploadedTemplatePage = () => {
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
   const [fieldComments, setFieldComments] = useState<Record<string, string>>({});
 
-  const normalizeDependencies = (items: any[] = []): Dependency[] =>
-    items.map((dependency) => ({
-      ...dependency,
-      visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
-    }));
-
+  const normalizeDependencies = (items: any[] = []): Dependency[] => {
+    console.log('Normalizing dependencies from:', items);
+    console.log('Items count:', items.length);
+    return items.map((dependency, index) => {
+      console.log(`Item ${index}:`, dependency);
+      console.log(`Item ${index} keys:`, Object.keys(dependency));
+      const normalized = {
+        dep_code: dependency.dep_code || dependency?.code || "",
+        name: dependency.name || "",
+        responsible: dependency.responsible || "",
+        visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
+      };
+      console.log(`Normalized ${index}:`, normalized);
+      return normalized;
+    });
+  };
 
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
@@ -124,13 +134,18 @@ const UploadedTemplatePage = () => {
           console.log('Fetched dependency names:', depNames);
           setDependencyNames(depNames);
         }
-        const producersData = response.data.publishedTemplate?.template?.producers || []
+        const producersData = response.data.template?.producers || []
         console.log('Raw producers:', producersData);
-        console.log('First producer type:', typeof producersData[0]);
+        console.log('Producers length:', producersData.length);
+        if (producersData.length > 0) {
+          console.log('First producer:', producersData[0]);
+          console.log('First producer keys:', Object.keys(producersData[0]));
+        }
         setDependencies(
           normalizeDependencies(producersData)
         )
-        console.log('Dependencies loaded:', producersData);
+        console.log('Dependencies after normalization:', dependencies);
+
         
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
@@ -799,25 +814,24 @@ const renderCellContent = (value: any, fieldName?: string) => {
     setTableData(filteredData);
   };
 
-  const resumeRows = resumeData?.map((item) => {
-    const userName = item.send_by?.full_name || item.send_by?.email || "Usuario desconocido";
-    const depCode = item.dependency || "";
-    console.log('Looking for dep code:', depCode, 'in dependencyNames:', dependencyNames);
-    const depObject = dependencyNames.find(d => d.dep_code === depCode);
-    console.log('Found depObject:', depObject);
-    const depName = depObject?.name || depCode || "Dependencia desconocida";
-    console.log('Final depName:', depName);
+  const resumeRows = dependencies.map((dep) => {
+    const depCode = dep.dep_code || "";
+    const depName = dep.name || depCode || "Dependencia desconocida";
+    const sentData = resumeData?.find(item => item.dependency === depCode);
+    const userName = sentData?.send_by?.full_name || sentData?.send_by?.email || "No definido";
+    const status = sentData ? "✓ Enviado" : "✗ No enviado";
+    const statusColor = sentData ? undefined : "red";
     
     return (
-      <Table.Tr key={item.dependency}>
+      <Table.Tr key={depCode} c={statusColor}>
         <Table.Td>{depName}</Table.Td>
         <Table.Td>
           <Text size="sm">{userName}</Text>
         </Table.Td>
-        <Table.Td>Enviado</Table.Td>
+        <Table.Td>{status}</Table.Td>
       </Table.Tr>
     );
-  }) || []
+  }) || [];
 
   return (
     <Box style={{ display: 'flex', minHeight: '100vh' }}>
