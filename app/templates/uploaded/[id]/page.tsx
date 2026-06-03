@@ -61,6 +61,7 @@ const UploadedTemplatePage = () => {
   const [templateName, setTemplateName] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData[]>()
   const [dependencies, setDependencies] = useState<Dependency[]>([])
+  const [dependencyNames, setDependencyNames] = useState<any[]>([]);
   const searchParams = useSearchParams();
   const [resume, setResume] = useState<boolean>(
     searchParams?.get("resume") === "true"
@@ -115,6 +116,14 @@ const UploadedTemplatePage = () => {
           return {dependency: data.dependency, send_by: data.send_by}
         })
         setResumeData(sentDepedencies)
+        
+        const depCodes = sentDepedencies.map(d => d.dependency).filter(Boolean);
+        console.log('Dependency codes for lookup:', depCodes);
+        if (depCodes.length > 0) {
+          const depNames = await fetchDependenciesNames(depCodes);
+          console.log('Fetched dependency names:', depNames);
+          setDependencyNames(depNames);
+        }
         const producersData = response.data.publishedTemplate?.template?.producers || []
         console.log('Raw producers:', producersData);
         console.log('First producer type:', typeof producersData[0]);
@@ -792,7 +801,12 @@ const renderCellContent = (value: any, fieldName?: string) => {
 
   const resumeRows = resumeData?.map((item) => {
     const userName = item.send_by?.full_name || item.send_by?.email || "Usuario desconocido";
-    const depName = item.dependency || "Dependencia desconocida";
+    const depCode = item.dependency || "";
+    console.log('Looking for dep code:', depCode, 'in dependencyNames:', dependencyNames);
+    const depObject = dependencyNames.find(d => d.dep_code === depCode);
+    console.log('Found depObject:', depObject);
+    const depName = depObject?.name || depCode || "Dependencia desconocida";
+    console.log('Final depName:', depName);
     
     return (
       <Table.Tr key={item.dependency}>
