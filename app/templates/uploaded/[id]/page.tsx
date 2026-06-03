@@ -61,6 +61,7 @@ const UploadedTemplatePage = () => {
   const [templateName, setTemplateName] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData[]>()
   const [dependencies, setDependencies] = useState<Dependency[]>([])
+  const [dependencyNames, setDependencyNames] = useState<any[]>([]);
   const searchParams = useSearchParams();
   const [resume, setResume] = useState<boolean>(
     searchParams?.get("resume") === "true"
@@ -104,13 +105,32 @@ const UploadedTemplatePage = () => {
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
+        console.log('📋 Raw resumeData received:', sentData);
         const sentDepedencies = sentData.map((data:any) => {
+          console.log('👤 send_by for dependency', data.dependency, ':', {
+            email: data.send_by?.email,
+            full_name: data.send_by?.full_name,
+            position: data.send_by?.position,
+            entire: data.send_by
+          });
           return {dependency: data.dependency, send_by: data.send_by}
         })
         setResumeData(sentDepedencies)
+        
+        const depCodes = sentDepedencies.map((d: any) => d.dependency).filter(Boolean);
+        console.log('Dependency codes for lookup:', depCodes);
+        if (depCodes.length > 0) {
+          const depNames = await fetchDependenciesNames(depCodes);
+          console.log('Fetched dependency names:', depNames);
+          setDependencyNames(depNames);
+        }
+        const producersData = response.data.publishedTemplate?.template?.producers || []
+        console.log('Raw producers:', producersData);
+        console.log('First producer type:', typeof producersData[0]);
         setDependencies(
-          normalizeDependencies(response.data.publishedTemplate?.template?.producers)
+          normalizeDependencies(producersData)
         )
+        console.log('Dependencies loaded:', producersData);
         
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
@@ -779,32 +799,25 @@ const renderCellContent = (value: any, fieldName?: string) => {
     setTableData(filteredData);
   };
 
-  const resumeRows = dependencies.map((dependency) => {
-    const hasSentData = resumeData?.some(data => data.dependency===dependency.dep_code)
-    const visualizers = Array.isArray(dependency.visualizers) ? dependency.visualizers : [];
+  const resumeRows = resumeData?.map((item) => {
+    const userName = item.send_by?.full_name || item.send_by?.email || "Usuario desconocido";
+    const depCode = item.dependency || "";
+    console.log('Looking for dep code:', depCode, 'in dependencyNames:', dependencyNames);
+    const depObject = dependencyNames.find(d => d.dep_code === depCode);
+    console.log('Found depObject:', depObject);
+    const depName = depObject?.name || depCode || "Dependencia desconocida";
+    console.log('Final depName:', depName);
+    
     return (
-      <Table.Tr key={dependency.dep_code} c={!hasSentData ? "red" : undefined}>
-        <Table.Td>{dependency.name}</Table.Td>
+      <Table.Tr key={item.dependency}>
+        <Table.Td>{depName}</Table.Td>
         <Table.Td>
-          {visualizers.length > 0 ? (
-            <Group gap={5}>
-              {visualizers.slice(0, 1).map((v, index) => (
-                <Text key={index}> {v} </Text>
-              ))}
-              {visualizers.length > 1 && (
-                <Badge variant="outline">
-                  +{visualizers.length - 1} más
-                </Badge>
-              )}
-            </Group>
-          ) : (
-            <Text> No definido </Text>
-          )}
+          <Text size="sm">{userName}</Text>
         </Table.Td>
-        <Table.Td>{hasSentData ? "✓ Enviado" : "✗ No enviado"}</Table.Td>
+        <Table.Td>Enviado</Table.Td>
       </Table.Tr>
     );
-  })
+  }) || []
 
   return (
     <Box style={{ display: 'flex', minHeight: '100vh' }}>
