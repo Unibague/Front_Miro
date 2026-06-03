@@ -133,18 +133,30 @@ const UploadedTemplatePage = () => {
           const depNames = await fetchDependenciesNames(depCodes);
           console.log('Fetched dependency names:', depNames);
           setDependencyNames(depNames);
+          
+          // Usar los nombres de dependencias para construir la lista de dependencies
+          // Esto asegura que el resumen muestre las dependencias que enviaron datos
+          const normalizedDeps = depNames.map((dep: any) => ({
+            dep_code: dep.code || dep.dep_code || "",
+            name: dep.name || "",
+            responsible: dep.responsible || "",
+            visualizers: dep.visualizers || []
+          }));
+          console.log('Dependencies from fetched names:', normalizedDeps);
+          setDependencies(normalizedDeps);
+        } else {
+          // Si no hay datos enviados, usar los productores asignados
+          const producersData = response.data.template?.producers || []
+          console.log('Raw producers:', producersData);
+          console.log('Producers length:', producersData.length);
+          if (producersData.length > 0) {
+            console.log('First producer:', producersData[0]);
+            console.log('First producer keys:', Object.keys(producersData[0]));
+          }
+          setDependencies(
+            normalizeDependencies(producersData)
+          )
         }
-        const producersData = response.data.template?.producers || []
-        console.log('Raw producers:', producersData);
-        console.log('Producers length:', producersData.length);
-        if (producersData.length > 0) {
-          console.log('First producer:', producersData[0]);
-          console.log('First producer keys:', Object.keys(producersData[0]));
-        }
-        setDependencies(
-          normalizeDependencies(producersData)
-        )
-        console.log('Dependencies after normalization:', dependencies);
 
         
         // Obtener comentarios de los campos
