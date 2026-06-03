@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
@@ -8,10 +8,31 @@ import {
   IconCurrencyDollar, IconTarget,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+import axios from "axios";
 import { useRole } from "@/app/context/RoleContext";
+import { PDI_ROUTES } from "../api";
+
+type PdiNavItem = {
+  label: string;
+  icon: React.ElementType;
+  path: string;
+  permissionKey: string;
+  color: string;
+  exact: boolean;
+  requiresMacroLeader?: boolean;
+};
+
+type PdiNavGroup = {
+  section: string;
+  items: PdiNavItem[];
+};
+
+const normalizeText = (value?: string | null) => String(value ?? "").toLowerCase().trim();
+
 
 // Links exclusivos para administrador
-const ADMIN_LINKS = [
+const ADMIN_LINKS: PdiNavGroup[] = [
   {
     section: "CONTROL",
     items: [
@@ -43,7 +64,7 @@ const ADMIN_LINKS = [
 ];
 
 // Links para responsables (sin perfil o con permiso explícito)
-const RESPONSABLE_LINKS = [
+const RESPONSABLE_LINKS: PdiNavGroup[] = [
   {
     section: "MI PDI",
     items: [
@@ -61,7 +82,7 @@ const RESPONSABLE_LINKS = [
   {
     section: "INFORMES",
     items: [
-      { label: "Informes de avance", icon: IconReportAnalytics, path: "/pdi/informes", permissionKey: "pdi", color: "violet", exact: false },
+      { label: "Informes de avance", icon: IconReportAnalytics, path: "/pdi/informes", permissionKey: "pdi", color: "violet", exact: false, requiresMacroLeader: true },
     ],
   },
 ];
@@ -70,12 +91,55 @@ export default function PdiSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const currentPath = pathname ?? "";
+  const { data: session, status } = useSession();
   const { userRole } = useRole();
+  const [isMacroLeader, setIsMacroLeader] = useState(false);
 
-  const isAdmin = userRole === "Administrador";
+  const isImpersonating = !!(session?.user as any)?.originalUserEmail;
+  const isAdmin = userRole === "Administrador" && !isImpersonating;
 
-  // Sin perfiles: admin ve todo, responsable ve Mi PDI + Tablero
-  const links = isAdmin ? ADMIN_LINKS : RESPONSABLE_LINKS;
+  useEffect(() => {
+    if (isAdmin) {
+      setIsMacroLeader(true);
+      return;
+    }
+
+    if (status !== "authenticated" || !session?.user?.email) {
+      setIsMacroLeader(false);
+      return;
+    }
+
+    const email = normalizeText(session.user.email);
+    let active = true;
+
+    axios.get(PDI_ROUTES.informesLista())
+      .then((res) => {
+        if (!active) return;
+        const macros: any[] = Array.isArray(res.data) ? res.data : [];
+        // Solo lider_email estricto — evita falsos positivos por coincidencia de nombre
+        setIsMacroLeader(macros.some((m) =>
+          m.lider_email && normalizeText(m.lider_email) === email
+        ));
+      })
+      .catch(() => {
+        if (active) setIsMacroLeader(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, session?.user, status]);
+
+  // Sin perfiles: admin ve todo; responsables solo ven informes si lideran un macroproyecto.
+  const links = useMemo(() => {
+    const source = isAdmin ? ADMIN_LINKS : RESPONSABLE_LINKS;
+    return source
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.requiresMacroLeader || isMacroLeader),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [isAdmin, isMacroLeader]);
 
   return (
     <Stack
@@ -104,7 +168,7 @@ export default function PdiSidebar() {
           <Stack key={group.section} gap={0}>
             <Divider />
             <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>{group.section}</Text>
-            {visibleItems.map((item: { path: string; label: string; icon: React.ElementType; exact: boolean; color: string }) => (
+            {visibleItems.map((item) => (
               <NavLink
                 key={item.path}
                 label={item.label}

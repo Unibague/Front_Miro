@@ -33,6 +33,7 @@ import {
   buildValidatorOptions,
   getPreferredValidatorColumnName,
 } from "../../../../../utils/validatorOptions";
+import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
 import "dayjs/locale/es";
 
 interface Field {
@@ -441,7 +442,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
 
     rows.forEach((row, rowIndex) => {
       template?.fields.forEach((field) => {
-        if (field.required && (row[field.name] === null || row[field.name] === undefined)) {
+        if (getEffectiveRequired(field) && isBlankRequiredValue(row[field.name])) {
           if (!newErrors[field.name]) {
             newErrors[field.name] = [];
           }
@@ -581,7 +582,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
       value: row[field.name] || "",
       onChange: (e: React.ChangeEvent<HTMLInputElement> | number) =>
         handleInputChange(rowIndex, field.name, typeof e === "number" ? e : e.currentTarget.value),
-      required: field.required,
+      required: getEffectiveRequired(field),
       placeholder: field.comment,
       style: { width: "100%" },
       error: Boolean(fieldError),
@@ -602,6 +603,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           placeholder="Seleccione opciones"
           style={{ width: "100%" }}
           error={fieldError ? fieldError : undefined}
+          required={getEffectiveRequired(field)}
         />
       );
     }
@@ -732,7 +734,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
                   {template.fields.map((field) => (
                     <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                       <Group>
-                        {field.name} {field.required && <Text span color="red">*</Text>}
+                        {field.name} {getEffectiveRequired(field) && <Text span color="red">*</Text>}
 
                       </Group>
                     </Table.Th>

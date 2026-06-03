@@ -10,6 +10,7 @@ import { showNotification } from '@mantine/notifications';
 import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
 import { endOfDayGMT5 } from '../DateConfig';
+import { getEffectiveRequired, isBlankRequiredValue } from '../../utils/requiredFields';
 
 interface DropzoneButtonProps {
   pubTemId: string;
@@ -46,6 +47,40 @@ const normalizeBackendValidationErrors = (payload: any) => {
       ],
     },
   ];
+};
+
+const buildRequiredErrorDetails = (
+  rows: Record<string, any>[],
+  fields: any[]
+) => fields
+  .filter((field) => getEffectiveRequired(field))
+  .map((field) => {
+    const errors = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => isBlankRequiredValue(row?.[field.name]))
+      .map(({ index }) => ({
+        register: index + 1,
+        value: 'Sin valor',
+        message: `El campo "${field.name}" es obligatorio y no puede estar vacio (fila ${index + 1})`,
+      }));
+
+    return {
+      column: field.name,
+      errors,
+    };
+  })
+  .filter((detail) => detail.errors.length > 0);
+
+const showRequiredUploadErrors = (details: any[]) => {
+  localStorage.setItem('errorDetails', JSON.stringify(details));
+  if (typeof window !== 'undefined') window.open('/logs', '_blank');
+
+  showNotification({
+    title: 'Campos obligatorios sin completar',
+    message: 'La plantilla no se subio. Revisa los campos marcados como obligatorios en los comentarios.',
+    color: 'red',
+    autoClose: 7000,
+  });
 };
 
 export function DropzoneUpdateButton({ pubTemId, endDate, onClose, edit = false }: DropzoneButtonProps) {
@@ -332,6 +367,15 @@ const handleFileDrop = async (files: File[]) => {
       }
       return sanitizedRow;
     });
+
+    const requiredErrors = buildRequiredErrorDetails(
+      finalSanitizedData,
+      templateMeta.data.template.fields || []
+    );
+    if (requiredErrors.length > 0) {
+      showRequiredUploadErrors(requiredErrors);
+      return;
+    }
 
     try {
       if (!session?.user?.email) throw new Error('Usuario no autenticado');

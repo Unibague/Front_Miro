@@ -50,8 +50,22 @@ interface MacroResumen {
   nombre: string;
   avance: number;
   lider: string;
+  lider_email?: string;
   informe_drive_web_view_link: string | null;
   proyectos: ProyectoResumen[];
+}
+
+const normalizeText = (value?: string | null) => String(value ?? "").toLowerCase().trim();
+
+function matchesCurrentUser(email: string, fullName: string, name?: string | null, emailValue?: string | null) {
+  const normalizedName = normalizeText(name);
+  return (
+    Boolean(emailValue) && normalizeText(emailValue) === email
+  ) || (
+    Boolean(fullName) && normalizedName === fullName
+  ) || (
+    Boolean(email) && normalizedName === email
+  );
 }
 
 function semaforoColor(avance: number) {
@@ -389,10 +403,13 @@ export default function InformesPage() {
         if (isAdmin) {
           setMacros(todos);
         } else {
-          const nombre = (rUser?.data?.full_name ?? "").toLowerCase().trim();
+          const nombre = normalizeText(
+            rUser?.data?.full_name ||
+            (session.user as { full_name?: string })?.full_name ||
+            session.user?.name
+          );
           setMacros(todos.filter((m) => {
-            const lider = (m.lider ?? "").toLowerCase().trim();
-            return lider === email || (nombre && lider === nombre);
+            return matchesCurrentUser(email, nombre, m.lider, m.lider_email);
           }));
         }
         setCortes(rCortes.data ?? []);
@@ -449,7 +466,11 @@ export default function InformesPage() {
           {loading ? (
             <Center py="xl"><Loader /></Center>
           ) : macros.length === 0 ? (
-            <Center py="xl"><Text c="dimmed">No hay macroproyectos registrados</Text></Center>
+            <Center py="xl">
+              <Text c="dimmed">
+                {isAdmin ? "No hay macroproyectos registrados" : "No tienes macroproyectos liderados para generar informes de avance"}
+              </Text>
+            </Center>
           ) : (
             <Stack gap="md">
               {macros.map((m) => (

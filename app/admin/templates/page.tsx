@@ -25,6 +25,7 @@ import {
 } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { logTemplateChange } from "@/app/utils/auditUtils";
+import { getEffectiveRequired } from "@/app/utils/requiredFields";
 import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { modals } from "@mantine/modals";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
@@ -731,7 +732,7 @@ const getWorksheetHeaderFields = (
       fields.push({
         name: fieldName,
         datatype: "Texto Largo",
-        required: true,
+        required: getEffectiveRequired({ comment }),
         validate_with: "",
         comment,
         multiple: false,
@@ -1399,7 +1400,7 @@ const AdminTemplatesPage = () => {
           template.name,
           field.name,
           field.datatype,
-          field.required ? 'Si' : 'No',
+          getEffectiveRequired(field) ? 'Si' : 'No',
           validateWith,
           '',
           field.comment || '',
