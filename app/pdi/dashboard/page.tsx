@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import {
-  ActionIcon, Badge, Box, Center, Container, Divider, Group,
+  ActionIcon, Badge, Box, Button, Center, Container, Divider, Group,
   Loader, Paper, SimpleGrid, Stack, Text,
   ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
-  IconListCheck, IconBulb, IconChartDonut3,
+  IconListCheck, IconBulb, IconChartDonut3, IconNetwork,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -109,9 +109,20 @@ export default function DashboardPage() {
                 </Text>
               </div>
             </Group>
-            <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
-              <IconRefresh size={18} />
-            </ActionIcon>
+            <Group gap="xs">
+              <Button
+                variant="light"
+                color="violet"
+                radius="xl"
+                leftSection={<IconNetwork size={17} />}
+                onClick={() => router.push("/pdi/dashboard/red-nodos")}
+              >
+                Red de nodos
+              </Button>
+              <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
+                <IconRefresh size={18} />
+              </ActionIcon>
+            </Group>
           </Group>
 
           {loading ? (

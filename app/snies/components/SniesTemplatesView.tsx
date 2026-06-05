@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 import {
   ActionIcon,
   Badge,
@@ -10,6 +12,7 @@ import {
   Center,
   Checkbox,
   Container,
+  Divider,
   FileInput,
   Group,
   Loader,
@@ -534,6 +537,17 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [pTemplateOptions, setPTemplateOptions] = useState<{ value: string; label: string }[]>([]);
   const [selectedPTemplateIds, setSelectedPTemplateIds] = useState<string[]>([]);
   const [loadingPTemplates, setLoadingPTemplates] = useState(false);
+  const [publishedTemplatesList, setPublishedTemplatesList] = useState<any[]>([]);
+  const [ptSearch, setPtSearch] = useState("");
+  const [ptPage, setPtPage] = useState(1);
+  const [ptStatusFilter, setPtStatusFilter] = useState<string | null>(null);
+  const PT_PAGE_SIZE = 15;
+  const [allSniesTemplatesForLookup, setAllSniesTemplatesForLookup] = useState<SniesTemplate[]>([]);
+  const [dataModalOpened, { open: openDataModal, close: closeDataModal }] = useDisclosure(false);
+  const [dataModalTemplate, setDataModalTemplate] = useState<any>(null);
+  const [dataModalRows, setDataModalRows] = useState<Record<string, any>[]>([]);
+  const [dataModalColumns, setDataModalColumns] = useState<string[]>([]);
+  const [dataModalLoading, setDataModalLoading] = useState(false);
   const [equivalenceOpened, { open: openEquivalence, close: closeEquivalence }] = useDisclosure(false);
   const [equivalenceTemplate, setEquivalenceTemplate] = useState<SniesTemplate | null>(null);
   const [cnaFieldOptions, setCnaFieldOptions] = useState<CnaFieldOption[]>([]);
@@ -596,22 +610,34 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     if (!session?.user?.email) return;
     setLoadingPTemplates(true);
     try {
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
-        params: { email: session.user.email, page: 1, limit: 200, periodId: selectedPeriodId },
-      });
-      const list: any[] = res.data.templates || res.data || [];
+      const [ptRes, sniesRes] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
+          params: { email: session.user.email, page: 1, limit: 200, periodId: selectedPeriodId },
+        }),
+        // Sin filtro de periodo para encontrar todas las plantillas SNIES sin importar el periodo
+        axios.get(apiBasePath, {
+          params: { email: session.user.email, page: 1, limit: 1000 },
+        }),
+      ]);
+      const list: any[] = ptRes.data.templates || ptRes.data || [];
       setPTemplateOptions(
         list.map((t) => ({
           value: String(t._id),
           label: t.name || t.template?.name || t._id,
         }))
       );
+      setPublishedTemplatesList(list);
+      setAllSniesTemplatesForLookup(sniesRes.data.templates || []);
     } catch (e) {
       console.error("Error fetching published templates:", e);
     } finally {
       setLoadingPTemplates(false);
     }
   };
+
+  useEffect(() => {
+    fetchPublishedTemplates();
+  }, [session?.user?.email, selectedPeriodId]);
 
   const resetForm = () => {
     setEditingTemplate(null);
@@ -1342,6 +1368,61 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     router.push(`${moduleBasePath}/${template._id}`);
   };
 
+  const handleDownloadDataModal = () => {
+    if (dataModalRows.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(dataModalRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Datos");
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const name = dataModalTemplate?.name || dataModalTemplate?.template?.name || "datos";
+    saveAs(new Blob([buf], { type: "application/octet-stream" }), `${name}.xlsx`);
+  };
+
+  const handleDownloadDirectData = async (pt: any) => {
+    try {
+      const res = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+        { params: { pubTem_id: pt._id, email: session?.user?.email } }
+      );
+      const rows: Record<string, any>[] = res.data?.data || [];
+      if (rows.length === 0) {
+        showNotification({ title: "Sin datos", message: "No hay información para descargar.", color: "yellow" });
+        return;
+      }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Datos");
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const name = pt.name || pt.template?.name || "datos";
+      saveAs(new Blob([buf], { type: "application/octet-stream" }), `${name}.xlsx`);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo descargar la información.", color: "red" });
+    }
+  };
+
+  const handleOpenRawData = async (pt: any) => {
+    setDataModalTemplate(pt);
+    setDataModalRows([]);
+    setDataModalColumns([]);
+    setDataModalLoading(true);
+    openDataModal();
+    try {
+      const res = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+        { params: { pubTem_id: pt._id, email: session?.user?.email } }
+      );
+      const rows: Record<string, any>[] = res.data?.data || [];
+      if (rows.length > 0) {
+        setDataModalColumns(Object.keys(rows[0]));
+      }
+      setDataModalRows(rows);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo cargar la información.", color: "red" });
+    } finally {
+      setDataModalLoading(false);
+    }
+  };
+
   const selectedCnaField = cnaFieldOptions.find((field) => field.key === selectedCnaFieldKey);
   const selectedCnaHierarchy = selectedCnaField ? getCnaFieldHierarchy(selectedCnaField) : null;
   const selectedMiroValues = new Set(equivalenceSelections[selectedCnaFieldKey] || []);
@@ -1473,63 +1554,132 @@ const activeMiroTemplateId =
         </Title>
       </Group>
 
-      <TextInput
-        placeholder="Buscar en todas las plantillas"
-        value={search}
-        onChange={(event) => {
-          setSearch(event.currentTarget.value);
-          setPage(1);
-        }}
-        mb="md"
-      />
-
       <Group mb="md">
-        {isConfigureMode && (
-          <Button onClick={openCreate} leftSection={<IconCirclePlus size={18} />}>
-            Crear Nueva Plantilla
-          </Button>
-        )}
+        <TextInput
+          placeholder="Buscar en todas las plantillas"
+          value={ptSearch}
+          onChange={(e) => { setPtSearch(e.currentTarget.value); setPtPage(1); }}
+          style={{ flex: 1 }}
+        />
+        <Select
+          placeholder="Todos los estados"
+          data={[
+            { value: "pendiente", label: "Pendiente" },
+            { value: "enviado", label: "Enviado" },
+          ]}
+          value={ptStatusFilter}
+          onChange={(v) => { setPtStatusFilter(v); setPtPage(1); }}
+          clearable
+          w={180}
+        />
       </Group>
 
-      <Table striped withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Nombre</Table.Th>
-            <Table.Th>Creado Por</Table.Th>
-            <Table.Th>Archivo</Table.Th>
-            <Table.Th>Última Modificación</Table.Th>
-            <Table.Th>
-              <Center>Acciones</Center>
-            </Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.length > 0 ? (
-            rows
-          ) : (
-            <Table.Tr>
-              <Table.Td colSpan={5}>
-                <Center>
-                  <Text c="dimmed">
-                    {loading ? `Cargando plantillas ${moduleUpper}...` : `No hay plantillas ${moduleUpper} para los filtros actuales.`}
-                  </Text>
-                </Center>
-              </Table.Td>
-            </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
+      {(() => {
+        const filtered = publishedTemplatesList.filter(pt => {
+          const nameMatch = (pt.name || pt.template?.name || '').toLowerCase().includes(ptSearch.toLowerCase());
+          const statusMatch = ptStatusFilter === null
+            ? true
+            : ptStatusFilter === "enviado" ? pt.final_submitted : !pt.final_submitted;
+          return nameMatch && statusMatch;
+        });
+        const totalPtPages = Math.max(1, Math.ceil(filtered.length / PT_PAGE_SIZE));
+        const paginated = filtered.slice((ptPage - 1) * PT_PAGE_SIZE, ptPage * PT_PAGE_SIZE);
 
-      <Center>
-        <Pagination
-          mt={15}
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          siblings={1}
-          boundaries={3}
-        />
-      </Center>
+        return (
+          <>
+            <Table striped withTableBorder mb="md">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Nombre</Table.Th>
+                  <Table.Th>Estado</Table.Th>
+                  <Table.Th><Center>Acciones</Center></Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {loadingPTemplates ? (
+                  <Table.Tr>
+                    <Table.Td colSpan={3}>
+                      <Center py="md"><Loader size="sm" /></Center>
+                    </Table.Td>
+                  </Table.Tr>
+                ) : paginated.length === 0 ? (
+                  <Table.Tr>
+                    <Table.Td colSpan={3}>
+                      <Center><Text c="dimmed" size="sm">No hay plantillas para los filtros actuales.</Text></Center>
+                    </Table.Td>
+                  </Table.Tr>
+                ) : (
+                  paginated.map((pt) => {
+                    const ptName = normalizeToken(pt.name || pt.template?.name || '');
+                    // Busca por vínculo explícito primero, luego por coincidencia de nombre como fallback
+                    const linkedSnies = allSniesTemplatesForLookup.find(t =>
+                      t.source_published_templates?.some(s => String(s.template_id) === String(pt._id)) ||
+                      String(t.source_published_template_id) === String(pt._id)
+                    ) || allSniesTemplatesForLookup.find(t =>
+                      ptName && normalizeToken(t.name) === ptName
+                    );
+                    return (
+                      <Table.Tr key={pt._id}>
+                        <Table.Td fw={500}>{pt.name || pt.template?.name || pt._id}</Table.Td>
+                        <Table.Td>
+                          {pt.final_submitted ? (
+                            <Badge color="green" variant="filled">Enviado a {moduleUpper}</Badge>
+                          ) : (
+                            <Badge color="orange" variant="light">Pendiente</Badge>
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          <Center>
+                            {pt.final_submitted && (
+                              <Group gap={6}>
+                                <Tooltip label={linkedSnies ? `Ver información en ${moduleUpper}` : `Ver información enviada`}>
+                                  <Button
+                                    variant="outline"
+                                    color="blue"
+                                    size="xs"
+                                    leftSection={<IconEye size={14} />}
+                                    onClick={() => linkedSnies
+                                      ? handleOpenConnectedData(linkedSnies)
+                                      : handleOpenRawData(pt)
+                                    }
+                                  >
+                                    Ver datos
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip label="Descargar información enviada">
+                                  <Button
+                                    variant="outline"
+                                    color="teal"
+                                    size="xs"
+                                    leftSection={<IconDownload size={14} />}
+                                    onClick={() => handleDownloadDirectData(pt)}
+                                  >
+                                    Descargar
+                                  </Button>
+                                </Tooltip>
+                              </Group>
+                            )}
+                          </Center>
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  })
+                )}
+              </Table.Tbody>
+            </Table>
+
+            <Center mb="xl">
+              <Pagination
+                value={ptPage}
+                onChange={setPtPage}
+                total={totalPtPages}
+                siblings={1}
+                boundaries={3}
+              />
+            </Center>
+          </>
+        );
+      })()}
 
       <Modal
         opened={equivalenceOpened}
@@ -2026,6 +2176,60 @@ const activeMiroTemplateId =
             {editingTemplate ? `Actualizar plantilla ${moduleUpper}` : `Guardar plantilla ${moduleUpper}`}
           </Button>
         </Group>
+      </Modal>
+
+      {/* Modal para ver datos de plantilla sin SNIES vinculado */}
+      <Modal
+        opened={dataModalOpened}
+        onClose={closeDataModal}
+        title={
+          <Group justify="space-between" style={{ width: '100%' }}>
+            <Text fw={600}>
+              Información enviada: {dataModalTemplate?.name || dataModalTemplate?.template?.name || ''}
+            </Text>
+            <Button
+              variant="outline"
+              color="teal"
+              size="xs"
+              leftSection={<IconDownload size={14} />}
+              disabled={dataModalRows.length === 0 || dataModalLoading}
+              onClick={handleDownloadDataModal}
+            >
+              Descargar Excel
+            </Button>
+          </Group>
+        }
+        size="90%"
+        overlayProps={{ backgroundOpacity: 0.55, blur: 3 }}
+      >
+        {dataModalLoading ? (
+          <Center py="xl"><Loader /></Center>
+        ) : dataModalRows.length === 0 ? (
+          <Center py="xl"><Text c="dimmed">No hay información cargada para esta plantilla.</Text></Center>
+        ) : (
+          <ScrollArea>
+            <Table striped withTableBorder withColumnBorders style={{ fontSize: 12 }}>
+              <Table.Thead>
+                <Table.Tr>
+                  {dataModalColumns.map(col => (
+                    <Table.Th key={col} style={{ whiteSpace: 'nowrap' }}>{col}</Table.Th>
+                  ))}
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {dataModalRows.map((row, i) => (
+                  <Table.Tr key={i}>
+                    {dataModalColumns.map(col => (
+                      <Table.Td key={col} style={{ whiteSpace: 'nowrap' }}>
+                        {row[col] !== null && row[col] !== undefined ? String(row[col]) : ''}
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        )}
       </Modal>
     </Container>
   );

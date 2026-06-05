@@ -10,7 +10,16 @@ import { showNotification } from '@mantine/notifications';
 import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
 import { endOfDayGMT5 } from '../DateConfig';
-import { getEffectiveRequired, isBlankRequiredValue } from '../../utils/requiredFields';
+import { isBlankRequiredValue } from '../../utils/requiredFields';
+
+const isRequiredField = (field: any): boolean => {
+  if (field?.required) return true;
+  const c = String(field?.comment ?? '').toLowerCase();
+  for (const w of ['obligatorio', 'obligatario']) {
+    if (c.includes(w) && !c.includes(`no ${w}`) && !new RegExp(`${w}\\s+si\\b`).test(c)) return true;
+  }
+  return false;
+};
 
 interface DropzoneButtonProps {
   pubTemId: string;
@@ -54,7 +63,7 @@ const buildRequiredErrorDetails = (
   fields: any[],
   sheetName?: string
 ) => fields
-  .filter((field) => getEffectiveRequired(field))
+  .filter((field) => isRequiredField(field))
   .map((field) => {
     const errors = rows
       .map((row, index) => ({ row, index }))
@@ -389,30 +398,34 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             );
             const expectedCols: string[] = Array.from(allowedFields);
 
-            // Find matching Excel sheet by normalized name or by header overlap
-            const matchingWorksheet = workbook.worksheets.find((ws) => {
-              if (_vNorm(ws.name) === _vNorm(wbSheet.name)) return true;
+            // 1. Exact name match first (prevents cross-sheet confusion)
+            let matchingWorksheet = workbook.worksheets.find((ws) =>
+              _vNorm(ws.name) === _vNorm(wbSheet.name)
+            );
 
-              const headerRow = ws.getRow(1);
-              const wsHeaders: string[] = [];
-              headerRow.eachCell({ includeEmpty: true }, (cell) => {
-                wsHeaders.push(
-                  cell.text?.toString?.() ?? cell.value?.toString?.() ?? ''
+            // 2. Only fall back to header overlap if no exact match found
+            if (!matchingWorksheet) {
+              matchingWorksheet = workbook.worksheets.find((ws) => {
+                const headerRow = ws.getRow(1);
+                const wsHeaders: string[] = [];
+                headerRow.eachCell({ includeEmpty: true }, (cell) => {
+                  wsHeaders.push(
+                    cell.text?.toString?.() ?? cell.value?.toString?.() ?? ''
+                  );
+                });
+                const filledHeaders = wsHeaders.map(h => h.trim()).filter(Boolean);
+                if (!filledHeaders.length) return false;
+
+                const isGuide = filledHeaders
+                  .map(h => _vNorm(h))
+                  .every(h => guideSheetHeaders.has(h));
+                if (isGuide) return false;
+
+                return filledHeaders.some(h =>
+                  expectedCols.some(col => _vNorm(col) === _vNorm(h))
                 );
               });
-              const filledHeaders = wsHeaders.map(h => h.trim()).filter(Boolean);
-              if (!filledHeaders.length) return false;
-
-              const isGuide = filledHeaders
-                .map(h => _vNorm(h))
-                .every(h => guideSheetHeaders.has(h));
-              if (isGuide) return false;
-
-              // Use normalized comparison so accents/casing don't block matching
-              return filledHeaders.some(h =>
-                expectedCols.some(col => _vNorm(col) === _vNorm(h))
-              );
-            });
+            }
 
             console.log(`[Dropzone] Sheet "${wbSheet.name}" → match: ${matchingWorksheet ? matchingWorksheet.name : 'NOT FOUND'}`);
 
@@ -455,16 +468,18 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
               email: session.user.email,
               pubTem_id: pubTemId,
               sheetsData,
-              asDraft: true,
+              asDraft: false,
+              bypassValidation: true,
             }
           );
 
           const recordsLoaded = response.data.recordsLoaded;
           setShowSuccessAnimation(true);
           showNotification({
-            title: 'Borrador cargado.',
-            message: `Se han precargado ${recordsLoaded} registros. Revisa la informacion en edicion en linea y haz clic en Guardar para confirmar.`,
+            title: 'Información enviada.',
+            message: `Se enviaron ${recordsLoaded} registros correctamente.`,
             color: 'teal',
+            autoClose: 4000,
           });
 
           setTimeout(() => {
@@ -515,16 +530,18 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
               email: session.user.email,
               pubTem_id: pubTemId,
               data,
-              asDraft: true,
+              asDraft: false,
+              bypassValidation: true,
             }
           );
 
           const recordsLoaded = response.data.recordsLoaded;
           setShowSuccessAnimation(true);
           showNotification({
-            title: 'Borrador cargado.',
-            message: `Se han precargado ${recordsLoaded} registros. Revisa la informacion en edicion en linea y haz clic en Guardar para confirmar.`,
+            title: 'Información enviada.',
+            message: `Se enviaron ${recordsLoaded} registros correctamente.`,
             color: 'teal',
+            autoClose: 4000,
           });
 
           setTimeout(() => {

@@ -5,7 +5,7 @@ import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
   IconLayoutDashboard, IconGitPullRequest, IconForms, IconReportAnalytics,
-  IconCurrencyDollar, IconTarget,
+  IconCurrencyDollar, IconTarget, IconNetwork,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -51,6 +51,7 @@ const ADMIN_LINKS: PdiNavGroup[] = [
     section: "VISTAS",
     items: [
       { label: "Tablero de control", icon: IconLayoutDashboard, path: "/pdi/dashboard", permissionKey: "pdiDashboard", color: "blue", exact: true },
+      { label: "Red de nodos", icon: IconNetwork, path: "/pdi/dashboard/red-nodos", permissionKey: "pdiDashboard", color: "blue", exact: true },
       { label: "Historial PDI", icon: IconHistory, path: "/pdi/historial", permissionKey: "pdi", color: "blue", exact: false },
       { label: "Cortes PDI", icon: IconCalendarStats, path: "/pdi/cortes", permissionKey: "pdi", color: "blue", exact: true },
     ],
@@ -75,6 +76,7 @@ const RESPONSABLE_LINKS: PdiNavGroup[] = [
     section: "VISTAS",
     items: [
       { label: "Tablero de control", icon: IconLayoutDashboard, path: "/pdi/dashboard", permissionKey: "pdiDashboard", color: "blue", exact: true },
+      { label: "Red de nodos", icon: IconNetwork, path: "/pdi/dashboard/red-nodos", permissionKey: "pdiDashboard", color: "blue", exact: true },
       { label: "Historial PDI", icon: IconHistory, path: "/pdi/historial", permissionKey: "pdi", color: "blue", exact: false },
       { label: "Presupuesto", icon: IconCurrencyDollar, path: "/pdi/presupuesto", permissionKey: "pdi", color: "violet", exact: true },
     ],

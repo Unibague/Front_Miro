@@ -433,13 +433,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {/* Distribución presupuestal por año */}
       {(() => {
         const ppa  = accion.presupuesto_por_anio ?? {};
-        const epa  = accion.presupuesto_ejecutado_por_anio ?? {};
-        const anios = Array.from(new Set([...Object.keys(ppa), ...Object.keys(epa)])).sort();
+        const anios = Object.keys(ppa).sort();
         if (!anios.length) return null;
 
-        // Proporción gasto/inversión del total para distribuir por año
-        const totalPres = Number(accion.presupuesto) || 1;
-        const gastoRatio    = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
+        const totalPres      = Number(accion.presupuesto) || 1;
+        const gastoRatio     = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
         const inversionRatio = Math.max(Number(accion.inversion) || 0, 0) / totalPres;
 
         return (
@@ -447,10 +445,48 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
             <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
             <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
               {anios.map(anio => {
-                const asignado  = Number(ppa[anio] ?? 0);
-                const ejecutado = Number(epa[anio] ?? 0);
+                const asignado      = Number(ppa[anio] ?? 0);
                 const gastoAnio     = Math.round(asignado * gastoRatio);
                 const inversionAnio = Math.round(asignado * inversionRatio);
+                return (
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px" }}>
+                    <Text size="sm" fw={800} mb={6}>{anio}</Text>
+                    <Group justify="space-between" align="flex-start" gap={2}>
+                      <div>
+                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
+                        <Text size="xs" fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
+                        <Text size="xs" fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <Text size="xs" c="dimmed" lh={1}>Total</Text>
+                        <Text size="xs" fw={700} c="dimmed">{formatCOP(asignado)}</Text>
+                      </div>
+                    </Group>
+                  </Box>
+                );
+              })}
+            </SimpleGrid>
+          </Box>
+        );
+      })()}
+
+      {/* Distribución ejecución por año */}
+      {(() => {
+        const ppa  = accion.presupuesto_por_anio ?? {};
+        const epa  = accion.presupuesto_ejecutado_por_anio ?? {};
+        const anios = Object.keys(epa).sort();
+        if (!anios.length) return null;
+
+        return (
+          <Box mb="sm">
+            <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
+            <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
+              {anios.map(anio => {
+                const asignado  = Number(ppa[anio] ?? 0);
+                const ejecutado = Number(epa[anio] ?? 0);
                 const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                 const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                 return (
@@ -464,16 +500,12 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                     </Box>
                     <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
-                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
-                        <Text size="xs" fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
-                        <Text size="xs" fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
                         <Text size="xs" c="dimmed" lh={1}>Causado</Text>
                         <Text size="xs" fw={700} c="teal">{formatCOP(ejecutado)}</Text>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <Text size="xs" c="dimmed" lh={1}>Presupuesto</Text>
+                        <Text size="xs" fw={700} c="dimmed">{formatCOP(asignado)}</Text>
                       </div>
                     </Group>
                   </Box>

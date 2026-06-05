@@ -36,7 +36,7 @@ import {
   buildValidatorOptions,
   getPreferredValidatorColumnName,
 } from "../../../../utils/validatorOptions";
-import { getEffectiveRequired, isBlankRequiredValue } from "../../../../utils/requiredFields";
+import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 
 interface Field {
   name: string;
@@ -120,9 +120,18 @@ interface ValidatorData {
   columns: { name: string; is_validator: boolean; values: any[] }[];
 }
 
+const fieldIsRequired = (field: Field): boolean => {
+  if (field.required) return true;
+  const c = field.comment?.toLowerCase() ?? "";
+  for (const w of ["obligatorio", "obligatario"]) {
+    if (c.includes(w) && !c.includes(`no ${w}`) && !new RegExp(`${w}\\s+si\\b`).test(c)) return true;
+  }
+  return false;
+};
+
 const normalizeFieldRequired = (field: Field): Field => ({
   ...field,
-  required: getEffectiveRequired(field),
+  required: fieldIsRequired(field),
 });
 
 const normalizeSheetRequired = (sheet: WorkbookSheet): WorkbookSheet => ({
@@ -159,6 +168,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
   const [validatorExists, setValidatorExists] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [isResponsibleProducer, setIsResponsibleProducer] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
   const [selectOptions, setSelectOptions] = useState<Record<string, Array<{value: string, label: string}>>>({});
@@ -524,6 +534,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               responsibleIds.length === 0 ||
               currentUserDepIds.some((id) => responsibleIds.includes(id));
             if (isResponsible) setHasQrDraft(true);
+            setIsResponsibleProducer(isResponsible);
           }
         } catch { /* ignorar error de pre-carga */ }
       }
@@ -767,7 +778,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     let hasErrors = false;
 
     fields.forEach((field) => {
-      if (!getEffectiveRequired(field)) return;
+      if (!fieldIsRequired(field)) return;
       const errorKey = getScopedFieldKey(field.name, sheetName);
 
       rowsToValidate.forEach((row, rowIndex) => {
@@ -801,6 +812,32 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         message: "No se pudieron cargar los datos de validación",
         color: "red",
       });
+    }
+  };
+
+  const handleSendToSnies = async () => {
+    try {
+      setLoading(true);
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmFinalSubmit`, {
+        email: session?.user?.email,
+        pubTem_id: id_template,
+      });
+      showNotification({
+        title: "Enviado a SNIES",
+        message: "La información fue enviada exitosamente a SNIES.",
+        color: "teal",
+        autoClose: 5000,
+      });
+      router.push('/producer/templates');
+    } catch (error: any) {
+      showNotification({
+        title: "Error al enviar a SNIES",
+        message: error.response?.data?.status || "No se pudo enviar la información a SNIES.",
+        color: "red",
+        autoClose: 6000,
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -969,7 +1006,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     };
 
     const commonProps = {
-      required: getEffectiveRequired(field),
+      required: fieldIsRequired(field),
       placeholder: field.comment,
       style: { minWidth: "280px", width: "100%" },
       error: fieldError || undefined,
@@ -992,7 +1029,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           style={{ minWidth: "280px", width: "100%" }}
           error={fieldError || undefined}
           disabled={readOnly}
-          required={getEffectiveRequired(field)}
+          required={fieldIsRequired(field)}
         />
       );
     }
@@ -1177,7 +1214,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 {fields.map((field) => (
                   <Table.Th key={field.name} style={{ minWidth: '250px' }}>
                     <Group>
-                      {field.name} {getEffectiveRequired(field) && <Text span c="red">*</Text>}
+                      {field.name} {fieldIsRequired(field) && <Text span c="red">*</Text>}
                     </Group>
                   </Table.Th>
                 ))}
@@ -1279,7 +1316,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                   fw={600}
                   leftSection={!canEdit ? (templateSharedUI ? <IconEye size={13} /> : <IconLock size={13} />) : undefined}
                   color={sheetHasErrors ? "red" : (!canEdit ? (templateSharedUI ? "blue" : "gray") : undefined)}
-                  rightSection={sheetHasErrors ? <Badge size="xs" color="red" circle>{fieldsWithErrors.length}</Badge> : undefined}
+                  rightSection={
+                    sheetHasErrors ? (
+                      <Badge
+                        size="sm"
+                        color="red"
+                        variant="filled"
+                        circle
+                        style={{ minWidth: 20, height: 20, fontSize: 11, fontWeight: 700 }}
+                      >
+                        {fieldsWithErrors.length}
+                      </Badge>
+                    ) : undefined
+                  }
                 >
                   {sheet.name}
                 </Tabs.Tab>
@@ -1347,6 +1396,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               loading={loading}
             >
               Enviar
+            </Button>
+          )}
+          {!fromUploaded && isResponsibleProducer && (
+            <Button
+              color="teal"
+              onClick={handleSendToSnies}
+              rightSection={<IconSend size={16}/>}
+              loading={loading}
+            >
+              Enviar a SNIES
             </Button>
           )}
         </Group>

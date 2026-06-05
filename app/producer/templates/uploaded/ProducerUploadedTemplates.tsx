@@ -600,7 +600,9 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
                 label={
                   uploadDisable
                     ? "El periodo ya se encuentra cerrado"
-                    : "Eliminar envío"
+                    : publishedTemplate.final_submitted
+                      ? "Eliminar envío (también reseteará el estado SNIES)"
+                      : "Eliminar envío"
                 }
               position="top"
               transitionProps={{ transition: "fade-up", duration: 200 }}

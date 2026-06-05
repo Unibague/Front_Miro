@@ -433,3 +433,62 @@ export interface DashboardCorte {
     responsable_email: string;
   }[];
 }
+
+export type PdiNodeIntensity = "Baja" | "Media" | "Alta";
+
+export interface PdiNetworkNode {
+  id: string;
+  codigo: string;
+  nombre: string;
+  macro_codigo: string;
+  macro_nombre: string;
+  puntaje_total: number;
+  nivel_articulacion: string;
+  prioridad_gestion: string;
+  relaciones_salientes: number;
+  relaciones_entrantes: number;
+  total_relaciones: number;
+  puntaje_saliente: number;
+  puntaje_entrante: number;
+  x?: number;
+  y?: number;
+}
+
+export interface PdiNetworkEdge {
+  id: string;
+  origen: string;
+  destino: string;
+  tipo_relacion: string;
+  intensidad: PdiNodeIntensity;
+  puntaje: 1 | 3 | 5 | number;
+  justificacion?: string;
+  recomendacion?: string;
+}
+
+export interface PdiNetworkResponse {
+  nodes: PdiNetworkNode[];
+  edges: PdiNetworkEdge[];
+  summary: {
+    total_nodos: number;
+    total_conexiones: number;
+    por_intensidad: Record<string, number>;
+    por_tipo: Record<string, number>;
+    macroproyectos: {
+      codigo: string;
+      nombre: string;
+      nodos: number;
+      conexiones: number;
+    }[];
+  };
+  catalogos: {
+    intensidades: PdiNodeIntensity[];
+    puntajes: number[];
+    tipos_relacion: string[];
+  };
+  source: {
+    type: "excel" | "override" | string;
+    name: string;
+    saved_at?: string | null;
+    path?: string;
+  };
+}
