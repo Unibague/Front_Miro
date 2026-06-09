@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
-  SimpleGrid, Box, Modal, TextInput, NumberInput,
+  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List,
 } from "@mantine/core";
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFlag, IconAlertTriangle, IconCurrencyDollar,
-  IconListCheck, IconExternalLink, IconSettings,
+  IconListCheck, IconExternalLink, IconSettings, IconSearch,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -541,7 +541,125 @@ interface CorteResumenPeriodo {
   con_reporte: number;
   total_indicadores: number;
   porcentaje_cobertura: number;
+  indicadores_pendientes?: { _id: string; codigo: string; nombre: string; responsable?: string }[];
 }
+
+type PresupuestoDetalleResumen = {
+  tipo?: string;
+  valor?: number;
+  causado?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+};
+
+type PresupuestoDashboardRow = {
+  presupuesto?: number;
+  presupuestoGasto?: number;
+  presupuestoInversion?: number;
+  comprometidoGasto?: number;
+  comprometidoInversion?: number;
+  causado?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+  gasto?: number;
+  inversion?: number;
+  detalles?: PresupuestoDetalleResumen[];
+};
+
+type PresupuestoDashboardResponse = {
+  rows?: PresupuestoDashboardRow[];
+  totals?: {
+    presupuesto?: number;
+    presupuestoGasto?: number;
+    presupuestoInversion?: number;
+    causado?: number;
+    causadoGasto?: number;
+    causadoInversion?: number;
+  };
+};
+
+const toBudgetNumber = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isBudgetInversion = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .includes("inversion");
+
+const getPresupuestoCausadoSplit = (row: PresupuestoDashboardRow) => {
+  const directGasto = toBudgetNumber(row.causadoGasto);
+  const directInversion = toBudgetNumber(row.causadoInversion);
+  if (directGasto || directInversion) {
+    return { gasto: directGasto, inversion: directInversion };
+  }
+
+  const detailSplit = (row.detalles ?? []).reduce(
+    (acc, detail) => {
+      const detailGasto = toBudgetNumber(detail.causadoGasto);
+      const detailInversion = toBudgetNumber(detail.causadoInversion);
+      if (detailGasto || detailInversion) {
+        acc.gasto += detailGasto;
+        acc.inversion += detailInversion;
+        return acc;
+      }
+
+      const causado = toBudgetNumber(detail.causado);
+      if (!causado) return acc;
+      if (isBudgetInversion(detail.tipo)) acc.inversion += causado;
+      else acc.gasto += causado;
+      return acc;
+    },
+    { gasto: 0, inversion: 0 }
+  );
+  if (detailSplit.gasto || detailSplit.inversion) return detailSplit;
+
+  const gasto = toBudgetNumber(row.gasto);
+  const inversion = toBudgetNumber(row.inversion);
+  return { gasto, inversion };
+};
+
+const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
+  const directGasto = toBudgetNumber(row.presupuestoGasto);
+  const directInversion = toBudgetNumber(row.presupuestoInversion);
+  if (directGasto || directInversion) {
+    return { gasto: directGasto, inversion: directInversion };
+  }
+
+  const comprometidoGasto = toBudgetNumber(row.comprometidoGasto);
+  const comprometidoInversion = toBudgetNumber(row.comprometidoInversion);
+  const comprometidoSplit = comprometidoGasto + comprometidoInversion;
+  const presupuesto = toBudgetNumber(row.presupuesto);
+  if (presupuesto > 0 && comprometidoSplit > 0) {
+    return {
+      gasto: presupuesto * (comprometidoGasto / comprometidoSplit),
+      inversion: presupuesto * (comprometidoInversion / comprometidoSplit),
+    };
+  }
+
+  const detailSplit = (row.detalles ?? []).reduce(
+    (acc, detail) => {
+      const valor = toBudgetNumber(detail.valor);
+      if (!valor) return acc;
+      if (isBudgetInversion(detail.tipo)) acc.inversion += valor;
+      else acc.gasto += valor;
+      return acc;
+    },
+    { gasto: 0, inversion: 0 }
+  );
+  if (presupuesto > 0 && detailSplit.gasto + detailSplit.inversion > 0) {
+    const detailTotal = detailSplit.gasto + detailSplit.inversion;
+    return {
+      gasto: presupuesto * (detailSplit.gasto / detailTotal),
+      inversion: presupuesto * (detailSplit.inversion / detailTotal),
+    };
+  }
+
+  return { gasto: presupuesto, inversion: 0 };
+};
 
 function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen }: {
   macros: Macroproyecto[];
@@ -552,7 +670,15 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   resumen: DashboardResumen | null;
 }) {
   const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
-  const [presupuestoAnio, setPresupuestoAnio] = useState<{ total: number; causado: number } | null>(null);
+  const [presupuestoAnio, setPresupuestoAnio] = useState<{
+    total: number;
+    presupuestoGasto: number;
+    presupuestoInversion: number;
+    causado: number;
+    causadoGasto: number;
+    causadoInversion: number;
+  } | null>(null);
+  const [modalPendientes, setModalPendientes] = useState(false);
 
   useEffect(() => {
     const fetchCorte = (nombre: string) =>
@@ -569,12 +695,59 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
       })
       .catch(() => {});
 
-    axios.get<{ rows: { presupuesto: number; causado: number }[] }>(PDI_ROUTES.presupuestoData())
+    axios.get<PresupuestoDashboardResponse>(PDI_ROUTES.presupuestoData())
       .then(({ data }) => {
         const rows = data.rows ?? [];
-        const total = rows.reduce((s, r) => s + (Number(r.presupuesto) || 0), 0);
-        const causado = rows.reduce((s, r) => s + (Number(r.causado) || 0), 0);
-        setPresupuestoAnio({ total, causado });
+        const splitFromTotals = {
+          gasto: toBudgetNumber(data.totals?.causadoGasto),
+          inversion: toBudgetNumber(data.totals?.causadoInversion),
+        };
+        const planFromTotals = {
+          gasto: toBudgetNumber(data.totals?.presupuestoGasto),
+          inversion: toBudgetNumber(data.totals?.presupuestoInversion),
+        };
+        const splitFromRows = rows.reduce(
+          (acc, row) => {
+            const split = getPresupuestoCausadoSplit(row);
+            acc.gasto += split.gasto;
+            acc.inversion += split.inversion;
+            return acc;
+          },
+          { gasto: 0, inversion: 0 }
+        );
+        const planFromRows = rows.reduce(
+          (acc, row) => {
+            const split = getPresupuestoPlaneadoSplit(row);
+            acc.gasto += split.gasto;
+            acc.inversion += split.inversion;
+            return acc;
+          },
+          { gasto: 0, inversion: 0 }
+        );
+        const total = toBudgetNumber(data.totals?.presupuesto)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.presupuesto), 0);
+        const causado = toBudgetNumber(data.totals?.causado)
+          || rows.reduce((s, r) => {
+            const rowCausado = toBudgetNumber(r.causado);
+            if (rowCausado) return s + rowCausado;
+            const split = getPresupuestoCausadoSplit(r);
+            return s + split.gasto + split.inversion;
+          }, 0);
+        let presupuestoGasto = planFromTotals.gasto || planFromRows.gasto;
+        let presupuestoInversion = planFromTotals.inversion || planFromRows.inversion;
+        const planSplit = presupuestoGasto + presupuestoInversion;
+        if (total > 0 && planSplit <= 0) presupuestoGasto = total;
+
+        const causadoGasto = splitFromTotals.gasto || splitFromRows.gasto;
+        const causadoInversion = splitFromTotals.inversion || splitFromRows.inversion;
+        setPresupuestoAnio({
+          total,
+          presupuestoGasto,
+          presupuestoInversion,
+          causado,
+          causadoGasto,
+          causadoInversion,
+        });
       })
       .catch(() => {});
   }, []);
@@ -584,7 +757,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
   const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
   const avancePonderado = pesosTotal > 0
-    ? Math.round(macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal)
+    ? macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal
     : 0;
   const criticos = macros.filter((m) => m.semaforo === "rojo").length;
   const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
@@ -603,7 +776,19 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
   const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
   const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
+  const presupuestoAnioGasto = presupuestoAnio?.presupuestoGasto ?? 0;
+  const presupuestoAnioInversion = presupuestoAnio?.presupuestoInversion ?? 0;
   const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
+  const presupuestoAnioCausadoGasto = presupuestoAnio?.causadoGasto ?? 0;
+  const presupuestoAnioCausadoInversion = presupuestoAnio?.causadoInversion ?? 0;
+  const presupuestoAnioSinDesagregar = Math.max(
+    presupuestoAnioCausado - presupuestoAnioCausadoGasto - presupuestoAnioCausadoInversion,
+    0
+  );
+  const presupuestoAnioPlaneadoSinDesagregar = Math.max(
+    presupuestoAnioTotal - presupuestoAnioGasto - presupuestoAnioInversion,
+    0
+  );
   const avanceFinancieroAnio = presupuestoAnioTotal > 0
     ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
     : 0;
@@ -644,7 +829,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               <div>
                 <Text size="xs" c="dimmed">Avance ponderado</Text>
                 <Group gap="sm" align="flex-end">
-                  <Text size="2.8rem" fw={900} lh={1}>{avancePonderado}%</Text>
+                  <Text size="2.8rem" fw={900} lh={1}>{avancePonderado.toFixed(2)}%</Text>
                   <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
                 </Group>
                 <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
@@ -699,7 +884,17 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
             </Paper>
 
-            <Paper withBorder radius="lg" p="lg">
+            <Paper withBorder radius="lg" p="lg" style={{ position: "relative" }}>
+              {(corteActual?.sin_reporte ?? 0) > 0 && (
+                <ActionIcon
+                  size="sm" variant="subtle" color="gray"
+                  style={{ position: "absolute", bottom: 10, right: 10 }}
+                  onClick={() => setModalPendientes(true)}
+                  title="Ver indicadores pendientes"
+                >
+                  <IconSearch size={14} />
+                </ActionIcon>
+              )}
               <Group justify="space-between" align="flex-start" mb="xs">
                 <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
                   <IconAlertTriangle size={20} />
@@ -720,6 +915,54 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   : "Cargando período..."}
               </Text>
             </Paper>
+
+            <Modal
+              opened={modalPendientes}
+              onClose={() => setModalPendientes(false)}
+              title={
+                <Group gap="xs">
+                  <ThemeIcon size={28} radius="xl" color="red" variant="light">
+                    <IconAlertTriangle size={16} />
+                  </ThemeIcon>
+                  <Text fw={700} size="sm">
+                    Indicadores sin reporte — {corteActual?.periodo}
+                  </Text>
+                </Group>
+              }
+              size="lg"
+              radius="lg"
+            >
+              {(corteActual?.indicadores_pendientes?.length ?? 0) === 0 ? (
+                <Text size="sm" c="dimmed" ta="center" py="xl">
+                  Todos los indicadores han sido reportados.
+                </Text>
+              ) : (
+                <>
+                  <Text size="xs" c="dimmed" mb="sm">
+                    {corteActual!.indicadores_pendientes!.length} indicador
+                    {corteActual!.indicadores_pendientes!.length !== 1 ? "es" : ""} pendiente
+                    {corteActual!.indicadores_pendientes!.length !== 1 ? "s" : ""} de reporte en <strong>{corteActual!.periodo}</strong>
+                  </Text>
+                  <ScrollArea h={420} offsetScrollbars>
+                    <List spacing={6} size="sm" icon={
+                      <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#fa5252", flexShrink: 0 }} />
+                    }>
+                      {corteActual!.indicadores_pendientes!.map((ind) => (
+                        <List.Item key={ind._id}>
+                          <Box>
+                            <Text size="xs" fw={700} c="red.7" lh={1.2}>{ind.codigo}</Text>
+                            <Text size="xs" c="dimmed" lh={1.4}>{ind.nombre}</Text>
+                            {ind.responsable && (
+                              <Text size="xs" c="dimmed" lh={1.4}>Responsable: {ind.responsable}</Text>
+                            )}
+                          </Box>
+                        </List.Item>
+                      ))}
+                    </List>
+                  </ScrollArea>
+                </>
+              )}
+            </Modal>
 
             <Paper withBorder radius="lg" p="lg">
               <Group justify="space-between" align="flex-start" mb="xs">
@@ -750,9 +993,39 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
               </Box>
               {presupuestoAnioTotal > 0 ? (
-                <Text size="xs" c="dimmed">
-                  {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
-                </Text>
+                <Stack gap={4}>
+                  <Text size="xs" c="dimmed">
+                    {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                  </Text>
+                  <SimpleGrid cols={2} spacing={6}>
+                    <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
+                      <Group gap={4} mb={4}>
+                        <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                        <Text size="10px" fw={700} c="blue.6">Gasto</Text>
+                      </Group>
+                      <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoGasto)}</Text>
+                      <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioGasto)}</Text>
+                    </Box>
+                    <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
+                      <Group gap={4} mb={4}>
+                        <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
+                        <Text size="10px" fw={700} c="violet.6">Inversión</Text>
+                      </Group>
+                      <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoInversion)}</Text>
+                      <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioInversion)}</Text>
+                    </Box>
+                  </SimpleGrid>
+                  {presupuestoAnioSinDesagregar > 0 && (
+                    <Text size="10px" c="dimmed">
+                      Causado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
+                    </Text>
+                  )}
+                  {presupuestoAnioPlaneadoSinDesagregar > 0 && (
+                    <Text size="10px" c="dimmed">
+                      Presupuesto sin desagregar: {formatCOP(presupuestoAnioPlaneadoSinDesagregar)}
+                    </Text>
+                  )}
+                </Stack>
               ) : (
                 <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
               )}

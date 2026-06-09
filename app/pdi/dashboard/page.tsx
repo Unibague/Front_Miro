@@ -83,7 +83,7 @@ export default function DashboardPage() {
 
   const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
   const avancePonderado = pesosTotal > 0
-    ? Math.round(macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal)
+    ? macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal
     : 0;
   const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
@@ -152,7 +152,7 @@ export default function DashboardPage() {
                     label={
                       <Center>
                         <Stack gap={0} align="center">
-                          <Text fw={800} size="xl" lh={1}>{avancePonderado}%</Text>
+                          <Text fw={800} size="xl" lh={1}>{avancePonderado.toFixed(2)}%</Text>
                           <Text size="10px" c="dimmed" tt="uppercase">avance</Text>
                         </Stack>
                       </Center>
@@ -162,7 +162,7 @@ export default function DashboardPage() {
                   <div>
                     <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Avance global PDI</Text>
                     <Title order={1} c={SEMAFORO_HEX[semaforo]} lh={1}>
-                      {avancePonderado}%
+                      {avancePonderado.toFixed(2)}%
                     </Title>
                     <Badge color={SEMAFORO_COLOR[semaforo]} variant="light" radius="xl" mt={6} size="md">
                       {SEMAFORO_LABEL[semaforo]}

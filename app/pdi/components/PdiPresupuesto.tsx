@@ -37,6 +37,7 @@ type PresupuestoRow = {
   macroproyecto: string;
   proyecto: string;
   codificacion: string;
+  accionEstrategica?: string;
   presupuesto: number;
   presupuestoGasto: number;
   presupuestoInversion: number;
@@ -635,7 +636,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
               <thead>
                 <tr style={{ background: "#f8f9fa" }}>
                   <th style={thStyle}>Macroproyecto</th>
-                  <th style={thStyle}>Proyecto</th>
+                  <th style={thStyle}>Acción</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Presupuesto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprometido gasto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprometido inversión</th>
@@ -685,26 +686,46 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                     const pc = pct(row.causado, row.comprometido);
                     const background = (groupIndex + rowIndex) % 2 === 0 ? "#fff" : "#f8f9ff";
                     const rowDetails = row.detalles ?? [];
+                    const accion = row.accionEstrategica?.trim() || "";
+                    const filteredDetails = accion
+                      ? rowDetails.filter((d) =>
+                          (d.accionEstrategica || "").includes(accion) ||
+                          accion.includes(d.accionEstrategica || "") ||
+                          (d.codificacion || "") === accion
+                        )
+                      : rowDetails;
                     return (
                       <tr key={`${group.macro}-${row.codificacion || row.proyecto}-${rowIndex}`} style={{ background }}>
                         <td style={tdStyle}>
                           <Text size="xs" c="dimmed">{group.code}</Text>
                         </td>
-                        <td style={tdStyle}>
-                          <Text size="xs" fw={700}>{projectLabel(row)}</Text>
+                        <td style={{ ...tdStyle, minWidth: 200 }}>
+                          {(() => {
+                            const raw = accion || row.codificacion || "";
+                            if (!raw) return <Text size="xs" c="dimmed">—</Text>;
+                            const codeMatch = raw.match(/^([A-Z0-9][\w-]*)/i);
+                            const code = codeMatch ? codeMatch[1] : "";
+                            const desc = code ? raw.slice(code.length).trim() : raw;
+                            return (
+                              <Box>
+                                {code && <Text size="xs" fw={700} c="blue.7" lh={1.2}>{code}</Text>}
+                                {desc && <Text size="xs" c="dimmed" lh={1.3}>{desc}</Text>}
+                              </Box>
+                            );
+                          })()}
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44" }}>{fmtCOP(row.presupuesto || 0)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>
-                          <BudgetDetailHover value={fmtCOP(row.comprometidoGasto)} details={rowDetails} metric="comprometidoGasto" color="#0b7285" />
+                          <BudgetDetailHover value={fmtCOP(row.comprometidoGasto)} details={filteredDetails} metric="comprometidoGasto" color="#0b7285" />
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#7048e8" }}>
-                          <BudgetDetailHover value={fmtCOP(row.comprometidoInversion)} details={rowDetails} metric="comprometidoInversion" color="#7048e8" />
+                          <BudgetDetailHover value={fmtCOP(row.comprometidoInversion)} details={filteredDetails} metric="comprometidoInversion" color="#7048e8" />
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>
-                          <BudgetDetailHover value={fmtCOP(row.comprometido)} details={rowDetails} metric="comprometido" fw={800} />
+                          <BudgetDetailHover value={fmtCOP(row.comprometido)} details={filteredDetails} metric="comprometido" fw={800} />
                         </td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                          <BudgetDetailHover value={fmtCOP(row.causado)} details={rowDetails} metric="causado" />
+                          <BudgetDetailHover value={fmtCOP(row.causado)} details={filteredDetails} metric="causado" />
                         </td>
                         <td style={{ ...tdStyle, minWidth: 100 }}>
                           <Group gap={4} wrap="nowrap">

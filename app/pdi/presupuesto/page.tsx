@@ -60,6 +60,7 @@ export default function PresupuestoPage() {
     }
     const formData = new FormData();
     formData.append("file", executedFile);
+    formData.append("anio", String(new Date().getFullYear()));
     setUploadingExecuted(true);
     try {
       const res = await axios.post<ImportExecutedResponse>(

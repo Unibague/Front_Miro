@@ -18,7 +18,7 @@ interface Template {
 const CreateCategoryPage = () => {
   const [categoryName, setCategoryName] = useState<string>('');
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [fields, setFields] = useState<any[]>([{ templateId: "", sequence: 1 }]);
+  const [fields, setFields] = useState<any[]>([{ templateId: "" }]);
   const { data: session } = useSession();
   const router = useRouter();
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
@@ -44,7 +44,7 @@ const CreateCategoryPage = () => {
   };
 
   const addField = () => {
-    setFields([...fields, { templateId: "", sequence: 1 }]);
+    setFields([...fields, { templateId: "" }]);
   };
 
   const removeField = (index: number) => {
@@ -103,12 +103,11 @@ const CreateCategoryPage = () => {
           {(provided) => (
             <Table stickyHeader withTableBorder {...provided.droppableProps} ref={provided.innerRef}>
               <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Arrastrar</Table.Th>
-                  <Table.Th>Nombre de la Plantilla</Table.Th>
-                  <Table.Th>Secuencia</Table.Th>
-                  <Table.Th>Acciones</Table.Th>
-                </Table.Tr>
+                  <Table.Tr>
+                    <Table.Th>Arrastrar</Table.Th>
+                    <Table.Th>Nombre de la Plantilla</Table.Th>
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {fields.map((field, index) => (
@@ -131,15 +130,6 @@ const CreateCategoryPage = () => {
                             searchable
                             clearable
                             placeholder="Buscar y seleccionar plantilla"
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <TextInput
-                            type="number"
-                            value={field.sequence}
-                            onChange={(e) => handleFieldChange(index, "sequence", parseInt(e.currentTarget.value))}
-                            min={1}
-                            placeholder="Secuencia"
                           />
                         </Table.Td>
                         <Table.Td>

@@ -113,7 +113,7 @@ export default function Navbar() {
     "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
     "/admin/templates-management", "/admin/logs", "/admin/audit",
     "/admin/validations", "/validations", "/historico-docentes",
-    "/apoyos-plantillas",
+    "/apoyos-plantillas", "/admin/dimensions",
   ];
   const showPeriodSelector =
     !!pathname &&

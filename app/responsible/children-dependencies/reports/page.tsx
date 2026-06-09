@@ -60,6 +60,7 @@ interface Template {
   fields: Field[];
   producers: [Dependency]
   active: boolean;
+  validators?: Validator[];
 }
 
 interface Validator {
@@ -174,10 +175,10 @@ const PublishedTemplatesPage = () => {
 
       const data = dataResponse.data.data;
       console.log("Data: ", data);
-      const { template } = publishedTemplate;
+      const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
       console.log("Template: ", template);
       const validators =
-        freshTemplateResponse.data.template?.validators ??
+        template?.validators ??
         publishedTemplate.validators;
 
       const workbook = new ExcelJS.Workbook();

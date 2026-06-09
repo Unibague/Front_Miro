@@ -83,6 +83,7 @@ interface Template {
   dimensions: [any];
   file_description: string;
   fields: Field[];
+  validators?: Validator[];
   workbook_sheets?: WorkbookSheet[];
   original_workbook_base64?: string;
   active: boolean;
@@ -133,7 +134,7 @@ interface PublishedTemplate {
 
 interface ProducerUploadedTemplatesPageProps {
   fetchTemp: () => void;
-  selectedDependency?: string;
+  selectedCategory?: string | null;
   userDependencies?: {value: string, label: string}[];
 }
 
@@ -180,7 +181,7 @@ const toExcelCellValue = (value: any): ExcelJS.CellValue => {
   return value as ExcelJS.CellValue;
 };
 
-const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDependencies }: ProducerUploadedTemplatesPageProps) => {
+const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
   const router = useRouter();
   const { data: session } = useSession();
@@ -203,8 +204,9 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     if (typeof publishedTemplate.isEncargado === 'boolean') return publishedTemplate.isEncargado;
     const responsibleIds = publishedTemplate.responsible_producers || [];
     if (responsibleIds.length === 0) return false;
+    const userDepCodes = new Set((userDependencies || []).map((dependency) => dependency.value));
     const depId = (publishedTemplate.template as any)?.producers?.find(
-      (p: any) => p.dep_code === selectedDependency
+      (p: any) => userDepCodes.has(p.dep_code)
     )?._id;
     return depId ? responsibleIds.includes(depId) : false;
   };
@@ -238,7 +240,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     });
   };
 
-  const fetchTemplates = async (page: number, search: string, filterByDependency?: string, limit?: number) => {
+  const fetchTemplates = async (page: number, search: string, filterByCategory?: string | null, limit?: number) => {
     try {
       const params: any = {
         email: session?.user?.email, 
@@ -248,13 +250,13 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         periodId: selectedPeriodId,
       };
       
-      if (filterByDependency) {
-        params.filterByDependency = filterByDependency;
+      if (filterByCategory) {
+        params.filterByCategory = filterByCategory;
       }
       
       console.log('Parámetros enviados:', params);
-      console.log('selectedDependency desde props:', selectedDependency);
-      console.log('filterByDependency calculado:', filterByDependency);
+      console.log('selectedCategory desde props:', selectedCategory);
+      console.log('filterByCategory calculado:', filterByCategory);
       
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/uploaded`,
@@ -294,16 +296,14 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
 
   useEffect(() => {
     if (session?.user?.email) {
-      const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-      fetchTemplates(page, search, filterDep, pageSize);
+      fetchTemplates(page, search, selectedCategory, pageSize);
     }
-  }, [page, search, session, selectedPeriodId, selectedDependency, pageSize]); // Agregar pageSize a las dependencias
+  }, [page, search, session, selectedPeriodId, selectedCategory, pageSize]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-        fetchTemplates(page, search, filterDep, pageSize);
+        fetchTemplates(page, search, selectedCategory, pageSize);
       }
     }, 500);
 
@@ -317,7 +317,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
     ]);
     const depCode: string = userResp.data.dep_code;
-    const freshTemplate = freshTemplateResponse.data.template;
+    const freshTemplate = freshTemplateResponse.data.template as Template | null | undefined;
     const validators = freshTemplate?.validators ?? publishedTemplate.validators;
 
     // Buscar datos del usuario
@@ -434,7 +434,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
     }
 
     // === RUTA 3: hoja única (lógica anterior) ===
-    const { template } = publishedTemplate;
+    const template: Template = freshTemplate ?? publishedTemplate.template;
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(template.name);
 
@@ -477,8 +477,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
           message: "La información ha sido eliminada exitosamente",
           color: "blue",
         });
-        const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-        fetchTemplates(page, search, filterDep, pageSize);
+        fetchTemplates(page, search, selectedCategory, pageSize);
         fetchTemp();
       }
     } catch (error) {
@@ -765,8 +764,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedDependency, userDepe
         opened={uploadModalOpen}
         onClose={() => {
           closeUploadModal();
-          const filterDep = selectedDependency && selectedDependency !== '' ? selectedDependency : undefined;
-          fetchTemplates(page, search, filterDep, pageSize);
+          fetchTemplates(page, search, selectedCategory, pageSize);
         }}
         title="Editar Información"
         overlayProps={{

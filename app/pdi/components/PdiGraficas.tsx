@@ -1,9 +1,10 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useState, useMemo } from "react";
 import {
   Stack, Text, Paper, Select, Group, Loader, Center, Box, Grid, ThemeIcon, Badge,
-  ActionIcon, Progress, SimpleGrid, Divider,
+  ActionIcon, Progress, SimpleGrid, Divider, Modal, ScrollArea, List,
 } from "@mantine/core";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, LabelList, CartesianGrid,
@@ -11,7 +12,7 @@ import {
   LineChart, Line, Legend,
 } from "recharts";
 import {
-  IconX, IconCurrencyDollar, IconTrendingUp, IconTarget, IconBulb,
+  IconX, IconCurrencyDollar, IconTrendingUp, IconTarget, IconBulb, IconSearch,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { PDI_ROUTES } from "../api";
@@ -34,6 +35,22 @@ const SEMAFORO_COLOR: Record<string, string> = { verde: GREEN, amarillo: YELLOW,
 const SEMAFORO_LABEL: Record<string, string> = { verde: "En cumplimiento", amarillo: "En riesgo", rojo: "Crítico" };
 const SEMAFORO_BADGE: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const FINAL_TARGET_YEAR = "2029";
+
+const miniPeriodoGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(82px, 1fr))",
+  gap: 8,
+  alignItems: "stretch",
+};
+
+const miniPeriodoCardStyle: CSSProperties = {
+  minWidth: 0,
+  textAlign: "center",
+  background: "var(--mantine-color-default-hover)",
+  borderRadius: 8,
+  padding: "8px 4px 6px",
+  overflow: "hidden",
+};
 
 const avg = (arr: number[]) => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
 
@@ -108,11 +125,133 @@ function cumplimientoPct(avance: number | null, meta: number | null) {
   return Math.min(Math.round((avance / meta) * 100), 100);
 }
 
+const PDI_WEIGHTED_PERCENT_MAX = 100;
+const PDI_WEIGHTED_AXIS_TICKS = [0, 25, 50, 75, 100];
+
+function roundWeightedPdiPct(value: number) {
+  const bounded = Math.min(Math.max(Number(value) || 0, 0), PDI_WEIGHTED_PERCENT_MAX);
+  return Math.round(bounded * 10) / 10;
+}
+
+function formatWeightedPdiPct(value: number | null | undefined) {
+  return `${roundWeightedPdiPct(Number(value) || 0).toLocaleString("es-CO", { maximumFractionDigits: 1 })}%`;
+}
+
+function pctOfFinalPdi(value: number | null, finalTarget: number | null) {
+  if (value === null || finalTarget === null || finalTarget <= 0) return null;
+  return Math.min(Math.max((Math.max(value, 0) / finalTarget) * 100, 0), PDI_WEIGHTED_PERCENT_MAX);
+}
+
+function weightedPdiData(
+  inds: Indicador[],
+  getMeta: (ind: Indicador) => number | null,
+  getAvance: (ind: Indicador) => number | null
+) {
+  let totalPeso = 0;
+  let metaPonderada = 0;
+  let avancePonderado = 0;
+
+  for (const ind of inds) {
+    const peso = Number(ind.peso) || 0;
+    if (peso <= 0) continue;
+
+    const meta = getMeta(ind);
+    const avance = getAvance(ind);
+    const finalTarget = toNumberValue(ind.meta_final_2029) ?? meta ?? avance;
+    if (finalTarget === null || finalTarget <= 0) continue;
+
+    totalPeso += peso;
+    metaPonderada += (pctOfFinalPdi(meta, finalTarget) ?? 0) * peso;
+    avancePonderado += (pctOfFinalPdi(avance, finalTarget) ?? 0) * peso;
+  }
+
+  if (totalPeso <= 0) return { meta: 0, avance: 0 };
+  return {
+    meta: roundWeightedPdiPct(metaPonderada / totalPeso),
+    avance: roundWeightedPdiPct(avancePonderado / totalPeso),
+  };
+}
+
+function weightedPdiTooltip(v: any, name: any) {
+  return [
+    formatWeightedPdiPct(Number(v)),
+    name === "meta" ? "Programado" : "Ejecutado",
+  ];
+}
+
+function weightedPdiAxisTick(v: any) {
+  return `${v}%`;
+}
+
+function weightedPdiLabel(v: any) {
+  const value = Number(v) || 0;
+  return value > 0 ? formatWeightedPdiPct(value) : "";
+}
+
 function semaforoFromPct(pct: number | null | undefined) {
   const value = Number(pct) || 0;
   if (value >= 90) return "verde";
   if (value >= 60) return "amarillo";
   return "rojo";
+}
+
+function semaforoColorFromPct(pct: number | null | undefined) {
+  return SEMAFORO_COLOR[semaforoFromPct(pct)] ?? RED;
+}
+
+function semaforoColorFromMeta(avance: number, meta: number) {
+  return semaforoColorFromPct(cumplimientoPct(avance, meta));
+}
+
+function MiniPeriodoDonut({ corte, avance, meta }: { corte: string; avance: number; meta: number }) {
+  const avPct = Math.min(Math.max(Number(avance) || 0, 0), PDI_WEIGHTED_PERCENT_MAX);
+  const metPct = Math.max(Number(meta) || 0, 0);
+  const fill = semaforoColorFromMeta(avPct, metPct);
+  const donutData = [
+    { value: avPct, fill },
+    { value: Math.max(PDI_WEIGHTED_PERCENT_MAX - avPct, 0), fill: "#e9ecef" },
+  ];
+
+  return (
+    <Box key={corte} style={miniPeriodoCardStyle}>
+      <Text size="xs" fw={800} mb={4} lh={1.1} style={{ letterSpacing: 0 }}>
+        {corte}
+      </Text>
+      <Box style={{ position: "relative", width: 68, height: 68, margin: "0 auto" }}>
+        <PieChart width={68} height={68}>
+          <Pie
+            data={donutData}
+            cx="50%"
+            cy="50%"
+            innerRadius={22}
+            outerRadius={32}
+            startAngle={90}
+            endAngle={-270}
+            dataKey="value"
+            strokeWidth={0}
+          >
+            {donutData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+          </Pie>
+        </PieChart>
+        <Box style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", lineHeight: 1 }}>
+          <Text fw={900} size="0.72rem" lh={1} style={{ color: fill }}>
+            {formatWeightedPdiPct(avPct)}
+          </Text>
+        </Box>
+      </Box>
+      {metPct > 0 && (
+        <Text
+          size="0.62rem"
+          c="dimmed"
+          mt={4}
+          lh={1.1}
+          style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        >
+          Meta <span style={{ fontWeight: 700, color: "#868e96" }}>{weightedPdiLabel(metPct)}</span>
+        </Text>
+      )}
+    </Box>
+  );
 }
 
 function resolvePeriodoActual(inds: Indicador[]) {
@@ -156,11 +295,23 @@ function isReportadoEnPeriodo(ind: Indicador, periodo: string) {
   return Boolean(periodoData?.fecha_envio) || estado !== "Borrador";
 }
 
-function StatCard({ title, value, sub, color = "blue", icon }: {
-  title: string; value: React.ReactNode; sub?: string; color?: string; icon: React.ReactNode;
+function StatCard({ title, value, sub, color = "blue", icon, onAction }: {
+  title: string; value: React.ReactNode; sub?: string; color?: string; icon: React.ReactNode; onAction?: () => void;
 }) {
   return (
-    <Paper withBorder radius="xl" p="md">
+    <Paper withBorder radius="xl" p="md" style={{ position: "relative" }}>
+      {onAction && (
+        <ActionIcon
+          size="sm"
+          variant="subtle"
+          color="gray"
+          style={{ position: "absolute", bottom: 10, right: 10 }}
+          onClick={onAction}
+          title="Ver detalle"
+        >
+          <IconSearch size={14} />
+        </ActionIcon>
+      )}
       <ThemeIcon size={40} radius="xl" color={color} variant="light" mb={8}>{icon}</ThemeIcon>
       <Text size="sm" c="dimmed" fw={700} mb={2}>{title}</Text>
       <Text fw={800} size="1.6rem" lh={1}>{value}</Text>
@@ -236,7 +387,7 @@ function numberValue(value: unknown) {
 
 function clampPercentage(value: number, total: number) {
   if (!total) return 0;
-  return Math.min(Math.round((value / total) * 100), 100);
+  return Math.round((value / total) * 100);
 }
 
 function normalizeBudgetCode(value: unknown) {
@@ -360,12 +511,12 @@ function MacroEntityCard({
 
   const meta   = Number(activeData?.meta   ?? 0);
   const avance = Number(activeData?.avance ?? 0);
-  const pctAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
+  const cumplimientoAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
   const restante = Math.max(meta - avance, 0);
-  const pieColor = pctAnio >= 80 ? "#16a34a" : pctAnio >= 50 ? "#d97706" : "#dc2626";
+  const pieColor = semaforoColorFromPct(cumplimientoAnio);
   const pieData = [
     { name: "Ejecutado", value: avance, fill: pieColor },
-    { name: "Programado restante", value: restante, fill: "#e9ecef" },
+    { name: "Restante ponderado", value: restante, fill: "#e9ecef" },
   ];
 
   return (
@@ -399,7 +550,7 @@ function MacroEntityCard({
       <Grid gutter="sm">
         {/* ── Programado vs Ejecutado por Año ── */}
         <Grid.Col span={12}>
-          <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año</Text>
+          <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año (% ponderado)</Text>
           {!hasAnio ? (
             <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
           ) : (
@@ -436,14 +587,14 @@ function MacroEntityCard({
                     </Pie>
                   </PieChart>
                   <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{pctAnio}%</Text>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{formatWeightedPdiPct(avance)}</Text>
                     <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
                   </Box>
                 </Box>
                 <Box mt={8} style={{ textAlign: "center" }}>
                   <Group justify="center" gap={8}>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Ejecutado: {avance.toLocaleString("es-CO")}</Text></Group>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Prog.: {meta.toLocaleString("es-CO")}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Ejecutado: {formatWeightedPdiPct(avance)}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Programado: {formatWeightedPdiPct(meta)}</Text></Group>
                   </Group>
                 </Box>
               </Grid.Col>
@@ -454,12 +605,12 @@ function MacroEntityCard({
                   <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                     <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                    <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
+                    <ReTooltip formatter={weightedPdiTooltip} />
                     <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
                     <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: color }} />
                     <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 4, fill: pieColor }}
-                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />
                   </LineChart>
                 </ResponsiveContainer>
               </Grid.Col>
@@ -469,22 +620,15 @@ function MacroEntityCard({
 
         {/* ── Programado vs Ejecutado por Periodo ── */}
         <Grid.Col span={12}>
-          <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Periodo</Text>
+          <Text size="sm" fw={700} mb={12}>Programado vs Ejecutado por Periodo (% ponderado)</Text>
           {!hasPeriodo ? (
             <Center h={120}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
           ) : (
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={dataPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                <XAxis dataKey="corte" tick={{ fontSize: 10, fontWeight: 600 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
-                <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
-                <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: color }} />
-                <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 3, fill: pieColor }}
-                  label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
-              </LineChart>
-            </ResponsiveContainer>
+            <Box style={miniPeriodoGridStyle}>
+              {dataPeriodo.map((d: { corte: string; meta: number; avance: number }) => (
+                <MiniPeriodoDonut key={d.corte} corte={d.corte} avance={d.avance} meta={d.meta} />
+              ))}
+            </Box>
           )}
         </Grid.Col>
       </Grid>
@@ -512,7 +656,7 @@ function AccionMetaAvanceCard({
   const avance  = Number(activeData?.avance ?? 0);
   const pctAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
   const restante = Math.max(meta - avance, 0);
-  const pieColor = pctAnio >= 80 ? "#16a34a" : pctAnio >= 50 ? "#d97706" : "#dc2626";
+  const pieColor = semaforoColorFromPct(pctAnio);
   const pieData = [
     { name: "Avance", value: avance, fill: pieColor },
     { name: "Meta restante", value: restante, fill: "#e9ecef" },
@@ -530,7 +674,7 @@ function AccionMetaAvanceCard({
 
       <Grid gutter="sm">
         <Grid.Col span={12}>
-          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Año</Text>
+          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Año (% ponderado)</Text>
           {!hasAnio ? (
             <Center h={160}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
           ) : (
@@ -564,14 +708,14 @@ function AccionMetaAvanceCard({
                     </Pie>
                   </PieChart>
                   <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{pctAnio}%</Text>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{formatWeightedPdiPct(avance)}</Text>
                     <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
                   </Box>
                 </Box>
                 <Box mt={8} style={{ textAlign: "center" }}>
                   <Group justify="center" gap={8}>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Avance: {avance.toLocaleString("es-CO")}</Text></Group>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Meta: {meta.toLocaleString("es-CO")}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Avance: {formatWeightedPdiPct(avance)}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Programado: {formatWeightedPdiPct(meta)}</Text></Group>
                   </Group>
                 </Box>
               </Grid.Col>
@@ -580,12 +724,12 @@ function AccionMetaAvanceCard({
                   <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                     <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                    <Legend formatter={(name) => name === "meta" ? "Meta" : "Avance"} />
+                    <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
+                    <ReTooltip formatter={weightedPdiTooltip} />
+                    <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance ponderado"} />
                     <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: color }} />
                     <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 4, fill: pieColor }}
-                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+                      label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />
                   </LineChart>
                 </ResponsiveContainer>
               </Grid.Col>
@@ -594,7 +738,7 @@ function AccionMetaAvanceCard({
         </Grid.Col>
 
         <Grid.Col span={12}>
-          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Periodo</Text>
+          <Text size="sm" fw={700} mb={8}>Meta vs Avance por Periodo (% ponderado)</Text>
           {!hasPeriodo ? (
             <Center h={120}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
           ) : (
@@ -602,12 +746,12 @@ function AccionMetaAvanceCard({
               <LineChart data={dataPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                 <XAxis dataKey="corte" tick={{ fontSize: 10, fontWeight: 600 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Meta" : "Avance"]} />
-                <Legend formatter={(name) => name === "meta" ? "Meta" : "Avance"} />
+                <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
+                <ReTooltip formatter={weightedPdiTooltip} />
+                <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance ponderado"} />
                 <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: color }} />
                 <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 3, fill: pieColor }}
-                  label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? v.toLocaleString("es-CO") : "" }} />
+                  label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -631,6 +775,8 @@ export default function PdiGraficas() {
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSourceRow[]>([]);
   const [selectedPres, setSelectedPres] = useState<PresupuestoSelection | null>(null);
   const [hoveredPres, setHoveredPres] = useState<PresupuestoSelection | null>(null);
+
+  const [modalSinReporte, setModalSinReporte] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -784,10 +930,11 @@ export default function PdiGraficas() {
     [metricIndicators, periodoActual]
   );
 
-  const reportesPendientes = useMemo(
-    () => indicadoresConMetaPeriodo.filter((ind) => !isReportadoEnPeriodo(ind, periodoActual)).length,
+  const indicadoresSinReporte = useMemo(
+    () => indicadoresConMetaPeriodo.filter((ind) => !isReportadoEnPeriodo(ind, periodoActual)),
     [indicadoresConMetaPeriodo, periodoActual]
   );
+  const reportesPendientes = indicadoresSinReporte.length;
 
   const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
     .filter((ind) => hasMetaEnPeriodo(ind, periodoActual))
@@ -856,23 +1003,20 @@ export default function PdiGraficas() {
     return Array.from(set).sort();
   }, [indsScope]);
 
-  // ── Datos separados por entidad (meta vs avance absolutos) ────────────────
+  // ── Datos separados por entidad (meta vs avance en % ponderado) ───────────
   const entidadesDataAnio = useMemo(() =>
     entities.map((entity) => {
       const indsEntity = indsScope.filter((i) => getEntityId(i._id) === entity._id);
       const data = aniosPdi.map((anio) => {
-        let swA = 0, spA = 0, swM = 0, spM = 0;
-        for (const ind of indsEntity) {
-          const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-          const pA = absAvanceHastaAnio(ind, anio);
-          const pM = absMetaEnAnio(ind, anio);
-          if (pA !== null) { swA += pA * peso; spA += peso; }
-          if (pM !== null) { swM += pM * peso; spM += peso; }
-        }
+        const ponderado = weightedPdiData(
+          indsEntity,
+          (ind) => absMetaEnAnio(ind, anio),
+          (ind) => absAvanceHastaAnio(ind, anio)
+        );
         return {
           anio,
-          avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0,
-          meta:   spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0,
+          avance: ponderado.avance,
+          meta:   ponderado.meta,
         };
       });
       return { entity, data };
@@ -883,18 +1027,15 @@ export default function PdiGraficas() {
     entities.map((entity) => {
       const indsEntity = indsScope.filter((i) => getEntityId(i._id) === entity._id);
       const data = periodosPdi.map((corte) => {
-        let swA = 0, spA = 0, swM = 0, spM = 0;
-        for (const ind of indsEntity) {
-          const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-          const pA = absAvanceHastaCorte(ind, corte);
-          const pM = absMetaEnCorte(ind, corte);
-          if (pA !== null) { swA += pA * peso; spA += peso; }
-          if (pM !== null) { swM += pM * peso; spM += peso; }
-        }
+        const ponderado = weightedPdiData(
+          indsEntity,
+          (ind) => absMetaEnCorte(ind, corte),
+          (ind) => absAvanceHastaCorte(ind, corte)
+        );
         return {
           corte: corte.slice(0, 7),
-          avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0,
-          meta:   spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0,
+          avance: ponderado.avance,
+          meta:   ponderado.meta,
         };
       });
       return { entity, data };
@@ -914,15 +1055,12 @@ export default function PdiGraficas() {
 
   const proyectoAvancePorAnio = useMemo(() =>
     aniosProyecto.map((anio) => {
-      let spA = 0, spM = 0, swA = 0, swM = 0;
-      for (const ind of indsDelProyecto) {
-        const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-        const pA = absAvanceHastaAnio(ind, anio);
-        const pM = absMetaEnAnio(ind, anio);
-        if (pA !== null) { swA += pA * peso; spA += peso; }
-        if (pM !== null) { swM += pM * peso; spM += peso; }
-      }
-      return { anio, avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0, meta: spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0 };
+      const ponderado = weightedPdiData(
+        indsDelProyecto,
+        (ind) => absMetaEnAnio(ind, anio),
+        (ind) => absAvanceHastaAnio(ind, anio)
+      );
+      return { anio, avance: ponderado.avance, meta: ponderado.meta };
     })
   , [aniosProyecto, indsDelProyecto]);
 
@@ -933,18 +1071,15 @@ export default function PdiGraficas() {
         return aid === a._id;
       });
       const data = aniosProyecto.map((anio) => {
-        let swA = 0, spA = 0, swM = 0, spM = 0;
-        for (const ind of indsA) {
-          const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-          const pA = absAvanceHastaAnio(ind, anio);
-          const pM = absMetaEnAnio(ind, anio);
-          if (pA !== null) { swA += pA * peso; spA += peso; }
-          if (pM !== null) { swM += pM * peso; spM += peso; }
-        }
+        const ponderado = weightedPdiData(
+          indsA,
+          (ind) => absMetaEnAnio(ind, anio),
+          (ind) => absAvanceHastaAnio(ind, anio)
+        );
         return {
           anio,
-          avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0,
-          meta:   spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0,
+          avance: ponderado.avance,
+          meta:   ponderado.meta,
         };
       });
       return { accion: a, data };
@@ -961,18 +1096,15 @@ export default function PdiGraficas() {
         return aid === a._id;
       });
       const data = periodos.map((corte) => {
-        let swA = 0, spA = 0, swM = 0, spM = 0;
-        for (const ind of indsA) {
-          const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-          const pA = absAvanceHastaCorte(ind, corte);
-          const pM = absMetaEnCorte(ind, corte);
-          if (pA !== null) { swA += pA * peso; spA += peso; }
-          if (pM !== null) { swM += pM * peso; spM += peso; }
-        }
+        const ponderado = weightedPdiData(
+          indsA,
+          (ind) => absMetaEnCorte(ind, corte),
+          (ind) => absAvanceHastaCorte(ind, corte)
+        );
         return {
           corte: corte.slice(0, 7),
-          avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0,
-          meta:   spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0,
+          avance: ponderado.avance,
+          meta:   ponderado.meta,
         };
       });
       return { accion: a, data };
@@ -983,15 +1115,12 @@ export default function PdiGraficas() {
     const set = new Set<string>();
     for (const ind of indsDelProyecto) for (const p of ind.periodos ?? []) if (p.periodo) set.add(p.periodo);
     return Array.from(set).sort().map((corte) => {
-      let spA = 0, spM = 0, swA = 0, swM = 0;
-      for (const ind of indsDelProyecto) {
-        const peso = Number(ind.peso) || 0; if (peso <= 0) continue;
-        const pA = absAvanceHastaCorte(ind, corte);
-        const pM = absMetaEnCorte(ind, corte);
-        if (pA !== null) { swA += pA * peso; spA += peso; }
-        if (pM !== null) { swM += pM * peso; spM += peso; }
-      }
-      return { corte: corte.slice(0, 7), avance: spA > 0 ? Math.round((swA / spA) * 10) / 10 : 0, meta: spM > 0 ? Math.round((swM / spM) * 10) / 10 : 0 };
+      const ponderado = weightedPdiData(
+        indsDelProyecto,
+        (ind) => absMetaEnCorte(ind, corte),
+        (ind) => absAvanceHastaCorte(ind, corte)
+      );
+      return { corte: corte.slice(0, 7), avance: ponderado.avance, meta: ponderado.meta };
     });
   }, [indsDelProyecto]);
 
@@ -1095,7 +1224,7 @@ export default function PdiGraficas() {
     ? `${macroActual.codigo} — ${macroActual.nombre}`
     : "Presupuesto, comprometido y causado — gasto e inversión";
 
-  return (
+  const mainContent = (
     <Stack gap="md">
 
       {/* ── Filtros ──────────────────────────────────────────────────────── */}
@@ -1167,6 +1296,7 @@ export default function PdiGraficas() {
                 value={reportesPendientes}
                 sub={`de ${indicadoresConMetaPeriodo.length} con meta en ${periodoActual}`}
                 color="orange"
+                onAction={reportesPendientes > 0 ? () => setModalSinReporte(true) : undefined}
               />
             </SimpleGrid>
           </>
@@ -1730,7 +1860,7 @@ export default function PdiGraficas() {
           <Grid gutter="sm">
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
-                <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año</Text>
+                <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Año (% ponderado)</Text>
                 {proyectoAvancePorAnio.length === 0 ? (
                   <Center h={180}><Text size="xs" c="dimmed">Sin datos por año</Text></Center>
                 ) : (
@@ -1738,12 +1868,12 @@ export default function PdiGraficas() {
                     <LineChart data={proyectoAvancePorAnio} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                       <XAxis dataKey="anio" tick={{ fontSize: 11, fontWeight: 600 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
+                      <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 10 }} />
+                      <ReTooltip formatter={weightedPdiTooltip} />
                       <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
                       <Line type="monotone" dataKey="meta" name="meta" stroke={PURPLE} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: PURPLE }} />
                       <Line type="monotone" dataKey="avance" name="avance" stroke={TEAL} strokeWidth={2.5} dot={{ r: 4, fill: TEAL }}
-                        label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? Number(v).toLocaleString("es-CO") : "" }} />
+                        label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />
                     </LineChart>
                   </ResponsiveContainer>
                 )}
@@ -1752,22 +1882,15 @@ export default function PdiGraficas() {
 
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Paper withBorder radius="xl" p="md" h="100%">
-                <Text size="sm" fw={700} mb={8}>Programado vs Ejecutado por Periodo</Text>
+                <Text size="sm" fw={700} mb={12}>Programado vs Ejecutado por Periodo (% ponderado)</Text>
                 {proyectoAvancePorPeriodo.length === 0 ? (
                   <Center h={180}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
                 ) : (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={proyectoAvancePorPeriodo} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
-                      <XAxis dataKey="corte" tick={{ fontSize: 9, fontWeight: 600 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <ReTooltip formatter={(v: any, name: any) => [Number(v).toLocaleString("es-CO"), name === "meta" ? "Programado" : "Ejecutado"]} />
-                      <Legend formatter={(name) => name === "meta" ? "Programado" : "Ejecutado"} />
-                      <Line type="monotone" dataKey="meta" name="meta" stroke={BLUE} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: BLUE }} />
-                      <Line type="monotone" dataKey="avance" name="avance" stroke={TEAL} strokeWidth={2.5} dot={{ r: 3, fill: TEAL }}
-                        label={{ position: "top", fontSize: 9, fontWeight: 700, fill: "#555", formatter: (v: any) => v > 0 ? Number(v).toLocaleString("es-CO") : "" }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <Box style={miniPeriodoGridStyle}>
+                    {proyectoAvancePorPeriodo.map((d: { corte: string; meta: number; avance: number }) => (
+                      <MiniPeriodoDonut key={d.corte} corte={d.corte} avance={d.avance} meta={d.meta} />
+                    ))}
+                  </Box>
                 )}
               </Paper>
             </Grid.Col>
@@ -2039,6 +2162,57 @@ export default function PdiGraficas() {
       )}
 
     </Stack>
+  );
+
+  return (
+    <>
+      {mainContent}
+
+      <Modal
+        opened={modalSinReporte}
+        onClose={() => setModalSinReporte(false)}
+        title={
+          <Group gap="xs">
+            <ThemeIcon size={28} radius="xl" color="orange" variant="light">
+              <IconBulb size={16} />
+            </ThemeIcon>
+            <Text fw={700} size="sm">
+              Indicadores sin reporte — {periodoActual}
+            </Text>
+          </Group>
+        }
+        size="lg"
+        radius="lg"
+      >
+        {indicadoresSinReporte.length === 0 ? (
+          <Text size="sm" c="dimmed" ta="center" py="xl">
+            Todos los indicadores han sido reportados.
+          </Text>
+        ) : (
+          <>
+            <Text size="xs" c="dimmed" mb="sm">
+              {indicadoresSinReporte.length} indicador{indicadoresSinReporte.length !== 1 ? "es" : ""} pendiente{indicadoresSinReporte.length !== 1 ? "s" : ""} de reporte en el período <strong>{periodoActual}</strong>
+            </Text>
+            <ScrollArea h={420} offsetScrollbars>
+              <List spacing={6} size="sm" icon={
+                <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#fd7e14", flexShrink: 0 }} />
+              }>
+                {indicadoresSinReporte.map((ind) => (
+                  <List.Item key={ind._id}>
+                    <Group gap={6} wrap="nowrap" align="flex-start">
+                      <Box style={{ minWidth: 0 }}>
+                        <Text size="xs" fw={700} c="orange.7" lh={1.2}>{ind.codigo}</Text>
+                        <Text size="xs" c="dimmed" lh={1.4}>{ind.nombre}</Text>
+                      </Box>
+                    </Group>
+                  </List.Item>
+                ))}
+              </List>
+            </ScrollArea>
+          </>
+        )}
+      </Modal>
+    </>
   );
 }
 

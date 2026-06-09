@@ -45,10 +45,8 @@ const EditCategoryPage = () => {
           );
           const category = response.data;
           setCategoryName(category.name);
-          // Mapeamos las plantillas asociadas con sus secuencias
           const templateFields = category.templates.map((template: any) => ({
             templateId: template.templateId._id,
-            sequence: template.sequence,
           }));
           setFields(templateFields);
         } catch (error) {
@@ -69,7 +67,7 @@ const EditCategoryPage = () => {
   };
 
   const addField = () => {
-    setFields([...fields, { templateId: "", sequence: 1 }]);
+    setFields([...fields, { templateId: "" }]);
   };
 
   const removeField = (index: number) => {
@@ -93,7 +91,6 @@ const EditCategoryPage = () => {
         name: categoryName,
         templates: fields.map(field => ({
           templateId: field.templateId,
-          sequence: field.sequence
         }))
       };
   
@@ -137,7 +134,6 @@ const EditCategoryPage = () => {
                 <Table.Tr>
                   <Table.Th>Arrastrar</Table.Th>
                   <Table.Th>Nombre de la Plantilla</Table.Th>
-                  <Table.Th>Secuencia</Table.Th>
                   <Table.Th>Acciones</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -162,15 +158,6 @@ const EditCategoryPage = () => {
                             searchable
                             clearable
                             placeholder="Buscar y seleccionar plantilla"
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <TextInput
-                            type="number"
-                            value={field.sequence}
-                            onChange={(e) => handleFieldChange(index, "sequence", parseInt(e.currentTarget.value))}
-                            min={1}
-                            placeholder="Secuencia"
                           />
                         </Table.Td>
                         <Table.Td>

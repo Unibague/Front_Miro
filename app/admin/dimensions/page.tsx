@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Stack, Loader, ScrollArea, Tooltip } from "@mantine/core";
-import { IconSettings, IconTrash, IconCirclePlus, IconDeviceFloppy, IconCancel, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconChevronDown, IconChevronUp, IconTemplate } from "@tabler/icons-react";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Stack, Loader, ScrollArea, Tooltip, ActionIcon } from "@mantine/core";
+import { IconSettings, IconTrash, IconCirclePlus, IconDeviceFloppy, IconCancel, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconChevronDown, IconChevronUp, IconTemplate, IconArrowLeft } from "@tabler/icons-react";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSort } from "../../hooks/useSort";
@@ -52,6 +52,8 @@ const AdminDimensionsPage = () => {
   const [responsible, setResponsible] = useState<Dependency | null>(null);
   const [selectedProducers, setSelectedProducers] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [expandedData, setExpandedData] = useState<Map<string, { rows: {depName: string; templateName: string; loaded: boolean}[]; loading: boolean }>>(new Map());
+  const [dimProducers, setDimProducers] = useState<Map<string, { _id: string; name: string }[]>>(new Map());
   const [templatesModalOpened, setTemplatesModalOpened] = useState(false);
   const [templatesModalDimension, setTemplatesModalDimension] = useState<Dimension | null>(null);
   const [dimensionTemplates, setDimensionTemplates] = useState<TemplateInfo[]>([]);
@@ -61,6 +63,42 @@ const AdminDimensionsPage = () => {
   const [search, setSearch] = useState("");
   const [selectedDependencyFilter, setSelectedDependencyFilter] = useState<string | null>(null);
   const { sortedItems: sortedDimensions, handleSort, sortConfig } = useSort<Dimension>(dimensions, { key: null, direction: "asc" });
+
+  const preloadDimData = async (dims: Dimension[]) => {
+    if (dims.length === 0) return;
+    try {
+      const [tplRes, depsRes] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, { params: { limit: 1000 } }),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, { params: { limit: 100000 } }),
+      ]);
+      const allDeps: any[] = depsRes.data.dependencies || [];
+      const depsById = new Map(allDeps.map((d: any) => [String(d._id), d]));
+      const allTemplates: any[] = tplRes.data.templates || [];
+
+      const newMap = new Map<string, { _id: string; name: string }[]>();
+      for (const dim of dims) {
+        const dimId = String(dim._id);
+        const dimTemplates = allTemplates.filter((t: any) =>
+          (t.dimensions || []).some((d: any) => String(typeof d === "string" ? d : d._id) === dimId)
+        );
+        const seen = new Set<string>();
+        const uniqueDeps: { _id: string; name: string }[] = [];
+        for (const t of dimTemplates) {
+          for (const pid of (t.producers || [])) {
+            const id = String(typeof pid === "string" ? pid : pid._id || pid);
+            if (!seen.has(id)) {
+              const dep = depsById.get(id);
+              if (dep) { seen.add(id); uniqueDeps.push({ _id: id, name: dep.name }); }
+            }
+          }
+        }
+        newMap.set(dimId, uniqueDeps);
+      }
+      setDimProducers(newMap);
+    } catch (e) {
+      console.error("Error preloading dim data:", e);
+    }
+  };
 
   const fetchDimensions = async (page: number, search: string, dependencyFilter?: string) => {
     try {
@@ -82,6 +120,7 @@ const AdminDimensionsPage = () => {
         const dimensions = response.data.dimensions || [];
         setDimensions([...dimensions]);
         setTotalPages(response.data.pages || 1);
+        preloadDimData(dimensions);
       }
     } catch (error) {
       console.error("Error fetching dimensions:", error);
@@ -228,17 +267,60 @@ const AdminDimensionsPage = () => {
     setSelectedDimension(dimension);
     setResponsible(dimension.responsible);
     setName(dimension.name);
-    setSelectedProducers((dimension.producers || []).map(p => p._id));
+    const preloaded = dimProducers.get(String(dimension._id));
+    if (preloaded && preloaded.length > 0) {
+      setSelectedProducers(preloaded.map(p => p._id));
+    } else {
+      setSelectedProducers(
+        (dimension.producers || []).map(p => String(typeof p === "string" ? p : p._id)).filter(Boolean)
+      );
+    }
     setOpened(true);
   };
 
-  const toggleRow = (id: string) => {
+  const fetchExpandedData = async (dimension: Dimension) => {
+    setExpandedData(prev => new Map(prev).set(dimension._id, { rows: [], loading: true }));
+    try {
+      const [tplRes, depsRes] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, { params: { limit: 1000 } }),
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, { params: { limit: 100000 } }),
+      ]);
+      const allDeps: any[] = depsRes.data.dependencies || [];
+      const depsById = new Map(allDeps.map((d: any) => [String(d._id), d]));
+      const templates = (tplRes.data.templates || []).filter((t: any) =>
+        (t.dimensions || []).some((d: any) => (typeof d === "string" ? d : d._id) === dimension._id)
+      );
+      const rows: { depName: string; templateName: string; loaded: boolean }[] = [];
+      for (const t of templates) {
+        let loadedCodes: string[] = [];
+        try {
+          const pubRes = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/by-template/${t._id}`,
+            { params: selectedPeriodId ? { periodId: selectedPeriodId } : {} }
+          );
+          if (pubRes.data?.found !== false) {
+            loadedCodes = (pubRes.data?.loaded_data || []).map((ld: any) => ld.dependency);
+          }
+        } catch {}
+        const producers = (t.producers || []).map((id: any) => depsById.get(String(id))).filter(Boolean);
+        for (const p of producers) {
+          rows.push({ depName: p.name, templateName: t.name, loaded: loadedCodes.includes(p.dep_code) });
+        }
+      }
+      setExpandedData(prev => new Map(prev).set(dimension._id, { rows, loading: false }));
+    } catch {
+      setExpandedData(prev => new Map(prev).set(dimension._id, { rows: [], loading: false }));
+    }
+  };
+
+  const toggleRow = (id: string, dimension: Dimension) => {
     setExpandedRows(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
       } else {
         next.add(id);
+        fetchExpandedData(dimension);
       }
       return next;
     });
@@ -323,10 +405,17 @@ const AdminDimensionsPage = () => {
               <Button
                 variant="subtle"
                 size="xs"
-                onClick={() => toggleRow(dimension._id)}
+                onClick={() => toggleRow(dimension._id, dimension)}
                 rightSection={isExpanded ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />}
               >
-                {producerCount} dep.
+                {(() => {
+                  const dimId = String(dimension._id);
+                  const d = expandedData.get(dimId);
+                  if (d && !d.loading) return `${[...new Set(d.rows.map(r => r.depName))].length} dep.`;
+                  const pre = dimProducers.get(dimId);
+                  if (pre !== undefined) return `${pre.length} dep.`;
+                  return `${producerCount} dep.`;
+                })()}
               </Button>
               <Tooltip label="Ver plantillas del ámbito" withArrow>
                 <Button
@@ -351,19 +440,20 @@ const AdminDimensionsPage = () => {
       </Table.Tr>,
       isExpanded ? (
         <Table.Tr key={`${dimension._id}-producers`}>
-          <Table.Td colSpan={4} style={{ backgroundColor: 'var(--mantine-color-gray-0)', padding: '12px 20px' }}>
-            <Text fw={500} size="sm" mb={6}>Dependencias del ámbito:</Text>
-            {producerCount > 0 ? (
-              <Group gap={6} wrap="wrap">
-                {(dimension.producers || []).map(producer => (
-                  <Badge key={producer._id} variant="light" color="blue">
-                    {producer.name}
-                  </Badge>
-                ))}
-              </Group>
-            ) : (
-              <Text size="sm" c="dimmed">No hay dependencias asignadas a este ámbito</Text>
-            )}
+          <Table.Td colSpan={4} style={{ backgroundColor: 'var(--mantine-color-gray-0)', padding: '12px 24px' }}>
+            {(() => {
+              const expData = expandedData.get(dimension._id);
+              if (!expData || expData.loading) return <Center py="sm"><Loader size="sm" /></Center>;
+              const uniqueDeps = [...new Set(expData.rows.map(r => r.depName))];
+              if (uniqueDeps.length === 0) return <Text size="sm" c="dimmed">No hay dependencias en las plantillas de este ámbito</Text>;
+              return (
+                <Group gap={6} wrap="wrap">
+                  {uniqueDeps.map((dep) => (
+                    <Badge key={dep} variant="light" color="blue" size="sm">{dep}</Badge>
+                  ))}
+                </Group>
+              );
+            })()}
           </Table.Td>
         </Table.Tr>
       ) : null,
@@ -373,6 +463,15 @@ const AdminDimensionsPage = () => {
   return (
     <Container size="xl">
       <Group mb="md">
+        <ActionIcon
+          variant="subtle"
+          color="blue"
+          size="lg"
+          radius="md"
+          onClick={() => router.back()}
+        >
+          <IconArrowLeft size={18} />
+        </ActionIcon>
         <TextInput
           placeholder="Buscar en todas los ámbitos"
           value={search}
@@ -503,7 +602,15 @@ const AdminDimensionsPage = () => {
             label="Dependencias del ámbito"
             description="Selecciona las dependencias que pertenecen a este ámbito"
             placeholder="Buscar dependencias..."
-            data={allDependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+            data={(() => {
+              const base = (allDependencies || []).map((dep) => ({ value: String(dep._id), label: dep.name }));
+              const baseIds = new Set(base.map((d) => d.value));
+              const preloaded = dimProducers.get(String(selectedDimension?._id || "")) || [];
+              const extras = preloaded
+                .filter(p => !baseIds.has(p._id))
+                .map(p => ({ value: p._id, label: p.name }));
+              return [...base, ...extras];
+            })()}
             value={selectedProducers}
             onChange={setSelectedProducers}
             searchable

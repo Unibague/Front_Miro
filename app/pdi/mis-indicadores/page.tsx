@@ -18,6 +18,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useRole } from "@/app/context/RoleContext";
 import { PDI_ROUTES } from "../api";
 import type { Indicador, Periodo, Accion, Proyecto, SolicitudCambio, TipoCambio, TipoEntidad, EstadoCambio, RespuestaFormulario as RespuestaFormularioAval } from "../types";
 import dynamic from "next/dynamic";
@@ -117,6 +118,24 @@ function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
         corte: p.periodo,
       }))
   );
+}
+
+function pluralizeCount(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : plural;
+}
+
+function formatCortesPendientes(items: Array<{ corte: string }>) {
+  const cortes = Array.from(new Set(items.map((item) => item.corte).filter(Boolean)));
+  if (cortes.length === 0) return "";
+  const visibles = cortes.slice(0, 3).join(", ");
+  return cortes.length > 3 ? `${visibles} +${cortes.length - 3}` : visibles;
+}
+
+function formatIndicadoresPendientes(items: Array<{ indicadorCodigo: string }>) {
+  const codigos = Array.from(new Set(items.map((item) => item.indicadorCodigo).filter(Boolean)));
+  if (codigos.length === 0) return "";
+  const visibles = codigos.slice(0, 3).join(", ");
+  return codigos.length > 3 ? `${visibles} +${codigos.length - 3}` : visibles;
 }
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
@@ -1550,7 +1569,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   );
 }
 
-function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLiderProyecto = false, esResponsableProyecto = false }: {
+function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLiderProyecto = false, esResponsableProyecto = false, esAdmin = false }: {
   vista: ProyectoResponsableView;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
@@ -1560,9 +1579,11 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   email: string;
   esLiderProyecto?: boolean;
   esResponsableProyecto?: boolean;
+  esAdmin?: boolean;
 }) {
   const [openProyecto, setOpenProyecto] = useState(true);
   const indicadoresCount = vista.acciones.reduce((acc, item) => acc + item.indicadores.length, 0);
+  const indicadoresProyecto = vista.acciones.flatMap((item) => item.indicadores);
   const accionesConAvance = vista.acciones.map((item) => ({
     ...item.accion,
     avance: item.indicadores.length
@@ -1574,6 +1595,14 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
     : Number(vista.proyecto.avance) || 0;
   const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
   const avanceProyectoBarra = Math.min(Math.max(avanceProyecto, 0), 100);
+  const reportesPendientesProyecto = (esResponsableProyecto || esAdmin)
+    ? getReportesPendientesAccion(indicadoresProyecto, cortesVigentes)
+    : [];
+  const evaluacionesPendientesProyecto = (esLiderProyecto || esAdmin)
+    ? getEvaluacionesPendientesAccion(indicadoresProyecto)
+    : [];
+  const reportesRechazadosProyecto = reportesPendientesProyecto.filter((r) => r.estado === "Rechazado");
+  const reportesPorEnviarProyecto = reportesPendientesProyecto.filter((r) => r.estado !== "Rechazado");
 
   return (
     <Paper
@@ -1599,6 +1628,31 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
                 <Text size="xs" c="dimmed">Responsable: <b>{vista.proyecto.responsable}</b></Text>
               )}
             </Group>
+            {(reportesRechazadosProyecto.length > 0 || reportesPorEnviarProyecto.length > 0 || evaluacionesPendientesProyecto.length > 0) && (
+              <Group gap={6} mt={10} wrap="wrap">
+                {reportesRechazadosProyecto.length > 0 && (
+                  <Badge color="red" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
+                    Corregir {reportesRechazadosProyecto.length} {pluralizeCount(reportesRechazadosProyecto.length, "reporte", "reportes")}
+                    {formatIndicadoresPendientes(reportesRechazadosProyecto) ? ` · ${formatIndicadoresPendientes(reportesRechazadosProyecto)}` : ""}
+                    {formatCortesPendientes(reportesRechazadosProyecto) ? ` · ${formatCortesPendientes(reportesRechazadosProyecto)}` : ""}
+                  </Badge>
+                )}
+                {reportesPorEnviarProyecto.length > 0 && (
+                  <Badge color="orange" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
+                    Reportar {reportesPorEnviarProyecto.length} {pluralizeCount(reportesPorEnviarProyecto.length, "indicador", "indicadores")}
+                    {formatIndicadoresPendientes(reportesPorEnviarProyecto) ? ` · ${formatIndicadoresPendientes(reportesPorEnviarProyecto)}` : ""}
+                    {formatCortesPendientes(reportesPorEnviarProyecto) ? ` · ${formatCortesPendientes(reportesPorEnviarProyecto)}` : ""}
+                  </Badge>
+                )}
+                {evaluacionesPendientesProyecto.length > 0 && (
+                  <Badge color="teal" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
+                    Evaluar {evaluacionesPendientesProyecto.length} {pluralizeCount(evaluacionesPendientesProyecto.length, "reporte", "reportes")}
+                    {formatIndicadoresPendientes(evaluacionesPendientesProyecto) ? ` · ${formatIndicadoresPendientes(evaluacionesPendientesProyecto)}` : ""}
+                    {formatCortesPendientes(evaluacionesPendientesProyecto) ? ` · ${formatCortesPendientes(evaluacionesPendientesProyecto)}` : ""}
+                  </Badge>
+                )}
+              </Group>
+            )}
           </div>
         </Group>
         <Group gap="sm" align="center">
@@ -2022,6 +2076,7 @@ function FilaMacroInforme({ macro, corte }: { macro: MacroInforme; corte: string
 export default function MisIndicadoresPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const { userRole } = useRole();
   const { config } = usePdiConfig();
   const { canManage: canManagePdi } = useViewPermission("pdi");
   const [proyectosVista, setProyectosVista] = useState<ProyectoResponsableView[]>([]);
@@ -2166,6 +2221,7 @@ export default function MisIndicadoresPage() {
     session?.user?.email ||
     "Responsable PDI";
   const requesterEmail = session?.user?.email ?? "";
+  const admin = userRole === "Administrador";
 
   const isLider = macroIdsLiderados.size > 0;
   const macroLiderLabel = macroNombresLiderados.length === 1
@@ -2390,6 +2446,7 @@ export default function MisIndicadoresPage() {
                     email={requesterEmail}
                     esLiderProyecto={canManagePdi && esLiderProyecto}
                     esResponsableProyecto={canManagePdi && esResponsableProyecto}
+                    esAdmin={admin}
                   />
                 );
               })}

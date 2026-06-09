@@ -66,6 +66,7 @@ interface Template {
   fields: Field[];
   producers: [Dependency]
   active: boolean;
+  validators?: Validator[];
 }
 
 interface Validator {
@@ -382,9 +383,9 @@ const TemplatesWithFiltersPage = () => {
       ]);
 
       const data = dataResponse.data.data;
-      const { template } = publishedTemplate;
+      const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
       const validators =
-        freshTemplateResponse.data.template?.validators ??
+        template?.validators ??
         publishedTemplate.validators;
 
       // Campos de tipo fecha para formatear correctamente

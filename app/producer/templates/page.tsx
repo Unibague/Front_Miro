@@ -56,6 +56,8 @@ import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
 
+const UNCATEGORIZED_CATEGORY_FILTER = "__uncategorized__";
+
 const DropzoneButton = dynamic(
   () =>
     import("@/app/components/Dropzone/DropzoneButton").then(
@@ -65,6 +67,7 @@ const DropzoneButton = dynamic(
 );
 
 interface Category {
+  _id?: string;
   name: string;
 }
 
@@ -85,12 +88,6 @@ interface Dimension {
   name: string;
 }
 
-interface Category{
-  _id: string,
-  name:string,
-  templateSequence: number
-}
-
 interface Producer {
   _id: string;
   dep_code: string;
@@ -104,6 +101,7 @@ interface Template {
   dimensions: [Dimension];
   file_description: string;
   fields: Field[];
+  validators?: Validator[];
   workbook_sheets?: TemplateWorksheet[];
   original_workbook_base64?: string;
   active: boolean;
@@ -169,7 +167,6 @@ interface PublishedTemplate {
   deadline: string | Date;
   isPending: boolean;
   category_name?: string;
-  sequence: number;
   responsible_producers?: string[];
   final_submitted?: boolean;
   final_submitted_date?: string;
@@ -234,7 +231,8 @@ const ProducerTemplatesPage = () => {
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
   };
   const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
-  const [selectedDependency, setSelectedDependency] = useState<string>('');
+  const [categoryOptions, setCategoryOptions] = useState<{ value: string; label: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   // const fetchPublishedTemplates = async () => {
@@ -252,7 +250,7 @@ const ProducerTemplatesPage = () => {
   //   fetchPublishedTemplates();
   // }, []);
   
-  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string, limit?: number) => {
+  const fetchTemplates = async (page?: number, search?: string, filterByCategory?: string | null, limit?: number) => {
     try {
       const params: any = {
         email: session?.user?.email,
@@ -262,8 +260,8 @@ const ProducerTemplatesPage = () => {
         periodId: selectedPeriodId,
       };
       
-      if (filterByDependency) {
-        params.filterByDependency = filterByDependency;
+      if (filterByCategory) {
+        params.filterByCategory = filterByCategory;
       }
       
       const response = await axios.get(
@@ -273,7 +271,7 @@ const ProducerTemplatesPage = () => {
       if (response.data) {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
-        setPendingCount(response.data.templates.length || 0);
+        setPendingCount(response.data.total ?? response.data.templates?.length ?? 0);
       }
     } catch (error) {
       setTemplates([]);
@@ -314,6 +312,27 @@ const ProducerTemplatesPage = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories/all`);
+      const categories = (response.data.categories || [])
+        .filter((category: Category) => category._id && category.name)
+        .map((category: Category) => ({
+          value: String(category._id),
+          label: category.name,
+        }))
+        .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+
+      setCategoryOptions([
+        { value: UNCATEGORIZED_CATEGORY_FILTER, label: "Sin categoría" },
+        ...categories,
+      ]);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      setCategoryOptions([{ value: UNCATEGORIZED_CATEGORY_FILTER, label: "Sin categoría" }]);
+    }
+  };
+
   useEffect(() => {
     console.log("Template con categoría:", PublishedTemplatesPage);  // Verifica que category esté poblado correctamente
   }, [PublishedTemplatesPage]);
@@ -322,14 +341,15 @@ const ProducerTemplatesPage = () => {
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
     if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search, selectedDependency, pageSize);
+      fetchTemplates(page, search, selectedCategory, pageSize);
       fetchUserDependencies();
+      fetchCategories();
     }
-  }, [page, search, session, selectedPeriodId, selectedDependency, pageSize]); // Agregar pageSize a las dependencias  
+  }, [page, search, session, selectedPeriodId, selectedCategory, pageSize]); // Agregar pageSize a las dependencias  
 
   const refreshTemplates = () => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency, pageSize);
+      fetchTemplates(page, search, selectedCategory, pageSize);
     }
   };
   
@@ -341,26 +361,22 @@ const ProducerTemplatesPage = () => {
     }
   };
 
-  const getCurrentDependencyTitle = () => {
-    if (!selectedDependency) {
-      // Mostrar la dependencia principal (siempre la primera en la lista)
-      const mainDependency = userDependencies[0];
-      return mainDependency ? mainDependency.label.split(' - ')[1] : 'Cargando...';
-    }
-    const dependency = userDependencies.find(dep => dep.value === selectedDependency);
-    return dependency ? dependency.label.split(' - ')[1] : selectedDependency;
+  const getCurrentCategoryTitle = () => {
+    if (!selectedCategory) return "Todas las categorías";
+    const category = categoryOptions.find((option) => option.value === selectedCategory);
+    return category?.label || "Categoría seleccionada";
   };
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency, pageSize);
+      fetchTemplates(page, search, selectedCategory, pageSize);
     }
   }, [page, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search, selectedDependency, pageSize);
+        fetchTemplates(page, search, selectedCategory, pageSize);
       }
     }, 500);
 
@@ -382,17 +398,17 @@ const ProducerTemplatesPage = () => {
     } else {
       setNextDeadline(null);
     }
-  }, [templates, selectedDependency]);
+  }, [templates, selectedCategory]);
   
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
-    const { template } = publishedTemplate;
     const [freshTemplateResponse, userResp] = await Promise.all([
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session?.user?.email } }),
     ]);
+    const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
     const validators =
-      freshTemplateResponse.data.template?.validators ??
+      template?.validators ??
       publishedTemplate.validators;
 
     // Datos ya enviados por el usuario (para pre-poblar el Excel)
@@ -983,11 +999,12 @@ if (field.multiple) {
   const isResponsibleForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
     // Usar el flag calculado en el backend cuando esté disponible
     if (typeof publishedTemplate.isEncargado === 'boolean') return publishedTemplate.isEncargado;
-    // Fallback local: comparar dep del usuario seleccionado con responsible_producers
+    // Fallback local: comparar todas las dependencias del usuario con responsible_producers
     const responsibleIds = publishedTemplate.responsible_producers || [];
     if (responsibleIds.length === 0) return false;
+    const userDepCodes = new Set((userDependencies || []).map((dependency) => dependency.value));
     const depId = publishedTemplate.template?.producers?.find(
-      (p: any) => p.dep_code === selectedDependency
+      (p: any) => userDepCodes.has(p.dep_code)
     )?._id;
     return depId ? responsibleIds.includes(depId) : false;
   };
@@ -1084,13 +1101,6 @@ if (field.multiple) {
     variant="light" 
     color={getCategoryColor(publishedTemplate.template.category.name)}
     fullWidth
-    rightSection={
-      publishedTemplate.template.category.templateSequence ? (
-        <Text size="lg" fw={700}>
-          #{publishedTemplate.template.category.templateSequence}
-        </Text>
-      ) : null
-    }
   >
      {publishedTemplate.template.category.name || 'Sin categoría'}
   </Badge>
@@ -1261,7 +1271,7 @@ if (field.multiple) {
         Plantillas Pendientes
       </Title>
       <Title order={3} ta="center" mb={"md"} c="blue">
-        {getCurrentDependencyTitle()}
+        {getCurrentCategoryTitle()}
       </Title>
       <Text ta="center" mt="sm" mb="md">
     Tienes <strong>{pendingCount}</strong> plantilla
@@ -1276,13 +1286,13 @@ if (field.multiple) {
           style={{ flex: 1 }}
         />
         <Select
-          placeholder="Filtrar por dependencia"
-          data={[
-            { value: '', label: 'Todas las dependencias' },
-            ...userDependencies
-          ]}
-          value={selectedDependency}
-          onChange={(value) => setSelectedDependency(value || '')}
+          placeholder="Filtrar por categoría"
+          data={categoryOptions}
+          value={selectedCategory}
+          onChange={(value) => {
+            setSelectedCategory(value);
+            setPage(1);
+          }}
           clearable
           searchable
           style={{ minWidth: 300 }}
@@ -1310,7 +1320,7 @@ if (field.multiple) {
   style={{ cursor: "pointer" }}
 >
   <Center inline>
-    Categoría/Secuencia
+    Categoría
     {sortConfig.key === "template.category.name" ? (
       sortConfig.direction === "asc" ? (
         <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
@@ -1444,8 +1454,8 @@ if (field.multiple) {
         )}
       </Modal>
       <ProducerUploadedTemplatesPage
-        fetchTemp={fetchTemplates}
-        selectedDependency={selectedDependency}
+        fetchTemp={refreshTemplates}
+        selectedCategory={selectedCategory}
         userDependencies={userDependencies}
       />
 

@@ -45,6 +45,24 @@ function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
   );
 }
 
+function pluralizeCount(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : plural;
+}
+
+function formatCortesPendientes(items: Array<{ corte: string }>) {
+  const cortes = Array.from(new Set(items.map((item) => item.corte).filter(Boolean)));
+  if (cortes.length === 0) return "";
+  const visibles = cortes.slice(0, 3).join(", ");
+  return cortes.length > 3 ? `${visibles} +${cortes.length - 3}` : visibles;
+}
+
+function formatIndicadoresPendientes(items: Array<{ indicadorCodigo: string }>) {
+  const codigos = Array.from(new Set(items.map((item) => item.indicadorCodigo).filter(Boolean)));
+  if (codigos.length === 0) return "";
+  const visibles = codigos.slice(0, 3).join(", ");
+  return codigos.length > 3 ? `${visibles} +${codigos.length - 3}` : visibles;
+}
+
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
@@ -476,17 +494,32 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {/* Distribución ejecución por año */}
       {(() => {
         const ppa  = accion.presupuesto_por_anio ?? {};
-        const epa  = accion.presupuesto_ejecutado_por_anio ?? {};
-        const anios = Object.keys(epa).sort();
+        const epaRaw = accion.presupuesto_ejecutado_por_anio ?? {};
+        const totalEjecutado = Number(accion.presupuesto_ejecutado) || 0;
+        // Si todos los valores por año son 0 pero hay causado total, asignarlo al año vigente
+        const epaAllZero = Object.values(epaRaw).every((v) => Number(v) === 0);
+        const epa: Record<string, number> = epaAllZero && totalEjecutado > 0
+          ? { ...epaRaw, [String(new Date().getFullYear())]: totalEjecutado }
+          : epaRaw;
+        // Usar los mismos años que el presupuestal para mostrar consistencia
+        const anios = (Object.keys(ppa).length ? Object.keys(ppa) : Object.keys(epa)).sort();
         if (!anios.length) return null;
+
+        const gastoEjec      = Math.max(Number(accion.gasto) || 0, 0);
+        const inversionEjec  = Math.max(Number(accion.inversion) || 0, 0);
+        const totalEjecBase  = gastoEjec + inversionEjec || Number(accion.presupuesto_ejecutado) || 1;
+        const gastoRatio     = gastoEjec / totalEjecBase;
+        const inversionRatio = inversionEjec / totalEjecBase;
 
         return (
           <Box mb="sm">
             <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
             <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
               {anios.map(anio => {
-                const asignado  = Number(ppa[anio] ?? 0);
-                const ejecutado = Number(epa[anio] ?? 0);
+                const asignado         = Number(ppa[anio] ?? 0);
+                const ejecutado        = Number(epa[anio] ?? 0);
+                const gastoCausado     = Math.round(ejecutado * gastoRatio);
+                const inversionCausado = Math.round(ejecutado * inversionRatio);
                 const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                 const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                 return (
@@ -500,12 +533,16 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                     </Box>
                     <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
-                        <Text size="xs" c="dimmed" lh={1}>Causado</Text>
-                        <Text size="xs" fw={700} c="teal">{formatCOP(ejecutado)}</Text>
+                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
+                        <Text size="xs" fw={700} c="teal">{formatCOP(gastoCausado)}</Text>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
+                        <Text size="xs" fw={700} c="teal">{formatCOP(inversionCausado)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Presupuesto</Text>
-                        <Text size="xs" fw={700} c="dimmed">{formatCOP(asignado)}</Text>
+                        <Text size="xs" c="dimmed" lh={1}>Total</Text>
+                        <Text size="xs" fw={700} c="dimmed">{formatCOP(ejecutado)}</Text>
                       </div>
                     </Group>
                   </Box>
@@ -610,21 +647,43 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const [accionModal, setAccionModal] = useState(false);
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
   const [accionesCount, setAccionesCount] = useState<number | null>(null);
+  const [pendientesProyecto, setPendientesProyecto] = useState<ReturnType<typeof getEvaluacionesPendientesAccion>>([]);
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
 
+  const fetchIndicadoresProyecto = useCallback(async (accionesBase: Accion[]) => {
+    const indicadoresPorAccion = await Promise.all(
+      accionesBase.map(async (accionItem) => {
+        try {
+          const res = await axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accionItem._id } });
+          return res.data as Indicador[];
+        } catch {
+          return [] as Indicador[];
+        }
+      })
+    );
+    return indicadoresPorAccion.flat();
+  }, []);
+
   useEffect(() => {
     axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyectoInicial._id } })
-      .then(res => setAccionesCount(res.data.length))
+      .then(async (res) => {
+        const accionesBase = res.data as Accion[];
+        setAccionesCount(accionesBase.length);
+        const indicadoresProyecto = await fetchIndicadoresProyecto(accionesBase);
+        setPendientesProyecto(getEvaluacionesPendientesAccion(indicadoresProyecto));
+      })
       .catch(() => {});
-  }, [proyectoInicial._id]);
+  }, [fetchIndicadoresProyecto, proyectoInicial._id]);
 
   const hydrateAcciones = async (accionesBase: Accion[]) => {
+    const indicadoresProyecto: Indicador[] = [];
     const accionesConIndicadores = await Promise.all(
       accionesBase.map(async (accionItem) => {
         try {
           const res = await axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accionItem._id } });
           const indicadoresAccion = res.data as Indicador[];
+          indicadoresProyecto.push(...indicadoresAccion);
           if (!indicadoresAccion.length) return accionItem;
 
           const avance = getWeightedProgress(indicadoresAccion, (ind) => getIndicadorAvancePonderado(ind));
@@ -639,6 +698,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
       })
     );
 
+    setPendientesProyecto(getEvaluacionesPendientesAccion(indicadoresProyecto));
     return accionesConIndicadores;
   };
 
@@ -711,8 +771,10 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const estadoProyectoColorReal = semaforoProyecto === "verde"
     ? "green"
     : semaforoProyecto === "amarillo"
-      ? "yellow"
-      : "red";
+    ? "yellow"
+    : "red";
+  const pendientesLiderProyecto = pendientesProyecto.filter((item) => item.tipo === "lider");
+  const pendientesPlaneacionProyecto = pendientesProyecto.filter((item) => item.tipo === "planeacion");
 
   useEffect(() => {
     onComputedProgress(proyecto._id, avanceProyecto, semaforoProyecto);
@@ -739,6 +801,24 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           )}
           {proyecto.descripcion && (
             <Text size="sm" c="dimmed" mt={2}>Propósito: {proyecto.descripcion}</Text>
+          )}
+          {pendientesProyecto.length > 0 && (
+            <Group gap={6} mt={10} wrap="wrap">
+              {pendientesLiderProyecto.length > 0 && (
+                <Badge color="yellow" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
+                  Pendiente líder {pendientesLiderProyecto.length} {pluralizeCount(pendientesLiderProyecto.length, "reporte", "reportes")}
+                  {formatIndicadoresPendientes(pendientesLiderProyecto) ? ` · ${formatIndicadoresPendientes(pendientesLiderProyecto)}` : ""}
+                  {formatCortesPendientes(pendientesLiderProyecto) ? ` · ${formatCortesPendientes(pendientesLiderProyecto)}` : ""}
+                </Badge>
+              )}
+              {pendientesPlaneacionProyecto.length > 0 && (
+                <Badge color="teal" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
+                  Revisar Planeación {pendientesPlaneacionProyecto.length} {pluralizeCount(pendientesPlaneacionProyecto.length, "reporte", "reportes")}
+                  {formatIndicadoresPendientes(pendientesPlaneacionProyecto) ? ` · ${formatIndicadoresPendientes(pendientesPlaneacionProyecto)}` : ""}
+                  {formatCortesPendientes(pendientesPlaneacionProyecto) ? ` · ${formatCortesPendientes(pendientesPlaneacionProyecto)}` : ""}
+                </Badge>
+              )}
+            </Group>
           )}
         </div>
 

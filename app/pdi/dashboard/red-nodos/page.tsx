@@ -82,9 +82,9 @@ function relationColor(type: string) {
 }
 
 function intensityWidth(score: number) {
-  if (score >= 5) return 5.8;
-  if (score >= 3) return 3.5;
-  return 1.7;
+  if (score >= 5) return 3.2;
+  if (score >= 3) return 1.8;
+  return 0.8;
 }
 
 function nodeRadius(node: PositionedNode) {
@@ -697,7 +697,7 @@ export default function PdiNodeNetworkPage() {
                         <filter id="node-label-shadow" x="-15%" y="-30%" width="130%" height="170%">
                           <feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#0f172a" floodOpacity="0.1" />
                         </filter>
-                        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
                           <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
                         </marker>
                       </defs>

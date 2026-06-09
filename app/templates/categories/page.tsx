@@ -16,7 +16,6 @@ interface Category {
       _id: string;
       name: string; 
     };
-    sequence: number;
   }[];
 }
 
@@ -121,7 +120,7 @@ const CategoryAdminPage = () => {
   {category.templates.length > 0 ? (
     <ul style={{ margin: 0, paddingLeft: 16 }}>
       {category.templates.map((t) => (
-        <li key={t.templateId._id}>{t.templateId.name} (#{t.sequence})</li>
+        <li key={t.templateId._id}>{t.templateId.name}</li>
       ))}
     </ul>
   ) : (
