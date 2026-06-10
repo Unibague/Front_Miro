@@ -706,7 +706,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           gasto: toBudgetNumber(data.totals?.presupuestoGasto),
           inversion: toBudgetNumber(data.totals?.presupuestoInversion),
         };
-        const splitFromRows = rows.reduce(
+        const splitFromRows = rows.reduce<{ gasto: number; inversion: number }>(
           (acc, row) => {
             const split = getPresupuestoCausadoSplit(row);
             acc.gasto += split.gasto;
@@ -715,7 +715,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           },
           { gasto: 0, inversion: 0 }
         );
-        const planFromRows = rows.reduce(
+        const planFromRows = rows.reduce<{ gasto: number; inversion: number }>(
           (acc, row) => {
             const split = getPresupuestoPlaneadoSplit(row);
             acc.gasto += split.gasto;

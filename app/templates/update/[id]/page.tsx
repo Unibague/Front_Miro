@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, Stack } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, Stack, ActionIcon } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconDownload } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconDownload, IconArrowLeft } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
@@ -20,6 +20,7 @@ import {
   applyWorkbookSheetDropdowns,
   extractWorkbookCommentsFromBase64,
   loadWorkbookFromBase64,
+  patchNoteBackgroundColor,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
@@ -805,6 +806,7 @@ router.back();
   };
 
   const handleDownloadTemplate = async () => {
+    await handleSave();
     if (originalWorkbookBase64) {
       const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
@@ -814,7 +816,8 @@ router.back();
         validators,
         originalCommentsBySheet,
       });
-      const buffer = await workbook.xlsx.writeBuffer();
+      let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+      buffer = await patchNoteBackgroundColor(buffer);
       saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
 
       showNotification({
@@ -855,7 +858,8 @@ router.back();
       applyValidatorDropdowns({ workbook, worksheet, fields, validators, startRow: 2, endRow: 1000 });
     }
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+    buffer = await patchNoteBackgroundColor(buffer);
     saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
 
     showNotification({
@@ -875,6 +879,11 @@ router.back();
 
   return (
     <Container size="xl">
+      <Box mb="md">
+        <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back())}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Box>
       <TextInput
         label="Nombre"
         placeholder="Nombre de la plantilla"

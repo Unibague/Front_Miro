@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActionIcon, Container, Table, TextInput, Select, Group, Title, Badge, Text, Pagination, Center, Card } from "@mantine/core";
 import { useRouter } from "next/navigation";
 import { IconArrowLeft, IconSearch, IconFilter, IconHistory } from "@tabler/icons-react";
@@ -30,7 +30,7 @@ const TraceabilityHistoryPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const fetchAuditLogs = async (page: number, search: string, entityType?: string) => {
+  const fetchAuditLogs = useCallback(async (page: number, search: string, entityType?: string) => {
     if (!session?.user?.email || userRole === 'Administrador') return;
     
     setLoading(true);
@@ -58,11 +58,11 @@ const TraceabilityHistoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, userRole]);
 
   useEffect(() => {
     fetchAuditLogs(page, search, filterType);
-  }, [page, session, userRole]);
+  }, [page, fetchAuditLogs, search, filterType]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -71,7 +71,7 @@ const TraceabilityHistoryPage = () => {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search, filterType]);
+  }, [search, filterType, fetchAuditLogs]);
 
   const translateAction = (action: string) => {
     switch (action.toLowerCase()) {

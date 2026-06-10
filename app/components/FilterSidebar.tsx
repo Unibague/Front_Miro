@@ -82,8 +82,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       // Determinar tipo de input basado en el nombre del campo y cantidad de valores
       const fieldLower = fieldName.toLowerCase();
       
+      // Campos de año - selector de rango
+      if (/^a[ñn]o$/i.test(fieldLower) || fieldLower === 'year' || fieldLower === 'anio') {
+        inputType = 'yearRange';
+      }
       // Campos de fecha
-      if (fieldLower.includes('fecha') || fieldLower.includes('date') || 
+      else if (fieldLower.includes('fecha') || fieldLower.includes('date') ||
           fieldLower.includes('time') || fieldLower.includes('hora')) {
         inputType = 'date';
       }
@@ -708,7 +712,10 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
               let dynamicInputType = 'dropdown';
               
               // Aplicar la misma lógica que en generateDynamicFilters
-              if (fieldLower.includes('fecha') || fieldLower.includes('date') || 
+              if (/^a[ñn]o$/i.test(fieldLower) || fieldLower === 'year' || fieldLower === 'anio') {
+                dynamicInputType = 'yearRange';
+              }
+              else if (fieldLower.includes('fecha') || fieldLower.includes('date') ||
                   fieldLower.includes('time') || fieldLower.includes('hora')) {
                 dynamicInputType = 'date';
               }
@@ -840,12 +847,14 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         boxShadow: '2px 0 10px rgba(0,0,0,0.1)'
       }}
     >
-      <Paper 
-        p={0} 
-        style={{ 
-          height: '100%', 
+      <Paper
+        p={0}
+        style={{
+          height: '100%',
           borderRadius: 0,
-          backgroundColor: 'transparent'
+          backgroundColor: 'transparent',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {/* Header */}
@@ -853,7 +862,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           p="lg" 
           style={{
             backgroundColor: '#495057',
-            color: 'white'
+            color: 'white',
+            flexShrink: 0,
           }}
         >
           <Group justify="space-between" align="center" mb="sm">
@@ -903,11 +913,11 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         </Box>
         
         {/* Filters Content */}
-        <ScrollArea 
-          style={{ height: 'calc(100vh - 160px)' }}
+        <ScrollArea
+          style={{ flex: 1, minHeight: 0 }}
           p="md"
           scrollbarSize={6}
-          type="never"
+          type="hover"
         >
           <Stack gap="sm">
             {activeFilters.length === 0 ? (
@@ -918,7 +928,11 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             ) : (
               activeFilters.map((filter) => {
                 const Icon = filter.icon;
-                const hasValues = filterValues[filter.name]?.length > 0;
+                const fromKey = `${filter.name}__from`;
+                const toKey = `${filter.name}__to`;
+                const hasValues = filter.inputType === 'yearRange'
+                  ? ((filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0)) > 0
+                  : (filterValues[filter.name]?.length ?? 0) > 0;
                 const options = filterOptions[filter.sourceField] || filterOptions[filter.name] || [];
                 
                 // Debug para filtros específicos
@@ -964,13 +978,15 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         {filter.label}
                       </Text>
                       {hasValues && (
-                        <Badge 
-                          size="sm" 
-                          variant="filled" 
+                        <Badge
+                          size="sm"
+                          variant="filled"
                           color={filter.color}
                           style={{ marginLeft: 'auto' }}
                         >
-                          {filterValues[filter.name]?.length || 0}
+                          {filter.inputType === 'yearRange'
+                            ? (filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0)
+                            : filterValues[filter.name]?.length || 0}
                         </Badge>
                       )}
                     </Group>
@@ -989,7 +1005,6 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         })()}
                         onChange={(value) => {
                           if (value && value.trim()) {
-                            // Buscar el valor correspondiente al label seleccionado
                             const option = options.find(opt => opt.label === value);
                             const valueToUse = option ? option.value : value.trim();
                             handleFilterChange(filter.name, [valueToUse]);
@@ -1002,49 +1017,40 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         leftSection={<IconSearch size={14} />}
                         limit={10}
                         maxDropdownHeight={200}
+                        comboboxProps={{ withinPortal: true, zIndex: 10000 }}
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
                             fontSize: '12px',
-                            '&:focus': {
-                              borderColor: `var(--mantine-color-${filter.color}-6)`
-                            }
                           },
-                          dropdown: {
-                            zIndex: 10000
-                          }
                         }}
                       />
                     )}
                     
                     {filter.inputType === 'radio' && (
-                      <Radio.Group
-                        value={filterValues[filter.name]?.[0] || ''}
-                        onChange={(value) => {
-                          console.log(`RADIO ${filter.label} onChange:`, { value, filterName: filter.name });
-                          handleFilterChange(filter.name, value ? [value] : []);
-                        }}
-                      >
-                        <Stack gap={4} mt="xs">
-                          {options.map((option) => (
-                            <Radio
-                              key={option.value}
-                              value={option.value}
-                              label={option.label}
-                              color={filter.color}
-                              size="xs"
-                              styles={{
-                                label: { fontSize: '12px', fontWeight: 500 },
-                                radio: {
-                                  '&:checked': {
-                                    backgroundColor: `var(--mantine-color-${filter.color}-6)`
-                                  }
-                                }
-                              }}
-                            />
-                          ))}
-                        </Stack>
-                      </Radio.Group>
+                      options.length === 0
+                        ? <Text size="xs" c="dimmed" fs="italic">Cargando opciones...</Text>
+                        : <Radio.Group
+                            value={filterValues[filter.name]?.[0] || ''}
+                            onChange={(value) => {
+                              handleFilterChange(filter.name, value ? [value] : []);
+                            }}
+                          >
+                            <Stack gap={4} mt="xs">
+                              {options.map((option) => (
+                                <Radio
+                                  key={option.value}
+                                  value={option.value}
+                                  label={option.label}
+                                  color={filter.color}
+                                  size="xs"
+                                  styles={{
+                                    label: { fontSize: '12px', fontWeight: 500 },
+                                  }}
+                                />
+                              ))}
+                            </Stack>
+                          </Radio.Group>
                     )}
                     
                     {filter.inputType === 'dropdown' && (
@@ -1053,7 +1059,6 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         data={options}
                         value={filterValues[filter.name]?.[0] || null}
                         onChange={(value) => {
-                          console.log(`DROPDOWN ${filter.label} onChange:`, value);
                           handleFilterChange(filter.name, value ? [value] : []);
                         }}
                         searchable
@@ -1061,20 +1066,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         size="xs"
                         radius="md"
                         maxDropdownHeight={200}
-                        rightSection={<IconChevronDown size={14} />}
+                        comboboxProps={{ withinPortal: true, zIndex: 10000 }}
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
                             fontSize: '12px',
-                            '&:focus': {
-                              borderColor: `var(--mantine-color-${filter.color}-6)`
-                            }
                           },
-                          dropdown: {
-                            maxHeight: '200px',
-                            overflowY: 'auto',
-                            zIndex: 10000
-                          }
                         }}
                       />
                     )}
@@ -1110,6 +1107,44 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                       />
                     )}
                     
+                    {filter.inputType === 'yearRange' && (() => {
+                      const sortedYears = [...options].sort((a, b) => a.value.localeCompare(b.value));
+                      const fromVal = filterValues[fromKey]?.[0] || null;
+                      const toVal = filterValues[toKey]?.[0] || null;
+                      const sharedStyles = {
+                        input: { border: `1px solid var(--mantine-color-${filter.color}-3)`, fontSize: '12px' },
+                        dropdown: { zIndex: 10000 }
+                      };
+                      return (
+                        <Stack gap={4}>
+                          <Select
+                            label={<Text size="11px" c="dimmed">Desde</Text>}
+                            placeholder="Año inicio..."
+                            data={sortedYears}
+                            value={fromVal}
+                            onChange={(v) => handleFilterChange(fromKey, v ? [v] : [])}
+                            clearable
+                            searchable
+                            size="xs"
+                            radius="md"
+                            styles={sharedStyles}
+                          />
+                          <Select
+                            label={<Text size="11px" c="dimmed">Hasta</Text>}
+                            placeholder="Año fin..."
+                            data={sortedYears}
+                            value={toVal}
+                            onChange={(v) => handleFilterChange(toKey, v ? [v] : [])}
+                            clearable
+                            searchable
+                            size="xs"
+                            radius="md"
+                            styles={sharedStyles}
+                          />
+                        </Stack>
+                      );
+                    })()}
+
                     {filter.inputType === 'date' && (
                       <DatePickerInput
                         placeholder={`Seleccionar ${filter.label.toLowerCase()}...`}

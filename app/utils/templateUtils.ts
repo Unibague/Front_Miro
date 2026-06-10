@@ -641,3 +641,23 @@ export const applyFieldCommentNote = (
   cell.note = wrapTextByLength(cleanComment, 52);
 };
 
+export const patchNoteBackgroundColor = async (
+  buffer: ArrayBuffer,
+  hexColor = "#ffffff"
+): Promise<ArrayBuffer> => {
+  const zip = await JSZip.loadAsync(buffer);
+  const vmlPaths = Object.keys(zip.files).filter((p) => p.endsWith(".vml"));
+
+  await Promise.all(
+    vmlPaths.map(async (path) => {
+      const text = await zip.files[path].async("text");
+      const patched = text
+        .replace(/fillcolor="[^"]+"/g, `fillcolor="${hexColor}"`)
+        .replace(/(<v:fill[^>]*?)color2="[^"]+"/g, `$1color2="${hexColor}"`);
+      zip.file(path, patched);
+    })
+  );
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+

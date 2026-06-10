@@ -456,21 +456,53 @@ export default function ConsultaInformacionPage() {
     }
   }, [session?.user?.email, fileSheet]);
 
-  // Filas filtradas client-side
+  // Filas filtradas client-side (usa allRows para buscar en todo el dataset, no solo la página actual)
   const filteredRows = useMemo(() => {
-    if (!fileData) return [];
+    const activeData = fileData || sniesData;
+    if (!activeData) return [];
     const hasFilters = Object.values(activeFilters).some(v => v.length > 0);
-    if (!hasFilters) return fileData.currentSheet.rows;
-    const headers = fileData.currentSheet.headers;
-    return fileData.currentSheet.rows.filter(row => {
-      return Object.entries(activeFilters).every(([filterName, values]) => {
-        if (!values.length) return true;
-        const colIdx = headers.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]/g, "_") === filterName || h === filterName);
-        if (colIdx === -1) return true;
-        return values.includes(row[colIdx] ?? "");
-      });
+    if (!hasFilters) return activeData.currentSheet.rows;
+
+    const headers = activeData.currentSheet.headers;
+
+    const exactFilters: Record<string, string[]> = {};
+    const rangeFrom: Record<string, string> = {};
+    const rangeTo: Record<string, string> = {};
+
+    Object.entries(activeFilters).forEach(([key, values]) => {
+      if (!values.length) return;
+      if (key.endsWith('__from')) rangeFrom[key.slice(0, -6)] = values[0];
+      else if (key.endsWith('__to')) rangeTo[key.slice(0, -4)] = values[0];
+      else exactFilters[key] = values;
     });
-  }, [fileData, activeFilters]);
+
+    const findHeader = (filterName: string) =>
+      headers.find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '_') === filterName || h === filterName);
+
+    // Priorizar allRows (dataset completo) para no limitarse a la página actual
+    const sourceObjects: Record<string, string>[] = allRows.length > 0
+      ? allRows
+      : activeData.currentSheet.rows.map(row => Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ''])));
+
+    const filtered = sourceObjects.filter(rowObj => {
+      for (const [filterName, values] of Object.entries(exactFilters)) {
+        if (!values.length) continue;
+        const header = findHeader(filterName);
+        if (!header) continue;
+        if (!values.includes(String(rowObj[header] ?? ''))) return false;
+      }
+      for (const baseKey of new Set([...Object.keys(rangeFrom), ...Object.keys(rangeTo)])) {
+        const header = findHeader(baseKey);
+        if (!header) continue;
+        const val = String(rowObj[header] ?? '').trim();
+        if (rangeFrom[baseKey] && val < rangeFrom[baseKey]) return false;
+        if (rangeTo[baseKey] && val > rangeTo[baseKey]) return false;
+      }
+      return true;
+    });
+
+    return filtered.map(rowObj => headers.map(h => String(rowObj[h] ?? '')));
+  }, [fileData, sniesData, allRows, activeFilters]);
 
   const handleViewExcelAnexo = async (a: Anexo) => {
     if (!selectedFile) return;
