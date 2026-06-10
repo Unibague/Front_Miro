@@ -692,13 +692,30 @@ export default function ConsultaInformacionPage() {
         </Stack>
       </Center>
     );
-    return renderDataTable(
-      sniesData, sniesLoading,
-      sniesSheet, sniesPage, sniesYear, sniesSearch,
-      (v) => { setSniesSheet(parseInt(v ?? "0", 10)); setSniesPage(1); },
-      setSniesPage,
-      (v) => { setSniesYear(v); setSniesPage(1); },
-      (e) => { setSniesSearch(e.currentTarget.value); setSniesPage(1); }
+    return (
+      <>
+        <Group justify="flex-end" mb="xs">
+          <Button
+            size="xs"
+            variant="subtle"
+            color="violet"
+            leftSection={<IconDownload size={14} />}
+            component="a"
+            href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${sniesData._id}`}
+            download={sniesData.file_name}
+          >
+            Descargar Excel
+          </Button>
+        </Group>
+        {renderDataTable(
+          sniesData, sniesLoading,
+          sniesSheet, sniesPage, sniesYear, sniesSearch,
+          (v) => { setSniesSheet(parseInt(v ?? "0", 10)); setSniesPage(1); },
+          setSniesPage,
+          (v) => { setSniesYear(v); setSniesPage(1); },
+          (e) => { setSniesSearch(e.currentTarget.value); setSniesPage(1); }
+        )}
+      </>
     );
   };
 
@@ -800,7 +817,7 @@ export default function ConsultaInformacionPage() {
                   </Group>
                 </div>
               </Group>
-              {isPdf && (
+              {isPdf ? (
                 <Group gap="xs" style={{ flexShrink: 0 }}>
                   <Button size="xs" variant="light" color="red" leftSection={<IconEye size={14} />} component="a" href={`${API_BASE}/${selectedFile._id}/pdf`} target="_blank">
                     Ver PDF
@@ -809,6 +826,18 @@ export default function ConsultaInformacionPage() {
                     Descargar
                   </Button>
                 </Group>
+              ) : (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="violet"
+                  leftSection={<IconDownload size={14} />}
+                  component="a"
+                  href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${selectedFile._id}`}
+                  download={selectedFile.file_name}
+                >
+                  Descargar Excel
+                </Button>
               )}
             </Group>
 
@@ -915,6 +944,18 @@ export default function ConsultaInformacionPage() {
                     <Button size="xs" variant="light" color={isPdf ? "red" : "violet"} onClick={() => handleSelectFile(item)}>
                       {isPdf ? "Ver" : "Consultar"}
                     </Button>
+                    <Tooltip label="Descargar">
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color={isPdf ? "red" : "violet"}
+                        component="a"
+                        href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${item._id}`}
+                        download={item.file_name}
+                      >
+                        <IconDownload size={15} />
+                      </ActionIcon>
+                    </Tooltip>
                     {isAdmin && (
                       <Tooltip label="Eliminar">
                         <ActionIcon variant="subtle" color="red" onClick={() => handleDeleteFile(item)}>

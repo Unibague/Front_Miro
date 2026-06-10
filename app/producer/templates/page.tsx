@@ -511,6 +511,26 @@ const ProducerTemplatesPage = () => {
         originalCommentsBySheet,
       });
 
+      // Encabezados de campos añadidos (solo value + fill + font, sin border para no corromper el workbook cargado)
+      for (const sheet of workbookSheets) {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !Array.isArray(sheet.fields)) continue;
+        const hasBase = sheet.fields.some((f: any) => f.locked !== false);
+        if (!hasBase) continue;
+        sheet.fields.forEach((field: any, index: number) => {
+          if (field.locked !== false) return;
+          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+          const cell = ws.getCell(hRow, col);
+          cell.value = field.name;
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          const colObj = ws.getColumn(col);
+          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+        });
+      }
+
       // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables
       for (const sheet of workbookSheets) {
         if (!canUserEditSheet(sheet)) continue;
@@ -572,17 +592,37 @@ const ProducerTemplatesPage = () => {
             startRow: 2,
             endRow: 1000,
           });
+          // Encabezados de campos añadidos por el usuario (color azul claro)
+          const hasBase = sheet.fields.some((f) => f.locked !== false);
+          if (hasBase) {
+            sheet.fields.forEach((field, index) => {
+              if (field.locked !== false) return;
+              const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+              const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+              const cell = worksheet.getCell(hRow, col);
+              cell.value = field.name;
+              cell.font = { bold: true, color: { argb: "FFFFFF" } };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "166534" } };
+              cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+              cell.alignment = { vertical: "middle", horizontal: "center" };
+              const currentWidth = worksheet.getColumn(col).width;
+              if (!currentWidth || currentWidth < 20) worksheet.getColumn(col).width = 20;
+            });
+          }
           continue;
         }
 
         const worksheet = workbook.addWorksheet(worksheetName);
+        const hasBaseFields = sheet.fields.some((f) => f.locked !== false);
         const headerRow = worksheet.addRow(sheet.fields.map((field) => field.name));
         headerRow.eachCell((cell, colNumber) => {
+          const field = sheet.fields[colNumber - 1];
+          const isAdded = hasBaseFields && field?.locked === false;
           cell.font = { bold: true, color: { argb: "FFFFFF" } };
           cell.fill = {
             type: "pattern",
             pattern: "solid",
-            fgColor: { argb: "0f1f39" },
+            fgColor: { argb: isAdded ? "166534" : "0f1f39" },
           };
           cell.border = {
             top: { style: "thin" },
@@ -591,8 +631,6 @@ const ProducerTemplatesPage = () => {
             right: { style: "thin" },
           };
           cell.alignment = { vertical: "middle", horizontal: "center" };
-
-          const field = sheet.fields[colNumber - 1];
           applyFieldCommentNote(cell, field.comment);
         });
 

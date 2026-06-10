@@ -108,6 +108,7 @@ const UpdateTemplatePage = () => {
   const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
   const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
   const [notifyProducers, setNotifyProducers] = useState(false);
+  const [isSnies, setIsSnies] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -258,6 +259,7 @@ const UpdateTemplatePage = () => {
             setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
             setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
             setNotifyProducers(response.data.notify_producers ?? false);
+            setIsSnies(response.data.is_snies ?? false);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -498,6 +500,7 @@ const UpdateTemplatePage = () => {
       shared,
       allows_qr: allowsQr,
       notify_producers: notifyProducers,
+      is_snies: isSnies,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
       fecha_final_responsables: fechaFinalResponsables,
@@ -852,9 +855,24 @@ router.back();
         validators,
         originalCommentsBySheet,
       });
+      // Encabezados de campos añadidos (solo value + fill + font, sin border para no corromper el workbook cargado)
       workbookSheets.forEach((sheet) => {
         const ws = workbook.getWorksheet(sheet.name);
-        if (ws) applyNewFieldHeaders(ws, sheet.fields);
+        if (!ws) return;
+        const hasBase = sheet.fields.some((f) => f.locked !== false);
+        if (!hasBase) return;
+        sheet.fields.forEach((field, index) => {
+          if (field.locked !== false) return;
+          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+          const cell = ws.getCell(hRow, col);
+          cell.value = field.name;
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          const colObj = ws.getColumn(col);
+          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+        });
       });
       let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
       buffer = await patchNoteBackgroundColor(buffer);
@@ -920,11 +938,18 @@ router.back();
 
   return (
     <Container size="xl">
-      <Box mb="md">
+      <Group justify="space-between" align="center" mb="md">
         <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back())}>
           <IconArrowLeft size={20} />
         </ActionIcon>
-      </Box>
+        <Switch
+          label="SNIES"
+          checked={isSnies}
+          onChange={(e) => { setIsSnies(e.currentTarget.checked); setHasChanges(true); }}
+          color="blue"
+          size="md"
+        />
+      </Group>
       <TextInput
         label="Nombre"
         placeholder="Nombre de la plantilla"
@@ -1086,7 +1111,7 @@ router.back();
             <Stack gap={2}>
               <Text size="sm" fw={500}>Notificar a productores</Text>
               <Text size="xs" c="dimmed">
-                Cuando esté activo, el productor encargado recibirá un correo cuando otro productor suba información.
+                Cuando esté activo, todos los productores asignados recibirán un correo cuando otro productor suba información.
               </Text>
             </Stack>
           }

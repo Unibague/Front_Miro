@@ -1244,13 +1244,16 @@ const AdminTemplatesPage = () => {
   ) => {
     const worksheet = workbook.addWorksheet(worksheetName);
 
+    const hasBaseFields = fields.some((f) => f.locked !== false);
     const headerRow = worksheet.addRow(fields.map(field => field.name));
     headerRow.eachCell((cell, colNumber) => {
+      const field = fields[colNumber - 1];
+      const isAdded = hasBaseFields && field?.locked === false;
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: '0f1f39' },
+        fgColor: { argb: isAdded ? '166534' : '0f1f39' },
       };
       cell.border = {
         top: { style: 'thin' },
@@ -1259,8 +1262,6 @@ const AdminTemplatesPage = () => {
         right: { style: 'thin' },
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-      const field = fields[colNumber - 1];
       applyFieldCommentNote(cell, field.comment);
     });
 
