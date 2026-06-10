@@ -81,6 +81,7 @@ interface Field {
   dropdown_options?: string[];
   header_row?: number;
   column?: number;
+  locked?: boolean;
 }
 
 interface Dimension {
@@ -515,9 +516,9 @@ const ProducerTemplatesPage = () => {
       for (const sheet of workbookSheets) {
         const ws = workbook.getWorksheet(sheet.name);
         if (!ws || !Array.isArray(sheet.fields)) continue;
-        const hasBase = sheet.fields.some((f: any) => f.locked !== false);
+        const hasBase = sheet.fields.some((f) => f.locked !== false);
         if (!hasBase) continue;
-        sheet.fields.forEach((field: any, index: number) => {
+        sheet.fields.forEach((field, index) => {
           if (field.locked !== false) return;
           const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
           const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
