@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput } from "@mantine/core";
+import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput, SegmentedControl } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { IconFilter, IconX, IconBuilding, IconSchool, IconWorld, IconUser, IconSearch, IconTrash, IconChevronDown, IconCalendar } from "@tabler/icons-react";
 import axios from "axios";
@@ -58,6 +58,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
   const [filterOptions, setFilterOptions] = useState<Record<string, FilterOption[]>>({});
   const [availableFields, setAvailableFields] = useState<string[]>([]);
   const [availableDependencies, setAvailableDependencies] = useState<FilterOption[]>([]);
+  const [yearModes, setYearModes] = useState<Record<string, 'single' | 'range'>>({});
 
   // Generar filtros dinámicos basados en los datos de la plantilla
   const generateDynamicFilters = (data: any[]) => {
@@ -930,6 +931,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                 const Icon = filter.icon;
                 const fromKey = `${filter.name}__from`;
                 const toKey = `${filter.name}__to`;
+                const yearMode = filter.inputType === 'yearRange' ? (yearModes[filter.name] || 'range') : undefined;
                 const hasValues = filter.inputType === 'yearRange'
                   ? ((filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0)) > 0
                   : (filterValues[filter.name]?.length ?? 0) > 0;
@@ -985,7 +987,9 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                           style={{ marginLeft: 'auto' }}
                         >
                           {filter.inputType === 'yearRange'
-                            ? (filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0)
+                            ? (yearMode === 'single'
+                                ? (filterValues[fromKey]?.length ?? 0)
+                                : (filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0))
                             : filterValues[filter.name]?.length || 0}
                         </Badge>
                       )}
@@ -1111,36 +1115,79 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                       const sortedYears = [...options].sort((a, b) => a.value.localeCompare(b.value));
                       const fromVal = filterValues[fromKey]?.[0] || null;
                       const toVal = filterValues[toKey]?.[0] || null;
+                      const mode = yearModes[filter.name] || 'range';
                       const sharedStyles = {
                         input: { border: `1px solid var(--mantine-color-${filter.color}-3)`, fontSize: '12px' },
                         dropdown: { zIndex: 10000 }
                       };
+
+                      const handleModeChange = (newMode: string) => {
+                        setYearModes(prev => ({ ...prev, [filter.name]: newMode as 'single' | 'range' }));
+                        const cleared = { ...filterValues, [fromKey]: [], [toKey]: [] };
+                        setFilterValues(cleared);
+                        onFiltersChange(cleared);
+                      };
+
                       return (
-                        <Stack gap={4}>
-                          <Select
-                            label={<Text size="11px" c="dimmed">Desde</Text>}
-                            placeholder="Año inicio..."
-                            data={sortedYears}
-                            value={fromVal}
-                            onChange={(v) => handleFilterChange(fromKey, v ? [v] : [])}
-                            clearable
-                            searchable
+                        <Stack gap={6}>
+                          <SegmentedControl
+                            value={mode}
+                            onChange={handleModeChange}
+                            data={[
+                              { label: 'Año único', value: 'single' },
+                              { label: 'Rango', value: 'range' },
+                            ]}
                             size="xs"
-                            radius="md"
-                            styles={sharedStyles}
+                            fullWidth
                           />
-                          <Select
-                            label={<Text size="11px" c="dimmed">Hasta</Text>}
-                            placeholder="Año fin..."
-                            data={sortedYears}
-                            value={toVal}
-                            onChange={(v) => handleFilterChange(toKey, v ? [v] : [])}
-                            clearable
-                            searchable
-                            size="xs"
-                            radius="md"
-                            styles={sharedStyles}
-                          />
+                          {mode === 'single' ? (
+                            <Select
+                              label={<Text size="11px" c="dimmed">Año específico</Text>}
+                              placeholder="Seleccionar año..."
+                              data={sortedYears}
+                              value={fromVal}
+                              onChange={(v) => {
+                                const updated = { ...filterValues, [fromKey]: v ? [v] : [], [toKey]: v ? [v] : [] };
+                                setFilterValues(updated);
+                                onFiltersChange(updated);
+                              }}
+                              clearable
+                              searchable
+                              size="xs"
+                              radius="md"
+                              styles={sharedStyles}
+                              comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                            />
+                          ) : (
+                            <>
+                              <Select
+                                label={<Text size="11px" c="dimmed">Desde</Text>}
+                                placeholder="Año inicio..."
+                                data={sortedYears}
+                                value={fromVal}
+                                onChange={(v) => handleFilterChange(fromKey, v ? [v] : [])}
+                                clearable
+                                searchable
+                                size="xs"
+                                radius="md"
+                                styles={sharedStyles}
+                                comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                              />
+                              <Select
+                                label={<Text size="11px" c="dimmed">Hasta</Text>}
+                                placeholder="Año fin..."
+                                data={sortedYears}
+                                value={toVal}
+                                onChange={(v) => handleFilterChange(toKey, v ? [v] : [])}
+                                clearable
+                                searchable
+                                size="xs"
+                                radius="md"
+                                styles={sharedStyles}
+                                comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                              />
+                            </>
+                          )}
                         </Stack>
                       );
                     })()}

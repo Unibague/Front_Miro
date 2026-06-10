@@ -18,6 +18,7 @@ import {
   Pagination,
   ScrollArea,
   Select,
+  SegmentedControl,
   Stack,
   Table,
   Tabs,
@@ -138,6 +139,9 @@ export default function ConsultaInformacionPage() {
   const [sniesSheet, setSniesSheet] = useState(0);
   const [sniesPage, setSniesPage] = useState(1);
   const [sniesYear, setSniesYear] = useState<string | null>(null);
+  const [sniesYearMode, setSniesYearMode] = useState<'single' | 'range'>('single');
+  const [sniesYearFrom, setSniesYearFrom] = useState<string | null>(null);
+  const [sniesYearTo, setSniesYearTo] = useState<string | null>(null);
   const [sniesSearch, setSniesSearch] = useState("");
   const [debouncedSniesSearch] = useDebouncedValue(sniesSearch, 350);
 
@@ -150,6 +154,9 @@ export default function ConsultaInformacionPage() {
   const [fileSheet, setFileSheet] = useState(0);
   const [filePage, setFilePage] = useState(1);
   const [fileYear, setFileYear] = useState<string | null>(null);
+  const [fileYearMode, setFileYearMode] = useState<'single' | 'range'>('single');
+  const [fileYearFrom, setFileYearFrom] = useState<string | null>(null);
+  const [fileYearTo, setFileYearTo] = useState<string | null>(null);
   const [fileSearch, setFileSearch] = useState("");
   const [debouncedFileSearch] = useDebouncedValue(fileSearch, 350);
 
@@ -183,7 +190,7 @@ export default function ConsultaInformacionPage() {
 
   // ── SNIES fetch ──────────────────────────────────────────────
   const fetchSnies = useCallback(
-    async (sheetIndex = 0, pageNum = 1, year: string | null = null, search = "") => {
+    async (sheetIndex = 0, pageNum = 1, year: string | null = null, search = "", yearFrom: string | null = null, yearTo: string | null = null) => {
       if (!session?.user?.email) return;
       setSniesLoading(true);
       try {
@@ -195,6 +202,8 @@ export default function ConsultaInformacionPage() {
             page: pageNum,
             limit: PAGE_SIZE,
             ...(year ? { year } : {}),
+            ...(yearFrom ? { yearFrom } : {}),
+            ...(yearTo ? { yearTo } : {}),
             ...(search.trim() ? { search: search.trim() } : {}),
           },
         });
@@ -229,7 +238,7 @@ export default function ConsultaInformacionPage() {
 
   // ── Datos de un archivo específico ───────────────────────────
   const fetchFileData = useCallback(
-    async (fileId: string, sheetIndex = 0, pageNum = 1, year: string | null = null, search = "") => {
+    async (fileId: string, sheetIndex = 0, pageNum = 1, year: string | null = null, search = "", yearFrom: string | null = null, yearTo: string | null = null) => {
       if (!session?.user?.email) return;
       setFileDataLoading(true);
       try {
@@ -241,6 +250,8 @@ export default function ConsultaInformacionPage() {
             page: pageNum,
             limit: PAGE_SIZE,
             ...(year ? { year } : {}),
+            ...(yearFrom ? { yearFrom } : {}),
+            ...(yearTo ? { yearTo } : {}),
             ...(search.trim() ? { search: search.trim() } : {}),
           },
         });
@@ -281,16 +292,22 @@ export default function ConsultaInformacionPage() {
   // SNIES: refetch al cambiar filtros
   useEffect(() => {
     if (activeCategory === "snies") {
-      fetchSnies(sniesSheet, sniesPage, sniesYear, debouncedSniesSearch);
+      const yearParam = sniesYearMode === 'single' ? sniesYear : null;
+      const fromParam = sniesYearMode === 'range' ? sniesYearFrom : null;
+      const toParam = sniesYearMode === 'range' ? sniesYearTo : null;
+      fetchSnies(sniesSheet, sniesPage, yearParam, debouncedSniesSearch, fromParam, toParam);
     }
-  }, [sniesSheet, sniesPage, sniesYear, debouncedSniesSearch]);
+  }, [sniesSheet, sniesPage, sniesYear, sniesYearMode, sniesYearFrom, sniesYearTo, debouncedSniesSearch]);
 
   // Archivo seleccionado: refetch al cambiar filtros (solo Excel)
   useEffect(() => {
     if (selectedFile && selectedFile.file_type !== "pdf") {
-      fetchFileData(selectedFile._id, fileSheet, filePage, fileYear, debouncedFileSearch);
+      const yearParam = fileYearMode === 'single' ? fileYear : null;
+      const fromParam = fileYearMode === 'range' ? fileYearFrom : null;
+      const toParam = fileYearMode === 'range' ? fileYearTo : null;
+      fetchFileData(selectedFile._id, fileSheet, filePage, yearParam, debouncedFileSearch, fromParam, toParam);
     }
-  }, [fileSheet, filePage, fileYear, debouncedFileSearch, selectedFile]);
+  }, [fileSheet, filePage, fileYear, fileYearMode, fileYearFrom, fileYearTo, debouncedFileSearch, selectedFile]);
 
   // Cargar todos los datos para filtros cuando cambia la hoja (archivo seleccionado)
   useEffect(() => {
@@ -538,10 +555,15 @@ export default function ConsultaInformacionPage() {
     onSheetChange: (v: string | null) => void,
     onPageChange: (v: number) => void,
     onYearChange: (v: string | null) => void,
-    onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+    onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
+    yearMode: 'single' | 'range' = 'single',
+    yearFrom: string | null = null,
+    yearTo: string | null = null,
+    onYearModeChange: (m: 'single' | 'range') => void = () => {},
+    onYearFromChange: (v: string | null) => void = () => {},
+    onYearToChange: (v: string | null) => void = () => {}
   ) => {
-    const yearOptions = (data.availableYears ?? []).map((y) => ({ value: y, label: y }));
-    const hasFilters = !!year || !!search.trim();
+    const hasFilters = !!search.trim();
 
     const hasActiveFilters = Object.values(activeFilters).some(v => v.length > 0);
     const canFilter = allRows.length > 0;
@@ -558,17 +580,6 @@ export default function ConsultaInformacionPage() {
           />
         )}
         <Group mb="md" align="flex-end">
-          {yearOptions.length > 0 && (
-            <Select
-              label="Filtrar por año"
-              placeholder="Todos los años"
-              data={yearOptions}
-              value={year}
-              onChange={onYearChange}
-              clearable
-              style={{ width: 180 }}
-            />
-          )}
           <Box style={{ flex: 1, maxWidth: 340 }}>
             <TextInput
               label="Buscar"
@@ -713,7 +724,11 @@ export default function ConsultaInformacionPage() {
           (v) => { setSniesSheet(parseInt(v ?? "0", 10)); setSniesPage(1); },
           setSniesPage,
           (v) => { setSniesYear(v); setSniesPage(1); },
-          (e) => { setSniesSearch(e.currentTarget.value); setSniesPage(1); }
+          (e) => { setSniesSearch(e.currentTarget.value); setSniesPage(1); },
+          sniesYearMode, sniesYearFrom, sniesYearTo,
+          (m) => { setSniesYearMode(m); setSniesPage(1); },
+          (v) => { setSniesYearFrom(v); setSniesPage(1); },
+          (v) => { setSniesYearTo(v); setSniesPage(1); }
         )}
       </>
     );

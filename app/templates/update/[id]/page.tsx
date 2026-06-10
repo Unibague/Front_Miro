@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, Stack, ActionIcon } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, ActionIcon } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "dayjs/locale/es";
 import axios from "axios";
@@ -1035,6 +1035,13 @@ router.back();
         mb="sm"
       />
       <Switch
+        label="Notificar a productores"
+        description="Cuando esté activo, todos los productores asignados recibirán un correo cuando otro productor suba información."
+        checked={notifyProducers}
+        onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
+        mb="sm"
+      />
+      <Switch
         label="Permite generación de código QR"
         description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla."
         checked={allowsQr}
@@ -1103,21 +1110,6 @@ router.back();
         searchable
         clearable
       />
-      <Box mb="md">
-        <Switch
-          checked={notifyProducers}
-          onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
-          label={
-            <Stack gap={2}>
-              <Text size="sm" fw={500}>Notificar a productores</Text>
-              <Text size="xs" c="dimmed">
-                Cuando esté activo, todos los productores asignados recibirán un correo cuando otro productor suba información.
-              </Text>
-            </Stack>
-          }
-        />
-      </Box>
-
       {hasWorkbookSheets && (
         <>
           <Text size="sm" c="dimmed" mt="md">

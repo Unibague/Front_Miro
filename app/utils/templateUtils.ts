@@ -442,6 +442,7 @@ export const applyValidatorDropdowns = ({
 
   fields.forEach((field, fieldIndex) => {
     let options: { value: string; displayLabel: string }[] = [];
+    let optionsFromValidator = false;
 
     if (field.validate_with) {
       const { validatorName, columnName } = splitValidateWithReference(field.validate_with);
@@ -450,11 +451,13 @@ export const applyValidatorDropdowns = ({
       } else {
         const validator = findValidatorByName(validators, validatorName);
         options = validator ? getValidatorOptions(validator, columnName) : [];
+        optionsFromValidator = options.length > 0;
       }
     } else {
       const validator = findValidatorByName(validators, field.name);
       if (validator) {
         options = getValidatorOptions(validator);
+        optionsFromValidator = options.length > 0;
       }
     }
 
@@ -465,8 +468,6 @@ export const applyValidatorDropdowns = ({
         return;
       }
       options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
-    } else if (field.comment) {
-      // Keep comment notes even when options came from a validator matched by field name.
     }
 
     if (options.length === 0 && !field.validate_with && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
@@ -486,7 +487,7 @@ export const applyValidatorDropdowns = ({
       return;
     }
 
-    if (!field.validate_with) {
+    if (!field.validate_with && !optionsFromValidator) {
       if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
         options = appendOptionTexts(options, field.dropdown_options);
       }
@@ -505,9 +506,9 @@ export const applyValidatorDropdowns = ({
 
     if (options.length === 0) return;
 
-    // Always store the value (code/id only) so the cell never gets the combined "CC Cédula de..."
+    // Guardar código + descripción (displayLabel) para que el dropdown muestre "CC - Cédula de ciudadanía"
     options.forEach((option, optionIndex) => {
-      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.value;
+      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.displayLabel;
     });
 
     const colLetter = toColumnLetter(sourceCol);

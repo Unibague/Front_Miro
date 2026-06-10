@@ -1492,6 +1492,17 @@ const AdminTemplatesPage = () => {
   };
 
   const handleDownload = async (template: Template) => {
+    // Re-fetch validators frescos para incluir cualquier opción añadida desde que se cargó la página
+    try {
+      const freshRes = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
+        { params: { withValidators: 'true', periodId: selectedPeriodId } }
+      );
+      if (freshRes.data?.validators) {
+        template = { ...template, validators: freshRes.data.validators };
+      }
+    } catch { /* si falla, se usan los validators cacheados */ }
+
     const worksheets = getTemplateWorksheets(template);
 
     if (template.original_workbook_base64) {

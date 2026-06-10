@@ -100,6 +100,7 @@ interface QrRowSource {
   dependencyName: string;
   senderName?: string;
   senderEmail?: string | null;
+  fromQr?: boolean;
 }
 
 interface PublishedTemplateResponse {
@@ -204,6 +205,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     dependencyName: draft.dependency_name || draft.dependency,
     senderName: draft.sender_name,
     senderEmail: draft.sender_email,
+    fromQr: true,
   });
 
   const getLoadedRowSource = (entry: ProducerLoadedEntry): QrRowSource => {
@@ -439,7 +441,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       }
 
       // Pre-cargar datos del borrador QR si existen para la dependencia del usuario
-      const qrDrafts = response.data.qr_draft_data || [];
+      // Solo si la plantilla tiene QR habilitado (allows_qr)
+      const allowsQr = !!(normalizedTemplate as any).allows_qr;
+      const qrDrafts = allowsQr ? (response.data.qr_draft_data || []) : [];
       if (qrDrafts.length && session?.user?.email) {
         try {
           const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
@@ -619,7 +623,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             vRes.data?.validator,
             getPreferredValidatorColumnName(validateWith)
           );
-          const options = buildSelectOptionsFromStrings([...optionStrings, ...fieldDropdownOptions]);
+          // Si el validador aportó opciones, no mezclar con las del comentario para evitar duplicados
+          const options = buildSelectOptionsFromStrings(
+            optionStrings.length > 0 ? optionStrings : fieldDropdownOptions
+          );
 
           return { fieldName: field.name, options, isMultiple: field.multiple };
         } catch (error) {
@@ -1183,6 +1190,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     return (
       <Tooltip label={tooltipLabel} withArrow>
         <div>
+          {source.fromQr && <Badge size="xs" color="orange" variant="light" mb={2}>QR</Badge>}
           <Text size="xs" fw={700}>{source.dependencyName}</Text>
           <Text size="xs" c="dimmed">{source.dependencyCode}</Text>
         </div>
@@ -1235,31 +1243,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     <Table.Td key={field.name} style={{ minWidth: '250px', background: cellError ? 'var(--mantine-color-red-0)' : undefined }}>
                       <Group align="center">
                         {renderInputField(field, row, rowIndex, onInputChange, readOnly, sheetName)}
-                        {field.validate_with && !readOnly && (
-                          <ActionIcon
-                            size="sm"
-                            onClick={() => {
-                              let validatorId = '';
-                              if (typeof field.validate_with === 'string') {
-                                const parts = field.validate_with.split(' - ');
-                                if (parts.length >= 2) validatorId = parts[1].trim();
-                              } else if (field.validate_with?.id) {
-                                validatorId = field.validate_with.id;
-                              }
-                              if (validatorId) {
-                                setActiveRowIndex(rowIndex);
-                                setActiveFieldName(field.name);
-                                setActiveSheetForValidator(sheetName || null);
-                                handleValidatorOpen(validatorId, rowIndex, field.name);
-                              }
-                            }}
-                            title="Ver valores aceptados"
-                            variant={activeRowIndex === rowIndex && activeFieldName === field.name ? "filled" : "light"}
-                            color={activeRowIndex === rowIndex && activeFieldName === field.name ? "green" : "blue"}
-                          >
-                            <IconEye />
-                          </ActionIcon>
-                        )}
                       </Group>
                     </Table.Td>
                   );
@@ -1295,11 +1278,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     <Container size="xl">
       <Title ta="center" mb="md">{`Completar Plantilla: ${publishedTemplateName}`}</Title>
 
-      {hasQrDraft && (
-        <Alert icon={<IconInfoCircle size={16} />} color="yellow" mb="md" title="Datos enviados por QR">
-          Se han cargado datos enviados mediante el formulario QR. Revisa y haz clic en <strong>Enviar</strong> para confirmar.
-        </Alert>
-      )}
 
 
       {useSheets ? (

@@ -268,7 +268,25 @@ const PublishedTemplatesPage = () => {
       ]);
 
       const data = dataResponse.data.data;
-      const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+      let template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+
+      const periodId =
+        (publishedTemplate as any).period?._id ??
+        (publishedTemplate as any).period ??
+        null;
+
+      try {
+        const freshRes = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
+          { params: { withValidators: 'true', ...(periodId ? { periodId } : {}) } }
+        );
+        if (freshRes.data?.validators) {
+          template = { ...template, validators: freshRes.data.validators };
+        }
+      } catch {
+        // si falla, se usan los validators cacheados
+      }
+
       const validators =
         template?.validators ??
         publishedTemplate.validators;
