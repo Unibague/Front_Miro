@@ -257,6 +257,7 @@ const UpdateTemplatePage = () => {
             setFechaFinalResponsables(response.data.fecha_final_responsables ? new Date(response.data.fecha_final_responsables) : null);
             setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
             setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
+            setNotifyProducers(response.data.notify_producers ?? false);
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -267,7 +268,8 @@ const UpdateTemplatePage = () => {
               fields: nextFields,
               workbook_sheets: normalizedSheets,
               dimensions: response.data.dimensions,
-              producers: response.data.producers
+              producers: response.data.producers,
+              notify_producers: response.data.notify_producers ?? false
             });
           }
         } catch (error) {
@@ -495,6 +497,7 @@ const UpdateTemplatePage = () => {
       active,
       shared,
       allows_qr: allowsQr,
+      notify_producers: notifyProducers,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
       fecha_final_responsables: fechaFinalResponsables,
@@ -740,18 +743,51 @@ router.back();
     worksheet: ExcelJS.Worksheet,
     sheetFields: Field[]
   ) => {
+    const hasBaseFields = sheetFields.some((f) => f.locked !== false);
     const headerRow = worksheet.addRow(sheetFields.map((f) => f.name));
     headerRow.eachCell((cell, colNumber) => {
+      const field = sheetFields[colNumber - 1];
+      const isAdded = hasBaseFields && field?.locked === false;
       cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "166534" : "0f1f39" } };
       cell.border = {
         top: { style: "thin" }, left: { style: "thin" },
         bottom: { style: "thin" }, right: { style: "thin" },
       };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-      applyFieldCommentNote(cell, sheetFields[colNumber - 1].comment);
+      applyFieldCommentNote(cell, field.comment);
     });
     worksheet.columns.forEach((col) => { col.width = 20; });
+  };
+
+  const applyNewFieldHeaders = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const hasBaseFields = sheetFields.some((f) => f.locked !== false);
+    if (!hasBaseFields) return;
+    sheetFields.forEach((field, index) => {
+      if (field.locked !== false) return;
+      const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0
+        ? Number(field.column)
+        : index + 1;
+      const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0
+        ? Number(field.header_row)
+        : 1;
+      const cell = worksheet.getCell(hRow, col);
+      cell.value = field.name;
+      cell.font = { bold: true, color: { argb: "FFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "166534" } };
+      cell.border = {
+        top: { style: "thin" }, left: { style: "thin" },
+        bottom: { style: "thin" }, right: { style: "thin" },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      const currentWidth = worksheet.getColumn(col).width;
+      if (!currentWidth || currentWidth < 20) {
+        worksheet.getColumn(col).width = 20;
+      }
+    });
   };
 
   const applySheetDataValidations = (
@@ -816,12 +852,16 @@ router.back();
         validators,
         originalCommentsBySheet,
       });
+      workbookSheets.forEach((sheet) => {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (ws) applyNewFieldHeaders(ws, sheet.fields);
+      });
       let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
       buffer = await patchNoteBackgroundColor(buffer);
       saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
 
       showNotification({
-        title: "Ã‰xito",
+        title: "Éxito",
         message: "Plantilla descargada exitosamente con las validaciones actualizadas",
         color: "green",
       });
@@ -844,6 +884,7 @@ router.back();
             worksheet.getCell(note.row, note.col).note = note.note;
           });
           applyValidatorDropdowns({ workbook, worksheet, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+          applyNewFieldHeaders(worksheet, sheet.fields);
           continue;
         }
         const worksheet = workbook.addWorksheet(sheetName);
@@ -1037,30 +1078,20 @@ router.back();
         searchable
         clearable
       />
-      <Tooltip
-        label="Funcionalidad en desarrollo — próximamente los productores recibirán un correo al subir su información"
-        withArrow
-        multiline
-        w={320}
-      >
-        <Box mb="md">
-          <Switch
-            checked={notifyProducers}
-            onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
-            label={
-              <Stack gap={2}>
-                <Group gap="xs" align="center">
-                  <Text size="sm" fw={500}>Notificar a productores</Text>
-                  <Badge size="xs" color="orange" variant="light">Próximamente</Badge>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Cuando esté activo, los productores asignados a cada hoja recibirán un correo de confirmación al subir su información.
-                </Text>
-              </Stack>
-            }
-          />
-        </Box>
-      </Tooltip>
+      <Box mb="md">
+        <Switch
+          checked={notifyProducers}
+          onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
+          label={
+            <Stack gap={2}>
+              <Text size="sm" fw={500}>Notificar a productores</Text>
+              <Text size="xs" c="dimmed">
+                Cuando esté activo, el productor encargado recibirá un correo cuando otro productor suba información.
+              </Text>
+            </Stack>
+          }
+        />
+      </Box>
 
       {hasWorkbookSheets && (
         <>
