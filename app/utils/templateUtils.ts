@@ -634,12 +634,13 @@ const wrapTextByLength = (text: string, maxLen = 52): string => {
 
 export const applyFieldCommentNote = (
   cell: ExcelJS.Cell,
-  rawComment?: string
+  rawComment?: string,
+  options: { preserveText?: boolean } = {}
 ): void => {
   if (!rawComment) return;
   const cleanComment = normalizeMultilineText(rawComment).replace(/^"+|"+$/g, "");
   if (!cleanComment) return;
-  cell.note = wrapTextByLength(cleanComment, 52);
+  cell.note = options.preserveText ? cleanComment : wrapTextByLength(cleanComment, 52);
 };
 
 export const patchNoteBackgroundColor = async (

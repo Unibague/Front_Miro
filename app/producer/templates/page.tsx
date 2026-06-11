@@ -508,7 +508,7 @@ const ProducerTemplatesPage = () => {
         const ws = workbook.getWorksheet(sheetName);
         if (!ws) continue;
         for (const [cellRef, noteText] of sheetComments.entries()) {
-          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText);
+          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
         }
       }
 
@@ -518,7 +518,7 @@ const ProducerTemplatesPage = () => {
         if (!ws || !sheet.cellNotes?.length) return;
         sheet.cellNotes.forEach((note) => {
           if (note?.row && note?.col && note?.note) {
-            applyFieldCommentNote(ws.getCell(note.row, note.col), note.note);
+            applyFieldCommentNote(ws.getCell(note.row, note.col), note.note, { preserveText: true });
           }
         });
       });
@@ -601,7 +601,7 @@ const ProducerTemplatesPage = () => {
           });
           (sheet.cellNotes || []).forEach((note) => {
             if (!note?.row || !note?.col || !note?.note) return;
-            worksheet.getCell(note.row, note.col).note = note.note;
+            applyFieldCommentNote(worksheet.getCell(note.row, note.col), note.note, { preserveText: true });
           });
           applyValidatorDropdowns({
             workbook,

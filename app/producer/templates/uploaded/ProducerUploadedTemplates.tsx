@@ -377,7 +377,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         const ws = workbook.getWorksheet(sheetName);
         if (!ws) continue;
         for (const [cellRef, noteText] of sheetComments.entries()) {
-          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText);
+          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
         }
       }
       const workbookSheets: any[] = freshTemplate.workbook_sheets || [];
@@ -409,7 +409,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           });
           (sheet.cellNotes || []).forEach((note: SheetCellNote) => {
             if (note?.row && note?.col && note?.note) {
-              applyFieldCommentNote(ws.getCell(note.row, note.col), note.note);
+              applyFieldCommentNote(ws.getCell(note.row, note.col), note.note, { preserveText: true });
             }
           });
           populateSheet(ws, sheet.fields || [], sheet.name);
