@@ -751,8 +751,8 @@ router.back();
     headerRow.eachCell((cell, colNumber) => {
       const field = sheetFields[colNumber - 1];
       const isAdded = hasBaseFields && field?.locked === false;
-      cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "166534" : "0f1f39" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "FF166534" : "FF0f1f39" } };
       cell.border = {
         top: { style: "thin" }, left: { style: "thin" },
         bottom: { style: "thin" }, right: { style: "thin" },
@@ -779,8 +779,8 @@ router.back();
         : 1;
       const cell = worksheet.getCell(hRow, col);
       cell.value = field.name;
-      cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "166534" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
       cell.border = {
         top: { style: "thin" }, left: { style: "thin" },
         bottom: { style: "thin" }, right: { style: "thin" },

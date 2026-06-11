@@ -118,6 +118,12 @@ const CATEGORY_ICONS: Record<Category, React.ReactNode> = {
   informes: <IconFileSpreadsheet size={16} />,
 };
 
+const ANEXO_ACTION_ICON_SIZE = 14;
+const ANEXO_ACTION_PROPS = {
+  size: "sm" as const,
+  variant: "subtle" as const,
+};
+
 const displayHeader = (h: string) => {
   const normalized = h.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (normalized === "ano") return "Año";
@@ -173,6 +179,10 @@ export default function ConsultaInformacionPage() {
   const [anexosLoading, setAnexosLoading] = useState(false);
   const [anexoFile, setAnexoFile] = useState<File | null>(null);
   const [uploadingAnexo, setUploadingAnexo] = useState(false);
+
+  // Edición inline de nombre de anexo
+  const [editingAnexoId, setEditingAnexoId] = useState<string | null>(null);
+  const [editingAnexoName, setEditingAnexoName] = useState("");
 
   // Vista Excel de anexo
   const [xlsxModal, setXlsxModal] = useState<{ name: string; sheets: { name: string; headers: string[]; rows: string[][] }[] } | null>(null);
@@ -453,6 +463,26 @@ export default function ConsultaInformacionPage() {
       showNotification({ title: "Anexo eliminado", message: "El anexo fue eliminado.", color: "teal" });
     } catch {
       showNotification({ title: "Error", message: "No se pudo eliminar el anexo.", color: "red" });
+    }
+  };
+
+  const handleRenameAnexo = async (a: Anexo) => {
+    if (!selectedFile) return;
+    if (!editingAnexoName.trim() || editingAnexoName.trim() === a.file_name) {
+      setEditingAnexoId(null);
+      return;
+    }
+    try {
+      await axios.patch(`${API_BASE}/${selectedFile._id}/anexos/${a._id}/rename`, { file_name: editingAnexoName.trim() });
+      setAnexos(prev => prev.map(x => x._id === a._id ? { ...x, file_name: editingAnexoName.trim() } : x));
+      setFileList(prev => prev.map(f =>
+        f._id === selectedFile._id
+          ? { ...f, anexosNames: f.anexosNames.map(n => n === a.file_name ? editingAnexoName.trim() : n) }
+          : f
+      ));
+      setEditingAnexoId(null);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo renombrar el anexo.", color: "red" });
     }
   };
 
@@ -768,38 +798,62 @@ export default function ConsultaInformacionPage() {
           ) : (
             anexos.map(a => (
               <Group key={a._id} justify="space-between" wrap="nowrap" style={{ background: "var(--mantine-color-gray-0)", borderRadius: 8, padding: "6px 10px" }}>
-                <Group gap={8} style={{ minWidth: 0 }}>
+                <Group gap={8} style={{ minWidth: 0, flex: 1 }}>
                   {a.file_name.toLowerCase().endsWith(".pdf")
                     ? <IconFileTypePdf size={18} color="#e03131" style={{ flexShrink: 0 }} />
                     : <IconFileSpreadsheet size={18} color="#7c3aed" style={{ flexShrink: 0 }} />}
-                  <div style={{ minWidth: 0 }}>
-                    <Text size="xs" fw={500} truncate>{a.file_name}</Text>
-                    <Text size="xs" c="dimmed">{new Date(a.createdAt).toLocaleDateString("es-CO")} · {a.uploaded_by?.full_name || a.uploaded_by?.email}</Text>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {editingAnexoId === a._id ? (
+                      <Group gap={4} wrap="nowrap">
+                        <TextInput
+                          value={editingAnexoName}
+                          onChange={(e) => setEditingAnexoName(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameAnexo(a);
+                            if (e.key === "Escape") setEditingAnexoId(null);
+                          }}
+                          size="xs"
+                          style={{ flex: 1 }}
+                          autoFocus
+                        />
+                        <ActionIcon size="sm" color="teal" variant="subtle" onClick={() => handleRenameAnexo(a)}><IconCheck size={14} /></ActionIcon>
+                        <ActionIcon size="sm" color="gray" variant="subtle" onClick={() => setEditingAnexoId(null)}><IconX size={14} /></ActionIcon>
+                      </Group>
+                    ) : (
+                      <Group gap={4} wrap="nowrap">
+                        <Text size="xs" fw={500} truncate style={{ flex: 1 }}>{a.file_name}</Text>
+                        {isAdmin && (
+                          <ActionIcon {...ANEXO_ACTION_PROPS} color="gray" onClick={() => { setEditingAnexoId(a._id); setEditingAnexoName(a.file_name); }}>
+                            <IconPencil size={ANEXO_ACTION_ICON_SIZE} />
+                          </ActionIcon>
+                        )}
+                      </Group>
+                    )}
                   </div>
                 </Group>
                 <Group gap={4} style={{ flexShrink: 0 }}>
                   {a.file_name.toLowerCase().endsWith(".pdf") ? (
                     <Tooltip label="Ver">
-                      <ActionIcon size="sm" variant="subtle" color="blue" component="a" href={`${API_BASE}/${selectedFile!._id}/anexos/${a._id}`} target="_blank">
-                        <IconEye size={14} />
+                      <ActionIcon {...ANEXO_ACTION_PROPS} color="gray" component="a" href={`${API_BASE}/${selectedFile!._id}/anexos/${a._id}`} target="_blank">
+                        <IconEye size={ANEXO_ACTION_ICON_SIZE} />
                       </ActionIcon>
                     </Tooltip>
                   ) : (
                     <Tooltip label="Ver">
-                      <ActionIcon size="sm" variant="subtle" color="blue" loading={xlsxLoading} onClick={() => handleViewExcelAnexo(a)}>
-                        <IconEye size={14} />
+                      <ActionIcon {...ANEXO_ACTION_PROPS} color="gray" loading={xlsxLoading} onClick={() => handleViewExcelAnexo(a)}>
+                        <IconEye size={ANEXO_ACTION_ICON_SIZE} />
                       </ActionIcon>
                     </Tooltip>
                   )}
                   <Tooltip label="Descargar">
-                    <ActionIcon size="sm" variant="subtle" color="violet" component="a" href={`${API_BASE}/${selectedFile!._id}/anexos/${a._id}?download=1`} download={a.file_name}>
-                      <IconDownload size={14} />
+                    <ActionIcon {...ANEXO_ACTION_PROPS} color="gray" component="a" href={`${API_BASE}/${selectedFile!._id}/anexos/${a._id}?download=1`} download={a.file_name}>
+                      <IconDownload size={ANEXO_ACTION_ICON_SIZE} />
                     </ActionIcon>
                   </Tooltip>
                   {isAdmin && (
                     <Tooltip label="Eliminar">
-                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => handleDeleteAnexo(a._id)}>
-                        <IconTrash size={14} />
+                      <ActionIcon {...ANEXO_ACTION_PROPS} color="red" onClick={() => handleDeleteAnexo(a._id)}>
+                        <IconTrash size={ANEXO_ACTION_ICON_SIZE} />
                       </ActionIcon>
                     </Tooltip>
                   )}
