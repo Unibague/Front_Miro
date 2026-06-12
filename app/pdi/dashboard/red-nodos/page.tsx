@@ -39,6 +39,7 @@ import { useRouter } from "next/navigation";
 import PdiSidebar from "../../components/PdiSidebar";
 import { usePdiConfig } from "../../hooks/usePdiConfig";
 import { PDI_ROUTES } from "../../api";
+import { useRole } from "@/app/context/RoleContext";
 import type { PdiNetworkEdge, PdiNetworkNode, PdiNetworkResponse, PdiNodeIntensity } from "../../types";
 
 const VIEWBOX_WIDTH = 1200;
@@ -209,6 +210,8 @@ function edgePath(edge: PdiNetworkEdge, source: PositionedNode, target: Position
 export default function PdiNodeNetworkPage() {
   const router = useRouter();
   const { config } = usePdiConfig();
+  const { userRole } = useRole();
+  const canEdit = userRole === "Administrador";
   const svgRef = useRef<SVGSVGElement | null>(null);
   const didMoveRef = useRef(false);
 
@@ -438,11 +441,12 @@ export default function PdiNodeNetworkPage() {
   const handleNodePointerDown = (event: React.PointerEvent<SVGGElement>, nodeId: string) => {
     event.preventDefault();
     event.stopPropagation();
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(null);
+    if (!canEdit) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     didMoveRef.current = false;
     setDraggingId(nodeId);
-    setSelectedNodeId(nodeId);
-    setSelectedEdgeId(null);
   };
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -550,21 +554,26 @@ export default function PdiNodeNetworkPage() {
             <div>
               <Group gap={8} align="center" wrap="nowrap">
                 <Text fw={800} size="lg" lh={1.2}>Red de nodos PDI</Text>
-                <Badge variant="dot" size="sm"
-                  color={network?.source?.type === "override" ? "teal" : "orange"}>
-                  {network?.source?.type === "override" ? "versión editable" : "Excel base"}
-                </Badge>
-                {dirty && <Badge color="yellow" variant="filled" size="xs" radius="xl">Sin guardar</Badge>}
+                {canEdit ? (
+                  <Badge variant="dot" size="sm" color={network?.source?.type === "override" ? "teal" : "orange"}>
+                    {network?.source?.type === "override" ? "versión editable" : "Excel base"}
+                  </Badge>
+                ) : (
+                  <Badge variant="dot" size="sm" color="gray">Solo lectura</Badge>
+                )}
+                {canEdit && dirty && <Badge color="yellow" variant="filled" size="xs" radius="xl">Sin guardar</Badge>}
               </Group>
               <Text size="xs" c="dimmed">
                 {config.nombre}{network?.source?.saved_at ? ` · Guardado ${formatDate(network.source.saved_at)}` : ""}
               </Text>
             </div>
           </Group>
-          <Button color="violet" radius="xl" leftSection={<IconDeviceFloppy size={15} />}
-            onClick={saveNetwork} loading={saving} disabled={!dirty}>
-            Guardar cambios
-          </Button>
+          {canEdit && (
+            <Button color="violet" radius="xl" leftSection={<IconDeviceFloppy size={15} />}
+              onClick={saveNetwork} loading={saving} disabled={!dirty}>
+              Guardar cambios
+            </Button>
+          )}
         </div>
 
         <Container size="xl" py="lg" px="xl">
@@ -772,7 +781,7 @@ export default function PdiNodeNetworkPage() {
                             onPointerDown={(event) => handleNodePointerDown(event, node.id)}
                             onPointerEnter={() => { if (!draggingId) setHoveredNodeId(node.id); }}
                             onPointerLeave={() => setHoveredNodeId(null)}
-                            style={{ cursor: draggingId === node.id ? "grabbing" : "grab", opacity: dimNode ? 0.25 : 1, transition: "opacity 0.15s" }}
+                            style={{ cursor: !canEdit ? "pointer" : draggingId === node.id ? "grabbing" : "grab", opacity: dimNode ? 0.25 : 1, transition: "opacity 0.15s" }}
                           >
                             <defs>
                               <radialGradient id={gId} cx="38%" cy="30%" r="72%">
@@ -850,15 +859,17 @@ export default function PdiNodeNetworkPage() {
                 <Grid.Col span={{ base: 12, xl: 4 }}>
                   <Stack gap="md">
 
-                    {/* Panel editar */}
+                    {/* Panel selección */}
                     <Paper withBorder radius="lg" bg="white" style={{ overflow: "hidden" }}>
                       <div style={{
-                        padding: "12px 16px", background: "#faf5ff",
-                        borderBottom: "1px solid #ede9fe",
+                        padding: "12px 16px", background: canEdit ? "#faf5ff" : "#f8fafc",
+                        borderBottom: `1px solid ${canEdit ? "#ede9fe" : "#e2e8f0"}`,
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                       }}>
-                        <Text fw={700} size="sm" c="violet.8">Editar selección</Text>
-                        {dirty && <Badge color="yellow" variant="filled" size="xs" radius="xl">Sin guardar</Badge>}
+                        <Text fw={700} size="sm" c={canEdit ? "violet.8" : "dimmed"}>
+                          {canEdit ? "Editar selección" : "Detalle selección"}
+                        </Text>
+                        {canEdit && dirty && <Badge color="yellow" variant="filled" size="xs" radius="xl">Sin guardar</Badge>}
                       </div>
                       <Box p="md">
                         {!selectedNode && !selectedEdge ? (
@@ -867,63 +878,70 @@ export default function PdiNodeNetworkPage() {
                               <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#f5f3ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <IconNetwork size={20} color="#7c3aed" opacity={0.5} />
                               </div>
-                              <Text size="xs" c="dimmed" ta="center" maw={160}>Haz clic en un nodo o relación para editarlo</Text>
+                              <Text size="xs" c="dimmed" ta="center" maw={160}>
+                                Haz clic en un nodo o relación para {canEdit ? "editarlo" : "verlo"}
+                              </Text>
                             </Stack>
                           </Center>
                         ) : selectedNode ? (
                           <Stack gap="sm">
                             <Badge color="violet" variant="light" radius="xl" w="fit-content">Nodo</Badge>
                             <TextInput label="Código" value={selectedNode.codigo} disabled radius="md" size="sm" />
-                            <TextInput label="Nombre" value={selectedNode.nombre} radius="md" size="sm"
-                              onChange={(e) => updateNode(selectedNode.id, { nombre: e.currentTarget.value })} />
-                            <TextInput label="Macroproyecto" value={selectedNode.macro_codigo} radius="md" size="sm"
-                              onChange={(e) => updateNode(selectedNode.id, { macro_codigo: e.currentTarget.value })} />
-                            <NumberInput label="Puntaje total" value={selectedNode.puntaje_total} min={0} radius="md" size="sm"
-                              onChange={(v) => updateNode(selectedNode.id, { puntaje_total: Number(v) || 0 })} />
-                            <Grid gutter="xs">
-                              <Grid.Col span={6}>
-                                <NumberInput label="X" value={Math.round(selectedNode.x)} radius="md" size="sm"
-                                  onChange={(v) => updateNode(selectedNode.id, { x: Number(v) || selectedNode.x })} />
-                              </Grid.Col>
-                              <Grid.Col span={6}>
-                                <NumberInput label="Y" value={Math.round(selectedNode.y)} radius="md" size="sm"
-                                  onChange={(v) => updateNode(selectedNode.id, { y: Number(v) || selectedNode.y })} />
-                              </Grid.Col>
-                            </Grid>
+                            <TextInput label="Nombre" value={selectedNode.nombre} disabled={!canEdit} radius="md" size="sm"
+                              onChange={canEdit ? (e) => updateNode(selectedNode.id, { nombre: e.currentTarget.value }) : undefined} />
+                            <TextInput label="Macroproyecto" value={selectedNode.macro_codigo} disabled={!canEdit} radius="md" size="sm"
+                              onChange={canEdit ? (e) => updateNode(selectedNode.id, { macro_codigo: e.currentTarget.value }) : undefined} />
+                            <NumberInput label="Puntaje total" value={selectedNode.puntaje_total} min={0} disabled={!canEdit} radius="md" size="sm"
+                              onChange={canEdit ? (v) => updateNode(selectedNode.id, { puntaje_total: Number(v) || 0 }) : undefined} />
+                            {canEdit && (
+                              <Grid gutter="xs">
+                                <Grid.Col span={6}>
+                                  <NumberInput label="X" value={Math.round(selectedNode.x)} radius="md" size="sm"
+                                    onChange={(v) => updateNode(selectedNode.id, { x: Number(v) || selectedNode.x })} />
+                                </Grid.Col>
+                                <Grid.Col span={6}>
+                                  <NumberInput label="Y" value={Math.round(selectedNode.y)} radius="md" size="sm"
+                                    onChange={(v) => updateNode(selectedNode.id, { y: Number(v) || selectedNode.y })} />
+                                </Grid.Col>
+                              </Grid>
+                            )}
                           </Stack>
                         ) : selectedEdge ? (
                           <Stack gap="sm">
                             <Group justify="space-between">
                               <Badge color="blue" variant="light" radius="xl">Relación</Badge>
-                              <Tooltip label="Eliminar" withArrow>
-                                <ActionIcon color="red" variant="light" radius="xl" size="sm" onClick={removeSelectedEdge}>
-                                  <IconTrash size={14} />
-                                </ActionIcon>
-                              </Tooltip>
+                              {canEdit && (
+                                <Tooltip label="Eliminar" withArrow>
+                                  <ActionIcon color="red" variant="light" radius="xl" size="sm" onClick={removeSelectedEdge}>
+                                    <IconTrash size={14} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              )}
                             </Group>
                             <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 12px" }}>
                               <Text size="xs" fw={700} c="dark">{selectedEdge.origen} → {selectedEdge.destino}</Text>
                             </div>
                             <Select label="Tipo de relación" data={relationTypeOptions} value={selectedEdge.tipo_relacion}
-                              radius="md" size="sm"
-                              onChange={(v) => updateEdge(selectedEdge.id, { tipo_relacion: v || "Habilitadora" })} />
-                            <Select label="Intensidad" radius="md" size="sm"
+                              radius="md" size="sm" disabled={!canEdit}
+                              onChange={canEdit ? (v) => updateEdge(selectedEdge.id, { tipo_relacion: v || "Habilitadora" }) : undefined} />
+                            <Select label="Intensidad" radius="md" size="sm" disabled={!canEdit}
                               data={[{ value: "Baja", label: "Baja · 1" }, { value: "Media", label: "Media · 3" }, { value: "Alta", label: "Alta · 5" }]}
                               value={selectedEdge.intensidad}
-                              onChange={(v) => {
+                              onChange={canEdit ? (v) => {
                                 const intensity = (v || "Media") as PdiNodeIntensity;
                                 updateEdge(selectedEdge.id, { intensidad: intensity, puntaje: SCORE_BY_INTENSITY[intensity] });
-                              }} />
-                            <TextInput label="Justificación" value={selectedEdge.justificacion ?? ""} radius="md" size="sm"
-                              onChange={(e) => updateEdge(selectedEdge.id, { justificacion: e.currentTarget.value })} />
-                            <TextInput label="Recomendación" value={selectedEdge.recomendacion ?? ""} radius="md" size="sm"
-                              onChange={(e) => updateEdge(selectedEdge.id, { recomendacion: e.currentTarget.value })} />
+                              } : undefined} />
+                            <TextInput label="Justificación" value={selectedEdge.justificacion ?? ""} radius="md" size="sm" disabled={!canEdit}
+                              onChange={canEdit ? (e) => updateEdge(selectedEdge.id, { justificacion: e.currentTarget.value }) : undefined} />
+                            <TextInput label="Recomendación" value={selectedEdge.recomendacion ?? ""} radius="md" size="sm" disabled={!canEdit}
+                              onChange={canEdit ? (e) => updateEdge(selectedEdge.id, { recomendacion: e.currentTarget.value }) : undefined} />
                           </Stack>
                         ) : null}
                       </Box>
                     </Paper>
 
-                    {/* Nueva relación */}
+                    {/* Nueva relación — solo admins */}
+                    {canEdit && (
                     <Paper withBorder radius="lg" bg="white" style={{ overflow: "hidden" }}>
                       <div style={{ padding: "12px 16px", background: "#f0fdf4", borderBottom: "1px solid #dcfce7" }}>
                         <Text fw={700} size="sm" c="teal.8">Nueva relación</Text>
@@ -952,6 +970,7 @@ export default function PdiNodeNetworkPage() {
                         </Button>
                       </Stack>
                     </Paper>
+                    )}
 
                     {/* Lista relaciones */}
                     <Paper withBorder radius="lg" bg="white" style={{ overflow: "hidden" }}>

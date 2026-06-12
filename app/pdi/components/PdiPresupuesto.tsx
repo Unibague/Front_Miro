@@ -74,6 +74,8 @@ type MacroBudgetGroup = {
   name: string;
   rows: PresupuestoRow[];
   presupuesto: number;
+  presupuestoGasto: number;
+  presupuestoInversion: number;
   comprometido: number;
   comprometidoGasto: number;
   comprometidoInversion: number;
@@ -221,6 +223,8 @@ function groupByMacro(rows: PresupuestoRow[]) {
           name: macroName(key),
           rows: [],
           presupuesto: 0,
+          presupuestoGasto: 0,
+          presupuestoInversion: 0,
           comprometidoGasto: 0,
           comprometidoInversion: 0,
           comprometido: 0,
@@ -229,6 +233,8 @@ function groupByMacro(rows: PresupuestoRow[]) {
       }
       acc[key].rows.push(row);
       acc[key].presupuesto += row.presupuesto || 0;
+      acc[key].presupuestoGasto += row.presupuestoGasto || 0;
+      acc[key].presupuestoInversion += row.presupuestoInversion || 0;
       acc[key].comprometidoGasto += row.comprometidoGasto;
       acc[key].comprometidoInversion += row.comprometidoInversion;
       acc[key].comprometido += row.comprometido;
@@ -637,10 +643,11 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                 <tr style={{ background: "#f8f9fa" }}>
                   <th style={thStyle}>Macroproyecto</th>
                   <th style={thStyle}>Acción</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Presupuesto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido gasto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Comprometido inversión</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Total comprometido</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Ppto. gasto</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Ppto. inversión</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Comprom. gasto</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Comprom. inversión</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Total comprom.</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Total causado</th>
                   <th style={{ ...thStyle, textAlign: "center" }}>% causado</th>
                 </tr>
@@ -658,7 +665,8 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                         </Group>
                       </td>
                       <td style={tdStyle} />
-                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(group.presupuesto)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(group.presupuestoGasto)}</td>
+                      <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#5c7cfa", fontWeight: 800 }}>{fmtCOP(group.presupuestoInversion)}</td>
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>
                         <BudgetDetailHover value={fmtCOP(group.comprometidoGasto)} details={groupDetails} metric="comprometidoGasto" color="#0b7285" fw={800} />
                       </td>
@@ -714,7 +722,8 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                             );
                           })()}
                         </td>
-                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44" }}>{fmtCOP(row.presupuesto || 0)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44" }}>{fmtCOP(row.presupuestoGasto || 0)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#5c7cfa" }}>{fmtCOP(row.presupuestoInversion || 0)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285" }}>
                           <BudgetDetailHover value={fmtCOP(row.comprometidoGasto)} details={filteredDetails} metric="comprometidoGasto" color="#0b7285" />
                         </td>
@@ -747,7 +756,8 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                   <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={2}>
                     {selectedMacro === "todos" ? "Total" : "Total macro filtrada"}
                   </td>
-                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(visibleTotals.presupuesto)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2f9e44", fontWeight: 800 }}>{fmtCOP(visibleTotals.presupuestoGasto)}</td>
+                  <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#5c7cfa", fontWeight: 800 }}>{fmtCOP(visibleTotals.presupuestoInversion)}</td>
                   <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#0b7285", fontWeight: 800 }}>
                     <BudgetDetailHover value={fmtCOP(visibleTotals.comprometidoGasto)} details={visibleDetails} metric="comprometidoGasto" color="#0b7285" fw={800} />
                   </td>
@@ -778,20 +788,20 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
 }
 
 const thStyle: React.CSSProperties = {
-  padding: "10px 12px",
+  padding: "7px 8px",
   textAlign: "left",
   borderBottom: "2px solid #e9ecef",
   fontWeight: 700,
-  fontSize: 12,
+  fontSize: 11,
   color: "#495057",
   whiteSpace: "nowrap",
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
+  padding: "5px 8px",
   borderBottom: "1px solid #f1f3f5",
   verticalAlign: "middle",
-  fontSize: 12,
+  fontSize: 11,
 };
 
 const popupThStyle: React.CSSProperties = {

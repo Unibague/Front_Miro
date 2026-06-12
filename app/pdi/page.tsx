@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
-  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List,
+  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List, Grid,
 } from "@mantine/core";
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFlag, IconAlertTriangle, IconCurrencyDollar,
-  IconListCheck, IconExternalLink, IconSettings, IconSearch,
+  IconListCheck, IconExternalLink, IconSettings, IconSearch, IconClipboardCheck,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -535,6 +535,14 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
 }
 
 // ── Stats cards ───────────────────────────────────────────────────────────
+interface PendienteAprobacion {
+  indicadorId: string;
+  indicadorCodigo: string;
+  indicadorNombre: string;
+  corte: string;
+  tipo: "lider" | "planeacion";
+}
+
 interface CorteResumenPeriodo {
   periodo: string;
   sin_reporte: number;
@@ -661,13 +669,14 @@ const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
   return { gasto: presupuesto, inversion: 0 };
 };
 
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen, pendientesAprobacion }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
   alertasActivas: number;
   resumen: DashboardResumen | null;
+  pendientesAprobacion: PendienteAprobacion[];
 }) {
   const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
   const [presupuestoAnio, setPresupuestoAnio] = useState<{
@@ -679,6 +688,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     causadoInversion: number;
   } | null>(null);
   const [modalPendientes, setModalPendientes] = useState(false);
+  const [modalAprobaciones, setModalAprobaciones] = useState(false);
 
   useEffect(() => {
     const fetchCorte = (nombre: string) =>
@@ -799,6 +809,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
+  const totalPendientes = pendientesAprobacion.length;
   return (
     <Stack gap="lg" mb="xl">
       <Paper
@@ -869,52 +880,56 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
           </Stack>
 
-          <SimpleGrid cols={2} spacing="md">
-            <Paper withBorder radius="lg" p="lg">
-              <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light">
-                  <IconFlag size={20} />
-                </ThemeIcon>
-                <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" radius="xl">
-                  {criticos > 0 ? "Crítico" : amarillos > 0 ? "En riesgo" : "Estable"}
-                </Badge>
-              </Group>
-              <Text size="xs" c="dimmed">Estado del portafolio</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
-              <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
-            </Paper>
+          <Grid gutter="md">
+            <Grid.Col span={6}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light">
+                    <IconFlag size={20} />
+                  </ThemeIcon>
+                  <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" radius="xl">
+                    {criticos > 0 ? "Crítico" : amarillos > 0 ? "En riesgo" : "Estable"}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Estado del portafolio</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
+                <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
+              </Paper>
+            </Grid.Col>
 
-            <Paper withBorder radius="lg" p="lg" style={{ position: "relative" }}>
-              {(corteActual?.sin_reporte ?? 0) > 0 && (
-                <ActionIcon
-                  size="sm" variant="subtle" color="gray"
-                  style={{ position: "absolute", bottom: 10, right: 10 }}
-                  onClick={() => setModalPendientes(true)}
-                  title="Ver indicadores pendientes"
-                >
-                  <IconSearch size={14} />
-                </ActionIcon>
-              )}
-              <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
-                  <IconAlertTriangle size={20} />
-                </ThemeIcon>
-                <Badge color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
-                  {corteActual ? corteActual.periodo : "—"}
-                </Badge>
-              </Group>
-              <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>
-                {corteActual ? corteActual.sin_reporte : "—"}
-              </Text>
-              <Text size="xs" c="dimmed" mt={6}>
-                {corteActual
-                  ? corteActual.sin_reporte === 0
-                    ? "Todos han reportado"
-                    : `Sin reporte en ${corteActual.periodo}`
-                  : "Cargando período..."}
-              </Text>
-            </Paper>
+            <Grid.Col span={6}>
+              <Paper withBorder radius="lg" p="lg" h="100%" style={{ position: "relative" }}>
+                {(corteActual?.sin_reporte ?? 0) > 0 && (
+                  <ActionIcon
+                    size="sm" variant="subtle" color="gray"
+                    style={{ position: "absolute", bottom: 10, right: 10 }}
+                    onClick={() => setModalPendientes(true)}
+                    title="Ver indicadores pendientes"
+                  >
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                )}
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
+                    <IconAlertTriangle size={20} />
+                  </ThemeIcon>
+                  <Badge color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
+                    {corteActual ? corteActual.periodo : "—"}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                  {corteActual ? corteActual.sin_reporte : "—"}
+                </Text>
+                <Text size="xs" c="dimmed" mt={6}>
+                  {corteActual
+                    ? corteActual.sin_reporte === 0
+                      ? "Todos han reportado"
+                      : `Sin reporte en ${corteActual.periodo}`
+                    : "Cargando período..."}
+                </Text>
+              </Paper>
+            </Grid.Col>
 
             <Modal
               opened={modalPendientes}
@@ -964,74 +979,179 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               )}
             </Modal>
 
-            <Paper withBorder radius="lg" p="lg">
-              <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color="blue" variant="light">
-                  <IconListCheck size={20} />
-                </ThemeIcon>
-                <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
-              </Group>
-              <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
-              <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} Macroproyectos</Text>
-            </Paper>
+            <Grid.Col span={6}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color="blue" variant="light">
+                    <IconListCheck size={20} />
+                  </ThemeIcon>
+                  <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
+                <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} Macroproyectos</Text>
+              </Paper>
+            </Grid.Col>
 
-            <Paper withBorder radius="lg" p="lg">
-              <Group justify="space-between" align="flex-start" mb="xs">
-                <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
-                  <IconCurrencyDollar size={20} />
-                </ThemeIcon>
-                <Badge color={finColorAnio} variant="light" radius="xl">
-                  {new Date().getFullYear()}
-                </Badge>
-              </Group>
-              <Text size="xs" c="dimmed">Presupuesto del año vs ejecutado</Text>
-              <Text size="1.8rem" fw={800} lh={1} mt={4}>
-                {avanceFinancieroAnio}%
-              </Text>
-              <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
-                <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
-              </Box>
-              {presupuestoAnioTotal > 0 ? (
-                <Stack gap={4}>
-                  <Text size="xs" c="dimmed">
-                    {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
-                  </Text>
-                  <SimpleGrid cols={2} spacing={6}>
-                    <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
-                      <Group gap={4} mb={4}>
-                        <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
-                        <Text size="10px" fw={700} c="blue.6">Gasto</Text>
-                      </Group>
-                      <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoGasto)}</Text>
-                      <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioGasto)}</Text>
-                    </Box>
-                    <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
-                      <Group gap={4} mb={4}>
-                        <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
-                        <Text size="10px" fw={700} c="violet.6">Inversión</Text>
-                      </Group>
-                      <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoInversion)}</Text>
-                      <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioInversion)}</Text>
-                    </Box>
-                  </SimpleGrid>
-                  {presupuestoAnioSinDesagregar > 0 && (
-                    <Text size="10px" c="dimmed">
-                      Causado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
+            <Grid.Col span={6}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                    <IconCurrencyDollar size={20} />
+                  </ThemeIcon>
+                  <Badge color={finColorAnio} variant="light" radius="xl">
+                    {new Date().getFullYear()}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Ejecutado vs Presupuesto</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                  {avanceFinancieroAnio}%
+                </Text>
+                <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
+                  <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
+                </Box>
+                {presupuestoAnioTotal > 0 ? (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">
+                      {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
                     </Text>
-                  )}
-                  {presupuestoAnioPlaneadoSinDesagregar > 0 && (
-                    <Text size="10px" c="dimmed">
-                      Presupuesto sin desagregar: {formatCOP(presupuestoAnioPlaneadoSinDesagregar)}
-                    </Text>
-                  )}
-                </Stack>
-              ) : (
-                <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
-              )}
-            </Paper>
-          </SimpleGrid>
+                    <SimpleGrid cols={2} spacing={6}>
+                      <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
+                        <Group gap={4} mb={4}>
+                          <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                          <Text size="10px" fw={700} c="blue.6">Gasto</Text>
+                        </Group>
+                        <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoGasto)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioGasto)}</Text>
+                      </Box>
+                      <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
+                        <Group gap={4} mb={4}>
+                          <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
+                          <Text size="10px" fw={700} c="violet.6">Inversión</Text>
+                        </Group>
+                        <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoInversion)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioInversion)}</Text>
+                      </Box>
+                    </SimpleGrid>
+                    {presupuestoAnioSinDesagregar > 0 && (
+                      <Text size="10px" c="dimmed">
+                        Causado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
+                      </Text>
+                    )}
+                    {presupuestoAnioPlaneadoSinDesagregar > 0 && (
+                      <Text size="10px" c="dimmed">
+                        Presupuesto sin desagregar: {formatCOP(presupuestoAnioPlaneadoSinDesagregar)}
+                      </Text>
+                    )}
+                  </Stack>
+                ) : (
+                  <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
+                )}
+              </Paper>
+            </Grid.Col>
+
+          </Grid>
         </SimpleGrid>
+
+        {/* Bandeja de planeación — debajo del panorama, ancho completo */}
+        <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
+          <Group justify="space-between" align="center" mb="sm">
+            <Group gap="sm" align="center">
+              <ThemeIcon size={36} radius="xl" color={totalPendientes > 0 ? "violet" : "teal"} variant="light">
+                <IconClipboardCheck size={18} />
+              </ThemeIcon>
+              <Box>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Bandeja de planeación</Text>
+                <Text size="sm" fw={700} lh={1.2} mt={2}>Reportes pendientes de validación</Text>
+              </Box>
+            </Group>
+            <Group gap={8}>
+              {totalPendientes > 0 ? (
+                <>
+                  <Badge color="violet" variant="filled" radius="xl" size="md">
+                    {totalPendientes} pendiente{totalPendientes !== 1 ? "s" : ""}
+                  </Badge>
+                  <ActionIcon variant="light" color="violet" size="md" onClick={() => setModalAprobaciones(true)} title="Ver todos">
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                </>
+              ) : (
+                <Badge color="teal" variant="light" radius="xl" size="md">Sin pendientes</Badge>
+              )}
+            </Group>
+          </Group>
+
+          {totalPendientes === 0 ? (
+            <Text size="sm" c="dimmed">No hay reportes esperando validación de planeación.</Text>
+          ) : (
+            <>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
+                {pendientesAprobacion.slice(0, 8).map((item, i) => (
+                  <Box
+                    key={`plan-prev-${item.indicadorId}-${item.corte}-${i}`}
+                    style={{
+                      background: "rgba(124,58,237,0.05)",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      borderLeft: "3px solid #7950f2",
+                    }}
+                  >
+                    <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                    <Text size="xs" lh={1.4} lineClamp={1}>{item.indicadorNombre}</Text>
+                    <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte}</Text>
+                  </Box>
+                ))}
+              </SimpleGrid>
+              {totalPendientes > 8 && (
+                <Text
+                  size="xs" c="violet.6" fw={600} mt="xs" style={{ cursor: "pointer" }}
+                  onClick={() => setModalAprobaciones(true)}
+                >
+                  + {totalPendientes - 8} más — ver todos
+                </Text>
+              )}
+            </>
+          )}
+        </Box>
+
+        <Modal
+          opened={modalAprobaciones}
+          onClose={() => setModalAprobaciones(false)}
+          title={
+            <Group gap="xs">
+              <ThemeIcon size={28} radius="xl" color="violet" variant="light">
+                <IconClipboardCheck size={16} />
+              </ThemeIcon>
+              <div>
+                <Text fw={700} size="sm" lh={1.2}>Reportes pendientes de validación</Text>
+                <Text size="xs" c="dimmed">Aprobados por el líder · Requieren aval de planeación</Text>
+              </div>
+            </Group>
+          }
+          size="lg"
+          radius="lg"
+        >
+          <Text size="xs" c="dimmed" mb="sm">
+            {totalPendientes} reporte{totalPendientes !== 1 ? "s" : ""} aprobado{totalPendientes !== 1 ? "s" : ""} por el líder, pendiente{totalPendientes !== 1 ? "s" : ""} de validación de planeación.
+          </Text>
+          <ScrollArea h={440} offsetScrollbars>
+            <List spacing={8} size="sm" icon={
+              <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#7950f2", flexShrink: 0 }} />
+            }>
+              {pendientesAprobacion.map((item, i) => (
+                <List.Item key={`modal-plan-${item.indicadorId}-${item.corte}-${i}`}>
+                  <Box>
+                    <Group gap={6} align="center">
+                      <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                      <Badge color="violet" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
+                    </Group>
+                    <Text size="xs" lh={1.4} mt={2}>{item.indicadorNombre}</Text>
+                  </Box>
+                </List.Item>
+              ))}
+            </List>
+          </ScrollArea>
+        </Modal>
       </Paper>
     </Stack>
   );
@@ -1136,6 +1256,7 @@ export default function PdiPage() {
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
+  const [pendientesAprobacion, setPendientesAprobacion] = useState<PendienteAprobacion[]>([]);
   const [loadingMacros, setLoadingMacros] = useState(true);
   const [macroModal, setMacroModal] = useState(false);
   const [configModal, setConfigModal] = useState(false);
@@ -1194,6 +1315,20 @@ export default function PdiPage() {
         }
         return acc;
       }, {});
+
+      // Solo los que el líder ya aprobó y planeación debe validar
+      const pendientes = indicadoresData.flatMap((ind) =>
+        (ind.periodos ?? [])
+          .filter((p) => p.estado_reporte === "Aprobado")
+          .map((p) => ({
+            indicadorId: ind._id,
+            indicadorCodigo: ind.codigo,
+            indicadorNombre: ind.nombre,
+            corte: p.periodo,
+            tipo: "planeacion" as const,
+          }))
+      );
+      setPendientesAprobacion(pendientes);
 
       setMacros(macrosData);
       setProyectosPorMacro(proyectosMap);
@@ -1267,7 +1402,7 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
-      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} />
+      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} pendientesAprobacion={pendientesAprobacion} />
 
       <Group justify="space-between" align="center" mb="md">
         <div>

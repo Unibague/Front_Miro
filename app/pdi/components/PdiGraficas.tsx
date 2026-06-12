@@ -625,7 +625,7 @@ function MacroEntityCard({
             <Center h={120}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
           ) : (
             <Box style={miniPeriodoGridStyle}>
-              {dataPeriodo.map((d: { corte: string; meta: number; avance: number }) => (
+              {dataPeriodo.filter((d) => d.meta > 0).map((d: { corte: string; meta: number; avance: number }) => (
                 <MiniPeriodoDonut key={d.corte} corte={d.corte} avance={d.avance} meta={d.meta} />
               ))}
             </Box>
@@ -1887,7 +1887,7 @@ export default function PdiGraficas() {
                   <Center h={180}><Text size="xs" c="dimmed">Sin datos por periodo</Text></Center>
                 ) : (
                   <Box style={miniPeriodoGridStyle}>
-                    {proyectoAvancePorPeriodo.map((d: { corte: string; meta: number; avance: number }) => (
+                    {proyectoAvancePorPeriodo.filter((d) => d.meta > 0).map((d: { corte: string; meta: number; avance: number }) => (
                       <MiniPeriodoDonut key={d.corte} corte={d.corte} avance={d.avance} meta={d.meta} />
                     ))}
                   </Box>
