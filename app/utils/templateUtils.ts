@@ -64,17 +64,8 @@ const findValidatorByName = (validators: ValidatorOptionSource[], name = "") =>
   validators.find((item) => normalizeToken(item.name) === normalizeToken(name));
 
 const getFieldCommentForNote = (field: FieldWithValidator): string => {
-  const comment = field.comment
+  return field.comment
     ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
-    : "";
-  if (comment) return comment;
-
-  const dropdownOptions = Array.isArray(field.dropdown_options)
-    ? field.dropdown_options.map((option) => String(option || "").trim()).filter(Boolean)
-    : [];
-
-  return dropdownOptions.length > 0
-    ? `Opciones:\n${dropdownOptions.join("\n")}`
     : "";
 };
 
@@ -82,28 +73,18 @@ const applyHeaderCommentNote = (
   worksheet: ExcelJS.Worksheet,
   field: FieldWithValidator,
   fieldIndex: number,
-  fallbackOptions: string[] = []
+  startRow: number = 2,
+  endRow: number = 1000,
+  _fallbackOptions: string[] = []
 ) => {
-  const baseComment = getFieldCommentForNote(field);
-  const normalizedBase = baseComment
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase();
-  const missingOptions = fallbackOptions.filter((option) => {
-    const normalizedOption = String(option || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toUpperCase();
-    return normalizedOption && !normalizedBase.includes(normalizedOption);
-  });
-  const optionsComment = missingOptions.length > 0
-    ? `Opciones:\n${missingOptions.join("\n")}`
-    : "";
-  const comment = [baseComment, optionsComment].filter(Boolean).join("\n\n");
+  const comment = getFieldCommentForNote(field);
   if (!comment) return;
 
   const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
-  applyFieldCommentNote(worksheet.getCell(headerRow, col), comment);
+  const firstDataRow = Math.max(startRow, headerRow + 1);
+  for (let row = firstDataRow; row <= endRow; row++) {
+    applyFieldCommentNote(worksheet.getCell(row, col), comment);
+  }
 };
 
 export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
@@ -464,7 +445,7 @@ export const applyValidatorDropdowns = ({
     if (options.length === 0 && !field.validate_with && field.comment) {
       const commentOptions = extractOptionsFromCommentValidators(field.comment);
       if (commentOptions.length === 0) {
-        applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+        applyHeaderCommentNote(worksheet, field, fieldIndex, startRow, endRow, []);
         return;
       }
       options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
@@ -483,7 +464,7 @@ export const applyValidatorDropdowns = ({
     }
 
     if (options.length === 0) {
-      applyHeaderCommentNote(worksheet, field, fieldIndex, []);
+      applyHeaderCommentNote(worksheet, field, fieldIndex, startRow, endRow, []);
       return;
     }
 
@@ -501,6 +482,8 @@ export const applyValidatorDropdowns = ({
       worksheet,
       field,
       fieldIndex,
+      startRow,
+      endRow,
       options.map((option) => option.displayLabel)
     );
 
@@ -527,24 +510,22 @@ export const applyValidatorDropdowns = ({
         ? `${normalizedComment.slice(0, 217)}...`
         : normalizedComment;
 
-    for (let row = firstDataRow; row <= endRow; row++) {
-      const cell = worksheet.getCell(row, templateCol);
-      const validation: ExcelJS.DataValidation = {
-        type: "list",
-        allowBlank: true,
-        formulae: [rangeRef],
-        // Para campos múltiples no se bloquea la entrada libre, solo se muestra la lista como referencia
-        showErrorMessage: !field.multiple,
-        errorTitle: "Valor no valido",
-        error: "Selecciona un valor de la lista desplegable.",
-      };
-      if (promptText) {
-        validation.showInputMessage = true;
-        validation.promptTitle = field.name.slice(0, 32);
-        validation.prompt = promptText;
-      }
-      cell.dataValidation = validation;
+    const rangeAddress = `${toColumnLetter(templateCol)}${firstDataRow}:${toColumnLetter(templateCol)}${endRow}`;
+    const validation: ExcelJS.DataValidation = {
+      type: "list",
+      allowBlank: true,
+      formulae: [rangeRef],
+      showErrorMessage: !field.multiple,
+      errorTitle: "Valor no valido",
+      error: "Selecciona un valor de la lista desplegable.",
+    };
+    if (promptText) {
+      validation.showInputMessage = true;
+      validation.promptTitle = field.name.slice(0, 32);
+      validation.prompt = promptText;
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (worksheet as any).dataValidations.add(rangeAddress, validation);
 
     sourceCol += 1;
   });
@@ -576,6 +557,12 @@ export const applyWorkbookSheetDropdowns = ({
 
     const worksheet = workbook.getWorksheet(sheet.name);
     if (!worksheet) return;
+
+    // Clear all existing data validations from the worksheet before rebuilding.
+    // The original workbook's validations reference the old _Listas layout, which is
+    // now stale after removing and rebuilding the _Listas sheet.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (worksheet as any).dataValidations.model = [];
 
     const originalComments = originalCommentsBySheet?.get(sheet.name);
     const fields = originalComments
@@ -640,7 +627,112 @@ export const applyFieldCommentNote = (
   if (!rawComment) return;
   const cleanComment = normalizeMultilineText(rawComment).replace(/^"+|"+$/g, "");
   if (!cleanComment) return;
-  cell.note = options.preserveText ? cleanComment : wrapTextByLength(cleanComment, 52);
+  cell.note = options.preserveText ? cleanComment : wrapTextByLength(cleanComment, 68);
+};
+
+const NOTE_WIDTH_PT = 360;
+const NOTE_LINE_HEIGHT_PT = 14;
+const NOTE_VERTICAL_PAD_PT = 20;
+const NOTE_MIN_HEIGHT_PT = 60;
+const NOTE_CHARS_PER_LINE = Math.floor((NOTE_WIDTH_PT - 20) / 5);
+
+const computeNoteHeight = (text: string): number => {
+  let lines = 0;
+  for (const line of text.split("\n")) {
+    lines += Math.max(1, Math.ceil((line.length || 1) / NOTE_CHARS_PER_LINE));
+  }
+  return Math.max(NOTE_MIN_HEIGHT_PT, lines * NOTE_LINE_HEIGHT_PT + NOTE_VERTICAL_PAD_PT);
+};
+
+export const patchNoteSize = async (buffer: ArrayBuffer): Promise<ArrayBuffer> => {
+  const zip = await JSZip.loadAsync(buffer);
+
+  // Step 1: Map vmlPath → commentsPath using each sheet's .rels file.
+  // The relationship between VML drawing and comments is declared in
+  // xl/worksheets/_rels/sheetN.xml.rels, NOT in a VML-level .rels file.
+  const vmlToComments = new Map<string, string>();
+
+  for (const relsPath of Object.keys(zip.files)) {
+    if (!/xl\/worksheets\/_rels\/.+\.xml\.rels$/.test(relsPath)) continue;
+
+    const relsXml = await zip.files[relsPath].async("text");
+    const doc = new DOMParser().parseFromString(relsXml, "application/xml");
+
+    // The document that owns these rels (remove /_rels/ and .rels suffix)
+    const docPath = relsPath.replace("/_rels/", "/").replace(/\.rels$/, "");
+
+    let vmlPath = "";
+    let commentsPath = "";
+
+    for (const rel of Array.from(doc.getElementsByTagName("Relationship"))) {
+      const type = (rel.getAttribute("Type") || "").toLowerCase();
+      const target = rel.getAttribute("Target") || "";
+      if (type.includes("vmldrawing")) {
+        vmlPath = resolveZipPath(docPath, target);
+      }
+      if (type.includes("/comments") && !type.includes("threadedcomments")) {
+        commentsPath = resolveZipPath(docPath, target);
+      }
+    }
+
+    if (vmlPath && commentsPath) vmlToComments.set(vmlPath, commentsPath);
+  }
+
+  // Step 2: Parse each unique comments file to get (cellRef → full text)
+  const textByFile = new Map<string, Map<string, string>>();
+
+  for (const commentsPath of new Set(vmlToComments.values())) {
+    const file = zip.file(commentsPath);
+    if (!file) continue;
+    const xml = await file.async("text");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const refMap = new Map<string, string>();
+    for (const node of Array.from(doc.getElementsByTagName("comment"))) {
+      const ref = node.getAttribute("ref") || "";
+      const text = Array.from(node.getElementsByTagName("t"))
+        .map((t) => t.textContent || "")
+        .join("")
+        .trim();
+      if (ref && text) refMap.set(ref, text);
+    }
+    textByFile.set(commentsPath, refMap);
+  }
+
+  // Step 3: Patch VML note shapes with computed dimensions
+  const vmlPaths = Object.keys(zip.files).filter((p) => p.endsWith(".vml"));
+
+  await Promise.all(
+    vmlPaths.map(async (vmlPath) => {
+      const refMap = textByFile.get(vmlToComments.get(vmlPath) ?? "");
+      const vmlText = await zip.files[vmlPath].async("text");
+
+      // Matches both single- and double-quoted style attributes containing visibility:hidden
+      const patched = vmlText.replace(
+        /<v:shape\b([^>]*?)style=(["'])([^"']*?visibility:hidden[^"']*)\2([^>]*>[\s\S]*?<\/v:shape>)/g,
+        (_match, beforeStyle, quote, styleContent, afterTag) => {
+          const rowMatch = /<x:Row>(\d+)<\/x:Row>/.exec(afterTag);
+          const colMatch = /<x:Column>(\d+)<\/x:Column>/.exec(afterTag);
+          if (!rowMatch || !colMatch) return _match;
+
+          const row = parseInt(rowMatch[1], 10) + 1;
+          const col = parseInt(colMatch[1], 10) + 1;
+          const cellRef = `${toColumnLetter(col)}${row}`;
+          const noteText = refMap?.get(cellRef) || "";
+          const height = computeNoteHeight(noteText);
+
+          const newStyle = styleContent
+            .replace(/width:\d+(?:\.\d+)?pt/, `width:${NOTE_WIDTH_PT}pt`)
+            .replace(/height:\d+(?:\.\d+)?pt/, `height:${height}pt`);
+
+          return `<v:shape${beforeStyle}style=${quote}${newStyle}${quote}${afterTag}`;
+        }
+      );
+
+      zip.file(vmlPath, patched);
+    })
+  );
+
+  return zip.generateAsync({ type: "arraybuffer" });
 };
 
 export const patchNoteBackgroundColor = async (

@@ -169,6 +169,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
   const [validatorExists, setValidatorExists] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [isResponsibleProducer, setIsResponsibleProducer] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const [multiSelectOptions, setMultiSelectOptions] = useState<Record<string, string[]>>({});
@@ -205,7 +206,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     dependencyName: draft.dependency_name || draft.dependency,
     senderName: draft.sender_name,
     senderEmail: draft.sender_email,
-    fromQr: true,
+    fromQr: !!(draft.sender_name && draft.sender_email !== session?.user?.email),
   });
 
   const getLoadedRowSource = (entry: ProducerLoadedEntry): QrRowSource => {
@@ -440,10 +441,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         } catch { /* ignorar error de pre-carga de datos enviados */ }
       }
 
-      // Pre-cargar datos del borrador QR si existen para la dependencia del usuario
-      // Solo si la plantilla tiene QR habilitado (allows_qr)
-      const allowsQr = !!(normalizedTemplate as any).allows_qr;
-      const qrDrafts = allowsQr ? (response.data.qr_draft_data || []) : [];
+      // Pre-cargar datos del borrador si existen para la dependencia del usuario.
+      // Se carga siempre: tanto borradores guardados manualmente como los originados por QR.
+      const qrDrafts = response.data.qr_draft_data || [];
       if (qrDrafts.length && session?.user?.email) {
         try {
           const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
@@ -597,7 +597,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           if (typeof field.validate_with === 'string') {
             const parts = field.validate_with.split(' - ');
             if (parts.length >= 2) {
-              validatorId = parts[parts.length - 1].trim();
+              const lastPart = parts[parts.length - 1].trim();
+              // Si el último segmento es un ObjectId de MongoDB (24 hex), úsalo como ID;
+              // de lo contrario el primer segmento es el nombre del validador.
+              validatorId = /^[0-9a-fA-F]{24}$/.test(lastPart) ? lastPart : parts[0].trim();
               validateWith = field.validate_with;
             } else if (field.validate_with.trim()) {
               validatorId = field.validate_with.trim();
@@ -723,6 +726,27 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       }
     } catch (err) {
       console.error('[saveDraftRows] Error al guardar borrador:', err);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveDraftRows();
+      showNotification({
+        title: "Guardado",
+        message: "Tu progreso ha sido guardado. Puedes continuar más tarde.",
+        color: "green",
+        icon: <IconDeviceFloppy size={18} />,
+      });
+    } catch {
+      showNotification({
+        title: "Error al guardar",
+        message: "No se pudo guardar el progreso. Intenta de nuevo.",
+        color: "red",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1350,7 +1374,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         </>
       )}
       <Group justify="center" mt={rem(50)}>
-        <Button 
+        <Button
           color={"red"}
           variant="outline"
           onClick={() => router.push('/producer/templates')}
@@ -1359,14 +1383,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         >
           Cancelar
         </Button>
+        <Button
+          color="gray"
+          variant="outline"
+          onClick={handleSave}
+          leftSection={<IconDeviceFloppy size={16} />}
+          loading={saving}
+          disabled={loading}
+        >
+          Guardar
+        </Button>
         <Group>
-          <Button
-            variant="light"
-            onClick={addRow}
-            leftSection={<IconPlus/>}
-          >
-            Agregar Fila
-          </Button>
           {!fromUploaded && (
             <Button
               onClick={handleSubmit}
@@ -1374,16 +1401,6 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               loading={loading}
             >
               Enviar
-            </Button>
-          )}
-          {!fromUploaded && isResponsibleProducer && (
-            <Button
-              color="teal"
-              onClick={handleSendToSnies}
-              rightSection={<IconSend size={16}/>}
-              loading={loading}
-            >
-              Enviar a SNIES
             </Button>
           )}
         </Group>

@@ -36,21 +36,33 @@ export const buildValidatorOptions = (validator: any, preferredColumnName = ""):
   const valueColumn = preferredColumn || columns.find((column: any) => column?.is_validator) || columns[0];
   if (!valueColumn) return [];
 
-  const descriptionColumn = columns.find((column: any) => (
-    column?.name !== valueColumn.name && isDescriptionColumn(column?.name || "")
-  ));
+  // If the selected value column is a description-type column (e.g. DESCRIPCION),
+  // look for a companion ID/code column to use as a prefix.
+  const valueColumnIsDesc = isDescriptionColumn(valueColumn.name || "");
+  const idColumn = valueColumnIsDesc
+    ? columns.find((column: any) => column?.name !== valueColumn.name && !isDescriptionColumn(column?.name || ""))
+    : null;
+
+  const descriptionColumn = !valueColumnIsDesc
+    ? columns.find((column: any) => column?.name !== valueColumn.name && isDescriptionColumn(column?.name || ""))
+    : null;
+
+  // When the value column is a description, iterate over it using the id column as prefix.
+  // Otherwise iterate over the id/code column and append the description.
+  const primaryColumn = idColumn ?? valueColumn;
+  const secondaryColumn = idColumn ? valueColumn : descriptionColumn;
 
   const seen = new Set<string>();
-  const values = Array.isArray(valueColumn.values) ? valueColumn.values : [];
+  const values = Array.isArray(primaryColumn.values) ? primaryColumn.values : [];
 
   return values.flatMap((value: any, index: number) => {
-    const idText = toOptionText(value);
-    if (!idText) return [];
+    const primaryText = toOptionText(value);
+    if (!primaryText) return [];
 
-    const descriptionText = toOptionText(descriptionColumn?.values?.[index]);
-    const optionText = descriptionText && normalizeValidatorText(descriptionText) !== normalizeValidatorText(idText)
-      ? `${idText} - ${descriptionText}`
-      : idText;
+    const secondaryText = toOptionText(secondaryColumn?.values?.[index]);
+    const optionText = secondaryText && normalizeValidatorText(secondaryText) !== normalizeValidatorText(primaryText)
+      ? `${primaryText} - ${secondaryText}`
+      : primaryText;
     const key = normalizeValidatorText(optionText);
     if (seen.has(key)) return [];
 

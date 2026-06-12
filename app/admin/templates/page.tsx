@@ -21,6 +21,7 @@ import {
   extractWorkbookCommentsFromBase64,
   getExcelCellAddress,
   loadWorkbookFromBase64,
+  patchNoteSize,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
@@ -1556,7 +1557,8 @@ const AdminTemplatesPage = () => {
         });
       });
 
-      const buffer = await workbook.xlsx.writeBuffer();
+      let buffer = await workbook.xlsx.writeBuffer();
+      buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: 'application/octet-stream' });
       saveAs(blob, `${template.file_name}.xlsx`);
       return;
@@ -1580,7 +1582,8 @@ const AdminTemplatesPage = () => {
       populateTemplateWorksheet(workbook, template, worksheetName, false, template.validators, sheet.fields);
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    let buffer = await workbook.xlsx.writeBuffer();
+    buffer = await patchNoteSize(buffer);
     const blob = new Blob([buffer], { type: 'application/octet-stream' });
     saveAs(blob, `${template.file_name}.xlsx`);
   };

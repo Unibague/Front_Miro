@@ -50,6 +50,7 @@ import {
   applyWorkbookSheetDropdowns,
   extractWorkbookCommentsFromBase64,
   loadWorkbookFromBase64,
+  patchNoteSize,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import dayjs from "dayjs";
@@ -569,7 +570,8 @@ const ProducerTemplatesPage = () => {
         }
       }
 
-      const buffer = await workbook.xlsx.writeBuffer();
+      let buffer = await workbook.xlsx.writeBuffer();
+      buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
       return;
@@ -849,7 +851,8 @@ if (field.multiple) {
     // Pre-poblar con datos ya enviados
     populateSheetWithData(worksheet, template.fields);
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    let buffer = await workbook.xlsx.writeBuffer();
+    buffer = await patchNoteSize(buffer);
     const blob = new Blob([buffer], { type: "application/octet-stream" });
     saveAs(blob, `${template.file_name}.xlsx`);
   };
