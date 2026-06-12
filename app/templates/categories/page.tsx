@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Tooltip } from "@mantine/core";
+import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Tooltip, ActionIcon } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconEdit, IconTrash, IconCirclePlus } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconCirclePlus, IconArrowLeft } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useDisclosure } from "@mantine/hooks";
 
@@ -95,6 +95,9 @@ const CategoryAdminPage = () => {
       />
 
       <Group justify="flex-start" mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.back()} size="lg">
+          <IconArrowLeft size={18} />
+        </ActionIcon>
         <Button
           leftSection={<IconCirclePlus />}
           onClick={() => router.push("/templates/create-category")}

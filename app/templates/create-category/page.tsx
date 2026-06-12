@@ -9,6 +9,7 @@ import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Template {
   _id: string;
@@ -22,19 +23,22 @@ const CreateCategoryPage = () => {
   const { data: session } = useSession();
   const router = useRouter();
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
-    // Fetch templates for the category
     const fetchTemplates = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination`);
+        const qs = selectedPeriodId
+          ? `?periodId=${selectedPeriodId}&onlyPublishedInPeriod=true`
+          : "";
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination${qs}`);
         setTemplates(response.data.templates);
       } catch (error) {
         console.error("Error fetching templates:", error);
       }
     };
     fetchTemplates();
-  }, []);
+  }, [selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: string, value: any) => {
     setHasChanges(true);

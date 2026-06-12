@@ -259,7 +259,8 @@ const UpdateTemplatePage = () => {
             setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
             setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
             setNotifyProducers(response.data.notify_producers ?? false);
-            setIsSnies(response.data.is_snies ?? false);
+            const categoryName: string = response.data.category?.name ?? "";
+            setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -977,7 +978,14 @@ router.back();
         label="Ámbitos"
         placeholder="Seleccionar ámbitos"
         data={dimensions.map((dim) => ({ value: dim._id, label: dim.name }))}
-        onChange={(v) => { setSelectedDimensions(v); setHasChanges(true); }}
+        onChange={(v) => {
+          setSelectedDimensions(v);
+          setHasChanges(true);
+          const sniesSelected = dimensions.some(
+            (dim) => v.includes(dim._id) && dim.name.toUpperCase().includes("SNIES")
+          );
+          if (sniesSelected) setIsSnies(true);
+        }}
         value={selectedDimensions}
         searchable
       />

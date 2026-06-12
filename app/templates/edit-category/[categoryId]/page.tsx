@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, TextInput, Button, Group, Table, Select, Tooltip, Center } from "@mantine/core";
+import { Container, TextInput, Button, Group, Table, Select, Tooltip, Center, ActionIcon } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy, IconArrowLeft } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useParams } from "next/navigation";
 import { paramKey } from "@/app/utils/routeParams";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Template {
   _id: string;
@@ -26,6 +27,7 @@ const EditCategoryPage = () => {
   const params = useParams();
   const categoryId = paramKey(params, "categoryId");
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -118,6 +120,9 @@ const EditCategoryPage = () => {
 
   return (
     <Container size="xl">
+      <ActionIcon variant="subtle" size="lg" mb="sm" onClick={() => confirmNavigation(() => router.back())}>
+        <IconArrowLeft size={18} />
+      </ActionIcon>
       <TextInput
         label="Nombre de la Categoría"
         value={categoryName}
