@@ -524,7 +524,6 @@ export const applyValidatorDropdowns = ({
       validation.promptTitle = field.name.slice(0, 32);
       validation.prompt = promptText;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (worksheet as any).dataValidations.add(rangeAddress, validation);
 
     sourceCol += 1;
@@ -561,7 +560,6 @@ export const applyWorkbookSheetDropdowns = ({
     // Clear all existing data validations from the worksheet before rebuilding.
     // The original workbook's validations reference the old _Listas layout, which is
     // now stale after removing and rebuilding the _Listas sheet.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (worksheet as any).dataValidations.model = [];
 
     const originalComments = originalCommentsBySheet?.get(sheet.name);
