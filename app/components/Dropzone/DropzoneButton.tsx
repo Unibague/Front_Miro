@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Text, Group, Button, rem, useMantineTheme } from '@mantine/core';
+import { Text, Group, Button, rem, useMantineTheme, Modal, ScrollArea, Table, Stack, Divider, Badge } from '@mantine/core';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 import { IconCloudUpload, IconX, IconDownload } from '@tabler/icons-react';
 import ExcelJS from 'exceljs';
@@ -26,6 +26,12 @@ interface DropzoneButtonProps {
   endDate: Date | undefined;
   onClose: () => void;
   onUploadSuccess: () => void;
+}
+
+interface PreviewData {
+  sheetsData?: { name: string; data: Record<string, any>[] }[];
+  data?: Record<string, any>[];
+  totalRecords: number;
 }
 
 const normalizeBackendValidationErrors = (payload: any) => {
@@ -99,6 +105,10 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
   const openRef = useRef<() => void>(null);
   const { data: session } = useSession();
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [isSendingDraft, setIsSendingDraft] = useState(false);
+  const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set());
 
   const handleFileDrop = async (files: File[]) => {
     if (endDate && endOfDayGMT5(new Date(endDate)) < new Date()) {
@@ -156,49 +166,69 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
       allFields.forEach((field: any) => {
         fieldTypeMap[field.name] = field.datatype;
-        if (!field.validate_with || field.multiple) return;
+        if (field.multiple) return;
 
-        const validateWithStr =
-          typeof field.validate_with === 'string'
-            ? field.validate_with
-            : (field.validate_with as any)?.name ?? '';
-        if (!validateWithStr) return;
+        let lookup = new Map<string, string>();
 
-        const parts = validateWithStr.split(' - ');
-        const validatorName = parts[0]?.trim();
-        const preferredColumn = parts.slice(1).join(' - ').trim();
-        if (!validatorName) return;
+        // Estrategia 1: Si tiene validate_with, usar validador
+        if (field.validate_with) {
+          const validateWithStr =
+            typeof field.validate_with === 'string'
+              ? field.validate_with
+              : (field.validate_with as any)?.name ?? '';
+          if (validateWithStr) {
+            const parts = validateWithStr.split(' - ');
+            const validatorName = parts[0]?.trim();
+            const preferredColumn = parts.slice(1).join(' - ').trim();
+            if (validatorName) {
+              const validator = validators.find(
+                (v: any) => _vNorm(v.name) === _vNorm(validatorName)
+              );
+              if (validator && Array.isArray(validator.values)) {
+                validator.values.forEach((row: any) => {
+                  const keys = Object.keys(row || {});
+                  if (!keys.length) return;
 
-        const validator = validators.find(
-          (v: any) => _vNorm(v.name) === _vNorm(validatorName)
-        );
-        if (!validator || !Array.isArray(validator.values)) return;
+                  const idKey = preferredColumn
+                    ? keys.find(k => _vNorm(k) === _vNorm(preferredColumn))
+                    : keys[0];
+                  const mainKey = idKey || keys[0];
+                  const idText = _vStr(row[mainKey]);
+                  if (!idText) return;
 
-        const lookup = new Map<string, string>();
-        validator.values.forEach((row: any) => {
-          const keys = Object.keys(row || {});
-          if (!keys.length) return;
+                  const descKey = keys.find(k => {
+                    if (k === mainKey) return false;
+                    const n = _vNorm(k);
+                    return n.includes('DESCRIPCION') || n.includes('NOMBRE') || n.startsWith('DESC');
+                  });
+                  const descText = descKey ? _vStr(row[descKey]) : '';
 
-          const idKey = preferredColumn
-            ? keys.find(k => _vNorm(k) === _vNorm(preferredColumn))
-            : keys[0];
-          const mainKey = idKey || keys[0];
-          const idText = _vStr(row[mainKey]);
-          if (!idText) return;
-
-          const descKey = keys.find(k => {
-            if (k === mainKey) return false;
-            const n = _vNorm(k);
-            return n.includes('DESCRIPCION') || n.includes('NOMBRE') || n.startsWith('DESC');
-          });
-          const descText = descKey ? _vStr(row[descKey]) : '';
-
-          lookup.set(_vNorm(idText), idText);
-          if (descText) {
-            lookup.set(_vNorm(`${idText} - ${descText}`), idText);
-            lookup.set(_vNorm(descText), idText);
+                  lookup.set(_vNorm(idText), idText);
+                  if (descText) {
+                    lookup.set(_vNorm(`${idText} - ${descText}`), idText);
+                    lookup.set(_vNorm(descText), idText);
+                  }
+                });
+              }
+            }
           }
-        });
+        }
+
+        // Estrategia 2: Si no hay validador o si está vacío, usar dropdown_options
+        if (lookup.size === 0 && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+          field.dropdown_options.forEach((option: string) => {
+            const optionStr = _vStr(option);
+            if (optionStr) {
+              lookup.set(_vNorm(optionStr), optionStr);
+              // También agregar partes antes del guión si existe
+              const parts = optionStr.split(' - ');
+              if (parts.length > 1) {
+                const firstPart = _vStr(parts[0]);
+                lookup.set(_vNorm(firstPart), optionStr);
+              }
+            }
+          });
+        }
 
         if (lookup.size > 0) fieldValidatorLookup[field.name] = lookup;
       });
@@ -462,31 +492,14 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             return;
           }
 
-          const response = await axios.put(
-            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
-            {
-              email: session.user.email,
-              pubTem_id: pubTemId,
-              sheetsData,
-              asDraft: false,
-              bypassValidation: true,
-            }
-          );
-
-          const recordsLoaded = response.data.recordsLoaded;
-          setShowSuccessAnimation(true);
-          showNotification({
-            title: 'Información enviada.',
-            message: `Se enviaron ${recordsLoaded} registros correctamente.`,
-            color: 'teal',
-            autoClose: 4000,
+          // Mostrar preview en lugar de enviar directamente
+          setPreviewData({
+            sheetsData,
+            totalRecords: sheetsData.reduce((sum, s) => sum + s.data.length, 0),
           });
-
-          setTimeout(() => {
-            setShowSuccessAnimation(false);
-            onUploadSuccess();
-            onClose();
-          }, 3000);
+          // Si hay múltiples hojas, todas están seleccionadas por defecto
+          setSelectedSheets(new Set(sheetsData.map(s => s.name)));
+          setShowPreviewModal(true);
 
         } else {
           // === SINGLE-SHEET MODE ===
@@ -524,31 +537,12 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             return;
           }
 
-          const response = await axios.put(
-            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
-            {
-              email: session.user.email,
-              pubTem_id: pubTemId,
-              data,
-              asDraft: false,
-              bypassValidation: true,
-            }
-          );
-
-          const recordsLoaded = response.data.recordsLoaded;
-          setShowSuccessAnimation(true);
-          showNotification({
-            title: 'Información enviada.',
-            message: `Se enviaron ${recordsLoaded} registros correctamente.`,
-            color: 'teal',
-            autoClose: 4000,
+          // Mostrar preview en lugar de enviar directamente
+          setPreviewData({
+            data,
+            totalRecords: data.length,
           });
-
-          setTimeout(() => {
-            setShowSuccessAnimation(false);
-            onUploadSuccess();
-            onClose();
-          }, 3000);
+          setShowPreviewModal(true);
         }
 
       } catch (error) {
@@ -579,6 +573,88 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
     };
 
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleSendData = async (asDraft: boolean) => {
+    if (!previewData || !session?.user?.email) return;
+    
+    try {
+      setIsSendingDraft(true);
+      
+      // Si hay hojas, filtrar por las seleccionadas
+      let dataToSend: any = {
+        email: session.user.email,
+        pubTem_id: pubTemId,
+        asDraft,
+        bypassValidation: true,
+      };
+
+      if (previewData.sheetsData) {
+        const filteredSheets = previewData.sheetsData.filter(s => selectedSheets.has(s.name));
+        if (filteredSheets.length === 0) {
+          showNotification({
+            title: 'Selecciona al menos una hoja',
+            message: 'Debes seleccionar al menos una hoja para enviar',
+            color: 'orange',
+          });
+          setIsSendingDraft(false);
+          return;
+        }
+        dataToSend.sheetsData = filteredSheets;
+      } else if (previewData.data) {
+        dataToSend.data = previewData.data;
+      }
+
+      const response = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
+        dataToSend
+      );
+
+      const recordsLoaded = response.data.recordsLoaded;
+      const message = asDraft 
+        ? `Se guardó como borrador: ${recordsLoaded} registros.`
+        : `Se enviaron ${recordsLoaded} registros correctamente.`;
+
+      setShowSuccessAnimation(true);
+      showNotification({
+        title: asDraft ? 'Guardado como borrador' : 'Información enviada',
+        message,
+        color: 'teal',
+        autoClose: 4000,
+      });
+
+      setTimeout(() => {
+        setShowSuccessAnimation(false);
+        setShowPreviewModal(false);
+        setPreviewData(null);
+        setSelectedSheets(new Set());
+        onUploadSuccess();
+        onClose();
+      }, 3000);
+    } catch (error) {
+      console.error('Error enviando los datos:', error);
+
+      if (axios.isAxiosError(error)) {
+        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
+          localStorage.setItem('errorDetails', JSON.stringify(normalizedErrors));
+          if (typeof window !== 'undefined') window.open('/logs', '_blank');
+        }
+      }
+
+      showNotification({
+        title: 'Error al enviar datos',
+        message: 'No se pudieron procesar los datos. Revisa los logs.',
+        color: 'red',
+      });
+    } finally {
+      setIsSendingDraft(false);
+    }
+  };
+
+  const handleCancelPreview = () => {
+    setShowPreviewModal(false);
+    setPreviewData(null);
   };
 
 
@@ -635,6 +711,129 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
           </Button>
         </>
       )}
+
+      {/* Modal de preview de datos */}
+      <Modal
+        opened={showPreviewModal}
+        onClose={handleCancelPreview}
+        title="Validar y Enviar Información"
+        size="lg"
+        centered
+      >
+        {previewData && (
+          <Stack>
+            <div>
+              <Text fw={600} mb="sm"> Resumen de Datos</Text>
+              <Text size="sm" c="dimmed">
+                Total de registros: <Text span fw={700} c="blue">{previewData.totalRecords}</Text>
+              </Text>
+              
+              {previewData.sheetsData && previewData.sheetsData.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <Text size="sm" fw={500} mb="xs">Hojas:</Text>
+                  {previewData.sheetsData.length >= 3 ? (
+                    // Si hay 3 o más hojas, mostrar checkboxes
+                    <Group>
+                      {previewData.sheetsData.map((sheet) => (
+                        <label key={sheet.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedSheets.has(sheet.name)}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedSheets);
+                              if (e.target.checked) {
+                                newSelected.add(sheet.name);
+                              } else {
+                                newSelected.delete(sheet.name);
+                              }
+                              setSelectedSheets(newSelected);
+                            }}
+                          />
+                          <Badge variant="light" style={{ marginTop: 0 }}>
+                            {sheet.name}: {sheet.data.length} registros
+                          </Badge>
+                        </label>
+                      ))}
+                    </Group>
+                  ) : (
+                    // Si hay menos de 3 hojas, mostrar solo badges
+                    <Group>
+                      {previewData.sheetsData.map((sheet) => (
+                        <Badge key={sheet.name} variant="light">
+                          {sheet.name}: {sheet.data.length} registros
+                        </Badge>
+                      ))}
+                    </Group>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Divider />
+
+            <div>
+              <Text fw={600} mb="sm"> Preview de Datos (primeras 3 filas)</Text>
+              <ScrollArea>
+                <Table striped>
+                  <Table.Thead>
+                    <Table.Tr>
+                      {previewData.data && previewData.data.length > 0 && Object.keys(previewData.data[0]).map((key) => (
+                        <Table.Th key={key} style={{ minWidth: 100 }}>{key}</Table.Th>
+                      ))}
+                      {previewData.sheetsData && previewData.sheetsData.length > 0 && previewData.sheetsData[0].data.length > 0 && Object.keys(previewData.sheetsData[0].data[0]).map((key) => (
+                        <Table.Th key={key} style={{ minWidth: 100 }}>{key}</Table.Th>
+                      ))}
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {previewData.data && previewData.data.slice(0, 3).map((row, idx) => (
+                      <Table.Tr key={idx}>
+                        {Object.values(row).map((val, colIdx) => (
+                          <Table.Td key={colIdx}>
+                            <Text size="xs" truncate>{String(val)}</Text>
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    ))}
+                    {previewData.sheetsData && previewData.sheetsData[0]?.data.slice(0, 3).map((row, idx) => (
+                      <Table.Tr key={idx}>
+                        {Object.values(row).map((val, colIdx) => (
+                          <Table.Td key={colIdx}>
+                            <Text size="xs" truncate>{String(val)}</Text>
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+            </div>
+
+            <Group justify="flex-end" mt="lg">
+              <Button
+                variant="outline"
+                onClick={handleCancelPreview}
+                disabled={isSendingDraft}
+              >
+                 Cancelar
+              </Button>
+              <Button
+                variant="light"
+                onClick={() => handleSendData(true)}
+                loading={isSendingDraft}
+              >
+                 Guardar como Borrador
+              </Button>
+              <Button
+                onClick={() => handleSendData(false)}
+                loading={isSendingDraft}
+              >
+                 Enviar Información
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </div>
   );
 }

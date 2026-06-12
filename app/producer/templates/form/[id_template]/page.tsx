@@ -23,6 +23,7 @@ import {
   Tabs,
   Alert,
   Badge,
+  Box
 } from "@mantine/core";
 import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
@@ -181,6 +182,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
+  const [sharedSheetsData, setSharedSheetsData] = useState<Record<string, Record<string, any>[]>>({});
 
   const getScopedFieldKey = (fieldName: string, sheetName?: string | null) =>
     sheetName ? `${sheetName}::${fieldName}` : fieldName;
@@ -270,6 +272,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       setPublishedTemplateName(response.data.name);
       const normalizedTemplate = normalizeTemplateRequired(response.data.template);
       setTemplate(normalizedTemplate);
+
+      // Cargar datos compartidos de otros productores
+      if (response.data.shared_sheets_data) {
+        setSharedSheetsData(response.data.shared_sheets_data);
+      }
 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = normalizedTemplate.workbook_sheets || [];
@@ -398,12 +405,25 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                   const isAccessible = !editableSheetNames.size || editableSheetNames.has(sheet.name);
                   const sheetFields = sheet.fields || [];
                   const sheetFieldNames = new Set(sheetFields.map((f: Field) => f.name));
-                  const sheetFilled = hasSheetTaggedFields
-                    ? entry.filled_data.filter((fieldData) => getDraftFieldSheetName(fieldData) === sheet.name)
-                    : entry.filled_data
-                        .slice(legacyCursor, legacyCursor + sheetFields.length)
-                        .filter((fieldData) => sheetFieldNames.has(fieldData.field_name));
+                  
+                  // Prioridad: si hay sheet_name, usarlo; si no, fallback a legacy slice
+                  let sheetFilled: FilledFieldEntry[] = [];
+                  if (hasSheetTaggedFields) {
+                    // Si hay sheet_name, filtrar exactamente por coincidencia de nombre de hoja
+                    // Intentar coincidencia exacta primero, luego normalizada
+                    sheetFilled = entry.filled_data.filter((fieldData) => {
+                      const fieldSheetName = getDraftFieldSheetName(fieldData);
+                      return fieldSheetName === sheet.name || 
+                             fieldSheetName?.trim?.().toLowerCase() === sheet.name?.trim?.().toLowerCase();
+                    });
+                  } else {
+                    // Fallback legacy: usar slice y filtrar por nombre de campo
+                    sheetFilled = entry.filled_data
+                      .slice(legacyCursor, legacyCursor + sheetFields.length)
+                      .filter((fieldData) => sheetFieldNames.has(fieldData.field_name));
+                  }
 
+                  // Avanzar cursor legacy siempre (incluso si no se usó)
                   if (!hasSheetTaggedFields && sheetFilled.length) {
                     legacyCursor += sheetFields.length;
                   }
@@ -1203,6 +1223,48 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
   };
 
+  const renderCellContent = (value: any) => {
+    // Manejar valores undefined, null o cadenas vacías
+    if (value === undefined || value === null || value === '') {
+      return <Text size="sm" c="dimmed">Sin datos</Text>;
+    }
+
+    // Manejar booleanos
+    if (typeof value === "boolean") {
+      return value ? <Text size="sm">Sí</Text> : <Text size="sm">No</Text>;
+    }
+
+    // Manejar objetos
+    if (typeof value === "object" && value !== null) {
+      // Si es un array, mostrar elementos separados por comas
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          return <Text size="sm">-</Text>;
+        }
+        const arrayText = value.map(item => {
+          if (typeof item === 'object' && item !== null) {
+            return item.text || item.hyperlink || JSON.stringify(item);
+          }
+          return item;
+        }).join(', ');
+        return <Text size="sm" lineClamp={2}>{arrayText}</Text>;
+      }
+
+      // Si tiene un campo .text, mostramos solo ese
+      if (typeof value.text === "string") {
+        return <Text size="sm" lineClamp={2}>{value.text}</Text>;
+      }
+
+      // Por defecto, convertir a JSON
+      const jsonString = JSON.stringify(value);
+      return <Text size="sm" lineClamp={2}>{jsonString}</Text>;
+    }
+
+    // Para valores simples
+    const stringValue = (value ?? "").toString();
+    return <Text size="sm" lineClamp={2}>{stringValue}</Text>;
+  };
+
   const renderRowSource = (source?: QrRowSource | null) => {
     if (!source) return <Text size="xs" c="dimmed">Manual</Text>;
 
@@ -1214,7 +1276,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     return (
       <Tooltip label={tooltipLabel} withArrow>
         <div>
-          {source.fromQr && <Badge size="xs" color="orange" variant="light" mb={2}>QR</Badge>}
+          {source.fromQr ? (
+            <Badge size="xs" color="orange" variant="light" mb={2}>QR</Badge>
+          ) : (
+            <Badge size="xs" color="blue" variant="light" mb={2}>En línea</Badge>
+          )}
           <Text size="xs" fw={700}>{source.dependencyName}</Text>
           <Text size="xs" c="dimmed">{source.dependencyCode}</Text>
         </div>
