@@ -94,14 +94,16 @@ interface ProducerLoadedEntry {
     email?: string;
   };
   filled_data: FilledFieldEntry[];
+  source?: 'excel' | 'qr' | 'online' | 'manual';
 }
-
 interface QrRowSource {
   dependencyCode: string;
   dependencyName: string;
   senderName?: string;
   senderEmail?: string | null;
   fromQr?: boolean;
+  fromExcel?: boolean;
+  fromOnline?: boolean;
 }
 
 interface PublishedTemplateResponse {
@@ -215,11 +217,34 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const sender = entry.send_by || {};
     const dependencyCode = getEntryDependencyCode(entry);
 
+    // Determinar el origen con fallback para datos viejos
+    let fromQr = false;
+    let fromExcel = false;
+    let fromOnline = false;
+    
+    if (entry.source === 'excel') {
+      fromExcel = true;
+    } else if (entry.source === 'online') {
+      fromOnline = true;
+    } else if (entry.source === 'manual') {
+      // fromManual será inferido cuando todos sean false (datos viejos)
+    } else if (entry.sender_email && entry.sender_name) {
+      // Si tiene sender_email y sender_name → es QR
+      fromQr = true;
+    } else if (sender.email) {
+      // Fallback para datos viejos: si tiene send_by con email, es probablemente online
+      fromOnline = true;
+    }
+    // Si no tiene nada: será Manual (datos muy viejos)
+
     return {
       dependencyCode,
       dependencyName: entry.dependency_name || dependencyCode,
       senderName: entry.sender_name || sender.full_name || sender.name || sender.email,
       senderEmail: entry.sender_email ?? sender.email ?? null,
+      fromQr,
+      fromExcel,
+      fromOnline,
     };
   };
 
@@ -355,6 +380,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                         dependencyName: row.__origin__.depName || row.__origin__.code,
                         senderName: row.__origin__.senderName,
                         senderEmail: row.__origin__.senderEmail,
+                        fromQr: row.__origin__.fromQr,
+                        fromExcel: row.__origin__.fromExcel,
+                        fromOnline: row.__origin__.fromOnline,
                       }
                     : null
                 );
@@ -1273,14 +1301,25 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       ? `Enviado por ${senderText}`
       : `Codigo ${source.dependencyCode}`;
 
+    // Determinar el badge según el origen
+    let badgeColor = "gray";
+    let badgeText = "Manual";
+    
+    if (source.fromQr) {
+      badgeColor = "orange";
+      badgeText = "QR";
+    } else if (source.fromExcel) {
+      badgeColor = "green";
+      badgeText = "Excel";
+    } else if (source.fromOnline) {
+      badgeColor = "blue";
+      badgeText = "En línea";
+    }
+
     return (
       <Tooltip label={tooltipLabel} withArrow>
         <div>
-          {source.fromQr ? (
-            <Badge size="xs" color="orange" variant="light" mb={2}>QR</Badge>
-          ) : (
-            <Badge size="xs" color="blue" variant="light" mb={2}>En línea</Badge>
-          )}
+          <Badge size="xs" color={badgeColor} variant="light" mb={2}>{badgeText}</Badge>
           <Text size="xs" fw={700}>{source.dependencyName}</Text>
           <Text size="xs" c="dimmed">{source.dependencyCode}</Text>
         </div>
