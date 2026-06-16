@@ -155,6 +155,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromUploaded = searchParams?.get('from') === 'uploaded';
+  // Detectar si viene de /public/form/ (QR) o /producer/templates/form/ (en línea)
+  const isFromPublicQr = typeof window !== 'undefined' && window.location.pathname.includes('/public/form/');
   const [publishedTemplateName, setPublishedTemplateName] = useState<string>("");
   const [template, setTemplate] = useState<Template | null>(null);
   const [allSheets, setAllSheets] = useState<WorkbookSheet[]>([]);
@@ -167,6 +169,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [rowSources, setRowSources] = useState<(QrRowSource | null)[]>([]);
   const [sheetRowSources, setSheetRowSources] = useState<Record<string, (QrRowSource | null)[]>>({});
   const [userSource, setUserSource] = useState<QrRowSource | null>(null);
+  // Rastrear si los datos vinieron del QR (se pre-llenaron desde QR)
+  const [hasQrOrigin, setHasQrOrigin] = useState<boolean>(false);
+  const [qrOriginInfo, setQrOriginInfo] = useState<{ sender_email?: string; sender_name?: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [validatorModalOpen, setValidatorModalOpen] = useState(false);
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
@@ -224,6 +229,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     
     if (entry.source === 'excel') {
       fromExcel = true;
+    } else if (entry.source === 'qr') {
+      fromQr = true;
     } else if (entry.source === 'online') {
       fromOnline = true;
     } else if (entry.source === 'manual') {
@@ -559,6 +566,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
                 setSheetRowSources(prev => ({ ...prev, ...draftSheetSources }));
                 setActiveSheet(firstDraftSheetName);
+                // Marcar que los datos vinieron del QR para preservar el origen
+                setHasQrOrigin(true);
+                // Guardar info del remitente del primer draft
+                if (draftsWithData.length > 0) {
+                  const firstDraft = draftsWithData[0];
+                  setQrOriginInfo({
+                    sender_email: firstDraft.sender_email || undefined,
+                    sender_name: firstDraft.sender_name || undefined,
+                  });
+                }
               }
             } else {
               const draftRows: Record<string, any>[] = [];
@@ -573,6 +590,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               if (draftRows.length) {
                 setRows(draftRows);
                 setRowSources(draftSources);
+                // Marcar que los datos vinieron del QR para preservar el origen
+                setHasQrOrigin(true);
+                // Guardar info del remitente del primer draft
+                if (draftsWithData.length > 0) {
+                  const firstDraft = draftsWithData[0];
+                  setQrOriginInfo({
+                    sender_email: firstDraft.sender_email || undefined,
+                    sender_name: firstDraft.sender_name || undefined,
+                  });
+                }
               }
             }
 
@@ -730,6 +757,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       rows[rowIdx] = { ...rows[rowIdx], [fieldName]: value };
       return { ...prev, [sheetName]: rows };
     });
+    // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
+    if (hasQrOrigin) {
+      setHasQrOrigin(false);
+      setQrOriginInfo(null);
+    }
     clearFieldError(fieldName, sheetName);
   };
 
@@ -743,6 +775,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     if (sheet?.fields?.some(f => f.name.toUpperCase() === 'SEMESTRE')) prefilled['SEMESTRE'] = semester;
     setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), prefilled] }));
     setSheetRowSources(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), userSource] }));
+    // Si agregan fila nueva a datos del QR, cambiar origen a "en línea"
+    if (hasQrOrigin) {
+      setHasQrOrigin(false);
+      setQrOriginInfo(null);
+    }
   };
 
   const saveDraftRows = async (
@@ -822,6 +859,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
   
     setRows(updatedRows);
+    
+    // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
+    if (hasQrOrigin) {
+      setHasQrOrigin(false);
+      setQrOriginInfo(null);
+    }
 
     clearFieldError(fieldName);
   };
@@ -830,6 +873,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const newRows = [...rows, {}];
     setRows(newRows);
     setRowSources(prev => [...prev, null]);
+    // Si agregan fila nueva a datos del QR, cambiar origen a "en línea"
+    if (hasQrOrigin) {
+      setHasQrOrigin(false);
+      setQrOriginInfo(null);
+    }
     
     // Auto-seleccionar el primer campo con validador de la nueva fila
     const newRowIndex = newRows.length - 1;
@@ -999,6 +1047,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         data: useSheetSubmission ? undefined : formattedRows,
         sheetsData: useSheetSubmission ? sheetsData : undefined,
         asDraft: false,
+        // Si los datos vinieron del QR, preservar ese origen
+        ...(hasQrOrigin ? { hasQrOrigin: true } : {}),
+        // Incluir info del remitente si está disponible
+        ...(qrOriginInfo?.sender_email && qrOriginInfo?.sender_name ? {
+          sender_email: qrOriginInfo.sender_email,
+          sender_name: qrOriginInfo.sender_name,
+        } : {}),
+        // Si viene de ruta /public/form/, marcar como QR (fallback para datos nuevos no desde draft)
+        ...(isFromPublicQr && !hasQrOrigin ? { isFromPublicQr: true } : {}),
       });
       showNotification({
         title: "Información enviada",
@@ -1530,6 +1587,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               const updatedRows = [...rows];
               updatedRows[activeRowIndex][activeFieldName] = value;
               setRows(updatedRows);
+              // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
+              if (hasQrOrigin) {
+                setHasQrOrigin(false);
+                setQrOriginInfo(null);
+              }
               clearFieldError(activeFieldName);
             }
 
