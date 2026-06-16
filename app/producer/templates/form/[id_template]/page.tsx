@@ -79,6 +79,7 @@ interface QrDraftEntry {
   dependency_name?: string;
   sender_name?: string;
   sender_email?: string | null;
+  source?: 'excel' | 'qr' | 'online' | 'manual';
   filled_data: FilledFieldEntry[];
 }
 
@@ -169,9 +170,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [rowSources, setRowSources] = useState<(QrRowSource | null)[]>([]);
   const [sheetRowSources, setSheetRowSources] = useState<Record<string, (QrRowSource | null)[]>>({});
   const [userSource, setUserSource] = useState<QrRowSource | null>(null);
-  // Rastrear si los datos vinieron del QR (se pre-llenaron desde QR)
-  const [hasQrOrigin, setHasQrOrigin] = useState<boolean>(false);
-  const [qrOriginInfo, setQrOriginInfo] = useState<{ sender_email?: string; sender_name?: string } | null>(null);
+  // Rastrear el origen detectado de los datos (QR, Excel, Online)
+  const [detectedOrigin, setDetectedOrigin] = useState<{ source: 'excel' | 'qr' | 'online' | 'manual' | null; senderInfo?: { sender_email?: string; sender_name?: string } }>({ source: null });
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [validatorModalOpen, setValidatorModalOpen] = useState(false);
   const [validatorData, setValidatorData] = useState<ValidatorData | null>(null);
@@ -210,13 +210,42 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const getEntryDependencyCode = (entry: { dependency?: string; dependency_code?: string }) =>
     entry.dependency_code || entry.dependency || "";
 
-  const getDraftRowSource = (draft: QrDraftEntry): QrRowSource => ({
-    dependencyCode: draft.dependency_code || draft.dependency,
-    dependencyName: draft.dependency_name || draft.dependency,
-    senderName: draft.sender_name,
-    senderEmail: draft.sender_email,
-    fromQr: !!(draft.sender_name && draft.sender_email !== session?.user?.email),
-  });
+  const getDraftRowSource = (draft: QrDraftEntry): QrRowSource => {
+    // Prioridad 1: Si el draft tiene campo source, usarlo
+    let fromQr = false;
+    let fromExcel = false;
+    let fromOnline = false;
+
+    if (draft.source) {
+      if (draft.source === 'qr') {
+        fromQr = true;
+      } else if (draft.source === 'excel') {
+        fromExcel = true;
+      } else if (draft.source === 'online') {
+        fromOnline = true;
+      }
+      // Si source === 'manual', quedará todo false (manual)
+    } else {
+      // Prioridad 2: Fallback para drafts sin source - inferir por sender info
+      if (draft.sender_name && draft.sender_email && draft.sender_email !== session?.user?.email) {
+        // Si hay info de remitente diferente al usuario actual → QR
+        fromQr = true;
+      } else {
+        // Si no hay info de remitente o es el usuario actual → Online
+        fromOnline = true;
+      }
+    }
+
+    return {
+      dependencyCode: draft.dependency_code || draft.dependency,
+      dependencyName: draft.dependency_name || draft.dependency,
+      senderName: draft.sender_name,
+      senderEmail: draft.sender_email,
+      fromQr,
+      fromExcel,
+      fromOnline,
+    };
+  };
 
   const getLoadedRowSource = (entry: ProducerLoadedEntry): QrRowSource => {
     const sender = entry.send_by || {};
@@ -566,15 +595,34 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                 setSheetRows(prev => ({ ...prev, ...draftSheetRows }));
                 setSheetRowSources(prev => ({ ...prev, ...draftSheetSources }));
                 setActiveSheet(firstDraftSheetName);
-                // Marcar que los datos vinieron del QR para preservar el origen
-                setHasQrOrigin(true);
-                // Guardar info del remitente del primer draft
+                
+                // Detectar origen del primer draft para preservarlo
                 if (draftsWithData.length > 0) {
                   const firstDraft = draftsWithData[0];
-                  setQrOriginInfo({
-                    sender_email: firstDraft.sender_email || undefined,
-                    sender_name: firstDraft.sender_name || undefined,
-                  });
+                  if (firstDraft.source === 'excel') {
+                    setDetectedOrigin({ source: 'excel' });
+                  } else if (firstDraft.source === 'qr') {
+                    setDetectedOrigin({ 
+                      source: 'qr', 
+                      senderInfo: {
+                        sender_email: firstDraft.sender_email || undefined,
+                        sender_name: firstDraft.sender_name || undefined,
+                      }
+                    });
+                  } else if (firstDraft.source === 'online') {
+                    setDetectedOrigin({ source: 'online' });
+                  } else if (firstDraft.sender_name && firstDraft.sender_email) {
+                    // Fallback: inferir QR por sender info
+                    setDetectedOrigin({ 
+                      source: 'qr', 
+                      senderInfo: {
+                        sender_email: firstDraft.sender_email,
+                        sender_name: firstDraft.sender_name,
+                      }
+                    });
+                  } else {
+                    setDetectedOrigin({ source: 'online' });
+                  }
                 }
               }
             } else {
@@ -590,15 +638,34 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               if (draftRows.length) {
                 setRows(draftRows);
                 setRowSources(draftSources);
-                // Marcar que los datos vinieron del QR para preservar el origen
-                setHasQrOrigin(true);
-                // Guardar info del remitente del primer draft
+                
+                // Detectar origen del primer draft para preservarlo
                 if (draftsWithData.length > 0) {
                   const firstDraft = draftsWithData[0];
-                  setQrOriginInfo({
-                    sender_email: firstDraft.sender_email || undefined,
-                    sender_name: firstDraft.sender_name || undefined,
-                  });
+                  if (firstDraft.source === 'excel') {
+                    setDetectedOrigin({ source: 'excel' });
+                  } else if (firstDraft.source === 'qr') {
+                    setDetectedOrigin({ 
+                      source: 'qr', 
+                      senderInfo: {
+                        sender_email: firstDraft.sender_email || undefined,
+                        sender_name: firstDraft.sender_name || undefined,
+                      }
+                    });
+                  } else if (firstDraft.source === 'online') {
+                    setDetectedOrigin({ source: 'online' });
+                  } else if (firstDraft.sender_name && firstDraft.sender_email) {
+                    // Fallback: inferir QR por sender info
+                    setDetectedOrigin({ 
+                      source: 'qr', 
+                      senderInfo: {
+                        sender_email: firstDraft.sender_email,
+                        sender_name: firstDraft.sender_name,
+                      }
+                    });
+                  } else {
+                    setDetectedOrigin({ source: 'online' });
+                  }
                 }
               }
             }
@@ -757,10 +824,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       rows[rowIdx] = { ...rows[rowIdx], [fieldName]: value };
       return { ...prev, [sheetName]: rows };
     });
-    // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
-    if (hasQrOrigin) {
-      setHasQrOrigin(false);
-      setQrOriginInfo(null);
+    // Si el usuario edita datos existentes, cambiar origen a "en línea"
+    if (detectedOrigin.source && detectedOrigin.source !== 'online') {
+      setDetectedOrigin({ source: 'online' });
     }
     clearFieldError(fieldName, sheetName);
   };
@@ -775,11 +841,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     if (sheet?.fields?.some(f => f.name.toUpperCase() === 'SEMESTRE')) prefilled['SEMESTRE'] = semester;
     setSheetRows(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), prefilled] }));
     setSheetRowSources(prev => ({ ...prev, [sheetName]: [...(prev[sheetName] || []), userSource] }));
-    // Si agregan fila nueva a datos del QR, cambiar origen a "en línea"
-    if (hasQrOrigin) {
-      setHasQrOrigin(false);
-      setQrOriginInfo(null);
-    }
+    // NO resetear hasQrOrigin - el backend preservará el origen original
   };
 
   const saveDraftRows = async (
@@ -800,6 +862,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           pubTem_id: id_template,
           sheetsData: sheetsPayload,
           asDraft: true,
+          // Preservar origen detectado al guardar borrador
+          ...(detectedOrigin.source === 'qr' ? { hasQrOrigin: true } : {}),
+          ...(detectedOrigin.source === 'excel' ? { bypassValidation: true } : {}),
+          ...(detectedOrigin.senderInfo?.sender_email && detectedOrigin.senderInfo?.sender_name ? {
+            sender_email: detectedOrigin.senderInfo.sender_email,
+            sender_name: detectedOrigin.senderInfo.sender_name,
+          } : {}),
         });
       } else {
         await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
@@ -807,6 +876,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           pubTem_id: id_template,
           data: updatedRows ?? rows,
           asDraft: true,
+          // Preservar origen detectado al guardar borrador
+          ...(detectedOrigin.source === 'qr' ? { hasQrOrigin: true } : {}),
+          ...(detectedOrigin.source === 'excel' ? { bypassValidation: true } : {}),
+          ...(detectedOrigin.senderInfo?.sender_email && detectedOrigin.senderInfo?.sender_name ? {
+            sender_email: detectedOrigin.senderInfo.sender_email,
+            sender_name: detectedOrigin.senderInfo.sender_name,
+          } : {}),
         });
       }
     } catch (err) {
@@ -860,10 +936,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   
     setRows(updatedRows);
     
-    // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
-    if (hasQrOrigin) {
-      setHasQrOrigin(false);
-      setQrOriginInfo(null);
+    // Si el usuario edita datos existentes, cambiar origen a "en línea"
+    if (detectedOrigin.source && detectedOrigin.source !== 'online') {
+      setDetectedOrigin({ source: 'online' });
     }
 
     clearFieldError(fieldName);
@@ -873,11 +948,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const newRows = [...rows, {}];
     setRows(newRows);
     setRowSources(prev => [...prev, null]);
-    // Si agregan fila nueva a datos del QR, cambiar origen a "en línea"
-    if (hasQrOrigin) {
-      setHasQrOrigin(false);
-      setQrOriginInfo(null);
-    }
+    // NO resetear hasQrOrigin - el backend preservará el origen original
     
     // Auto-seleccionar el primer campo con validador de la nueva fila
     const newRowIndex = newRows.length - 1;
@@ -1047,15 +1118,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         data: useSheetSubmission ? undefined : formattedRows,
         sheetsData: useSheetSubmission ? sheetsData : undefined,
         asDraft: false,
-        // Si los datos vinieron del QR, preservar ese origen
-        ...(hasQrOrigin ? { hasQrOrigin: true } : {}),
+        // Preservar origen detectado
+        ...(detectedOrigin.source === 'qr' ? { hasQrOrigin: true } : {}),
+        ...(detectedOrigin.source === 'excel' ? { bypassValidation: true } : {}),
         // Incluir info del remitente si está disponible
-        ...(qrOriginInfo?.sender_email && qrOriginInfo?.sender_name ? {
-          sender_email: qrOriginInfo.sender_email,
-          sender_name: qrOriginInfo.sender_name,
+        ...(detectedOrigin.senderInfo?.sender_email && detectedOrigin.senderInfo?.sender_name ? {
+          sender_email: detectedOrigin.senderInfo.sender_email,
+          sender_name: detectedOrigin.senderInfo.sender_name,
         } : {}),
         // Si viene de ruta /public/form/, marcar como QR (fallback para datos nuevos no desde draft)
-        ...(isFromPublicQr && !hasQrOrigin ? { isFromPublicQr: true } : {}),
+        ...(isFromPublicQr && !detectedOrigin.source ? { isFromPublicQr: true } : {}),
       });
       showNotification({
         title: "Información enviada",
@@ -1587,10 +1659,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               const updatedRows = [...rows];
               updatedRows[activeRowIndex][activeFieldName] = value;
               setRows(updatedRows);
-              // Si el usuario edita datos que vinieron del QR, cambiar origen a "en línea"
-              if (hasQrOrigin) {
-                setHasQrOrigin(false);
-                setQrOriginInfo(null);
+              // Si el usuario edita datos existentes, cambiar origen a "en línea"
+              if (detectedOrigin.source && detectedOrigin.source !== 'online') {
+                setDetectedOrigin({ source: 'online' });
               }
               clearFieldError(activeFieldName);
             }
