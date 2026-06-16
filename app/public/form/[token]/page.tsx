@@ -14,7 +14,21 @@ import {
   IconBuilding, IconCalendar, IconCircleCheck,
   IconAlertCircle, IconForms, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
-import { buildValidatorOptions, getPreferredValidatorColumnName } from "../../../utils/validatorOptions";
+import { extractDropdownOptionsFromComment } from "../../../utils/validatorOptions";
+
+const extractValidatorDisplayValues = (validator: any): string[] => {
+  if (!validator?.columns?.length) return [];
+  const idCol = validator.columns.find((c: any) => c.is_validator) ?? validator.columns[0];
+  if (!idCol?.values?.length) return [];
+  const descCol = validator.columns.find(
+    (c: any) => !c.is_validator && /desc/i.test(c.name)
+  ) ?? validator.columns.find((c: any) => !c.is_validator);
+  return idCol.values.map((v: any, i: number) => {
+    const id = String(v ?? '').trim();
+    const desc = descCol ? String(descCol.values[i] ?? '').trim() : '';
+    return desc ? `${id} - ${desc}` : id;
+  }).filter(Boolean);
+};
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../utils/requiredFields";
 
 interface Field {
@@ -77,33 +91,41 @@ export default function PublicFormPage() {
         setSheetRows(initialRows);
         if (fd.sheets.length > 0) setActiveTab(fd.sheets[0].name);
 
-        // Precargar opciones de validadores (todos los campos de todas las hojas)
+        // Cargar opciones: comentario → dropdown_options → validador del período
         const allFields = fd.sheets.flatMap(s => s.fields);
+        const periodId = fd.periodId;
         const vMap: Record<string, string[]> = {};
 
-        allFields.forEach((field) => {
-          if (field.dropdown_options?.length) {
-            vMap[field.name] = [...new Set(field.dropdown_options.map((option) => String(option).trim()).filter(Boolean))];
+        await Promise.all(allFields.map(async (field) => {
+          const fromComment = extractDropdownOptionsFromComment(field.comment);
+          if (fromComment.length > 0) {
+            vMap[field.name] = fromComment;
+            return;
           }
-        });
+          if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+            vMap[field.name] = field.dropdown_options.map(o => String(o || '').trim()).filter(Boolean);
+            return;
+          }
+          if (field.validate_with && periodId) {
+            try {
+              let validatorId = '';
+              if (typeof field.validate_with === 'string') {
+                const parts = field.validate_with.split(' - ');
+                validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
+              } else {
+                validatorId = (field.validate_with as any).id;
+              }
+              if (!validatorId) return;
+              const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+                params: { id: validatorId, periodId },
+              });
+              const validator = vRes.data.validator;
+              const values = extractValidatorDisplayValues(validator);
+              if (values.length) vMap[field.name] = values;
+            } catch { /* sin opciones */ }
+          }
+        }));
 
-        await Promise.all(
-          allFields.map(async (field) => {
-            if (vMap[field.name]?.length) return;
-
-            if (field.validate_with && typeof field.validate_with === "object") {
-              try {
-                const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-                  params: { id: field.validate_with.id, periodId: fd.periodId },
-                });
-                vMap[field.name] = buildValidatorOptions(
-                  vRes.data?.validator,
-                  getPreferredValidatorColumnName(field.validate_with.name)
-                );
-              } catch { vMap[field.name] = []; }
-            }
-          })
-        );
         setValidatorOptions(vMap);
       } catch (err: any) {
         setError(err.response?.data?.error || "Enlace no válido o ya expirado.");

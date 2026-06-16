@@ -406,6 +406,7 @@ export const applyValidatorDropdowns = ({
   validators,
   startRow = 2,
   endRow = 1000,
+  preloadedValidatorOptions = {},
 }: {
   workbook: ExcelJS.Workbook;
   worksheet: ExcelJS.Worksheet;
@@ -413,104 +414,68 @@ export const applyValidatorDropdowns = ({
   validators: ValidatorOptionSource[];
   startRow?: number;
   endRow?: number;
+  preloadedValidatorOptions?: Record<string, string[]>;
 }): void => {
   const sourcesSheetName = "_Listas";
-  const existingSourcesSheet = workbook.getWorksheet(sourcesSheetName);
-  const sourcesSheet = existingSourcesSheet ?? workbook.addWorksheet(sourcesSheetName);
-  sourcesSheet.state = "veryHidden";
-
+  // Reusar o crear la hoja _Listas; si ya existe, continuar desde la última columna usada
+  let sourcesSheet = workbook.getWorksheet(sourcesSheetName);
+  if (!sourcesSheet) {
+    sourcesSheet = workbook.addWorksheet(sourcesSheetName);
+    sourcesSheet.state = "veryHidden";
+  }
   let sourceCol = Math.max(1, sourcesSheet.columnCount + 1);
 
   fields.forEach((field, fieldIndex) => {
-    let options: { value: string; displayLabel: string }[] = [];
-    let optionsFromValidator = false;
+    let options: string[] = [];
 
-    if (field.validate_with) {
-      const { validatorName, columnName } = splitValidateWithReference(field.validate_with);
-      if (!validatorName) {
-        options = [];
-      } else {
-        const validator = findValidatorByName(validators, validatorName);
-        options = validator ? getValidatorOptions(validator, columnName) : [];
-        optionsFromValidator = options.length > 0;
-      }
-    } else {
-      const validator = findValidatorByName(validators, field.name);
-      if (validator) {
-        options = getValidatorOptions(validator);
-        optionsFromValidator = options.length > 0;
-      }
+    // 1. Extraer del comentario
+    if (field.comment) {
+      options = extractOptionsFromCommentValidators(field.comment);
     }
 
-    if (options.length === 0 && !field.validate_with && field.comment) {
-      const commentOptions = extractOptionsFromCommentValidators(field.comment);
-      if (commentOptions.length === 0) {
-        applyHeaderCommentNote(worksheet, field, fieldIndex, startRow, endRow, []);
-        return;
-      }
-      options = commentOptions.map((opt) => ({ value: opt, displayLabel: opt }));
-    }
-
-    if (options.length === 0 && !field.validate_with && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
-      const seenStaticOptions = new Set<string>();
+    // 2. Respaldo: dropdown_options ya almacenadas
+    if (options.length === 0 && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+      const seen = new Set<string>();
       options = field.dropdown_options
-        .map((option) => String(option || "").trim())
-        .filter((option) => {
-          if (!option || seenStaticOptions.has(option)) return false;
-          seenStaticOptions.add(option);
-          return true;
-        })
-        .map((option) => ({ value: option, displayLabel: option }));
+        .map((o) => String(o || "").trim())
+        .filter((o) => o && !seen.has(o) && !!seen.add(o));
     }
 
-    if (options.length === 0) {
-      applyHeaderCommentNote(worksheet, field, fieldIndex, startRow, endRow, []);
-      return;
+    // 3. Respaldo: valores del validador del período (precargados)
+    if (options.length === 0 && preloadedValidatorOptions[field.name]?.length) {
+      options = preloadedValidatorOptions[field.name];
     }
-
-    if (!field.validate_with && !optionsFromValidator) {
-      if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
-        options = appendOptionTexts(options, field.dropdown_options);
-      }
-
-      if (field.comment) {
-        options = appendOptionTexts(options, extractOptionsFromCommentValidators(field.comment));
-      }
-    }
-
-    applyHeaderCommentNote(
-      worksheet,
-      field,
-      fieldIndex,
-      startRow,
-      endRow,
-      options.map((option) => option.displayLabel)
-    );
 
     if (options.length === 0) return;
 
-    // Guardar código + descripción (displayLabel) para que el dropdown muestre "CC - Cédula de ciudadanía"
-    options.forEach((option, optionIndex) => {
-      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.displayLabel;
-    });
-
-    const colLetter = toColumnLetter(sourceCol);
-    const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
     const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
     const firstDataRow = Math.max(startRow, headerRow + 1);
-    const normalizedComment = field.comment
-      ? String(field.comment)
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n")
-          .trim()
-      : "";
-
-    const promptText =
-      normalizedComment.length > 220
-        ? `${normalizedComment.slice(0, 217)}...`
-        : normalizedComment;
-
     const rangeAddress = `${toColumnLetter(templateCol)}${firstDataRow}:${toColumnLetter(templateCol)}${endRow}`;
+
+    // Escribir opciones en hoja oculta _Listas
+    options.forEach((opt, i) => {
+      sourcesSheet.getCell(i + 1, sourceCol).value = opt;
+    });
+    const colLetter = toColumnLetter(sourceCol);
+    const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
+    sourceCol += 1;
+
+    // Limpiar validaciones de celda individuales para esta columna (evitar conflictos)
+    const dvModel = (worksheet as any).dataValidations?.model;
+    if (dvModel && typeof dvModel === "object" && !Array.isArray(dvModel)) {
+      Object.keys(dvModel).forEach((key) => {
+        const col = key.replace(/[0-9]/g, "");
+        if (col === toColumnLetter(templateCol)) delete dvModel[key];
+      });
+    }
+
+    const normalizedComment = field.comment
+      ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+      : "";
+    const promptText = normalizedComment.length > 220
+      ? `${normalizedComment.slice(0, 217)}...`
+      : normalizedComment;
+
     const validation: ExcelJS.DataValidation = {
       type: "list",
       allowBlank: true,
@@ -525,8 +490,6 @@ export const applyValidatorDropdowns = ({
       validation.prompt = promptText;
     }
     (worksheet as any).dataValidations.add(rangeAddress, validation);
-
-    sourceCol += 1;
   });
 };
 
@@ -536,12 +499,14 @@ export const applyWorkbookSheetDropdowns = ({
   validators,
   originalCommentsBySheet,
   endRow = 1000,
+  preloadedValidatorOptions = {},
 }: {
   workbook: ExcelJS.Workbook;
   workbookSheets: WorkbookSheetWithFields[];
   validators: ValidatorOptionSource[];
   originalCommentsBySheet?: Map<string, Map<string, string>>;
   endRow?: number;
+  preloadedValidatorOptions?: Record<string, string[]>;
 }): void => {
   // Remove the existing _Listas sheet so it is rebuilt from scratch with code-only values.
   // Without this, the original workbook's full-text options would remain in the sheet and
@@ -560,13 +525,18 @@ export const applyWorkbookSheetDropdowns = ({
     // Clear all existing data validations from the worksheet before rebuilding.
     // The original workbook's validations reference the old _Listas layout, which is
     // now stale after removing and rebuilding the _Listas sheet.
-    (worksheet as any).dataValidations.model = [];
+    (worksheet as any).dataValidations.model = {};
 
     const originalComments = originalCommentsBySheet?.get(sheet.name);
     const fields = originalComments
       ? sheet.fields.map((field, fieldIndex) => {
           const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
-          const originalComment = originalComments.get(getExcelCellAddress(headerRow, col));
+          // Los comentarios pueden estar en la celda de encabezado (fila 1) o
+          // en la primera fila de datos (fila 2+), dependiendo de cómo se generó el workbook
+          const firstDataRow = Math.max(2, headerRow + 1);
+          const originalComment =
+            originalComments.get(getExcelCellAddress(headerRow, col)) ||
+            originalComments.get(getExcelCellAddress(firstDataRow, col));
           // Always prefer the fresh JSZip-extracted comment; fall back to stored comment
           const resolvedComment = originalComment ?? field.comment;
           return resolvedComment !== field.comment ? { ...field, comment: resolvedComment } : field;
@@ -580,8 +550,52 @@ export const applyWorkbookSheetDropdowns = ({
       validators,
       startRow: 2,
       endRow: Math.max(endRow, worksheet.rowCount + 500),
+      preloadedValidatorOptions,
     });
   });
+};
+
+export const fetchValidatorOptionsForFields = async (
+  fields: FieldWithValidator[],
+  periodId: string,
+  apiUrl: string
+): Promise<Record<string, string[]>> => {
+  const result: Record<string, string[]> = {};
+  await Promise.all(
+    fields.map(async (field) => {
+      if (!field.validate_with) return;
+      // Solo para campos sin opciones en comentario
+      if (field.comment && extractOptionsFromCommentValidators(field.comment).length > 0) return;
+      try {
+        let validatorId = '';
+        if (typeof field.validate_with === 'string') {
+          const parts = field.validate_with.split(' - ');
+          validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
+        } else {
+          validatorId = (field.validate_with as any).id ?? '';
+        }
+        if (!validatorId) return;
+        const res = await fetch(
+          `${apiUrl}/validators/id?id=${encodeURIComponent(validatorId)}&periodId=${encodeURIComponent(periodId)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const validator = data.validator;
+        if (!validator?.columns?.length) return;
+        const idCol = validator.columns.find((c: any) => c.is_validator) ?? validator.columns[0];
+        if (!idCol?.values?.length) return;
+        const descCol = validator.columns.find(
+          (c: any) => !c.is_validator && /desc/i.test(c.name)
+        ) ?? validator.columns.find((c: any) => !c.is_validator);
+        result[field.name] = idCol.values.map((v: any, i: number) => {
+          const id = String(v ?? '').trim();
+          const desc = descCol ? String(descCol.values[i] ?? '').trim() : '';
+          return desc ? `${id} - ${desc}` : id;
+        }).filter(Boolean);
+      } catch { /* ignorar errores individuales */ }
+    })
+  );
+  return result;
 };
 
 const normalizeMultilineText = (text: string): string =>

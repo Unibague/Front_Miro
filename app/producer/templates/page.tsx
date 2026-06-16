@@ -49,6 +49,7 @@ import {
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
   extractWorkbookCommentsFromBase64,
+  fetchValidatorOptionsForFields,
   loadWorkbookFromBase64,
   patchNoteSize,
   sanitizeSheetName,
@@ -431,6 +432,14 @@ const ProducerTemplatesPage = () => {
       template?.validators ??
       publishedTemplate.validators;
 
+    const allFieldsForValidators = [
+      ...(template?.fields || []),
+      ...((template?.workbook_sheets || []).flatMap((s: any) => s.fields || [])),
+    ];
+    const preloadedValidatorOptions = periodId
+      ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
+      : {};
+
     // Datos ya enviados por el usuario (para pre-poblar el Excel)
     const userDepCode: string = userResp.data.dep_code || '';
     const userLoadedEntry = (publishedTemplate.loaded_data || []).find(
@@ -504,21 +513,34 @@ const ProducerTemplatesPage = () => {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
 
-      // Re-apply all notes extracted via JSZip (ExcelJS may not load note text from xlsx correctly)
+      // Eliminar notas de celdas de datos (filas > 1) cargadas desde el xlsx original
+      workbook.worksheets.forEach((ws) => {
+        ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return;
+          row.eachCell({ includeEmpty: false }, (cell) => {
+            const m = (cell as any)._model;
+            if (m && 'note' in m) delete m.note;
+          });
+        });
+      });
+
+      // Re-aplicar solo las notas de fila 1 (encabezados)
       for (const [sheetName, sheetComments] of originalCommentsBySheet.entries()) {
         const ws = workbook.getWorksheet(sheetName);
         if (!ws) continue;
         for (const [cellRef, noteText] of sheetComments.entries()) {
-          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
+          const rowNum = parseInt(cellRef.replace(/[A-Za-z$]/g, ''), 10);
+          if (rowNum !== 1 || !noteText) continue;
+          applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
         }
       }
 
-      // Also apply cellNotes stored in the template snapshot (fallback for older imports)
+      // cellNotes solo fila 1
       (template.workbook_sheets || []).forEach((sheet) => {
         const ws = workbook.getWorksheet(sheet.name);
         if (!ws || !sheet.cellNotes?.length) return;
         sheet.cellNotes.forEach((note) => {
-          if (note?.row && note?.col && note?.note) {
+          if (note?.row === 1 && note?.col && note?.note) {
             applyFieldCommentNote(ws.getCell(note.row, note.col), note.note, { preserveText: true });
           }
         });
@@ -529,6 +551,7 @@ const ProducerTemplatesPage = () => {
         workbookSheets,
         validators,
         originalCommentsBySheet,
+        preloadedValidatorOptions,
       });
 
       // Encabezados de campos añadidos (solo value + fill + font, sin border para no corromper el workbook cargado)
@@ -612,6 +635,7 @@ const ProducerTemplatesPage = () => {
             validators,
             startRow: 2,
             endRow: 1000,
+            preloadedValidatorOptions,
           });
           // Encabezados de campos añadidos por el usuario (color azul claro)
           const hasBase = sheet.fields.some((f) => f.locked !== false);
@@ -666,6 +690,7 @@ const ProducerTemplatesPage = () => {
           validators,
           startRow: 2,
           endRow: 1000,
+          preloadedValidatorOptions,
         });
 
         if (canUserEditSheet(sheet)) {
@@ -710,7 +735,6 @@ const ProducerTemplatesPage = () => {
         right: { style: "thin" },
       };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-
       const field = template.fields[colNumber - 1];
       applyFieldCommentNote(cell, field.comment);
     });
@@ -846,6 +870,7 @@ if (field.multiple) {
       validators,
       startRow: 2,
       endRow: 1000,
+      preloadedValidatorOptions,
     });
 
     // Pre-poblar con datos ya enviados

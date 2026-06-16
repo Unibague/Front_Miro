@@ -32,10 +32,8 @@ import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../components/Validators/ValidatorModal";
 import {
-  buildFieldDropdownOptions,
   buildSelectOptionsFromStrings,
-  buildValidatorOptions,
-  getPreferredValidatorColumnName,
+  extractDropdownOptionsFromComment,
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 
@@ -124,6 +122,20 @@ interface ValidatorData {
   _id: string;
   columns: { name: string; is_validator: boolean; values: any[] }[];
 }
+
+const extractValidatorDisplayValues = (validator: any): string[] => {
+  if (!validator?.columns?.length) return [];
+  const idCol = validator.columns.find((c: any) => c.is_validator) ?? validator.columns[0];
+  if (!idCol?.values?.length) return [];
+  const descCol = validator.columns.find(
+    (c: any) => !c.is_validator && /desc/i.test(c.name)
+  ) ?? validator.columns.find((c: any) => !c.is_validator);
+  return idCol.values.map((v: any, i: number) => {
+    const id = String(v ?? '').trim();
+    const desc = descCol ? String(descCol.values[i] ?? '').trim() : '';
+    return desc ? `${id} - ${desc}` : id;
+  }).filter(Boolean);
+};
 
 const fieldIsRequired = (field: Field): boolean => {
   if (field.required) return true;
@@ -691,105 +703,57 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         ...((normalizedTemplate.workbook_sheets || []).flatMap((s: WorkbookSheet) => s.fields || [])),
       ];
 
-      const validatorCheckPromises = allTemplateFields.map(async (field) => {
-        if (field.validate_with) {
-          try {
-            let validatorId = '';
-            if (typeof field.validate_with === 'string') {
-              const parts = field.validate_with.split(' - ');
-              validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
-            } else {
-              validatorId = (field.validate_with as any).id;
-            }
-
-            if (validatorId) {
-              const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-                params: { id: validatorId, periodId },
-              });
-              return { [field.name]: !!validatorResponse.data.validator };
-            }
-          } catch {
-            return { [field.name]: false };
-          }
-        }
-        return { [field.name]: false };
-      });
-
-      const validatorChecks = await Promise.all(validatorCheckPromises);
-      const validatorCheckResults = validatorChecks.reduce((acc, curr) => ({ ...acc, ...curr }), {});
-      setValidatorExists(validatorCheckResults);
-
-      // Cargar opciones para campos con validador o listas importadas desde Excel
-      const allValidatorOptionsPromises = allTemplateFields
-      .map(async (field) => {
-        const fieldDropdownOptions = buildFieldDropdownOptions(field);
-
-        if (!field.validate_with) {
-          return {
-            fieldName: field.name,
-            options: buildSelectOptionsFromStrings(fieldDropdownOptions),
-            isMultiple: field.multiple,
-          };
-        }
-
+      // Obtener datos del validador y sus opciones en una sola llamada por campo
+      const validatorFetchPromises = allTemplateFields.map(async (field) => {
+        if (!field.validate_with) return { fieldName: field.name, exists: false, validatorValues: [] as string[] };
         try {
           let validatorId = '';
-          let validateWith = '';
-
           if (typeof field.validate_with === 'string') {
             const parts = field.validate_with.split(' - ');
-            if (parts.length >= 2) {
-              const lastPart = parts[parts.length - 1].trim();
-              // Si el último segmento es un ObjectId de MongoDB (24 hex), úsalo como ID;
-              // de lo contrario el primer segmento es el nombre del validador.
-              validatorId = /^[0-9a-fA-F]{24}$/.test(lastPart) ? lastPart : parts[0].trim();
-              validateWith = field.validate_with;
-            } else if (field.validate_with.trim()) {
-              validatorId = field.validate_with.trim();
-              validateWith = field.validate_with.trim();
-            }
-          } else if ((field.validate_with as any)?.id) {
+            validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
+          } else {
             validatorId = (field.validate_with as any).id;
-            validateWith = (field.validate_with as any).name || '';
           }
+          if (!validatorId) return { fieldName: field.name, exists: false, validatorValues: [] as string[] };
 
-          if (!validatorId) {
-            return {
-              fieldName: field.name,
-              options: buildSelectOptionsFromStrings(fieldDropdownOptions),
-              isMultiple: field.multiple,
-            };
-          }
-
-          const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+          const validatorResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
             params: { id: validatorId, periodId },
           });
-          const optionStrings = buildValidatorOptions(
-            vRes.data?.validator,
-            getPreferredValidatorColumnName(validateWith)
-          );
-          // Si el validador aportó opciones, no mezclar con las del comentario para evitar duplicados
-          const options = buildSelectOptionsFromStrings(
-            optionStrings.length > 0 ? optionStrings : fieldDropdownOptions
-          );
-
-          return { fieldName: field.name, options, isMultiple: field.multiple };
-        } catch (error) {
-          console.error(`Error obteniendo opciones para ${field.name}:`, error);
-          return {
-            fieldName: field.name,
-            options: buildSelectOptionsFromStrings(fieldDropdownOptions),
-            isMultiple: field.multiple,
-          };
+          const validator = validatorResponse.data.validator;
+          const values = extractValidatorDisplayValues(validator);
+          return { fieldName: field.name, exists: !!validator, validatorValues: values };
+        } catch {
+          return { fieldName: field.name, exists: false, validatorValues: [] as string[] };
         }
       });
 
-    const allValidatorOptions = await Promise.all(allValidatorOptionsPromises);
-    
+      const validatorFetchResults = await Promise.all(validatorFetchPromises);
+      const validatorExistsMap: Record<string, boolean> = {};
+      const validatorValuesMap: Record<string, string[]> = {};
+      validatorFetchResults.forEach(({ fieldName, exists, validatorValues }) => {
+        validatorExistsMap[fieldName] = exists;
+        validatorValuesMap[fieldName] = validatorValues;
+      });
+      setValidatorExists(validatorExistsMap);
+
+      // Opciones: comentario → dropdown_options → valores del validador del período
+      const allValidatorOptions = allTemplateFields.map((field) => {
+        const fromComment = extractDropdownOptionsFromComment(field.comment);
+        let opts: string[];
+        if (fromComment.length > 0) {
+          opts = fromComment;
+        } else if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+          opts = field.dropdown_options.map(o => String(o || '').trim()).filter(Boolean);
+        } else {
+          opts = validatorValuesMap[field.name] || [];
+        }
+        return { fieldName: field.name, options: buildSelectOptionsFromStrings(opts), isMultiple: field.multiple };
+      });
+
     // Separar opciones para MultiSelect y Select
     const multiSelectOpts: Record<string, string[]> = {};
     const selectOpts: Record<string, Array<{value: string, label: string}>> = {};
-    
+
     allValidatorOptions.forEach(({ fieldName, options, isMultiple }) => {
       if (isMultiple) {
         multiSelectOpts[fieldName] = options.map((opt: any) => opt.value);
@@ -797,7 +761,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         selectOpts[fieldName] = options;
       }
     });
-    
+
     setMultiSelectOptions(multiSelectOpts);
     setSelectOptions(selectOpts);
 

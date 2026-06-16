@@ -19,6 +19,7 @@ import {
   applyWorkbookSheetDropdowns,
   arrayBufferToBase64,
   extractWorkbookCommentsFromBase64,
+  fetchValidatorOptionsForFields,
   getExcelCellAddress,
   loadWorkbookFromBase64,
   patchNoteSize,
@@ -1241,7 +1242,8 @@ const AdminTemplatesPage = () => {
     worksheetName: string,
     _includeHelpSheet = false,
     validators = template.validators,
-    fields = template.fields
+    fields = template.fields,
+    preloadedValidatorOptions: Record<string, string[]> = {}
   ) => {
     const worksheet = workbook.addWorksheet(worksheetName);
 
@@ -1289,6 +1291,7 @@ const AdminTemplatesPage = () => {
       validators,
       startRow: 2,
       endRow: maxRows,
+      preloadedValidatorOptions,
     });
   };
 
@@ -1505,26 +1508,43 @@ const AdminTemplatesPage = () => {
     } catch { /* si falla, se usan los validators cacheados */ }
 
     const worksheets = getTemplateWorksheets(template);
+    const allFields = worksheets.flatMap(s => s.fields || []);
+    const preloadedValidatorOptions = selectedPeriodId
+      ? await fetchValidatorOptionsForFields(allFields, selectedPeriodId, process.env.NEXT_PUBLIC_API_URL!)
+      : {};
 
     if (template.original_workbook_base64) {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
 
-      // Re-apply all notes extracted via JSZip (ExcelJS may not load note text from xlsx correctly)
+      // Eliminar notas de celdas de datos (filas > 1) cargadas desde el xlsx original
+      workbook.worksheets.forEach((ws) => {
+        ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return;
+          row.eachCell({ includeEmpty: false }, (cell) => {
+            const m = (cell as any)._model;
+            if (m && 'note' in m) delete m.note;
+          });
+        });
+      });
+
+      // Re-aplicar solo las notas de fila 1 (encabezados)
       for (const [sheetName, sheetComments] of originalCommentsBySheet.entries()) {
         const ws = workbook.getWorksheet(sheetName);
         if (!ws) continue;
         for (const [cellRef, noteText] of sheetComments.entries()) {
-          if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText);
+          const rowNum = parseInt(cellRef.replace(/[A-Za-z$]/g, ''), 10);
+          if (rowNum !== 1 || !noteText) continue;
+          applyFieldCommentNote(ws.getCell(cellRef), noteText);
         }
       }
 
-      // Also apply cellNotes stored in the template snapshot (fallback for older imports)
+      // cellNotes solo fila 1
       (template.workbook_sheets || []).forEach((sheet) => {
         const ws = workbook.getWorksheet(sheet.name);
         if (!ws || !sheet.cellNotes?.length) return;
         sheet.cellNotes.forEach((note) => {
-          if (note?.row && note?.col && note?.note) {
+          if (note?.row === 1 && note?.col && note?.note) {
             applyFieldCommentNote(ws.getCell(note.row, note.col), note.note);
           }
         });
@@ -1535,6 +1555,7 @@ const AdminTemplatesPage = () => {
         workbookSheets: worksheets,
         validators: template.validators,
         originalCommentsBySheet,
+        preloadedValidatorOptions,
       });
 
       // Encabezados verdes para campos añadidos (locked: false)
@@ -1576,10 +1597,11 @@ const AdminTemplatesPage = () => {
           validators: template.validators,
           startRow: 2,
           endRow: 1000,
+          preloadedValidatorOptions,
         });
         return;
       }
-      populateTemplateWorksheet(workbook, template, worksheetName, false, template.validators, sheet.fields);
+      populateTemplateWorksheet(workbook, template, worksheetName, false, template.validators, sheet.fields, preloadedValidatorOptions);
     });
 
     let buffer = await workbook.xlsx.writeBuffer();

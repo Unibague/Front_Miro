@@ -40,7 +40,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns, fetchValidatorOptionsForFields, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -112,6 +112,7 @@ interface Validator {
 interface Period {
   name: string;
   producer_end_date: Date;
+  is_active: boolean;
 }
 
 interface PublishedTemplate {
@@ -120,6 +121,7 @@ interface PublishedTemplate {
   published_by: any;
   template: Template;
   period: Period;
+  deadline?: Date;
   producers_dep_code: string[];
   completed: boolean;
   createdAt: string;
@@ -136,6 +138,7 @@ interface ProducerUploadedTemplatesPageProps {
   fetchTemp: () => void;
   selectedCategory?: string | null;
   userDependencies?: {value: string, label: string}[];
+  isAdmin?: boolean;
 }
 
 const cloneExcelValue = <T,>(value: T): T => {
@@ -181,7 +184,7 @@ const toExcelCellValue = (value: any): ExcelJS.CellValue => {
   return value as ExcelJS.CellValue;
 };
 
-const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies }: ProducerUploadedTemplatesPageProps) => {
+const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies, isAdmin = false }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
   const router = useRouter();
   const { data: session } = useSession();
@@ -319,6 +322,14 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     const depCode: string = userResp.data.dep_code;
     const freshTemplate = freshTemplateResponse.data.template as Template | null | undefined;
     const validators = freshTemplate?.validators ?? publishedTemplate.validators;
+    const periodId: string = (publishedTemplate.period as any)?._id ?? String(publishedTemplate.period ?? '');
+    const allFieldsForValidators = [
+      ...(freshTemplate?.fields || []),
+      ...((freshTemplate?.workbook_sheets || []).flatMap((s: any) => s.fields || [])),
+    ];
+    const preloadedValidatorOptions = periodId
+      ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
+      : {};
 
     // Buscar datos del usuario
     const filledData: any = publishedTemplate.loaded_data.find(
@@ -413,7 +424,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
             }
           });
           populateSheet(ws, sheet.fields || [], sheet.name);
-          applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields || [], validators, startRow: 2, endRow: 1000 });
+          applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields || [], validators, startRow: 2, endRow: 1000, preloadedValidatorOptions });
           continue;
         }
         const ws = workbook.addWorksheet(sheet.name);
@@ -426,7 +437,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         });
         ws.columns.forEach(c => { c.width = 20; });
         populateSheet(ws, sheet.fields, sheet.name);
-        applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+        applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields, validators, startRow: 2, endRow: 1000, preloadedValidatorOptions });
       }
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${freshTemplate?.file_name || publishedTemplate.name}.xlsx`);
@@ -449,7 +460,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     worksheet.columns.forEach(c => { c.width = 20; });
 
     populateSheet(worksheet, template.fields);
-    applyValidatorDropdowns({ workbook, worksheet, fields: template.fields, validators, startRow: 2, endRow: 1000 });
+    applyValidatorDropdowns({ workbook, worksheet, fields: template.fields, validators, startRow: 2, endRow: 1000, preloadedValidatorOptions });
 
     const buffer = await workbook.xlsx.writeBuffer();
     saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template.file_name}.xlsx`);
@@ -495,7 +506,11 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
-    return endOfDayGMT5(new Date(publishedTemplate.period.producer_end_date)) < new Date();
+    if (isAdmin || (session?.user as any)?.role === "Administrador") return false;
+    if (!publishedTemplate.period.is_active) return true;
+    const effectiveDeadline = publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date;
+    if (!effectiveDeadline) return false;
+    return endOfDayGMT5(new Date(effectiveDeadline)) < new Date();
   };
 
   const truncateString = (str: string, maxLength: number = 20): string => {
@@ -510,7 +525,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         <Table.Td>{publishedTemplate.template.dimensions.map(dim => dim.name).join(', ')}</Table.Td>
         <Table.Td>{publishedTemplate.name}</Table.Td>
         <Table.Td>
-          {dateToGMT(publishedTemplate.period.producer_end_date)}
+          {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
         </Table.Td>
     
         <Table.Td>
