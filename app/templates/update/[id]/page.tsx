@@ -15,12 +15,16 @@ import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChang
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import {
+  appendMissingFieldComments,
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
   extractWorkbookCommentsFromBase64,
+  getExcelCellAddress,
+  injectWorkbookSheetHeaderComments,
   loadWorkbookFromBase64,
   patchNoteBackgroundColor,
+  patchNoteSize,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
@@ -787,6 +791,7 @@ router.back();
         bottom: { style: "thin" }, right: { style: "thin" },
       };
       cell.alignment = { vertical: "middle", horizontal: "center" };
+      applyFieldCommentNote(cell, field.comment);
       const currentWidth = worksheet.getColumn(col).width;
       if (!currentWidth || currentWidth < 20) {
         worksheet.getColumn(col).width = 20;
@@ -847,6 +852,19 @@ router.back();
 
   const handleDownloadTemplate = async () => {
     await handleSave();
+    const fieldCommentByName = new Map(
+      fields
+        .filter((field) => field.name && field.comment)
+        .map((field) => [field.name, field.comment])
+    );
+    const withSavedFieldComments = (sheet: TemplateWorksheet): TemplateWorksheet => ({
+      ...sheet,
+      fields: sheet.fields.map((field) => ({
+        ...field,
+        comment: field.comment || fieldCommentByName.get(field.name) || "",
+      })),
+    });
+
     if (originalWorkbookBase64) {
       const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
@@ -876,7 +894,25 @@ router.back();
         });
       });
       let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+      // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
+      const augmentedForInjection = workbookSheets.map((sheet) => {
+        const sheetWithFallbackComments = withSavedFieldComments(sheet);
+        const sheetOrigComments = originalCommentsBySheet.get(sheet.name);
+        if (!sheetOrigComments) return sheetWithFallbackComments;
+        return {
+          ...sheetWithFallbackComments,
+          fields: sheetWithFallbackComments.fields.map((field, fi) => {
+            if (field.comment) return field;
+            const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : fi + 1;
+            const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+            const orig = sheetOrigComments.get(getExcelCellAddress(hRow, col));
+            return orig ? { ...field, comment: orig } : field;
+          }),
+        };
+      });
+      buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
       buffer = await patchNoteBackgroundColor(buffer);
+      buffer = await patchNoteSize(buffer);
       saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
 
       showNotification({
@@ -889,9 +925,12 @@ router.back();
 
     const workbook = new ExcelJS.Workbook();
 
+    const generatedSheetNameMap = new Map<string, string>();
+
     if (hasWorkbookSheets) {
       for (const sheet of workbookSheets) {
         const sheetName = resolveUniqueSheetName(workbook, sheet.name, `Hoja_${workbookSheets.indexOf(sheet) + 1}`);
+        generatedSheetNameMap.set(sheet.name, sheetName);
         if (sheet.preserveOriginalContent) {
           const worksheet = workbook.addWorksheet(sheetName);
           (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
@@ -919,7 +958,17 @@ router.back();
     }
 
     let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+    buffer = await injectWorkbookSheetHeaderComments(
+      buffer,
+      hasWorkbookSheets
+        ? workbookSheets.map((sheet) => ({
+          ...withSavedFieldComments(sheet),
+          name: generatedSheetNameMap.get(sheet.name) || sheet.name,
+        }))
+        : [{ name, fields }]
+    );
     buffer = await patchNoteBackgroundColor(buffer);
+    buffer = await patchNoteSize(buffer);
     saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
 
     showNotification({

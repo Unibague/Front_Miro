@@ -46,6 +46,22 @@ function normalizePeriodo(value?: string | null) {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
 }
 
+function deduplicarRespuestas(items: RespuestaFormulario[]): RespuestaFormulario[] {
+  const mapa = new Map<string, RespuestaFormulario>();
+  for (const r of items) {
+    const clave = normalizePeriodo(r.corte);
+    const prev = mapa.get(clave);
+    if (!prev) {
+      mapa.set(clave, r);
+    } else {
+      const fechaR = r.fecha_envio ? new Date(r.fecha_envio).getTime() : (r as any).createdAt ? new Date((r as any).createdAt).getTime() : 0;
+      const fechaPrev = prev.fecha_envio ? new Date(prev.fecha_envio).getTime() : (prev as any).createdAt ? new Date((prev as any).createdAt).getTime() : 0;
+      if (fechaR > fechaPrev) mapa.set(clave, r);
+    }
+  }
+  return Array.from(mapa.values());
+}
+
 function getPeriodoPreferido(periodos: Periodo[], preferredPeriodo?: string | null) {
   const preferred = normalizePeriodo(preferredPeriodo);
   if (!preferred) return null;
@@ -375,7 +391,7 @@ function FormulariosRespuestasPanel({
     if (!indicadorId) return;
     setLoading(true);
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
-      .then((r) => setRespuestas(r.data))
+      .then((r) => setRespuestas(deduplicarRespuestas(r.data)))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -517,7 +533,7 @@ function LiderRevisionPanel({
     if (!indicadorId) return;
     setLoading(true);
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
-      .then((r) => setRespuestas(r.data.filter((item: RespuestaFormulario) => item.estado === "Enviado")))
+      .then((r) => setRespuestas(deduplicarRespuestas(r.data.filter((item: RespuestaFormulario) => item.estado === "Enviado"))))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -795,10 +811,10 @@ function LiderRevisionPanelV2({
     setLoading(true);
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
       .then((r) => setRespuestas(
-        r.data.filter((item: RespuestaFormulario) =>
+        deduplicarRespuestas(r.data.filter((item: RespuestaFormulario) =>
           item.estado === "Enviado" && (!onlyApproved || item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
           && (!onlyEvaluated || (item.estado_aval != null && item.estado_aval !== "Pendiente"))
-        )
+        ))
       ))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1261,9 +1277,9 @@ function PlaneacionRevisionPanel({
     setLoading(true);
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
       .then((res) => setRespuestas(
-        (res.data as RespuestaFormulario[]).filter(
+        deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
           (item) => item.estado === "Enviado" && item.estado_aval === "Aprobado"
-        )
+        ))
       ))
       .catch(() => {})
       .finally(() => setLoading(false));

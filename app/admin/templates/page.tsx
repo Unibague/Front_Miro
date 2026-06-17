@@ -17,6 +17,7 @@ import {
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
+  appendMissingFieldComments,
   arrayBufferToBase64,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
@@ -1578,7 +1579,20 @@ const AdminTemplatesPage = () => {
         });
       });
 
-      let buffer = await workbook.xlsx.writeBuffer();
+      let buffer = await workbook.xlsx.writeBuffer() as ArrayBuffer;
+      const fieldCommentByName = new Map(
+        (template.fields || [])
+          .filter((f: any) => f?.name && f.comment)
+          .map((f: any) => [f.name, f.comment as string])
+      );
+      const augmentedForInjection = worksheets.map((sheet) => ({
+        ...sheet,
+        fields: (sheet.fields || []).map((field) => ({
+          ...field,
+          comment: field.comment || fieldCommentByName.get(field.name) || "",
+        })),
+      }));
+      buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
       buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: 'application/octet-stream' });
       saveAs(blob, `${template.file_name}.xlsx`);

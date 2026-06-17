@@ -45,11 +45,14 @@ import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
 import {
+  appendMissingFieldComments,
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
+  getExcelCellAddress,
+  injectWorkbookSheetHeaderComments,
   loadWorkbookFromBase64,
   patchNoteSize,
   sanitizeSheetName,
@@ -466,6 +469,18 @@ const ProducerTemplatesPage = () => {
     const workbookSheets = (template.workbook_sheets || []).filter(
       (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
     );
+    const templateFieldCommentByName = new Map(
+      (template.fields || [])
+        .filter((field) => field?.name && field.comment)
+        .map((field) => [field.name, field.comment])
+    );
+    const withTemplateFieldComments = (sheet: any) => ({
+      ...sheet,
+      fields: (sheet.fields || []).map((field: any) => ({
+        ...field,
+        comment: field.comment || templateFieldCommentByName.get(field.name) || "",
+      })),
+    });
 
     // Mapa de ID de productor → dep_code para resolver las hojas
     const producerIdMap = new Map<string, string>();
@@ -594,6 +609,23 @@ const ProducerTemplatesPage = () => {
       }
 
       let buffer = await workbook.xlsx.writeBuffer();
+      // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
+      const augmentedForInjection = workbookSheets.map((sheet: any) => {
+        const sheetWithFallbackComments = withTemplateFieldComments(sheet);
+        const sheetOrigComments = originalCommentsBySheet.get(sheet.name);
+        if (!sheetOrigComments) return sheetWithFallbackComments;
+        return {
+          ...sheetWithFallbackComments,
+          fields: (sheetWithFallbackComments.fields || []).map((field: any, fi: number) => {
+            if (field.comment) return field;
+            const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : fi + 1;
+            const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+            const orig = sheetOrigComments.get(getExcelCellAddress(hRow, col));
+            return orig ? { ...field, comment: orig } : field;
+          }),
+        };
+      });
+      buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
       buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
@@ -650,6 +682,7 @@ const ProducerTemplatesPage = () => {
               cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "166534" } };
               cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
               cell.alignment = { vertical: "middle", horizontal: "center" };
+              applyFieldCommentNote(cell, field.comment);
               const currentWidth = worksheet.getColumn(col).width;
               if (!currentWidth || currentWidth < 20) worksheet.getColumn(col).width = 20;
             });
@@ -710,7 +743,15 @@ const ProducerTemplatesPage = () => {
         }
       }
 
-      const buffer = await workbook.xlsx.writeBuffer();
+      let buffer = await workbook.xlsx.writeBuffer();
+      buffer = await injectWorkbookSheetHeaderComments(
+        buffer,
+        workbookSheets.map((sheet) => ({
+          ...withTemplateFieldComments(sheet),
+          name: sheetNameMap.get(sheet.name) || sheet.name,
+        }))
+      );
+      buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: "application/octet-stream" });
       saveAs(blob, `${template.file_name}.xlsx`);
       return;
@@ -877,6 +918,9 @@ if (field.multiple) {
     populateSheetWithData(worksheet, template.fields);
 
     let buffer = await workbook.xlsx.writeBuffer();
+    buffer = await injectWorkbookSheetHeaderComments(buffer, [
+      { name: template.name, fields: template.fields },
+    ]);
     buffer = await patchNoteSize(buffer);
     const blob = new Blob([buffer], { type: "application/octet-stream" });
     saveAs(blob, `${template.file_name}.xlsx`);

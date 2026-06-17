@@ -171,6 +171,520 @@ const getCommentNodeText = (node: Element): string => {
   return (node.textContent || "").trim();
 };
 
+const getWorksheetPathMap = async (zip: JSZip): Promise<Map<string, string>> => {
+  const worksheetPathByName = new Map<string, string>();
+  const workbookPath = "xl/workbook.xml";
+  const workbookXml = await zip.file(workbookPath)?.async("text");
+  const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (!workbookXml || !workbookRelsXml) return worksheetPathByName;
+
+  const workbookRels = getRelTargets(workbookRelsXml);
+  const workbookDoc = parseXml(workbookXml);
+  const sheets = Array.from(workbookDoc.getElementsByTagName("sheet"));
+
+  sheets.forEach((sheetNode) => {
+    const sheetName = sheetNode.getAttribute("name") || "";
+    const relId =
+      sheetNode.getAttribute("r:id") ||
+      sheetNode.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "id"
+      ) ||
+      sheetNode.getAttribute("id") ||
+      "";
+    const sheetRel = workbookRels.get(relId);
+    if (!sheetName || !sheetRel?.target) return;
+    worksheetPathByName.set(sheetName, resolveZipPath(workbookPath, sheetRel.target));
+  });
+
+  return worksheetPathByName;
+};
+
+const getWorksheetRelsPath = (worksheetPath: string): string => {
+  const parts = worksheetPath.split("/");
+  const worksheetFileName = parts.pop() || "";
+  return `${parts.join("/")}/_rels/${worksheetFileName}.rels`;
+};
+
+const createRelationshipsDoc = (): Document =>
+  parseXml(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+  );
+
+const getNextRelId = (relsDoc: Document): string => {
+  const used = new Set(
+    Array.from(relsDoc.getElementsByTagName("Relationship"))
+      .map((node) => node.getAttribute("Id") || "")
+      .filter(Boolean)
+  );
+  let index = 1;
+  while (used.has(`rIdMiroComments${index}`)) index += 1;
+  return `rIdMiroComments${index}`;
+};
+
+const getSheetCommentsFromRelationships = async (
+  zip: JSZip,
+  worksheetPath: string
+): Promise<Map<string, string>> => {
+  const comments = new Map<string, string>();
+  const relsXml = await zip.file(getWorksheetRelsPath(worksheetPath))?.async("text");
+  if (!relsXml) return comments;
+
+  const sheetRels = getRelTargets(relsXml);
+  for (const rel of sheetRels.values()) {
+    const normalizedType = rel.type.toLowerCase();
+    if (!normalizedType.includes("/comments") || normalizedType.includes("/threadedcomments")) {
+      continue;
+    }
+
+    const commentsPath = resolveZipPath(worksheetPath, rel.target);
+    const commentsXml = await zip.file(commentsPath)?.async("text");
+    if (!commentsXml) continue;
+
+    const commentsDoc = parseXml(commentsXml);
+    Array.from(commentsDoc.getElementsByTagName("comment")).forEach((commentNode) => {
+      const ref = commentNode.getAttribute("ref") || "";
+      const text = getCommentNodeText(commentNode);
+      if (ref && text) comments.set(ref.replace(/\$/g, ""), text);
+    });
+  }
+
+  return comments;
+};
+
+const columnLettersToNumber = (letters: string): number => {
+  return letters.toUpperCase().split("").reduce((total, char) => {
+    const value = char.charCodeAt(0) - 64;
+    return value >= 1 && value <= 26 ? total * 26 + value : total;
+  }, 0);
+};
+
+const parseCellAddress = (ref: string): { rowNumber: number; columnNumber: number } | null => {
+  const match = /^([A-Z]+)(\d+)$/i.exec(ref.replace(/\$/g, ""));
+  if (!match) return null;
+  return {
+    columnNumber: columnLettersToNumber(match[1]),
+    rowNumber: Number(match[2]),
+  };
+};
+
+const escapeXmlText = (str: string): string =>
+  str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const buildCommentsXml = (comments: Array<{ ref: string; text: string }>): string => {
+  const commentElements = comments
+    .map(
+      (c) =>
+        `<comment ref="${c.ref}" authorId="0"><text><r><t xml:space="preserve">${escapeXmlText(c.text)}</t></r></text></comment>`
+    )
+    .join("");
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<authors><author></author></authors>` +
+    `<commentList>${commentElements}</commentList>` +
+    `</comments>`
+  );
+};
+
+const buildVmlShapeNodes = (
+  comments: Array<{ rowNumber: number; columnNumber: number }>,
+  startShapeId = 1025
+): string =>
+  comments
+    .map((comment, index) => {
+      const startColumn = Math.max(comment.columnNumber - 1, 0);
+      const startRow = Math.max(comment.rowNumber - 1, 0);
+      const endColumn = startColumn + 5;
+      const endRow = startRow + 20;
+
+      return (
+        `<v:shape id="_x0000_s${startShapeId + index}" type="#_x0000_t202"` +
+        ` style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:200pt;height:60pt;z-index:1;visibility:hidden"` +
+        ` fillcolor="#ffffe1" o:insetmode="auto">` +
+        `<v:fill color2="#ffffe1"/>` +
+        `<v:shadow on="t" color="black" obscured="t"/>` +
+        `<v:path o:connecttype="none"/>` +
+        `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>` +
+        `<x:ClientData ObjectType="Note">` +
+        `<x:MoveWithCells/><x:SizeWithCells/>` +
+        `<x:Anchor>${startColumn}, 0, ${startRow}, 0, ${endColumn}, 0, ${endRow}, 0</x:Anchor>` +
+        `<x:AutoFill>False</x:AutoFill>` +
+        `<x:Row>${startRow}</x:Row><x:Column>${startColumn}</x:Column>` +
+        `</x:ClientData></v:shape>`
+      );
+    })
+    .join("");
+
+const buildVmlCommentsXml = (
+  comments: Array<{ rowNumber: number; columnNumber: number }>
+): string => {
+  const shapeNodes = buildVmlShapeNodes(comments);
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<xml xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:x="urn:schemas-microsoft-com:office:excel">` +
+    `<o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="1"/></o:shapelayout>` +
+    `<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe">` +
+    `<v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>` +
+    `</v:shapetype>` +
+    shapeNodes +
+    `</xml>`
+  );
+};
+
+const getVmlCellRefs = (vmlText: string): Set<string> => {
+  const refs = new Set<string>();
+  for (const match of vmlText.matchAll(/<x:Row>(\d+)<\/x:Row>[\s\S]*?<x:Column>(\d+)<\/x:Column>/g)) {
+    const row = parseInt(match[1], 10) + 1;
+    const col = parseInt(match[2], 10) + 1;
+    refs.add(getExcelCellAddress(row, col));
+  }
+  return refs;
+};
+
+const appendMissingVmlShapes = (
+  vmlText: string,
+  comments: Array<{ ref: string; rowNumber: number; columnNumber: number }>
+): string => {
+  const existingRefs = getVmlCellRefs(vmlText);
+  const missing = comments.filter((comment) => !existingRefs.has(comment.ref));
+  if (missing.length === 0) return vmlText;
+
+  const idMatches = [...vmlText.matchAll(/id="_x0000_s(\d+)"/g)];
+  const maxId = idMatches.length > 0
+    ? Math.max(...idMatches.map((match) => parseInt(match[1], 10)))
+    : 1024;
+  const newShapes = buildVmlShapeNodes(missing, maxId + 1);
+
+  return vmlText.includes("</xml>")
+    ? vmlText.replace("</xml>", `${newShapes}</xml>`)
+    : `${vmlText}${newShapes}`;
+};
+
+const ensureWorksheetLegacyDrawing = async (
+  zip: JSZip,
+  worksheetPath: string,
+  vmlRelId: string
+) => {
+  const worksheetXml = await zip.file(worksheetPath)?.async("text");
+  if (!worksheetXml) return;
+
+  const legacyDrawing = `<legacyDrawing r:id="${vmlRelId}"/>`;
+  const withoutLegacyDrawing = worksheetXml
+    .replace(/<legacyDrawing\b[\s\S]*?(?:\/>|>[\s\S]*?<\/legacyDrawing>)/g, "");
+
+  zip.file(worksheetPath, withoutLegacyDrawing.replace("</worksheet>", `${legacyDrawing}</worksheet>`));
+};
+
+const ensureContentTypeEntry = (
+  typesDoc: Document,
+  selector: () => boolean,
+  createEntry: (doc: Document) => Element
+) => {
+  if (selector()) return;
+  typesDoc.getElementsByTagName("Types")[0]?.appendChild(createEntry(typesDoc));
+};
+
+const upsertWorksheetComments = async (
+  zip: JSZip,
+  worksheetPath: string,
+  comments: Array<{ ref: string; text: string; rowNumber: number; columnNumber: number }>,
+  commentIndex: number
+): Promise<string | null> => {
+  const serializer = new XMLSerializer();
+  const relsPath = getWorksheetRelsPath(worksheetPath);
+
+  const relsXml = await zip.file(relsPath)?.async("text");
+  const relsDoc = relsXml ? parseXml(relsXml) : createRelationshipsDoc();
+  const relationshipsNode = relsDoc.getElementsByTagName("Relationships")[0];
+  if (!relationshipsNode) return null;
+
+  let commentsTarget = "";
+  let vmlTarget = "";
+  let vmlRelId = "";
+
+  const relationshipNodes = Array.from(relsDoc.getElementsByTagName("Relationship"));
+  relationshipNodes.forEach((relationship) => {
+    const type = String(relationship.getAttribute("Type") || "");
+    const normalizedType = type.toLowerCase();
+    if (normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) {
+      commentsTarget ||= String(relationship.getAttribute("Target") || "");
+      return;
+    }
+    if (normalizedType.includes("/vmldrawing")) {
+      vmlTarget ||= String(relationship.getAttribute("Target") || "");
+      vmlRelId ||= String(relationship.getAttribute("Id") || "");
+    }
+  });
+
+  if (commentsTarget && vmlTarget && vmlRelId) {
+    const commentsPath = resolveZipPath(worksheetPath, commentsTarget);
+    const vmlPath = resolveZipPath(worksheetPath, vmlTarget);
+    const vmlText = await zip.file(vmlPath)?.async("text");
+
+    if (vmlText) {
+      zip.file(commentsPath, buildCommentsXml(comments));
+      zip.file(vmlPath, appendMissingVmlShapes(vmlText, comments));
+      await ensureWorksheetLegacyDrawing(zip, worksheetPath, vmlRelId);
+      return commentsPath;
+    }
+  }
+
+  relationshipNodes.forEach((relationship) => {
+    const type = String(relationship.getAttribute("Type") || "");
+    const normalizedType = type.toLowerCase();
+    if (
+      (normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) ||
+      normalizedType.includes("/vmldrawing")
+    ) {
+      relationship.parentNode?.removeChild(relationship);
+    }
+  });
+
+  commentsTarget = `../commentsMiro${commentIndex}.xml`;
+  vmlTarget = `../drawings/vmlDrawingMiro${commentIndex}.vml`;
+
+  const commentsPath = resolveZipPath(worksheetPath, commentsTarget);
+  const vmlPath = resolveZipPath(worksheetPath, vmlTarget);
+
+  const commentsRelId = getNextRelId(relsDoc);
+  vmlRelId = `${commentsRelId}Vml`;
+
+  const commentsRel = relsDoc.createElement("Relationship");
+  commentsRel.setAttribute("Id", commentsRelId);
+  commentsRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments");
+  commentsRel.setAttribute("Target", commentsTarget);
+  relationshipsNode.appendChild(commentsRel);
+
+  const vmlRel = relsDoc.createElement("Relationship");
+  vmlRel.setAttribute("Id", vmlRelId);
+  vmlRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing");
+  vmlRel.setAttribute("Target", vmlTarget);
+  relationshipsNode.appendChild(vmlRel);
+
+  zip.file(relsPath, serializer.serializeToString(relsDoc));
+  await ensureWorksheetLegacyDrawing(zip, worksheetPath, vmlRelId);
+
+  zip.file(commentsPath, buildCommentsXml(comments));
+  zip.file(vmlPath, buildVmlCommentsXml(comments));
+  return commentsPath;
+};
+
+export const injectWorkbookSheetHeaderComments = async (
+  buffer: ArrayBuffer,
+  workbookSheets: WorkbookSheetWithFields[]
+): Promise<ArrayBuffer> => {
+  if (!Array.isArray(workbookSheets) || workbookSheets.length === 0) return buffer;
+
+  const zip = await JSZip.loadAsync(buffer);
+  const worksheetPathByName = await getWorksheetPathMap(zip);
+  const contentTypeComments: string[] = [];
+  let commentIndex = 1;
+
+  for (const sheet of workbookSheets) {
+    if (!sheet?.name || !Array.isArray(sheet.fields) || sheet.fields.length === 0) continue;
+    const worksheetPath = worksheetPathByName.get(sheet.name);
+    if (!worksheetPath || !zip.file(worksheetPath)) continue;
+
+    const commentsByRef = await getSheetCommentsFromRelationships(zip, worksheetPath);
+    sheet.fields.forEach((field, fieldIndex) => {
+      const comment = getFieldCommentForNote(field);
+      if (!comment) return;
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+      commentsByRef.set(getExcelCellAddress(headerRow, col), comment);
+    });
+
+    const comments = Array.from(commentsByRef.entries())
+      .map(([ref, text]) => {
+        const parsed = parseCellAddress(ref);
+        if (!parsed || !text) return null;
+        return { ref, text, ...parsed };
+      })
+      .filter((item): item is { ref: string; text: string; rowNumber: number; columnNumber: number } => Boolean(item));
+
+    if (comments.length === 0) continue;
+    const commentsPath = await upsertWorksheetComments(zip, worksheetPath, comments, commentIndex);
+    if (commentsPath) contentTypeComments.push(`/${commentsPath}`);
+    commentIndex += 1;
+  }
+
+  const contentTypesXml = await zip.file("[Content_Types].xml")?.async("text");
+  if (contentTypesXml && contentTypeComments.length > 0) {
+    const serializer = new XMLSerializer();
+    const typesDoc = parseXml(contentTypesXml);
+
+    ensureContentTypeEntry(
+      typesDoc,
+      () => Array.from(typesDoc.getElementsByTagName("Default")).some(
+        (node) =>
+          node.getAttribute("Extension") === "vml" &&
+          node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.vmlDrawing"
+      ),
+      (doc) => {
+        const node = doc.createElement("Default");
+        node.setAttribute("Extension", "vml");
+        node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.vmlDrawing");
+        return node;
+      }
+    );
+
+    contentTypeComments.forEach((partName) => {
+      ensureContentTypeEntry(
+        typesDoc,
+        () => Array.from(typesDoc.getElementsByTagName("Override")).some(
+          (node) =>
+            node.getAttribute("PartName") === partName &&
+            node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
+        ),
+        (doc) => {
+          const node = doc.createElement("Override");
+          node.setAttribute("PartName", partName);
+          node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml");
+          return node;
+        }
+      );
+    });
+
+    zip.file("[Content_Types].xml", serializer.serializeToString(typesDoc));
+  }
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+
+/**
+ * Appends VML comment shapes and comment entries for fields that don't yet have them
+ * in the existing VML/comments files. Used for workbooks loaded from base64 where
+ * ExcelJS preserves original VML but doesn't add shapes for newly set cell.note values.
+ */
+export const appendMissingFieldComments = async (
+  buffer: ArrayBuffer,
+  workbookSheets: WorkbookSheetWithFields[]
+): Promise<ArrayBuffer> => {
+  if (!Array.isArray(workbookSheets) || workbookSheets.length === 0) return buffer;
+
+  const zip = await JSZip.loadAsync(buffer);
+  const worksheetPathByName = await getWorksheetPathMap(zip);
+
+  for (const sheet of workbookSheets) {
+    if (!sheet?.name || !Array.isArray(sheet.fields) || sheet.fields.length === 0) continue;
+    const worksheetPath = worksheetPathByName.get(sheet.name);
+    if (!worksheetPath || !zip.file(worksheetPath)) continue;
+
+    const relsXml = await zip.file(getWorksheetRelsPath(worksheetPath))?.async("text");
+    if (!relsXml) continue;
+
+    const sheetRels = getRelTargets(relsXml);
+    let commentsPath = "";
+    let vmlPath = "";
+
+    for (const rel of sheetRels.values()) {
+      const type = rel.type.toLowerCase();
+      if (type.includes("/comments") && !type.includes("threadedcomments")) {
+        commentsPath = resolveZipPath(worksheetPath, rel.target);
+      }
+      if (type.includes("vmldrawing")) {
+        vmlPath = resolveZipPath(worksheetPath, rel.target);
+      }
+    }
+
+    if (!commentsPath || !vmlPath) continue;
+
+    const vmlText = await zip.file(vmlPath)?.async("text");
+    if (!vmlText) continue;
+
+    // Find which cells already have VML shapes so we don't duplicate
+    const existingVmlRefs = new Set<string>();
+    const vmlCellRegex = /<x:Row>(\d+)<\/x:Row>[\s\S]*?<x:Column>(\d+)<\/x:Column>/g;
+    let vmlCellMatch: RegExpExecArray | null;
+    while ((vmlCellMatch = vmlCellRegex.exec(vmlText)) !== null) {
+      const row = parseInt(vmlCellMatch[1], 10) + 1;
+      const col = parseInt(vmlCellMatch[2], 10) + 1;
+      existingVmlRefs.add(getExcelCellAddress(row, col));
+    }
+
+    // Collect fields that are missing VML shapes
+    const fieldsToAdd: Array<{ ref: string; text: string; rowNumber: number; columnNumber: number }> = [];
+    sheet.fields.forEach((field, fieldIndex) => {
+      const comment = getFieldCommentForNote(field);
+      if (!comment) return;
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+      const ref = getExcelCellAddress(headerRow, col);
+      if (!existingVmlRefs.has(ref)) {
+        fieldsToAdd.push({ ref, text: comment, rowNumber: headerRow, columnNumber: col });
+      }
+    });
+
+    if (fieldsToAdd.length === 0) continue;
+
+    // Find cells already in comments XML so we don't duplicate entries
+    const commentsXml = await zip.file(commentsPath)?.async("text");
+    const existingCommentRefs = new Set<string>();
+    if (commentsXml) {
+      const refRegex = /\bref="([^"]+)"/g;
+      let refMatch: RegExpExecArray | null;
+      while ((refMatch = refRegex.exec(commentsXml)) !== null) {
+        existingCommentRefs.add(refMatch[1].replace(/\$/g, ""));
+      }
+    }
+
+    // Append comment entries for cells not already in comments XML
+    const newCommentElements = fieldsToAdd
+      .filter((f) => !existingCommentRefs.has(f.ref))
+      .map(
+        (c) =>
+          `<comment ref="${c.ref}" authorId="0"><text><r><t xml:space="preserve">${escapeXmlText(c.text)}</t></r></text></comment>`
+      )
+      .join("");
+
+    if (commentsXml && newCommentElements) {
+      zip.file(commentsPath, commentsXml.replace("</commentList>", `${newCommentElements}</commentList>`));
+    }
+
+    // Find highest existing shape ID so new shapes don't conflict
+    const shapeIdRegex = /id="_x0000_s(\d+)"/g;
+    const shapeIds: number[] = [];
+    let shapeIdMatch: RegExpExecArray | null;
+    while ((shapeIdMatch = shapeIdRegex.exec(vmlText)) !== null) {
+      shapeIds.push(parseInt(shapeIdMatch[1], 10));
+    }
+    const maxId = shapeIds.length > 0 ? Math.max(...shapeIds) : 1024;
+
+    // Append VML shapes for missing cells
+    const newShapes = fieldsToAdd
+      .map((comment, idx) => {
+        const startColumn = Math.max(comment.columnNumber - 1, 0);
+        const startRow = Math.max(comment.rowNumber - 1, 0);
+        const endColumn = startColumn + 5;
+        const endRow = startRow + 20;
+        return (
+          `<v:shape id="_x0000_s${maxId + 1 + idx}" type="#_x0000_t202"` +
+          ` style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:200pt;height:60pt;z-index:1;visibility:hidden"` +
+          ` fillcolor="#ffffe1" o:insetmode="auto">` +
+          `<v:fill color2="#ffffe1"/>` +
+          `<v:shadow on="t" color="black" obscured="t"/>` +
+          `<v:path o:connecttype="none"/>` +
+          `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>` +
+          `<x:ClientData ObjectType="Note">` +
+          `<x:MoveWithCells/><x:SizeWithCells/>` +
+          `<x:Anchor>${startColumn}, 0, ${startRow}, 0, ${endColumn}, 0, ${endRow}, 0</x:Anchor>` +
+          `<x:AutoFill>False</x:AutoFill>` +
+          `<x:Row>${startRow}</x:Row><x:Column>${startColumn}</x:Column>` +
+          `</x:ClientData></v:shape>`
+        );
+      })
+      .join("");
+
+    zip.file(vmlPath, vmlText.replace("</xml>", `${newShapes}</xml>`));
+  }
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+
 export const extractWorkbookCommentsFromBase64 = async (
   base64: string
 ): Promise<Map<string, Map<string, string>>> => {
@@ -444,6 +958,23 @@ export const applyValidatorDropdowns = ({
     // 3. Respaldo: valores del validador del período (precargados)
     if (options.length === 0 && preloadedValidatorOptions[field.name]?.length) {
       options = preloadedValidatorOptions[field.name];
+    }
+
+    // 4. Auto-detección: buscar en validadores cuya columna coincida con el nombre del campo
+    if (options.length === 0 && validators.length > 0) {
+      const fieldNorm = normalizeToken(field.name);
+      for (const validator of validators) {
+        const columnMatch =
+          (validator.columns?.some((c) => normalizeToken(c.name) === fieldNorm)) ||
+          (validator.values.length > 0 &&
+            Object.keys(validator.values[0]).some((k) => normalizeToken(k) === fieldNorm));
+        if (!columnMatch) continue;
+        const matched = getValidatorOptions(validator, field.name);
+        if (matched.length > 0) {
+          options = matched.map((o) => o.displayLabel);
+          break;
+        }
+      }
     }
 
     if (options.length === 0) return;

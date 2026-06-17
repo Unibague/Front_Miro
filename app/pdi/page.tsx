@@ -541,6 +541,24 @@ interface PendienteAprobacion {
   indicadorNombre: string;
   corte: string;
   tipo: "lider" | "planeacion";
+  respuestaId?: string;
+  formularioId?: string;
+}
+
+interface PendientePlaneacionResponse {
+  _id?: string;
+  respuesta_id?: string;
+  indicador_id_ref?: string;
+  formulario_id_ref?: string;
+  corte?: string;
+  indicador_id?: string | {
+    _id?: string;
+    codigo?: string;
+    nombre?: string;
+  } | null;
+  formulario_id?: string | {
+    _id?: string;
+  } | null;
 }
 
 interface CorteResumenPeriodo {
@@ -678,6 +696,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   resumen: DashboardResumen | null;
   pendientesAprobacion: PendienteAprobacion[];
 }) {
+  const router = useRouter();
   const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
   const [presupuestoAnio, setPresupuestoAnio] = useState<{
     total: number;
@@ -810,6 +829,18 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
   const totalPendientes = pendientesAprobacion.length;
+  const abrirPendientePlaneacion = (item: PendienteAprobacion) => {
+    if (!item.indicadorId) return;
+    const params = new URLSearchParams({
+      modo: "planeacion",
+      origen: "bandeja-planeacion",
+    });
+    if (item.corte) params.set("periodo", item.corte);
+    if (item.respuestaId) params.set("respuesta_id", item.respuestaId);
+    if (item.formularioId) params.set("formulario_id", item.formularioId);
+    router.push(`/pdi/indicadores/${encodeURIComponent(item.indicadorId)}?${params.toString()}`);
+  };
+
   return (
     <Stack gap="lg" mb="xl">
       <Paper
@@ -1089,11 +1120,21 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 {pendientesAprobacion.slice(0, 8).map((item, i) => (
                   <Box
                     key={`plan-prev-${item.indicadorId}-${item.corte}-${i}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirPendientePlaneacion(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        abrirPendientePlaneacion(item);
+                      }
+                    }}
                     style={{
                       background: "rgba(124,58,237,0.05)",
                       borderRadius: 10,
                       padding: "8px 12px",
                       borderLeft: "3px solid #7950f2",
+                      cursor: "pointer",
                     }}
                   >
                     <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
@@ -1140,7 +1181,22 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
             }>
               {pendientesAprobacion.map((item, i) => (
                 <List.Item key={`modal-plan-${item.indicadorId}-${item.corte}-${i}`}>
-                  <Box>
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setModalAprobaciones(false);
+                      abrirPendientePlaneacion(item);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setModalAprobaciones(false);
+                        abrirPendientePlaneacion(item);
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
                     <Group gap={6} align="center">
                       <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
                       <Badge color="violet" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
@@ -1263,12 +1319,14 @@ export default function PdiPage() {
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
   const cargarPortfolio = async () => {
     try {
-      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes] = await Promise.all([
+      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes, pendientesPlaneacionRes] = await Promise.all([
         axios.get(PDI_ROUTES.macroproyectos()),
         axios.get(PDI_ROUTES.proyectos()),
         axios.get(PDI_ROUTES.acciones()),
         axios.get(PDI_ROUTES.indicadores()),
         axios.get(PDI_ROUTES.dashboardResumen()),
+        axios.get<PendientePlaneacionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
+          .catch(() => ({ data: [] as PendientePlaneacionResponse[] })),
       ]);
       setResumen(resumenRes.data);
 
@@ -1317,17 +1375,28 @@ export default function PdiPage() {
       }, {});
 
       // Solo los que el líder ya aprobó y planeación debe validar
-      const pendientes = indicadoresData.flatMap((ind) =>
-        (ind.periodos ?? [])
-          .filter((p) => p.estado_reporte === "Aprobado")
-          .map((p) => ({
-            indicadorId: ind._id,
-            indicadorCodigo: ind.codigo,
-            indicadorNombre: ind.nombre,
-            corte: p.periodo,
+      const pendientes = (pendientesPlaneacionRes.data ?? [])
+        .map((item): PendienteAprobacion | null => {
+          const indicador = item.indicador_id && typeof item.indicador_id === "object"
+            ? item.indicador_id
+            : null;
+          const indicadorId = item.indicador_id_ref
+            || indicador?._id
+            || (typeof item.indicador_id === "string" ? item.indicador_id : "");
+          if (!indicadorId) return null;
+
+          return {
+            indicadorId,
+            indicadorCodigo: indicador?.codigo ?? "Indicador",
+            indicadorNombre: indicador?.nombre ?? "Reporte pendiente de validacion",
+            corte: item.corte ?? "",
             tipo: "planeacion" as const,
-          }))
-      );
+            respuestaId: item.respuesta_id ?? item._id,
+            formularioId: item.formulario_id_ref
+              || (typeof item.formulario_id === "string" ? item.formulario_id : item.formulario_id?._id),
+          };
+        })
+        .filter((item): item is PendienteAprobacion => Boolean(item));
       setPendientesAprobacion(pendientes);
 
       setMacros(macrosData);

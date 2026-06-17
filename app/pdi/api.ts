@@ -39,6 +39,7 @@ export const PDI_ROUTES = {
   formularioPlaneacion: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/planeacion`,
   formularioDocumentoFinal: (id: string, rId: string) => `${BASE()}/pdi/formularios/${id}/respuestas/${rId}/documento-final`,
   formularioRespuestasPendientesAval: () => `${BASE()}/pdi/formularios/respuestas/pendientes-aval`,
+  formularioRespuestasPendientesPlaneacion: () => `${BASE()}/pdi/formularios/respuestas/pendientes-planeacion`,
   formularioRespuestasPorIndicador: () => `${BASE()}/pdi/formularios/respuestas/por-indicador`,
   formularioLiderEmailIndicador: () => `${BASE()}/pdi/formularios/respuestas/lider-email-indicador`,
 
