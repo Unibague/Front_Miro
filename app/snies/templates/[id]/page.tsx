@@ -51,7 +51,7 @@ export default function SniesTemplateDetailPage() {
   const [downloading, setDownloading] = useState(false);
 
   const templateId = paramId(params);
-  const pubTemId = searchParams.get("pubTemId");
+  const pubTemId = searchParams?.get("pubTemId") ?? null;
 
   const fetchConnectedData = async () => {
     if (!session?.user?.email || !templateId) return;
