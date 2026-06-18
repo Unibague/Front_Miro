@@ -246,6 +246,7 @@ export default function SubirEvidenciasPage() {
 
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [sentSuccessfully, setSentSuccessfully] = useState(false);
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
@@ -263,8 +264,8 @@ export default function SubirEvidenciasPage() {
       Object.keys(otrosTextos).length > 0 || 
       Object.keys(justificaciones).length > 0;
     
-    setHasChanges(tieneChanges && !sending && !savingDraft);
-  }, [avancesStr, textos, otrosTextos, justificaciones, sending, savingDraft, indicador, setHasChanges]);
+    setHasChanges(tieneChanges && !sending && !savingDraft && !sentSuccessfully);
+  }, [avancesStr, textos, otrosTextos, justificaciones, sending, savingDraft, sentSuccessfully, indicador, setHasChanges]);
 
   // ── Busca el corte vigente que coincide con un período real del indicador ──────
   // Si no hay coincidencia, el indicador no debe quedar abierto para reportar.
@@ -861,6 +862,7 @@ export default function SubirEvidenciasPage() {
       // Solo si el formulario se envió correctamente, marcar el avance como Enviado
       await guardarAvances("enviar");
       await recargarRespuestas();
+      setSentSuccessfully(true);
       showNotification({
         title: autoAprobado ? "Aprobado" : "Enviado",
         message: autoAprobado

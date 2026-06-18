@@ -825,7 +825,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           left: '20px',
           top: '50%',
           transform: 'translateY(-50%)',
-          zIndex: 101,
+          zIndex: 301,
           boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
         }}
       >
@@ -839,10 +839,10 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       style={{
         position: 'fixed',
         left: 0,
-        top: 0,
-        height: '100vh',
-        width: '20%',
-        zIndex: 100,
+        top: 56,
+        bottom: 0,
+        width: '300px',
+        zIndex: 300,
         backgroundColor: '#f8f9fa',
         borderRight: '2px solid #e9ecef',
         boxShadow: '2px 0 10px rgba(0,0,0,0.1)'
