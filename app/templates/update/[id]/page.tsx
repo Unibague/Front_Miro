@@ -113,6 +113,7 @@ const UpdateTemplatePage = () => {
   const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
   const [notifyProducers, setNotifyProducers] = useState(false);
   const [isSnies, setIsSnies] = useState(false);
+  const [skipCommentValidation, setSkipCommentValidation] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
@@ -263,6 +264,7 @@ const UpdateTemplatePage = () => {
             setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
             setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
             setNotifyProducers(response.data.notify_producers ?? false);
+            setSkipCommentValidation(response.data.skip_comment_validation ?? false);
             const categoryName: string = response.data.category?.name ?? "";
             setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
             setSelectedDimensions(response.data.dimensions);
@@ -506,6 +508,7 @@ const UpdateTemplatePage = () => {
       allows_qr: allowsQr,
       notify_producers: notifyProducers,
       is_snies: isSnies,
+      skip_comment_validation: skipCommentValidation,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
       fecha_final_responsables: fechaFinalResponsables,
@@ -1106,6 +1109,13 @@ router.back();
           const checked = e.currentTarget.checked;
           setAllowsQr(checked); setHasChanges(true);
         }}
+        mb="sm"
+      />
+      <Switch
+        label="Omitir validación de campos obligatorios por comentario"
+        description="Cuando está activo, solo los campos marcados como obligatorios explícitamente serán requeridos. Los campos cuyo comentario diga 'obligatorio' no serán validados."
+        checked={skipCommentValidation}
+        onChange={(e) => { setSkipCommentValidation(e.currentTarget.checked); setHasChanges(true); }}
         mb="md"
       />
       <Divider label="Fechas de la plantilla" labelPosition="left" mb="sm" />

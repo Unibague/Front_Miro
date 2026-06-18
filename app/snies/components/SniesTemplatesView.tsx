@@ -1364,8 +1364,18 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     }
   };
 
-  const handleOpenConnectedData = (template: SniesTemplate) => {
-    router.push(`${moduleBasePath}/${template._id}`);
+  const handleOpenConnectedData = (template: SniesTemplate, pubTemId?: string) => {
+    const query = pubTemId ? `?pubTemId=${encodeURIComponent(pubTemId)}` : '';
+    router.push(`${moduleBasePath}/${template._id}${query}`);
+  };
+
+  const handleDownloadSnisFilled = (sniesTemplate: SniesTemplate) => {
+    if (!session?.user?.email) return;
+    window.open(
+      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/download-connected-data?email=${encodeURIComponent(session.user.email)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   const handleDownloadDataModal = () => {
@@ -1639,24 +1649,26 @@ const activeMiroTemplateId =
                                     size="xs"
                                     leftSection={<IconEye size={14} />}
                                     onClick={() => linkedSnies
-                                      ? handleOpenConnectedData(linkedSnies)
+                                      ? handleOpenConnectedData(linkedSnies, pt._id)
                                       : handleOpenRawData(pt)
                                     }
                                   >
                                     Ver datos
                                   </Button>
                                 </Tooltip>
-                                <Tooltip label="Descargar información enviada">
-                                  <Button
-                                    variant="outline"
-                                    color="teal"
-                                    size="xs"
-                                    leftSection={<IconDownload size={14} />}
-                                    onClick={() => handleDownloadDirectData(pt)}
-                                  >
-                                    Descargar
-                                  </Button>
-                                </Tooltip>
+                                {!linkedSnies && (
+                                  <Tooltip label="Descargar información enviada">
+                                    <Button
+                                      variant="outline"
+                                      color="teal"
+                                      size="xs"
+                                      leftSection={<IconDownload size={14} />}
+                                      onClick={() => handleDownloadDirectData(pt)}
+                                    >
+                                      Descargar
+                                    </Button>
+                                  </Tooltip>
+                                )}
                               </Group>
                             )}
                           </Center>

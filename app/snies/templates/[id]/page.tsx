@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconDownload } from "@tabler/icons-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
 import { useSession } from "next-auth/react";
 
@@ -44,11 +44,14 @@ interface ConnectedDataResponse {
 export default function SniesTemplateDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const [data, setData] = useState<ConnectedDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const templateId = paramId(params);
+  const pubTemId = searchParams.get("pubTemId");
 
   const fetchConnectedData = async () => {
     if (!session?.user?.email || !templateId) return;
@@ -60,6 +63,7 @@ export default function SniesTemplateDetailPage() {
         {
           params: {
             email: session.user.email,
+            ...(pubTemId ? { pubTemId } : {}),
           },
         }
       );
@@ -79,7 +83,7 @@ export default function SniesTemplateDetailPage() {
 
   useEffect(() => {
     fetchConnectedData();
-  }, [session?.user?.email, templateId]);
+  }, [session?.user?.email, templateId, pubTemId]);
 
   const handleGoBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -90,28 +94,30 @@ export default function SniesTemplateDetailPage() {
     router.push("/snies/templates/published");
   };
 
-  const handleDownload = () => {
-    if (!session?.user?.email) return;
-
-    window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-connected-data?email=${encodeURIComponent(
-        session.user.email
-      )}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
-  };
-
-  const handleDownloadFieldComparison = () => {
-    if (!session?.user?.email) return;
-
-    window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-field-comparison?email=${encodeURIComponent(
-        session.user.email
-      )}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+  const handleDownload = async () => {
+    if (!session?.user?.email || !templateId) return;
+    setDownloading(true);
+    try {
+      const params: Record<string, string> = { email: session.user.email };
+      if (pubTemId) params.pubTemId = pubTemId;
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-connected-data`,
+        { params, responseType: "blob" }
+      );
+      const fileName = data?.template?.file_name || data?.template?.name || "plantilla_snies.xlsx";
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      showNotification({ title: "Error", message: "No se pudo descargar el archivo.", color: "red" });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -127,29 +133,17 @@ export default function SniesTemplateDetailPage() {
           Volver
         </Button>
         <Button
-          variant="outline"
+          variant="filled"
+          color="teal"
           leftSection={<IconDownload size={16} />}
           onClick={handleDownload}
-          disabled={!data}
+          disabled={!data || downloading}
+          loading={downloading}
         >
           Descargar plantilla SNIES llena
         </Button>
-        <Button
-          variant="outline"
-          color="blue"
-          leftSection={<IconDownload size={16} />}
-          onClick={handleDownloadFieldComparison}
-          disabled={!data}
-        >
-          Descargar comparativo de campos
-        </Button>
       </Group>
 
-      {data && (
-        <Text size="sm" c="dimmed" mb="md">
-          Plantillas conectadas: {data.sourceTemplates.map((item) => item.template_name).join(", ")}
-        </Text>
-      )}
 
       {!data && !loading && (
         <Center>

@@ -61,6 +61,7 @@ interface Template {
   fields: Field[];
   workbook_sheets?: WorkbookSheet[];
   shared?: boolean;
+  skip_comment_validation?: boolean;
 }
 
 interface FilledFieldEntry {
@@ -137,7 +138,8 @@ const extractValidatorDisplayValues = (validator: any): string[] => {
   }).filter(Boolean);
 };
 
-const fieldIsRequired = (field: Field): boolean => {
+const fieldIsRequired = (field: Field, skipComment = false): boolean => {
+  if (skipComment) return false;
   if (field.required) return true;
   const c = field.comment?.toLowerCase() ?? "";
   for (const w of ["obligatorio", "obligatario"]) {
@@ -146,21 +148,24 @@ const fieldIsRequired = (field: Field): boolean => {
   return false;
 };
 
-const normalizeFieldRequired = (field: Field): Field => ({
+const normalizeFieldRequired = (field: Field, skipComment = false): Field => ({
   ...field,
-  required: fieldIsRequired(field),
+  required: fieldIsRequired(field, skipComment),
 });
 
-const normalizeSheetRequired = (sheet: WorkbookSheet): WorkbookSheet => ({
+const normalizeSheetRequired = (sheet: WorkbookSheet, skipComment = false): WorkbookSheet => ({
   ...sheet,
-  fields: (sheet.fields || []).map(normalizeFieldRequired),
+  fields: (sheet.fields || []).map((f) => normalizeFieldRequired(f, skipComment)),
 });
 
-const normalizeTemplateRequired = (template: Template): Template => ({
-  ...template,
-  fields: (template.fields || []).map(normalizeFieldRequired),
-  workbook_sheets: (template.workbook_sheets || []).map(normalizeSheetRequired),
-});
+const normalizeTemplateRequired = (template: Template): Template => {
+  const skip = Boolean(template.skip_comment_validation);
+  return {
+    ...template,
+    fields: (template.fields || []).map((f) => normalizeFieldRequired(f, skip)),
+    workbook_sheets: (template.workbook_sheets || []).map((s) => normalizeSheetRequired(s, skip)),
+  };
+};
 
 const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } }) => {
   const { id_template } = params;
@@ -343,7 +348,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${id_template}`
       );
       setPublishedTemplateName(response.data.name);
-      const normalizedTemplate = normalizeTemplateRequired(response.data.template);
+      const templateWithFlag = {
+        ...response.data.template,
+        skip_comment_validation: response.data.template.skip_comment_validation ||
+          response.data.name === 'Docentes_IES' ||
+          response.data.template?.name === 'Docentes_IES',
+      };
+      const normalizedTemplate = normalizeTemplateRequired(templateWithFlag);
       setTemplate(normalizedTemplate);
 
       // Cargar datos compartidos de otros productores

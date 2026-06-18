@@ -12,7 +12,8 @@ import successAnimation from "../../../public/lottie/success.json";
 import { endOfDayGMT5 } from '../DateConfig';
 import { isBlankRequiredValue } from '../../utils/requiredFields';
 
-const isRequiredField = (field: any): boolean => {
+const isRequiredField = (field: any, skipComment = false): boolean => {
+  if (skipComment) return false;
   if (field?.required) return true;
   const c = String(field?.comment ?? '').toLowerCase();
   for (const w of ['obligatorio', 'obligatario']) {
@@ -67,9 +68,10 @@ const normalizeBackendValidationErrors = (payload: any) => {
 const buildRequiredErrorDetails = (
   rows: Record<string, any>[],
   fields: any[],
-  sheetName?: string
+  sheetName?: string,
+  skipComment = false
 ) => fields
-  .filter((field) => isRequiredField(field))
+  .filter((field) => isRequiredField(field, skipComment))
   .map((field) => {
     const errors = rows
       .map((row, index) => ({ row, index }))
@@ -159,6 +161,9 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
       const workbookSheets: any[] = templateResponse.data.template.workbook_sheets || [];
       const sheetFields: any[] = workbookSheets.flatMap((s: any) => s.fields || []);
       const allFields: any[] = topFields.length > 0 ? topFields : sheetFields;
+      const skipCommentValidation: boolean = Boolean(templateResponse.data.template.skip_comment_validation) ||
+        templateResponse.data.name === 'Docentes_IES' ||
+        templateResponse.data.template?.name === 'Docentes_IES';
 
       // Build field type map and validator lookup
       const fieldTypeMap: Record<string, string> = {};
@@ -484,7 +489,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
           const requiredErrors = sheetsData.flatMap((sheetData) => {
             const sheetTemplate = workbookTemplateSheets.find((s: any) => s.name === sheetData.name);
-            return buildRequiredErrorDetails(sheetData.data, sheetTemplate?.fields || [], sheetData.name);
+            return buildRequiredErrorDetails(sheetData.data, sheetTemplate?.fields || [], sheetData.name, skipCommentValidation);
           });
 
           if (requiredErrors.length > 0) {
@@ -531,7 +536,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
           const allowedFields = new Set<string>(expectedColumns);
           const data = readSheetRows(selectedSheet, allowedFields);
 
-          const requiredErrors = buildRequiredErrorDetails(data, allFields);
+          const requiredErrors = buildRequiredErrorDetails(data, allFields, undefined, skipCommentValidation);
           if (requiredErrors.length > 0) {
             showRequiredUploadErrors(requiredErrors);
             return;
