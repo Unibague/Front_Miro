@@ -40,6 +40,7 @@ import {
   IconX,
   IconArrowRight,
   IconHistory,
+  IconFileSpreadsheet,
 } from "@tabler/icons-react";
 import styles from "./AdminUsersPage.module.css";
 import { useSort } from "../../hooks/useSort";
@@ -106,6 +107,7 @@ const AdminUsersPage = () => {
   const [roles, setRoles] = useState<string[]>([]);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [historyChanges, setHistoryChanges] = useState<PendingChange[]>([]);
   const [selectedChanges, setSelectedChanges] = useState<string[]>([]);
@@ -309,6 +311,36 @@ const AdminUsersPage = () => {
         message: "Hubo un error al actualizar el estado del usuario",
         color: "red",
       });
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/exportActiveUsers`,
+        {
+          responseType: "blob",
+          headers: { "user-email": session?.user?.email },
+        }
+      );
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "usuarios_activos.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exportando usuarios:", error);
+      showNotification({
+        title: "Error",
+        message: "No se pudo descargar el archivo Excel.",
+        color: "red",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -629,6 +661,15 @@ const AdminUsersPage = () => {
               onChange={(event) => setSearch(event.currentTarget.value)}
               className={styles.searchInput}
             />
+            <Button
+              variant="light"
+              color="green"
+              onClick={handleExportExcel}
+              loading={isExporting}
+              leftSection={<IconFileSpreadsheet />}
+            >
+              Descargar Excel
+            </Button>
             <Button
               variant="light"
               onClick={handleSyncUsers}
