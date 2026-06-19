@@ -476,8 +476,9 @@ export default function SubirEvidenciasPage() {
     // 1. Hay corte vigente hoy (ya verificado)
     // 2. El período vigente tiene meta definida pero aún no ha reportado avance ni enviado
     // 3. No acaba de enviar exitosamente
-    // Si el período vigente tiene meta definida y no ha sido reportado, abrir directamente sin modal
-    if (tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully) {
+    // Si el período vigente tiene meta definida y no ha sido enviado/aprobado, mostrar formulario directamente
+    // (aplica tanto si ya tiene avance guardado en borrador como si no)
+    if (tieneMeta && !tieneReporte && !sentSuccessfully) {
       setUsuarioEligioReportarAvance(true);
       setMostrarModalPeriodoAtrasado(false);
     } else {
