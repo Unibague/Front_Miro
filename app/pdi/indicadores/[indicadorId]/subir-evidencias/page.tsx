@@ -474,18 +474,13 @@ export default function SubirEvidenciasPage() {
 
     // Mostrar modal SOLO si:
     // 1. Hay corte vigente hoy (ya verificado)
-    // 2. El período vigente NO tiene meta definida O está siendo reportado por primera vez
-    // 3. NO tiene avance real ni reporte enviado
-    // 4. No acaba de enviar exitosamente
-    const debesMostrarModal = !tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully;
-
-    if (debesMostrarModal) {
-      console.log("✅ Mostrando modal - período vigente sin meta definida o sin reporte");
-      setPeriodosAtrasados([periodoVigente]);
-      setMostrarModalPeriodoAtrasado(true);
+    // 2. El período vigente tiene meta definida pero aún no ha reportado avance ni enviado
+    // 3. No acaba de enviar exitosamente
+    // Si el período vigente tiene meta definida y no ha sido reportado, abrir directamente sin modal
+    if (tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully) {
+      setUsuarioEligioReportarAvance(true);
+      setMostrarModalPeriodoAtrasado(false);
     } else {
-      console.log("❌ No mostrando modal. Razones:", { tieneMeta, tieneAvanceReal, tieneReporte, sentSuccessfully });
-      setPeriodosAtrasados([]);
       setMostrarModalPeriodoAtrasado(false);
     }
   }, [indicador, corteActivo, sentSuccessfully]);
@@ -1124,7 +1119,12 @@ export default function SubirEvidenciasPage() {
                 {[
                   { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                  { label: "Avance actual", value: `${avanceActual}%` },
+                  { label: "Avance actual", value: (() => {
+                    const metaN = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
+                    const avN = periodoActivo ? parseAvance(avancesStr[periodoActivo.periodo] ?? String(avanceActual)) : null;
+                    if (metaN != null && metaN > 0 && avN != null) return `${Math.round((avN / metaN) * 100)}%`;
+                    return `${avanceActual}%`;
+                  })() },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
                     flex: 1, padding: "10px 14px",
@@ -1168,7 +1168,11 @@ export default function SubirEvidenciasPage() {
               ) : (
                 <Stack gap="sm">
                   {indicador.periodos
-                    .filter((p: Periodo) => mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes))
+                    .filter((p: Periodo) => {
+                      // Si el usuario eligió reportar, la sección de abajo maneja el período vigente — excluirlo aquí
+                      if (usuarioEligioReportarAvance && esPeriodoEditable(p.periodo, cortesVigentes)) return false;
+                      return mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes);
+                    })
                     .map((p: Periodo) => {
                     // Si usuarioEligioReportarAvance = false: bloquear TODO (usuario dijo "no por ahora")
                     // Si usuarioEligioReportarAvance = true: solo desbloquear vigentes (usuario dijo "sí reportar")
@@ -1313,6 +1317,7 @@ export default function SubirEvidenciasPage() {
                           if (/[^0-9.,%\s]/.test(nextValue)) return;
                           setAvancesStr((prev) => ({ ...prev, [periodoActivo.periodo]: nextValue }));
                         }}
+                        rightSection={String(periodoActivo.meta ?? "").includes("%") ? <Text size="sm" c="dimmed">%</Text> : undefined}
                         style={{ width: 150 }}
                         size="sm"
                       />
@@ -2142,27 +2147,27 @@ export default function SubirEvidenciasPage() {
         }
       >
         <Stack gap="md">
-          {/* Si hay corte activo sin meta, ofrecer reportar avance */}
           {corteActivo && periodosAtrasados.length > 0 && (
             <>
-              <Paper withBorder radius="lg" p="md" style={{ background: "rgba(251,146,60,0.06)" }}>
+              <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.06)" }}>
                 <Group gap="sm" align="flex-start">
-                  <ThemeIcon size={24} radius="md" color="orange" variant="light">
+                  <ThemeIcon size={24} radius="md" color="violet" variant="light">
                     <IconAlertCircle size={14} />
                   </ThemeIcon>
                   <Stack gap={2} style={{ flex: 1 }}>
-                    <Text size="sm" fw={700} c="orange.7">Período vigente sin meta definida</Text>
+                    <Text size="sm" fw={700} c="violet.7">Período vigente pendiente de reporte</Text>
                     <Text size="xs" c="dimmed">
-                      El período {corteActivo} está activo pero no tiene una meta definida en el indicador.
+                      El período {corteActivo} está activo y tiene una meta definida
+                      {periodosAtrasados[0]?.meta != null ? ` (${periodosAtrasados[0].meta})` : ""}. Aún no has reportado el avance.
                     </Text>
                   </Stack>
                 </Group>
               </Paper>
 
               <Stack gap="xs">
-                <Text size="sm" fw={600}>¿Deseas reportar avance para este período?</Text>
+                <Text size="sm" fw={600}>¿Deseas reportar el avance ahora?</Text>
                 <Text size="xs" c="dimmed">
-                  Puedes reportar avance aunque no tengas una meta definida. El avance se registrará como información adicional.
+                  Puedes ingresar el avance alcanzado para este período y adjuntar las evidencias correspondientes.
                 </Text>
               </Stack>
 

@@ -1209,10 +1209,9 @@ if (field.multiple) {
           ?? publishedTemplate.template?.fecha_final
           ?? publishedTemplate.deadline
           ?? publishedTemplate.period.producer_end_date);
-    // Deadline: 1:00 AM hora Colombia (UTC-5) del día límite
+    // Deadline: 11:59:59 PM hora Colombia (UTC-5) del día límite
     const colDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(raw));
-    const colMidnight = new Date(`${colDateStr}T00:00:00.000-05:00`);
-    return new Date(colMidnight.getTime() + 60 * 60 * 1000); // medianoche Colombia + 1 hora
+    return new Date(`${colDateStr}T23:59:59.999-05:00`);
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
