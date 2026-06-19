@@ -1049,7 +1049,11 @@ export default function MacroproyectoDetallePage() {
                   <Group gap={12} mt={4} wrap="wrap">
                     <Text size="sm" c="dimmed">Código: <b>{macro.codigo}</b></Text>
                     <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
-                    {macro.lider && (
+                    {macro.lideres && macro.lideres.length > 0 ? (
+                      <Text size="sm" c="dimmed">
+                        Líderes: <b>{macro.lideres.map((l: any) => l.nombre || l).join(', ')}</b>
+                      </Text>
+                    ) : macro.lider && (
                       <Text size="sm" c="dimmed">Líder: <b>{macro.lider}</b></Text>
                     )}
                     {presupuestoMacro > 0 && (

@@ -118,10 +118,19 @@ export default function PdiSidebar() {
       .then((res) => {
         if (!active) return;
         const macros: any[] = Array.isArray(res.data) ? res.data : [];
-        // Solo lider_email estricto — evita falsos positivos por coincidencia de nombre
-        setIsMacroLeader(macros.some((m) =>
-          m.lider_email && normalizeText(m.lider_email) === email
-        ));
+        // Buscar si el usuario es líder en CUALQUIER posición (legacy o nuevo array)
+        setIsMacroLeader(macros.some((m) => {
+          // Formato legacy
+          if (m.lider_email && normalizeText(m.lider_email) === email) return true;
+          // Formato nuevo - búsqueda en array lideres
+          if (m.lideres && Array.isArray(m.lideres)) {
+            return m.lideres.some((l: { nombre?: string; email?: string }) => 
+              (l.email && normalizeText(l.email) === email) ||
+              (l.nombre && normalizeText(l.nombre) === email)
+            );
+          }
+          return false;
+        }));
       })
       .catch(() => {
         if (active) setIsMacroLeader(false);

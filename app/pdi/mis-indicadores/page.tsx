@@ -2106,7 +2106,7 @@ export default function MisIndicadoresPage() {
         .then(r => r.data.length ? r : axios.get(PDI_ROUTES.cortesActivos())),
     ])
       .then(([resMacros, resInd, resAcc, resProy, resUser, resCortes]) => {
-        const todosMacros: Array<{ _id: string; codigo: string; nombre: string; lider?: string }> = resMacros.data;
+        const todosMacros: Array<{ _id: string; codigo: string; nombre: string; lider?: string; lideres?: Array<{ nombre: string; email: string }> }> = resMacros.data;
         const todosIndicadores: Indicador[] = resInd.data;
         const todasAcciones: Accion[] = resAcc.data;
         const todosProyectos: Proyecto[] = resProy.data;
@@ -2117,11 +2117,35 @@ export default function MisIndicadoresPage() {
         const macrosById = new Map(todosMacros.map((macro) => [macro._id, macro]));
         const macroIdsSet = new Set(
           todosMacros
-            .filter((macro) => matchesUserResponsable(email, fullName, macro.lider))
+            .filter((macro) => {
+              // Verificar en formato nuevo (array lideres)
+              if (macro.lideres && Array.isArray(macro.lideres)) {
+                if (macro.lideres.some(l => 
+                  matchesUserResponsable(email, fullName, l.nombre) || 
+                  (l.email && l.email.toLowerCase().trim() === email.toLowerCase().trim())
+                )) {
+                  return true;
+                }
+              }
+              // Fallback a formato legacy
+              return matchesUserResponsable(email, fullName, macro.lider);
+            })
             .map((macro) => macro._id)
         );
         const macroNombres = todosMacros
-          .filter((macro) => matchesUserResponsable(email, fullName, macro.lider))
+          .filter((macro) => {
+            // Verificar en formato nuevo (array lideres)
+            if (macro.lideres && Array.isArray(macro.lideres)) {
+              if (macro.lideres.some(l => 
+                matchesUserResponsable(email, fullName, l.nombre) || 
+                (l.email && l.email.toLowerCase().trim() === email.toLowerCase().trim())
+              )) {
+                return true;
+              }
+            }
+            // Fallback a formato legacy
+            return matchesUserResponsable(email, fullName, macro.lider);
+          })
           .map((macro) => macro.nombre)
           .filter(Boolean);
         setMacroIdsLiderados(macroIdsSet);

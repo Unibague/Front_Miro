@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack, Autocomplete, NumberInput } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack, MultiSelect, NumberInput } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import type { Macroproyecto } from "../types";
@@ -21,8 +21,7 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo]               = useState("");
   const [nombre, setNombre]               = useState("");
-  const [lider, setLider]                 = useState("");
-  const [liderEmail, setLiderEmail]       = useState("");
+  const [lideresSeleccionados, setLideresSeleccionados] = useState<string[]>([]);
   const [numProyectos, setNumProyectos]   = useState<number | string>(0);
   const [usuarios, setUsuarios]           = useState<{ name: string; email: string }[]>([]);
   const [loading, setLoading]             = useState(false);
@@ -51,21 +50,21 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
-      setLider(selected.lider ?? "");
-      setLiderEmail(selected.lider_email ?? "");
+      // Si es el nuevo formato (array de objetos)
+      if (Array.isArray(selected.lideres) && selected.lideres.length > 0) {
+        setLideresSeleccionados(selected.lideres.map((l: any) => l.nombre || l));
+      }
+      // Compatibilidad con formato antiguo (string único)
+      else if (selected.lider) {
+        setLideresSeleccionados([selected.lider]);
+      } else {
+        setLideresSeleccionados([]);
+      }
       setNumProyectos(selected.num_proyectos ?? 0);
     } else {
-      setCodigo(""); setNombre(""); setLider(""); setLiderEmail(""); setNumProyectos(0);
+      setCodigo(""); setNombre(""); setLideresSeleccionados([]); setNumProyectos(0);
     }
   }, [opened]);
-
-  const handleLiderChange = (name: string) => {
-    setHasChanges(true);
-    setLider(name);
-    const found = usuarios.find((u) => u.name === name);
-    if (found) setLiderEmail(found.email);
-    else setLiderEmail("");
-  };
 
   const pesoAuto = selected
     ? selected.peso
@@ -78,11 +77,20 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
     }
     setLoading(true);
     try {
+      // Convertir líderes seleccionados a objetos con nombre y email
+      const lideres = lideresSeleccionados
+        .map((nombre) => {
+          const usuario = usuarios.find((u) => u.name === nombre);
+          return {
+            nombre: nombre.trim(),
+            email: usuario?.email.trim().toLowerCase() || ""
+          };
+        });
+
       const payload = {
         codigo:        codigo.trim(),
         nombre:        nombre.trim(),
-        lider:         lider.trim(),
-        lider_email:   liderEmail.trim().toLowerCase(),
+        lideres:       lideres,
         peso:          pesoAuto,
         num_proyectos: Number(numProyectos) || 0,
       };
@@ -105,17 +113,19 @@ export default function MacroproyectoModal({ opened, onClose, selected, onSaved 
       <Stack gap="sm">
         <TextInput label="Código" placeholder="Ej: 1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
         <TextInput label="Nombre" placeholder="Nombre del macroproyecto" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
-        <Autocomplete
-          label="Líder"
-          placeholder="Buscar usuario..."
-          value={lider}
-          onChange={handleLiderChange}
+        <MultiSelect
+          label="Líderes del Macroproyecto"
+          placeholder="Seleccionar uno o más líderes..."
+          value={lideresSeleccionados}
+          onChange={(valores) => {
+            setLideresSeleccionados(valores);
+            setHasChanges(true);
+          }}
           data={usuarios.map((u) => u.name)}
+          searchable
+          clearable
           limit={8}
         />
-        {liderEmail && (
-          <TextInput label="Email del líder" value={liderEmail} readOnly styles={{ input: { color: "gray" } }} />
-        )}
         <NumberInput
           label="Número de proyectos"
           description="El peso de cada proyecto se calculará como 100 / n"

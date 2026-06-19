@@ -19,6 +19,7 @@ export interface Macroproyecto {
   nombre: string;
   lider?: string;
   lider_email?: string;
+  lideres?: Array<{ nombre: string; email: string }>;
   num_proyectos?: number;
   peso: number;
   avance: number;

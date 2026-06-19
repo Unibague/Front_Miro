@@ -51,6 +51,7 @@ interface MacroResumen {
   avance: number;
   lider: string;
   lider_email?: string;
+  lideres?: Array<{ nombre: string; email: string }>;
   informe_drive_web_view_link: string | null;
   proyectos: ProyectoResumen[];
 }
@@ -328,7 +329,11 @@ function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: s
               </Badge>
             </Group>
             <Text fw={700} size="md" truncate="end">{macro.nombre}</Text>
-            {macro.lider && <Text size="xs" c="dimmed">Líder: {macro.lider}</Text>}
+            {macro.lideres && macro.lideres.length > 0 ? (
+              <Text size="xs" c="dimmed">Líderes: {macro.lideres.map((l: any) => l.nombre || l).join(', ')}</Text>
+            ) : macro.lider && (
+              <Text size="xs" c="dimmed">Líder: {macro.lider}</Text>
+            )}
             <Progress value={macro.avance} color={semaforoColor(macro.avance)} size="sm" radius="xl" mt={6} />
           </Box>
         </Group>
@@ -409,6 +414,15 @@ export default function InformesPage() {
             session.user?.name
           );
           setMacros(todos.filter((m) => {
+            // Buscar en formato nuevo (array lideres)
+            if (m.lideres && Array.isArray(m.lideres)) {
+              if (m.lideres.some(l => 
+                matchesCurrentUser(email, nombre, l.nombre, l.email)
+              )) {
+                return true;
+              }
+            }
+            // Fallback a formato legacy
             return matchesCurrentUser(email, nombre, m.lider, m.lider_email);
           }));
         }

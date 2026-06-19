@@ -9,7 +9,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import {
   IconArrowLeft, IconBulb, IconCheck, IconChevronDown, IconChevronUp, IconExternalLink,
-  IconForms, IconLock, IconTarget, IconTrash, IconUpload,
+  IconForms, IconLock, IconTarget, IconTrash, IconUpload, IconAlertCircle,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -103,6 +103,16 @@ const SEMAFORO_COLORS: Record<string, string> = {
 
 function esPeriodoEditable(periodo: string, cortes: CorteVigente[]) {
   return cortes.some(c => c.nombre === periodo);
+}
+
+// Nueva función: Verifica si el período está en "Cortes de seguimiento" del indicador
+function estaEnCortesSegimiento(periodo: string, indicador: Indicador | null): boolean {
+  if (!indicador?.fecha_seguimiento) return false;
+  const cortesSegimiento = indicador.fecha_seguimiento
+    .split(",")
+    .map((c: string) => c.trim())
+    .filter(Boolean);
+  return cortesSegimiento.includes(periodo);
 }
 
 function parseAvance(val: string): number | null {
@@ -248,6 +258,10 @@ export default function SubirEvidenciasPage() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [sentSuccessfully, setSentSuccessfully] = useState(false);
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
+  const [mostrarModalPeriodoAtrasado, setMostrarModalPeriodoAtrasado] = useState(false);
+  const [periodosAtrasados, setPeriodosAtrasados] = useState<Periodo[]>([]);
+  const [periodosConDatos, setPeriodosConDatos] = useState<Set<string>>(new Set());
+  const [usuarioEligioReportarAvance, setUsuarioEligioReportarAvance] = useState(false); // false: solo vigente, true: todos
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
   const { setHasChanges } = useUnsavedChanges();
@@ -268,14 +282,32 @@ export default function SubirEvidenciasPage() {
   }, [avancesStr, textos, otrosTextos, justificaciones, sending, savingDraft, sentSuccessfully, indicador, setHasChanges]);
 
   // ── Busca el corte vigente que coincide con un período real del indicador ──────
-  // Si no hay coincidencia, el indicador no debe quedar abierto para reportar.
-  const corteQueCoincide = indicador
-    ? (cortesVigentes.find(c =>
-        (indicador.periodos ?? []).some((p: Periodo) => p.periodo === c.nombre)
-      )?.nombre ?? "")
+  // IMPORTANTE: cortesVigentes es lo que está vigente HOY
+  // El corte activo es el PRIMER corte vigente que encontremos
+  const corteActivo = cortesVigentes.length > 0
+    ? typeof cortesVigentes[0] === "string" 
+      ? (cortesVigentes[0] as string)
+      : ((cortesVigentes[0] as any)?.nombre ?? "")
     : "";
-  const corteActivo = corteQueCoincide;
-  const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? null;
+  
+  // Debug
+  useEffect(() => {
+    if (indicador && cortesVigentes.length > 0) {
+      const nombresCortes = cortesVigentes.map(c => typeof c === "string" ? c : (c as any)?.nombre);
+      console.log("🔍 DEBUG Corte - Cortesigentes:", nombresCortes);
+      console.log("🔍 DEBUG Corte - Períodos indicador:", indicador.periodos?.map((p: Periodo) => p.periodo));
+      console.log("🔍 DEBUG Corte - Corte activo seleccionado:", corteActivo);
+    }
+  }, [indicador, cortesVigentes, corteActivo]);
+  // Crear período vigente virtual si no existe en el indicador
+  const periodoActivo = indicador?.periodos?.find((p: Periodo) => p.periodo === corteActivo) ?? 
+    (corteActivo && {
+      periodo: corteActivo,
+      meta: null,
+      avance: null,
+      estado_reporte: "Borrador",
+      bloqueado: false,
+    } as any);
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
   const estadoCumplimientoMeta =
@@ -369,17 +401,102 @@ export default function SubirEvidenciasPage() {
 
   // ── Carga formularios ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!indicadorId || !email || !corteActivo) return;
+    if (!indicadorId || !email) return;
+    
+    // Si el usuario dice "no por ahora", NO cargar formularios
+    // Si el usuario dice "sí reportar avance", cargar formularios
+    if (!usuarioEligioReportarAvance) {
+      setFormularios([]);
+      setRespuestas({});
+      return;
+    }
+    
+    // SOLO cargar formularios si:
+    // 1. Usuario eligió reportar avance
+    // 2. Hay corte activo (vigente hoy)
+    if (!corteActivo) return;
+    
+    // Usar el corte activo (vigente hoy)
+    const corteAUsar = corteActivo;
+    
     setLoadingForms(true);
     axios.get(PDI_ROUTES.formularios(), { params: { indicador_id: indicadorId } })
       .then(async r => {
         const forms: FormularioPDI[] = r.data.filter((f: any) => f.activo);
         setFormularios(forms);
-        await recargarRespuestas(forms);
+        await recargarRespuestas(forms, corteAUsar);
       })
       .catch(() => {})
       .finally(() => setLoadingForms(false));
-  }, [indicadorId, email, corteActivo]);
+  }, [indicadorId, email, corteActivo, usuarioEligioReportarAvance]);
+
+  // ── Detectar si hay períodos sin datos para ofrecer al usuario ─────────────────────────────────
+  useEffect(() => {
+    if (!indicador) {
+      setMostrarModalPeriodoAtrasado(false);
+      return;
+    }
+
+    const periodos = indicador.periodos ?? [];
+
+    console.log("🔍 DEBUG Modal - Indicador ID:", indicador._id);
+    console.log("🔍 DEBUG Modal - Corte activo (vigente hoy):", corteActivo);
+    console.log("🔍 DEBUG Modal - Períodos totales:", periodos.length, periodos.map(p => p.periodo));
+
+    // Si NO hay corte vigente hoy, NO mostrar modal
+    if (!corteActivo) {
+      console.log("❌ No hay corte vigente hoy, no mostrar modal");
+      setMostrarModalPeriodoAtrasado(false);
+      setPeriodosAtrasados([]);
+      return;
+    }
+
+    // Si HAY corte vigente hoy, buscar ese período en los indicadores
+    let periodoVigente: Periodo = periodos.find((p: Periodo) => p.periodo === corteActivo) ?? {
+      periodo: corteActivo,
+      meta: null,
+      avance: null,
+      estado_reporte: "Borrador",
+      bloqueado: false,
+    } as any;
+
+    // Si fue creado virtualmente (no existía en el indicador)
+    if (!periodos.some((p: Periodo) => p.periodo === corteActivo)) {
+      console.log(`⚠️ El corte vigente ${corteActivo} no existe en los períodos del indicador - usando período virtual`);
+    }
+
+    // Verificar si el período vigente tiene meta definida
+    const tieneMeta = periodoVigente.meta != null && periodoVigente.meta !== "";
+    const tieneAvanceReal = periodoVigente.avance != null && periodoVigente.avance !== 0 && periodoVigente.avance !== "0";
+    const tieneReporte = periodoVigente.estado_reporte === "Enviado" || periodoVigente.estado_reporte === "Aprobado";
+
+    console.log(`📊 Período vigente ${corteActivo}: meta=${tieneMeta}, avance=${periodoVigente.avance}, tieneReporte=${periodoVigente.estado_reporte}`);
+
+    // Mostrar modal SOLO si:
+    // 1. Hay corte vigente hoy (ya verificado)
+    // 2. El período vigente NO tiene meta definida O está siendo reportado por primera vez
+    // 3. NO tiene avance real ni reporte enviado
+    // 4. No acaba de enviar exitosamente
+    const debesMostrarModal = !tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully;
+
+    if (debesMostrarModal) {
+      console.log("✅ Mostrando modal - período vigente sin meta definida o sin reporte");
+      setPeriodosAtrasados([periodoVigente]);
+      setMostrarModalPeriodoAtrasado(true);
+    } else {
+      console.log("❌ No mostrando modal. Razones:", { tieneMeta, tieneAvanceReal, tieneReporte, sentSuccessfully });
+      setPeriodosAtrasados([]);
+      setMostrarModalPeriodoAtrasado(false);
+    }
+  }, [indicador, corteActivo, sentSuccessfully]);
+
+  // ── Resetear flags cuando envía exitosamente ────────────────────────────────
+  useEffect(() => {
+    if (sentSuccessfully) {
+      setUsuarioEligioReportarAvance(false);
+      setMostrarTodosPeriodos(false);
+    }
+  }, [sentSuccessfully]);
 
   // ── Helpers formulario ────────────────────────────────────────────────────
   const getTexto = (formId: string, campoId: string) => textos[`${formId}-${campoId}`] ?? "";
@@ -432,9 +549,10 @@ export default function SubirEvidenciasPage() {
     getDocumentosTotalSize(getDocumentosEvidencia(respuestas[form._id])) > MAX_EVIDENCE_TOTAL_SIZE
   );
 
-  const recargarRespuestas = async (formsOverride?: FormularioPDI[]) => {
+  const recargarRespuestas = async (formsOverride?: FormularioPDI[], corteOverride?: string) => {
     const formsToLoad = formsOverride ?? formularios;
-    if (!indicadorId || !email || !corteActivo || formsToLoad.length === 0) return;
+    const corteAUsar = corteOverride || corteActivo;
+    if (!indicadorId || !email || !corteAUsar || formsToLoad.length === 0) return;
     const respMap: Record<string, RespuestaFormulario | null> = {};
     const textMap: Record<string, string> = {};
     const justMap: Record<string, string> = {};
@@ -442,7 +560,7 @@ export default function SubirEvidenciasPage() {
     await Promise.all(formsToLoad.map(async (f) => {
       try {
         const res = await axios.get(PDI_ROUTES.formularioRespuestas(f._id), {
-          params: { respondido_por: email, corte: corteActivo, indicador_id: indicadorId },
+          params: { respondido_por: email, corte: corteAUsar, indicador_id: indicadorId },
         });
         const resp: RespuestaFormulario | null = res.data[0] ?? null;
         respMap[f._id] = resp;
@@ -885,7 +1003,7 @@ export default function SubirEvidenciasPage() {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────
 
   if (status === "loading" || loadingInd) {
     return (
@@ -1052,7 +1170,10 @@ export default function SubirEvidenciasPage() {
                   {indicador.periodos
                     .filter((p: Periodo) => mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes))
                     .map((p: Periodo) => {
-                    const editable = esPeriodoEditable(p.periodo, cortesVigentes) && !bloqueado;
+                    // Si usuarioEligioReportarAvance = false: bloquear TODO (usuario dijo "no por ahora")
+                    // Si usuarioEligioReportarAvance = true: solo desbloquear vigentes (usuario dijo "sí reportar")
+                    // Si mostrarTodosPeriodos = true pero usuarioEligioReportarAvance = true: todavía bloquear (no es vigente)
+                    const editable = usuarioEligioReportarAvance && esPeriodoEditable(p.periodo, cortesVigentes) && !bloqueado;
                     const metaNumerica = p.meta != null ? parseAvance(String(p.meta)) : null;
                     const avanceNumerico = parseAvance(avancesStr[p.periodo] ?? "");
                     const porcentaje = metaNumerica && metaNumerica > 0 && avanceNumerico != null
@@ -1104,13 +1225,13 @@ export default function SubirEvidenciasPage() {
                             value={avancesStr[p.periodo] ?? ""}
                             onChange={(e) => {
                               const nextValue = e?.currentTarget?.value ?? "";
-                              if (!editable || bloqueado) return;
+                              if (bloqueado || !editable) return;
                               if (/[^0-9.,%\s]/.test(nextValue)) return;
                               setAvancesStr((prev) => ({ ...prev, [p.periodo]: nextValue }));
                             }}
                             style={{ width: 150 }}
                             size="sm"
-                            disabled={!editable || bloqueado}
+                            disabled={bloqueado || !editable}
                           />
                         </Group>
                         {porcentaje != null && (
@@ -1146,7 +1267,81 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {corteActivo && (<>
+            {corteActivo && usuarioEligioReportarAvance && (<>
+            <Divider />
+
+            {/* Resumen del período vigente */}
+            <div>
+              
+              {/* Debug logs */}
+              {(() => {
+                console.log("🔍 DEBUG Vigente - corteActivo:", corteActivo);
+                console.log("🔍 DEBUG Vigente - periodoActivo:", periodoActivo);
+                console.log("🔍 DEBUG Vigente - usuarioEligioReportarAvance:", usuarioEligioReportarAvance);
+                return null;
+              })()}
+              
+              {/* Tarjeta del período vigente - mismo diseño que los demás */}
+              {periodoActivo ? (() => {
+                const metaNumerica = periodoActivo.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
+                const avanceNumerico = parseAvance(avancesStr[periodoActivo.periodo] ?? "");
+                const pct = metaNumerica && metaNumerica > 0 && avanceNumerico != null
+                  ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
+                  : null;
+                console.log("🔍 DEBUG Card - meta:", metaNumerica, "avance:", avanceNumerico, "pct:", pct);
+                return (
+                  <Paper withBorder radius="xl" p="md" mb="lg" style={{
+                    borderLeft: `4px solid #7c3aed`,
+                    background: "#fff",
+                  }}>
+                    <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                      <div>
+                        <Group gap={8}>
+                          <Text size="lg" fw={800}>{periodoActivo.periodo}</Text>
+                          <Badge size="sm" radius="xl" color="violet" variant="light">
+                            Abierto
+                          </Badge>
+                        </Group>
+                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodoActivo.meta ?? "—"}</b></Text>
+                      </div>
+                      <TextInput
+                        label="Avance reportado"
+                        placeholder="Ej: 50"
+                        value={avancesStr[periodoActivo.periodo] ?? ""}
+                        onChange={(e) => {
+                          const nextValue = e?.currentTarget?.value ?? "";
+                          if (/[^0-9.,%\s]/.test(nextValue)) return;
+                          setAvancesStr((prev) => ({ ...prev, [periodoActivo.periodo]: nextValue }));
+                        }}
+                        style={{ width: 150 }}
+                        size="sm"
+                      />
+                    </Group>
+                    {pct != null && (
+                      <>
+                        <Group justify="space-between" mb={4}>
+                          <Text size="xs" c="dimmed">Progreso del periodo</Text>
+                          <Text size="xs" fw={700}>{Math.round(pct)}%</Text>
+                        </Group>
+                        <Progress
+                          value={pct}
+                          color={pct >= 90 ? "green" : pct >= 60 ? "yellow" : "red"}
+                          size="sm"
+                          radius="xl"
+                        />
+                      </>
+                    )}
+                  </Paper>
+                );
+              })() : (
+                <Paper withBorder radius="xl" p="md" mb="lg" style={{
+                  background: "rgba(248,250,252,0.96)",
+                }}>
+                  <Text size="sm" c="dimmed">El período {corteActivo} no tiene datos disponibles</Text>
+                </Paper>
+              )}
+            </div>
+
             <Divider />
 
             {/* Formulario de evidencias */}
@@ -1158,7 +1353,7 @@ export default function SubirEvidenciasPage() {
                 <div>
                   <Title order={5}>Formulario de evidencias</Title>
                   <Text size="xs" c="dimmed">
-                    {corteActivo ? `Corte activo: ${corteActivo}` : "Completa las evidencias del indicador"}
+                    {corteActivo ? `Corte activo: ${corteActivo}` : mostrarTodosPeriodos ? "Selecciona un período y completa las evidencias" : "Completa las evidencias del indicador"}
                   </Text>
                 </div>
               </Group>
@@ -1927,6 +2122,80 @@ export default function SubirEvidenciasPage() {
           </Stack>
         </Container>
       </div>
+
+      {/* Modal para períodos atrasados sin datos */}
+      <Modal
+        opened={mostrarModalPeriodoAtrasado}
+        onClose={() => setMostrarModalPeriodoAtrasado(false)}
+        centered
+        size="md"
+        radius="xl"
+        title={
+          <Group gap="sm">
+            <ThemeIcon size={32} radius="xl" color="orange" variant="light">
+              <IconBulb size={16} />
+            </ThemeIcon>
+            <div>
+              <Text fw={700}>Reportar avance</Text>
+            </div>
+          </Group>
+        }
+      >
+        <Stack gap="md">
+          {/* Si hay corte activo sin meta, ofrecer reportar avance */}
+          {corteActivo && periodosAtrasados.length > 0 && (
+            <>
+              <Paper withBorder radius="lg" p="md" style={{ background: "rgba(251,146,60,0.06)" }}>
+                <Group gap="sm" align="flex-start">
+                  <ThemeIcon size={24} radius="md" color="orange" variant="light">
+                    <IconAlertCircle size={14} />
+                  </ThemeIcon>
+                  <Stack gap={2} style={{ flex: 1 }}>
+                    <Text size="sm" fw={700} c="orange.7">Período vigente sin meta definida</Text>
+                    <Text size="xs" c="dimmed">
+                      El período {corteActivo} está activo pero no tiene una meta definida en el indicador.
+                    </Text>
+                  </Stack>
+                </Group>
+              </Paper>
+
+              <Stack gap="xs">
+                <Text size="sm" fw={600}>¿Deseas reportar avance para este período?</Text>
+                <Text size="xs" c="dimmed">
+                  Puedes reportar avance aunque no tengas una meta definida. El avance se registrará como información adicional.
+                </Text>
+              </Stack>
+
+              <Group justify="flex-end" gap="md">
+                <Button
+                  variant="default"
+                  radius="xl"
+                  onClick={() => {
+                    setMostrarModalPeriodoAtrasado(false);
+                    setUsuarioEligioReportarAvance(false); // Usuario dice "no", mostrar todos los períodos
+                    setMostrarTodosPeriodos(true);
+                  }}
+                >
+                  No por ahora
+                </Button>
+                <Button
+                  color="blue"
+                  radius="xl"
+                  leftSection={<IconUpload size={14} />}
+                  onClick={() => {
+                    setMostrarModalPeriodoAtrasado(false);
+                    setUsuarioEligioReportarAvance(true); // Usuario dice "sí", mostrar solo el vigente
+                    setMostrarTodosPeriodos(false);
+                  }}
+                >
+                  Sí, reportar avance
+                </Button>
+              </Group>
+            </>
+          )}
+          {/* Caso futuro: Si NO hay corte activo (no mostrar nada por ahora) */}
+        </Stack>
+      </Modal>
     </div>
   );
 }
