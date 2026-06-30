@@ -63,6 +63,30 @@ const splitValidateWithReference = (validateWith: FieldWithValidator["validate_w
 const findValidatorByName = (validators: ValidatorOptionSource[], name = "") =>
   validators.find((item) => normalizeToken(item.name) === normalizeToken(name));
 
+const findValidatorForField = (
+  field: FieldWithValidator,
+  validators: ValidatorOptionSource[]
+): { validator: ValidatorOptionSource; columnName?: string } | null => {
+  const { validatorName, columnName } = splitValidateWithReference(field.validate_with);
+
+  if (validatorName) {
+    const validator = findValidatorByName(validators, validatorName);
+    if (validator) return { validator, columnName: columnName || field.name };
+  }
+
+  const fieldNorm = normalizeToken(field.name);
+  for (const validator of validators) {
+    const columnMatch =
+      (validator.columns?.some((column) => normalizeToken(column.name) === fieldNorm)) ||
+      (validator.values.length > 0 &&
+        Object.keys(validator.values[0]).some((key) => normalizeToken(key) === fieldNorm));
+
+    if (columnMatch) return { validator, columnName: field.name };
+  }
+
+  return null;
+};
+
 const getFieldCommentForNote = (field: FieldWithValidator): string => {
   return field.comment
     ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
@@ -867,6 +891,15 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
       normalized.includes("VALORES") ||
       normalized.includes("VALOSRES") ||
       normalized.includes("VALOSR");
+    const looksLikeInstruction =
+      (normalized.includes("OBLIGAT") || normalized.includes("OPCIONAL")) &&
+      (
+        normalized.includes("NUMERIC") ||
+        normalized.includes("TEXTO") ||
+        normalized.includes("FECHA") ||
+        normalized.includes("DECIMAL") ||
+        normalized.includes("CARACTER")
+      );
     if (
       normalized.endsWith(":") &&
       hasValueWord &&
@@ -877,6 +910,7 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
     }
 
     if (inValidSection) {
+      if (looksLikeInstruction) continue;
       options.push(trimmed.replace(/\s+/g, " "));
     }
   }
@@ -942,8 +976,16 @@ export const applyValidatorDropdowns = ({
   fields.forEach((field, fieldIndex) => {
     let options: string[] = [];
 
+    const validatorMatch = validators.length > 0 ? findValidatorForField(field, validators) : null;
+    if (validatorMatch) {
+      const matched = getValidatorOptions(validatorMatch.validator, validatorMatch.columnName || field.name);
+      if (matched.length > 0) {
+        options = matched.map((option) => option.displayLabel);
+      }
+    }
+
     // 1. Extraer del comentario
-    if (field.comment) {
+    if (options.length === 0 && field.comment) {
       options = extractOptionsFromCommentValidators(field.comment);
     }
 
@@ -1095,8 +1137,6 @@ export const fetchValidatorOptionsForFields = async (
   await Promise.all(
     fields.map(async (field) => {
       if (!field.validate_with) return;
-      // Solo para campos sin opciones en comentario
-      if (field.comment && extractOptionsFromCommentValidators(field.comment).length > 0) return;
       try {
         let validatorId = '';
         if (typeof field.validate_with === 'string') {

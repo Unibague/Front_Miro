@@ -74,20 +74,12 @@ const UploadedTemplatePage = () => {
   const [fieldComments, setFieldComments] = useState<Record<string, string>>({});
 
   const normalizeDependencies = (items: any[] = []): Dependency[] => {
-    console.log('Normalizing dependencies from:', items);
-    console.log('Items count:', items.length);
-    return items.map((dependency, index) => {
-      console.log(`Item ${index}:`, dependency);
-      console.log(`Item ${index} keys:`, Object.keys(dependency));
-      const normalized = {
-        dep_code: dependency.dep_code || dependency?.code || "",
-        name: dependency.name || "",
-        responsible: dependency.responsible || "",
-        visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
-      };
-      console.log(`Normalized ${index}:`, normalized);
-      return normalized;
-    });
+    return items.map((dependency) => ({
+      dep_code: dependency.dep_code || dependency?.code || "",
+      name: dependency.name || "",
+      responsible: dependency.responsible || "",
+      visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
+    }));
   };
 
 
@@ -115,65 +107,29 @@ const UploadedTemplatePage = () => {
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
-        console.log('📋 Raw resumeData received:', sentData);
-        const sentDepedencies = sentData.map((data:any) => {
-          console.log('👤 send_by for dependency', data.dependency, ':', {
-            email: data.send_by?.email,
-            full_name: data.send_by?.full_name,
-            position: data.send_by?.position,
-            entire: data.send_by
-          });
-          return {dependency: data.dependency, send_by: data.send_by}
-        })
+        const sentDepedencies = sentData.map((data:any) => ({
+          dependency: data.dependency, send_by: data.send_by
+        }))
         setResumeData(sentDepedencies)
-        
-        const depCodes = sentDepedencies.map((d: any) => d.dependency).filter(Boolean);
-        console.log('Dependency codes for lookup:', depCodes);
-        if (depCodes.length > 0) {
-          const depNames = await fetchDependenciesNames(depCodes);
-          console.log('Fetched dependency names:', depNames);
-          setDependencyNames(depNames);
-          
-          // Usar los nombres de dependencias para construir la lista de dependencies
-          // Esto asegura que el resumen muestre las dependencias que enviaron datos
-          const normalizedDeps = depNames.map((dep: any) => ({
-            dep_code: dep.code || dep.dep_code || "",
-            name: dep.name || "",
-            responsible: dep.responsible || "",
-            visualizers: dep.visualizers || []
-          }));
-          console.log('Dependencies from fetched names:', normalizedDeps);
-          setDependencies(normalizedDeps);
-        } else {
-          // Si no hay datos enviados, usar los productores asignados
-          const producersData = response.data.template?.producers || []
-          console.log('Raw producers:', producersData);
-          console.log('Producers length:', producersData.length);
-          if (producersData.length > 0) {
-            console.log('First producer:', producersData[0]);
-            console.log('First producer keys:', Object.keys(producersData[0]));
-          }
-          setDependencies(
-            normalizeDependencies(producersData)
-          )
-        }
+
+        // Siempre mostrar TODOS los productores en el resumen, no solo los que enviaron
+        // response.data.template.producers tiene los productores ya resueltos con dep_code y name
+        // response.data.publishedTemplate.template.producers son solo ObjectIds (campo tipo {})
+        const allProducers: any[] = response.data.template?.producers
+          || response.data.publishedTemplate?.template?.producers
+          || []
+        const normalizedAll = normalizeDependencies(allProducers)
+        setDependencies(normalizedAll)
 
         
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
           const comments: Record<string, string> = {};
-          console.log('🔍 Template fields with comments:', response.data.publishedTemplate.template.fields);
-          
           response.data.publishedTemplate.template.fields.forEach((field: any) => {
             if (field.comment && field.comment.trim()) {
               comments[field.name] = field.comment;
-              console.log(`✅ Comment found for field '${field.name}':`, field.comment);
-            } else {
-              console.log(`❌ No comment for field '${field.name}'`);
             }
           });
-          
-          console.log('📝 Final field comments mapping:', comments);
           setFieldComments(comments);
         }
       } catch (error: any) {
@@ -203,15 +159,6 @@ const UploadedTemplatePage = () => {
           );
 
           const data = response.data.data;
-          console.log('📊 Data received for role:', userRole, 'Records:', data?.length || 0);
-          
-          // Mostrar información de debug sobre las dependencias encontradas
-          if (data?.length > 0) {
-            const uniqueDependencies = [...new Set(data.map((row: RowData) => row.Dependencia))];
-            console.log('🏢 Dependencies in data:', uniqueDependencies);
-            console.log('👤 User email:', session?.user?.email);
-            console.log('💼 User role:', userRole);
-          }
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -230,62 +177,17 @@ const UploadedTemplatePage = () => {
               };
             });
 
- 
-            // Analizar datos de evidencias
-            const evidenciasStats = updatedData.reduce((stats, row) => {
-              const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
-              if (evidencias && evidencias !== '' && evidencias !== undefined) {
-                stats.withData++;
-                if (stats.samples.length < 3) {
-                  stats.samples.push(evidencias);
-                }
-              } else {
-                stats.withoutData++;
-              }
-              return stats;
-            }, { withData: 0, withoutData: 0, samples: [] as any[] });
-              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
-            console.log('✅ Final data - Dependencies:', finalDependencies, 'Total records:', updatedData.length);
-            
-            // Notificar al usuario sobre el filtrado aplicado
-            if (userRole === 'Productor' || userRole === 'Responsable') {
-              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
-              if (finalDependencies.length === 1) {
-                showNotification({
-                  title: "Filtrado aplicado",
-                  message: `Mostrando datos de ${finalDependencies.length} dependencias. Si solo necesitas ver tu dependencia, contacta al administrador.`,
-                  color: "blue",
-                  autoClose: 5000,
-                });
-              } else if (finalDependencies.length === 1) {
-                showNotification({
-                  title: "✅ Filtrado aplicado",
-                  message: `Mostrando datos de: ${finalDependencies[0]}`,
-                  color: "green",
-                  autoClose: 3000,
-                });
-              }
-            }
-            
-            // Debug: comparar campos de datos vs campos de plantilla
-            const dataFields = Object.keys(updatedData[0]);
-            const templateFields = Object.keys(fieldComments);
-            
-            console.log('📊 Data fields (columns in table):', dataFields);
-            console.log('📋 Template fields (with comments):', templateFields);
-            console.log('🔍 Fields in data but not in template:', dataFields.filter(f => !templateFields.includes(f)));
-            console.log('🔍 Fields in template but not in data:', templateFields.filter(f => !dataFields.includes(f)));
-            
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
-            console.error("Invalid data format received from API.");
-         
-            showNotification({
-              title: "Sin datos",
-              message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
-              color: "orange",
-            });
+            // Solo mostrar notificación cuando el usuario está viendo la pestaña de datos, no el resumen
+            if (!resume) {
+              showNotification({
+                title: "Sin datos",
+                message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
+                color: "orange",
+              });
+            }
           }
         } catch (error: any) {
           console.error('Error fetching uploaded data:', error);
