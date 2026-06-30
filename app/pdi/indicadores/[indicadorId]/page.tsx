@@ -26,6 +26,7 @@ const ESTADO_COLORS: Record<EstadoReporte, string> = {
   Enviado:   "blue",
   Aprobado:  "teal",
   Rechazado: "red",
+  Validado:  "green",
 };
 
 const SEMAFORO_COLORS: Record<string, string> = {

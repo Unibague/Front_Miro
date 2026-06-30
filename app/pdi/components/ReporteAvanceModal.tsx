@@ -24,6 +24,7 @@ const ESTADO_COLORS: Record<EstadoReporte, string> = {
   Enviado:   "blue",
   Aprobado:  "teal",
   Rechazado: "red",
+  Validado:  "green",
 };
 
 export default function ReporteAvanceModal({ opened, onClose, indicador, periodo, onSaved }: Props) {
@@ -92,7 +93,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
     }
   };
 
-  const estadoBloqueado = periodoActual?.estado_reporte === "Aprobado" || periodoActual?.estado_reporte === "Rechazado";
+  const estadoBloqueado = periodoActual?.estado_reporte === "Aprobado" || periodoActual?.estado_reporte === "Rechazado" || periodoActual?.estado_reporte === "Validado";
   const yaEnviado       = periodoActual?.estado_reporte === "Enviado";
 
   return (
@@ -127,7 +128,7 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
         )}
 
         {estadoBloqueado && (
-          <Alert icon={<IconCheckbox size={16} />} color={periodoActual?.estado_reporte === "Aprobado" ? "teal" : "red"} radius="md">
+          <Alert icon={<IconCheckbox size={16} />} color={periodoActual?.estado_reporte === "Aprobado" || periodoActual?.estado_reporte === "Validado" ? "teal" : "red"} radius="md">
             Este reporte fue <strong>{periodoActual?.estado_reporte}</strong> y no puede modificarse.
           </Alert>
         )}

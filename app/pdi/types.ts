@@ -226,7 +226,7 @@ export interface Accion {
   proyecto_id: { _id: string; codigo: string; nombre: string };
 }
 
-export type EstadoReporte = "Borrador" | "Enviado" | "Aprobado" | "Rechazado";
+export type EstadoReporte = "Borrador" | "Enviado" | "Aprobado" | "Rechazado" | "Validado";
 
 export interface Periodo {
   periodo: string;

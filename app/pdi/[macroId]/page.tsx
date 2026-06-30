@@ -9,7 +9,7 @@ import {
   IconArrowLeft, IconTarget, IconBulb,
   IconEdit, IconTrash, IconPlus, IconChevronRight,
   IconChartBarPopular, IconFolderOpen,
-  IconCheck, IconAlertTriangle, IconX, IconFlag,
+  IconCheck, IconAlertTriangle, IconX, IconFlag, IconCheckbox,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -156,7 +156,7 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
   const avanceBarra = Math.min(Math.max(Number(avance), 0), 100);
 
   const borderColor = admin
-    ? (ind.periodos ?? []).some(p => p.estado_reporte === "Aprobado")
+    ? (ind.periodos ?? []).some(p => p.estado_reporte === "Aprobado" || p.estado_reporte === "Validado")
       ? "#12b886"
       : (ind.periodos ?? []).some(p => p.estado_reporte === "Enviado")
         ? "#f59f00"
@@ -188,12 +188,14 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
         </Group>
       </Group>
 
-      {/* Pendientes de evaluación (solo admin) */}
+      {/* Pendientes de evaluación / validados (solo admin) */}
       {admin && (() => {
         const pendientes = (ind.periodos ?? []).filter(p =>
           p.estado_reporte === "Enviado" || p.estado_reporte === "Aprobado"
         );
-        return pendientes.length > 0 ? (
+        const validados = (ind.periodos ?? []).filter(p => p.estado_reporte === "Validado");
+        if (pendientes.length === 0 && validados.length === 0) return null;
+        return (
           <Group gap={4} mb="xs" wrap="wrap">
             {pendientes.map(p => (
               <Badge
@@ -209,8 +211,20 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
                   : `Pendiente evaluar · ${p.periodo}`}
               </Badge>
             ))}
+            {validados.map(p => (
+              <Badge
+                key={p.periodo}
+                size="xs"
+                color="green"
+                variant="filled"
+                radius="xl"
+                leftSection={<IconCheckbox size={9} />}
+              >
+                {`Revisado · ${p.periodo}`}
+              </Badge>
+            ))}
           </Group>
-        ) : null;
+        );
       })()}
 
       {/* Avance grande + Meta */}
