@@ -32,7 +32,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 import classes from "./Navbar.module.css";
-import { IconCalendarStats, IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconCalendarStats, IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3, IconHelp } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -389,6 +389,12 @@ export default function Navbar() {
                   <Menu.Dropdown>{actionItems}</Menu.Dropdown>
                 </Menu>
 
+                <Link href="/ayudas" passHref>
+                  <Button variant="light" size="sm" fw={700} leftSection={<IconHelp size={18} />}>
+                    Ayudas
+                  </Button>
+                </Link>
+
                 <ThemeChanger />
 
                 {showPeriodSelector && availablePeriods.length > 0 && (
@@ -490,6 +496,11 @@ export default function Navbar() {
                 </Tooltip>
               )}
               {itemsDrawer}
+              <Link href="/ayudas" passHref>
+                <Button fullWidth variant="light" size="sm" style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Ayudas
+                </Button>
+              </Link>
               <ThemeChangerMobile />
               {session?.user && user?.isImpersonating ? (
                 <Button

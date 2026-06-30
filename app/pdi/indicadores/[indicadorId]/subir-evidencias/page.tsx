@@ -467,7 +467,8 @@ export default function SubirEvidenciasPage() {
 
     // Verificar si el período vigente tiene meta definida
     const tieneMeta = periodoVigente.meta != null && periodoVigente.meta !== "";
-    const tieneAvanceReal = periodoVigente.avance != null && periodoVigente.avance !== 0 && periodoVigente.avance !== "0";
+    // 0 es un avance válido (la dependencia reportó sin ejecución ese período)
+    const tieneAvanceReal = periodoVigente.avance != null;
     const tieneReporte = periodoVigente.estado_reporte === "Enviado" || periodoVigente.estado_reporte === "Aprobado" || periodoVigente.estado_reporte === "Validado";
 
     console.log(`📊 Período vigente ${corteActivo}: meta=${tieneMeta}, avance=${periodoVigente.avance}, tieneReporte=${periodoVigente.estado_reporte}`);
@@ -624,6 +625,48 @@ export default function SubirEvidenciasPage() {
       modificado_por: email,
     });
     setIndicador(res.data);
+  };
+
+  // ── Reporte en cero: actualiza solo el período del indicador, sin formulario ─
+  const handleReportarEnCero = async () => {
+    if (!indicador || !corteActivo) return;
+    setMostrarModalPeriodoAtrasado(false);
+    setSending(true);
+    try {
+      const autoAprobado = esLiderDelIndicador || esLiderDesdeListado;
+      const estadoEnviado = autoAprobado ? "Aprobado" : "Enviado";
+      const fechaEnvio = new Date().toISOString();
+      const periodosPayload = (indicador.periodos ?? []).map((p: Periodo) => {
+        const esPeriodoActual = p.periodo === corteActivo;
+        const val = esPeriodoActual ? 0 : parseAvance(avancesStr[p.periodo] ?? "");
+        const editable = esPeriodoEditable(p.periodo, cortesVigentes);
+        return {
+          periodo: p.periodo, meta: p.meta,
+          presupuesto_ejecutado: p.presupuesto_ejecutado ?? 0,
+          avance: val,
+          resultados_alcanzados: p.resultados_alcanzados ?? "",
+          logros: p.logros ?? "", alertas: p.alertas ?? "",
+          justificacion_retrasos: p.justificacion_retrasos ?? "",
+          estado_reporte: esPeriodoActual && editable ? estadoEnviado : (p.estado_reporte ?? "Borrador"),
+          fecha_envio: esPeriodoActual && editable ? fechaEnvio : (p.fecha_envio ?? null),
+          reportado_por: esPeriodoActual && editable ? email : (p.reportado_por ?? ""),
+        };
+      });
+      const res = await axios.put(PDI_ROUTES.indicador(indicador._id), {
+        periodos: periodosPayload,
+        accion_id: typeof indicador.accion_id === "string"
+          ? indicador.accion_id : (indicador.accion_id as any)._id,
+        modificado_por: email,
+      });
+      setIndicador(res.data);
+      setAvancesStr(prev => ({ ...prev, [corteActivo]: "0" }));
+      setSentSuccessfully(true);
+      showNotification({ title: "Registrado", message: "Avance en cero reportado correctamente.", color: "teal" });
+    } catch (err: any) {
+      showNotification({ title: "Error", message: err?.response?.data?.error ?? "No se pudo registrar el avance", color: "red" });
+    } finally {
+      setSending(false);
+    }
   };
 
   // ── Guardar respuesta formulario ──────────────────────────────────────────
@@ -1192,21 +1235,30 @@ export default function SubirEvidenciasPage() {
                         ? "teal"
                         : estadoPeriodo === "Rechazado"
                           ? "red"
-                          : estadoPeriodo === "Enviado"
-                            ? "yellow"
-                            : editable
-                              ? "violet"
-                              : "gray";
+                          : estadoPeriodo === "Validado"
+                            ? "green"
+                            : estadoPeriodo === "Aprobado"
+                              ? "teal"
+                              : estadoPeriodo === "Enviado"
+                                ? "yellow"
+                                : editable
+                                  ? "violet"
+                                  : "gray";
                     const badgeLabel =
                       periodoAutoAprobado
                         ? "Aprobado"
                         : estadoPeriodo === "Rechazado"
                           ? "Rechazado"
-                          : estadoPeriodo === "Enviado"
-                            ? "En revisión"
-                            : editable
-                              ? "Abierto"
-                              : "Cerrado";
+                          : estadoPeriodo === "Validado"
+                            ? "Validado"
+                            : estadoPeriodo === "Aprobado"
+                              ? "Aprobado"
+                              : estadoPeriodo === "Enviado"
+                                ? "En revisión"
+                                : editable
+                                  ? "Abierto"
+                                  : "Cerrado";
+                    const reportadoEnCero = avanceNumerico === 0 && estadoPeriodo && estadoPeriodo !== "Borrador";
                     return (
                       <Paper key={p.periodo} withBorder radius="xl" p="md" style={{
                         borderLeft: `4px solid ${editable ? "#7c3aed" : "#cbd5e1"}`,
@@ -1219,8 +1271,16 @@ export default function SubirEvidenciasPage() {
                               <Badge size="sm" radius="xl" color={badgeColor} variant="light">
                                 {badgeLabel}
                               </Badge>
+                              {reportadoEnCero && (
+                                <Badge size="xs" color="gray" variant="outline" radius="xl">
+                                  Avance: 0
+                                </Badge>
+                              )}
                             </Group>
                             <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
+                            {reportadoEnCero && (
+                              <Text size="xs" c="dimmed" mt={2}>La dependencia reportó sin ejecución este período.</Text>
+                            )}
                           </div>
                           <TextInput
                             label="Avance reportado"
@@ -2170,17 +2230,26 @@ export default function SubirEvidenciasPage() {
                 </Text>
               </Stack>
 
-              <Group justify="flex-end" gap="md">
+              <Group justify="flex-end" gap="md" wrap="wrap">
                 <Button
                   variant="default"
                   radius="xl"
                   onClick={() => {
                     setMostrarModalPeriodoAtrasado(false);
-                    setUsuarioEligioReportarAvance(false); // Usuario dice "no", mostrar todos los períodos
+                    setUsuarioEligioReportarAvance(false);
                     setMostrarTodosPeriodos(true);
                   }}
                 >
                   No por ahora
+                </Button>
+                <Button
+                  color="gray"
+                  variant="light"
+                  radius="xl"
+                  loading={sending}
+                  onClick={handleReportarEnCero}
+                >
+                  Reportar en cero
                 </Button>
                 <Button
                   color="blue"
@@ -2188,7 +2257,7 @@ export default function SubirEvidenciasPage() {
                   leftSection={<IconUpload size={14} />}
                   onClick={() => {
                     setMostrarModalPeriodoAtrasado(false);
-                    setUsuarioEligioReportarAvance(true); // Usuario dice "sí", mostrar solo el vigente
+                    setUsuarioEligioReportarAvance(true);
                     setMostrarTodosPeriodos(false);
                   }}
                 >
