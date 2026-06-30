@@ -81,14 +81,22 @@ function _periodosSorted(ind: Indicador) {
 
 
 function absAvanceHastaAnio(ind: Indicador, anio: string): number | null {
-  // Valor absoluto del avance en ESE año (no acumulado) — coincide con cómo se calcula absMetaEnAnio
+  // Valor absoluto del avance en ESE año — capado por la meta de cada periodo
   const delAnio = _periodosSorted(ind).filter(
     (p) => String(p.periodo ?? "").slice(0, 4) === anio && toNumberValue(p.avance) !== null
   );
   if (!delAnio.length) return null;
-  return ind.tipo_calculo === "ultimo_valor"
-    ? (toNumberValue(delAnio[delAnio.length - 1].avance) ?? 0)
-    : delAnio.reduce((acc, p) => acc + (toNumberValue(p.avance) ?? 0), 0);
+  if (ind.tipo_calculo === "ultimo_valor") {
+    const last = delAnio[delAnio.length - 1];
+    const av = toNumberValue(last.avance) ?? 0;
+    const meta = toNumberValue(last.meta);
+    return meta != null && meta > 0 ? Math.min(av, meta) : av;
+  }
+  return delAnio.reduce((acc, p) => {
+    const av = toNumberValue(p.avance) ?? 0;
+    const meta = toNumberValue(p.meta);
+    return acc + (meta != null && meta > 0 ? Math.min(av, meta) : av);
+  }, 0);
 }
 
 function absMetaEnAnio(ind: Indicador, anio: string): number | null {
@@ -204,12 +212,14 @@ function semaforoColorFromMeta(avance: number, meta: number) {
 }
 
 function MiniPeriodoDonut({ corte, avance, meta }: { corte: string; avance: number; meta: number }) {
-  const avPct = Math.min(Math.max(Number(avance) || 0, 0), PDI_WEIGHTED_PERCENT_MAX);
+  const avPct = Math.max(Number(avance) || 0, 0);
   const metPct = Math.max(Number(meta) || 0, 0);
-  const fill = semaforoColorFromMeta(avPct, metPct);
+  // Cumplimiento: qué % de la meta se ha alcanzado, máximo 100 para el visual
+  const cumplimiento = metPct > 0 ? Math.min((avPct / metPct) * 100, 100) : 0;
+  const fill = semaforoColorFromPct(cumplimiento);
   const donutData = [
-    { value: avPct, fill },
-    { value: Math.max(PDI_WEIGHTED_PERCENT_MAX - avPct, 0), fill: "#e9ecef" },
+    { value: cumplimiento, fill },
+    { value: Math.max(100 - cumplimiento, 0), fill: "#e9ecef" },
   ];
 
   return (
@@ -235,7 +245,7 @@ function MiniPeriodoDonut({ corte, avance, meta }: { corte: string; avance: numb
         </PieChart>
         <Box style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", lineHeight: 1 }}>
           <Text fw={900} size="0.72rem" lh={1} style={{ color: fill }}>
-            {formatWeightedPdiPct(avPct)}
+            {Math.round(cumplimiento)}%
           </Text>
         </Box>
       </Box>
@@ -509,15 +519,38 @@ function MacroEntityCard({
   const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
   const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
 
-  const meta   = Number(activeData?.meta   ?? 0);
-  const avance = Number(activeData?.avance ?? 0);
+  // Reemplazar avance con suma real de periodos capados por año
+  const dataConAvanceReal = data.map(d => {
+    const anio = String(d.anio);
+    const avanceReal = dataPeriodo
+      .filter(p => String(p.corte ?? "").slice(0, 4) === anio)
+      .reduce((acc, p) => {
+        const av = Math.max(Number(p.avance) || 0, 0);
+        const mt = Math.max(Number(p.meta) || 0, 0);
+        return acc + (mt > 0 ? Math.min(av, mt) : av);
+      }, 0);
+    return { ...d, avance: avanceReal };
+  });
+  const activeDataReal = dataConAvanceReal.find(d => String(d.anio) === activeAnio);
+
+  const meta   = Number(activeDataReal?.meta   ?? 0);
+  const avance = Number(activeDataReal?.avance ?? 0);
+  const avanceCapped = Math.min(avance, meta);
   const cumplimientoAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
   const restante = Math.max(meta - avance, 0);
   const pieColor = semaforoColorFromPct(cumplimientoAnio);
   const pieData = [
-    { name: "Ejecutado", value: avance, fill: pieColor },
+    { name: "Ejecutado", value: avanceCapped, fill: pieColor },
     { name: "Restante ponderado", value: restante, fill: "#e9ecef" },
   ];
+  // Avance real: suma de avances capados de los periodos del año seleccionado
+  const avanceRealAnio = dataPeriodo
+    .filter(p => String(p.corte ?? "").slice(0, 4) === activeAnio)
+    .reduce((acc, p) => {
+      const av = Math.max(Number(p.avance) || 0, 0);
+      const mt = Math.max(Number(p.meta) || 0, 0);
+      return acc + (mt > 0 ? Math.min(av, mt) : av);
+    }, 0);
 
   return (
     <Paper withBorder radius="xl" p="md">
@@ -587,13 +620,13 @@ function MacroEntityCard({
                     </Pie>
                   </PieChart>
                   <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{formatWeightedPdiPct(avance)}</Text>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{cumplimientoAnio}%</Text>
                     <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
                   </Box>
                 </Box>
                 <Box mt={8} style={{ textAlign: "center" }}>
                   <Group justify="center" gap={8}>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Ejecutado: {formatWeightedPdiPct(avance)}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Ejecutado: {formatWeightedPdiPct(avanceRealAnio)}</Text></Group>
                     <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Programado: {formatWeightedPdiPct(meta)}</Text></Group>
                   </Group>
                 </Box>
@@ -602,7 +635,7 @@ function MacroEntityCard({
               {/* Líneas por año */}
               <Grid.Col span={{ base: 12, sm: 8 }}>
                 <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                  <LineChart data={dataConAvanceReal} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                     <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
                     <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
@@ -652,15 +685,36 @@ function AccionMetaAvanceCard({
   const hasAnio    = data.some((d) => d.meta > 0 || d.avance > 0);
   const hasPeriodo = dataPeriodo.some((d) => d.meta > 0 || d.avance > 0);
 
-  const meta    = Number(activeData?.meta   ?? 0);
-  const avance  = Number(activeData?.avance ?? 0);
+  const dataConAvanceReal = data.map(d => {
+    const anio = String(d.anio);
+    const avanceReal = dataPeriodo
+      .filter(p => String(p.corte ?? "").slice(0, 4) === anio)
+      .reduce((acc, p) => {
+        const av = Math.max(Number(p.avance) || 0, 0);
+        const mt = Math.max(Number(p.meta) || 0, 0);
+        return acc + (mt > 0 ? Math.min(av, mt) : av);
+      }, 0);
+    return { ...d, avance: avanceReal };
+  });
+  const activeDataReal = dataConAvanceReal.find(d => String(d.anio) === activeAnio);
+
+  const meta    = Number(activeDataReal?.meta   ?? 0);
+  const avance  = Number(activeDataReal?.avance ?? 0);
   const pctAnio = meta > 0 ? Math.min(Math.round((avance / meta) * 100), 100) : 0;
   const restante = Math.max(meta - avance, 0);
   const pieColor = semaforoColorFromPct(pctAnio);
+  const avanceCapped = Math.min(avance, meta);
   const pieData = [
-    { name: "Avance", value: avance, fill: pieColor },
+    { name: "Avance", value: avanceCapped, fill: pieColor },
     { name: "Meta restante", value: restante, fill: "#e9ecef" },
   ];
+  const avanceRealAnio = dataPeriodo
+    .filter(p => String(p.corte ?? "").slice(0, 4) === activeAnio)
+    .reduce((acc, p) => {
+      const av = Math.max(Number(p.avance) || 0, 0);
+      const mt = Math.max(Number(p.meta) || 0, 0);
+      return acc + (mt > 0 ? Math.min(av, mt) : av);
+    }, 0);
 
   return (
     <Paper withBorder radius="xl" p="md">
@@ -708,20 +762,20 @@ function AccionMetaAvanceCard({
                     </Pie>
                   </PieChart>
                   <Box style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{formatWeightedPdiPct(avance)}</Text>
+                    <Text fw={900} size="lg" lh={1} style={{ color: pieColor }}>{pctAnio}%</Text>
                     <Text size="0.6rem" c="dimmed">{activeAnio}</Text>
                   </Box>
                 </Box>
                 <Box mt={8} style={{ textAlign: "center" }}>
                   <Group justify="center" gap={8}>
-                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Avance: {formatWeightedPdiPct(avance)}</Text></Group>
+                    <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: pieColor }} /><Text size="xs">Avance: {formatWeightedPdiPct(avanceRealAnio)}</Text></Group>
                     <Group gap={4}><Box w={8} h={8} style={{ borderRadius: "50%", background: "#e9ecef" }} /><Text size="xs">Programado: {formatWeightedPdiPct(meta)}</Text></Group>
                   </Group>
                 </Box>
               </Grid.Col>
               <Grid.Col span={{ base: 12, sm: 8 }}>
                 <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+                  <LineChart data={dataConAvanceReal} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
                     <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
                     <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
@@ -1490,11 +1544,8 @@ export default function PdiGraficas() {
 
               // Líneas de label: total siempre, + gasto/inv + % si está seleccionado
               const lines: { text: string; color: string; size: number; weight: number }[] = [];
-              if (isTopPart && !isSelected) {
+              if (isTopPart && !isSelected && stack === "pres") {
                 lines.push({ text: fmtM(stackTotal(d, stack)), color: "#0f172a", size: 12, weight: 900 });
-                if (stack === "pres") lines.push({ text: `${causPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
-                if (stack === "comp") lines.push({ text: `${compPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
-                if (stack === "caus") lines.push({ text: `${causPct(d)}%`, color: "#64748b", size: 10, weight: 900 });
               }
 
               const lineHeight = 14;
@@ -1541,27 +1592,27 @@ export default function PdiGraficas() {
                   {isTopPart && isSelected && (
                     <g pointerEvents="none">
                       <rect
-                        x={cardX}
-                        y={cardY}
-                        width={cardWidth}
-                        height={cardHeight}
-                        rx={8}
-                        ry={8}
-                        fill="#fff"
-                        stroke="#dbe3ef"
-                        strokeWidth={1}
+                        x={cardX} y={cardY}
+                        width={cardWidth} height={82}
+                        rx={10} ry={10}
+                        fill="#fff" stroke="#dbe3ef" strokeWidth={1.5}
                       />
-                      <text x={cardX + 12} y={cardY + 18} fontSize={12} fontWeight={900} fill="#0f172a">
+                      {/* Título */}
+                      <text x={cardX + 14} y={cardY + 20} fontSize={11} fontWeight={700} fill="#6b7280">
                         {stackLabel[stack]}
                       </text>
-                      <text x={cardX + 12} y={cardY + 39} fontSize={15} fontWeight={900} fill="#020617">
+                      {/* Monto total */}
+                      <text x={cardX + 14} y={cardY + 42} fontSize={16} fontWeight={900} fill="#0f172a">
                         {fmtM(selectedAmount)}
                       </text>
-                      <text x={cardX + 12} y={cardY + 54} fontSize={10} fontWeight={800} fill="#64748b">
-                        {selectedPctText}
+                      {/* Separador */}
+                      <line x1={cardX + 14} y1={cardY + 52} x2={cardX + cardWidth - 14} y2={cardY + 52} stroke="#e5e7eb" strokeWidth={1} />
+                      {/* Gasto e Inversión */}
+                      <text x={cardX + 14} y={cardY + 68} fontSize={10} fontWeight={600} fill="#374151">
+                        {`Gasto: ${fmtM(gastoAmt)}`}
                       </text>
-                      <text x={cardX + 12} y={cardY + 68} fontSize={10} fontWeight={700} fill="#475569">
-                        {`Gasto: ${fmtM(gastoAmt)}  Inversion: ${fmtM(invAmt)}`}
+                      <text x={cardX + 130} y={cardY + 68} fontSize={10} fontWeight={600} fill="#374151">
+                        {`Inversión: ${fmtM(invAmt)}`}
                       </text>
                     </g>
                   )}
