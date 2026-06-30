@@ -454,9 +454,9 @@ export default function SubirEvidenciasPage() {
     // Si HAY corte vigente hoy, buscar ese período en los indicadores
     let periodoVigente: Periodo = periodos.find((p: Periodo) => p.periodo === corteActivo) ?? {
       periodo: corteActivo,
-      meta: null,
+      meta: indicador.meta_final_2029 ?? null,
       avance: null,
-      estado_reporte: "Borrador",
+      estado_reporte: null,
       bloqueado: false,
     } as any;
 
@@ -476,11 +476,9 @@ export default function SubirEvidenciasPage() {
     // 1. Hay corte vigente hoy (ya verificado)
     // 2. El período vigente tiene meta definida pero aún no ha reportado avance ni enviado
     // 3. No acaba de enviar exitosamente
-    // Si el período vigente tiene meta definida y no ha sido enviado/aprobado, mostrar formulario directamente
-    // (aplica tanto si ya tiene avance guardado en borrador como si no)
-    if (tieneMeta && !tieneReporte && !sentSuccessfully) {
-      setUsuarioEligioReportarAvance(true);
-      setMostrarModalPeriodoAtrasado(false);
+    if (tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully) {
+      setPeriodosAtrasados([periodoVigente]);
+      setMostrarModalPeriodoAtrasado(true);
     } else {
       setMostrarModalPeriodoAtrasado(false);
     }
@@ -1120,7 +1118,12 @@ export default function SubirEvidenciasPage() {
                 {[
                   { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                  { label: "Avance actual", value: `${avanceActual}%` },
+                  { label: "Avance actual", value: (() => {
+                    const metaN = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
+                    const avN = periodoActivo ? parseAvance(avancesStr[periodoActivo.periodo] ?? String(avanceActual)) : null;
+                    if (metaN != null && metaN > 0 && avN != null) return `${Math.round((avN / metaN) * 100)}%`;
+                    return `${avanceActual}%`;
+                  })() },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
                     flex: 1, padding: "10px 14px",
