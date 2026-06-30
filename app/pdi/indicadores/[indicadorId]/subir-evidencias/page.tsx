@@ -1120,12 +1120,7 @@ export default function SubirEvidenciasPage() {
                 {[
                   { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-                  { label: "Avance actual", value: (() => {
-                    const metaN = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
-                    const avN = periodoActivo ? parseAvance(avancesStr[periodoActivo.periodo] ?? String(avanceActual)) : null;
-                    if (metaN != null && metaN > 0 && avN != null) return `${Math.round((avN / metaN) * 100)}%`;
-                    return `${avanceActual}%`;
-                  })() },
+                  { label: "Avance actual", value: `${avanceActual}%` },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
                     flex: 1, padding: "10px 14px",

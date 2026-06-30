@@ -1022,7 +1022,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
           </Button>
           {open && (
             <Stack gap={6} mt="sm">
-              {ind.periodos.map(p => (
+              {[...ind.periodos].sort((a, b) => a.periodo.localeCompare(b.periodo)).map(p => (
                 <Paper key={p.periodo} withBorder radius="md" p="sm">
                   <Group justify="space-between">
                     <Text size="sm" fw={700}>{p.periodo}</Text>
