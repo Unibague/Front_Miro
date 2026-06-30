@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useState, useMemo } from "react";
 import {
   Stack, Text, Paper, Select, Group, Loader, Center, Box, Grid, ThemeIcon, Badge,
-  ActionIcon, Progress, SimpleGrid, Divider, Modal, ScrollArea, List,
+  ActionIcon, Progress, SimpleGrid, Divider, Modal, ScrollArea, List, Tooltip,
 } from "@mantine/core";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, LabelList, CartesianGrid,
@@ -227,28 +227,35 @@ function MiniPeriodoDonut({ corte, avance, meta }: { corte: string; avance: numb
       <Text size="xs" fw={800} mb={4} lh={1.1} style={{ letterSpacing: 0 }}>
         {corte}
       </Text>
-      <Box style={{ position: "relative", width: 68, height: 68, margin: "0 auto" }}>
-        <PieChart width={68} height={68}>
-          <Pie
-            data={donutData}
-            cx="50%"
-            cy="50%"
-            innerRadius={22}
-            outerRadius={32}
-            startAngle={90}
-            endAngle={-270}
-            dataKey="value"
-            strokeWidth={0}
-          >
-            {donutData.map((e, i) => <Cell key={i} fill={e.fill} />)}
-          </Pie>
-        </PieChart>
-        <Box style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", lineHeight: 1 }}>
-          <Text fw={900} size="0.72rem" lh={1} style={{ color: fill }}>
-            {Math.round(cumplimiento)}%
-          </Text>
+      <Tooltip
+        label={`Ejecutado: ${formatWeightedPdiPct(Math.min(avPct, metPct))}`}
+        position="top"
+        withArrow
+        styles={{ tooltip: { fontSize: 12, fontWeight: 700 } }}
+      >
+        <Box style={{ position: "relative", width: 68, height: 68, margin: "0 auto", cursor: "pointer" }}>
+          <PieChart width={68} height={68}>
+            <Pie
+              data={donutData}
+              cx="50%"
+              cy="50%"
+              innerRadius={22}
+              outerRadius={32}
+              startAngle={90}
+              endAngle={-270}
+              dataKey="value"
+              strokeWidth={0}
+            >
+              {donutData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+            </Pie>
+          </PieChart>
+          <Box style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", lineHeight: 1 }}>
+            <Text fw={900} size="0.72rem" lh={1} style={{ color: fill }}>
+              {Math.round(cumplimiento)}%
+            </Text>
+          </Box>
         </Box>
-      </Box>
+      </Tooltip>
       {metPct > 0 && (
         <Text
           size="0.62rem"
@@ -995,6 +1002,10 @@ export default function PdiGraficas() {
     .map((ind) => {
       const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo } = metricasPeriodo(ind, periodoActual);
 
+      const usaPorcentaje =
+        (typeof ind.meta_final_2029 === "string" && ind.meta_final_2029.includes("%")) ||
+        (ind.periodos ?? []).some((p) => typeof p.meta === "string" && p.meta.includes("%"));
+
       return {
         id: ind._id,
         codigo: ind.codigo,
@@ -1004,6 +1015,7 @@ export default function PdiGraficas() {
         avancePeriodo,
         pctPeriodo,
         semaforoPeriodo,
+        usaPorcentaje,
       };
     })
     .sort((a, b) => a.pctPeriodo - b.pctPeriodo || a.codigo.localeCompare(b.codigo))
@@ -1841,13 +1853,22 @@ export default function PdiGraficas() {
                             <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
+                              {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                            </Group>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
+                              {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                            </Group>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                              {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                            </Group>
                           </td>
                           <td style={{ ...tdStyle, minWidth: 140 }}>
                             <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
@@ -2050,13 +2071,22 @@ export default function PdiGraficas() {
                               <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
+                              <Group gap={4} justify="flex-end" wrap="nowrap">
+                                <Text size="sm" fw={700}>{fmtValue(row.metaFinal)}</Text>
+                                {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                              </Group>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
+                              <Group gap={4} justify="flex-end" wrap="nowrap">
+                                <Text size="sm" fw={700}>{fmtValue(row.metaPeriodo)}</Text>
+                                {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                              </Group>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                              <Group gap={4} justify="flex-end" wrap="nowrap">
+                                <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                                {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                              </Group>
                             </td>
                             <td style={{ ...tdStyle, minWidth: 140 }}>
                               <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
