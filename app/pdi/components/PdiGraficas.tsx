@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Stack, Text, Paper, Select, Group, Loader, Center, Box, Grid, ThemeIcon, Badge,
   ActionIcon, Progress, SimpleGrid, Divider, Modal, ScrollArea, List, Tooltip,
@@ -823,6 +824,7 @@ function AccionMetaAvanceCard({
 }
 
 export default function PdiGraficas() {
+  const router = useRouter();
   const [pdiData, setPdiData] = useState<{
     macros: Macroproyecto[]; proyectos: Proyecto[]; acciones: Accion[]; indicadores: Indicador[];
   } | null>(null);
@@ -1848,8 +1850,11 @@ export default function PdiGraficas() {
                     ) : (
                       indicadoresCriticosTop.map((row, i) => (
                         <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
-                          <td style={{ ...tdStyle, maxWidth: 420 }}>
-                            <Text size="sm" fw={700} c="blue">{row.codigo}</Text>
+                          <td
+                            style={{ ...tdStyle, maxWidth: 420, cursor: "pointer" }}
+                            onClick={() => router.push(`/pdi/indicadores/${row.id}`)}
+                          >
+                            <Text size="sm" fw={700} c="blue" style={{ textDecoration: "underline" }}>{row.codigo}</Text>
                             <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
@@ -2066,8 +2071,11 @@ export default function PdiGraficas() {
                       ) : (
                         indicadoresCriticosTop.map((row, i) => (
                           <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
-                            <td style={{ ...tdStyle, maxWidth: 420 }}>
-                              <Text size="xs" fw={700} c="blue">{row.codigo}</Text>
+                            <td
+                              style={{ ...tdStyle, maxWidth: 420, cursor: "pointer" }}
+                              onClick={() => router.push(`/pdi/indicadores/${row.id}`)}
+                            >
+                              <Text size="xs" fw={700} c="blue" style={{ textDecoration: "underline" }}>{row.codigo}</Text>
                               <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>

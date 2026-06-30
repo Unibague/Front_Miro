@@ -90,7 +90,7 @@ function esPeriodoEditable(periodo: string, cortesVigentes: CorteVigente[]): boo
 }
 
 function getReportesPendientesAccion(indicadores: Indicador[], cortesVigentes: CorteVigente[]) {
-  const estadosReportados = new Set(["Enviado", "Aprobado"]);
+  const estadosReportados = new Set(["Enviado", "Aprobado", "Validado"]);
 
   return indicadores.flatMap((indicador) =>
     (indicador.periodos ?? [])

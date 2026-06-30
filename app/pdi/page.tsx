@@ -10,7 +10,7 @@ import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
   IconFlag, IconAlertTriangle, IconCurrencyDollar,
-  IconListCheck, IconExternalLink, IconSettings, IconSearch, IconClipboardCheck,
+  IconListCheck, IconExternalLink, IconSettings, IconSearch, IconClipboardCheck, IconShieldCheck,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -543,14 +543,18 @@ interface PendienteAprobacion {
   tipo: "lider" | "planeacion";
   respuestaId?: string;
   formularioId?: string;
+  liderEmail?: string;
+  respondidoPor?: string;
 }
 
-interface PendientePlaneacionResponse {
+interface PendienteRevisionResponse {
   _id?: string;
   respuesta_id?: string;
   indicador_id_ref?: string;
   formulario_id_ref?: string;
   corte?: string;
+  lider_email_aval?: string;
+  respondido_por?: string;
   indicador_id?: string | {
     _id?: string;
     codigo?: string;
@@ -559,6 +563,29 @@ interface PendientePlaneacionResponse {
   formulario_id?: string | {
     _id?: string;
   } | null;
+}
+
+function mapPendienteRevision(item: PendienteRevisionResponse, tipo: PendienteAprobacion["tipo"]): PendienteAprobacion | null {
+  const indicador = item.indicador_id && typeof item.indicador_id === "object"
+    ? item.indicador_id
+    : null;
+  const indicadorId = item.indicador_id_ref
+    || indicador?._id
+    || (typeof item.indicador_id === "string" ? item.indicador_id : "");
+  if (!indicadorId) return null;
+
+  return {
+    indicadorId,
+    indicadorCodigo: indicador?.codigo ?? "Indicador",
+    indicadorNombre: indicador?.nombre ?? "Reporte pendiente de validacion",
+    corte: item.corte ?? "",
+    tipo,
+    respuestaId: item.respuesta_id ?? item._id,
+    formularioId: item.formulario_id_ref
+      || (typeof item.formulario_id === "string" ? item.formulario_id : item.formulario_id?._id),
+    liderEmail: item.lider_email_aval ?? "",
+    respondidoPor: item.respondido_por ?? "",
+  };
 }
 
 interface CorteResumenPeriodo {
@@ -687,13 +714,14 @@ const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
   return { gasto: presupuesto, inversion: 0 };
 };
 
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen, pendientesAprobacion }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen, pendientesLider, pendientesAprobacion }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
   alertasActivas: number;
   resumen: DashboardResumen | null;
+  pendientesLider: PendienteAprobacion[];
   pendientesAprobacion: PendienteAprobacion[];
 }) {
   const router = useRouter();
@@ -707,6 +735,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     causadoInversion: number;
   } | null>(null);
   const [modalPendientes, setModalPendientes] = useState(false);
+  const [modalPendientesLider, setModalPendientesLider] = useState(false);
   const [modalAprobaciones, setModalAprobaciones] = useState(false);
 
   useEffect(() => {
@@ -828,7 +857,19 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
-  const totalPendientes = pendientesAprobacion.length;
+  const totalPendientesLider = pendientesLider.length;
+  const totalPendientesPlaneacion = pendientesAprobacion.length;
+  const abrirPendienteLider = (item: PendienteAprobacion) => {
+    if (!item.indicadorId) return;
+    const params = new URLSearchParams({
+      modo: "evaluar",
+      origen: "bandeja-lider",
+    });
+    if (item.corte) params.set("periodo", item.corte);
+    if (item.respuestaId) params.set("respuesta_id", item.respuestaId);
+    if (item.formularioId) params.set("formulario_id", item.formularioId);
+    router.push(`/pdi/indicadores/${encodeURIComponent(item.indicadorId)}?${params.toString()}`);
+  };
   const abrirPendientePlaneacion = (item: PendienteAprobacion) => {
     if (!item.indicadorId) return;
     const params = new URLSearchParams({
@@ -1084,11 +1125,83 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           </Grid>
         </SimpleGrid>
 
-        {/* Bandeja de planeación — debajo del panorama, ancho completo */}
+        {/* Bandejas de revisión — debajo del panorama, ancho completo */}
         <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
           <Group justify="space-between" align="center" mb="sm">
             <Group gap="sm" align="center">
-              <ThemeIcon size={36} radius="xl" color={totalPendientes > 0 ? "violet" : "teal"} variant="light">
+              <ThemeIcon size={36} radius="xl" color={totalPendientesLider > 0 ? "orange" : "teal"} variant="light">
+                <IconShieldCheck size={18} />
+              </ThemeIcon>
+              <Box>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Bandeja líder macroproyecto</Text>
+                <Text size="sm" fw={700} lh={1.2} mt={2}>Reportes pendientes de evaluación</Text>
+              </Box>
+            </Group>
+            <Group gap={8}>
+              {totalPendientesLider > 0 ? (
+                <>
+                  <Badge color="orange" variant="filled" radius="xl" size="md">
+                    {totalPendientesLider} pendiente{totalPendientesLider !== 1 ? "s" : ""}
+                  </Badge>
+                  <ActionIcon variant="light" color="orange" size="md" onClick={() => setModalPendientesLider(true)} title="Ver todos">
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                </>
+              ) : (
+                <Badge color="teal" variant="light" radius="xl" size="md">Sin pendientes</Badge>
+              )}
+            </Group>
+          </Group>
+
+          {totalPendientesLider === 0 ? (
+            <Text size="sm" c="dimmed">No hay reportes esperando evaluación del líder de macroproyecto.</Text>
+          ) : (
+            <>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
+                {pendientesLider.slice(0, 8).map((item, i) => (
+                  <Box
+                    key={`lider-prev-${item.indicadorId}-${item.corte}-${i}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirPendienteLider(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        abrirPendienteLider(item);
+                      }
+                    }}
+                    style={{
+                      background: "rgba(245,159,0,0.08)",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      borderLeft: "3px solid #f59f00",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Text size="xs" fw={800} c="orange.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                    <Text size="xs" lh={1.4} lineClamp={1}>{item.indicadorNombre}</Text>
+                    <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte}</Text>
+                    {item.liderEmail && <Text size="10px" c="dimmed" lineClamp={1}>Líder: {item.liderEmail}</Text>}
+                  </Box>
+                ))}
+              </SimpleGrid>
+              {totalPendientesLider > 8 && (
+                <Text
+                  size="xs" c="orange.7" fw={600} mt="xs" style={{ cursor: "pointer" }}
+                  onClick={() => setModalPendientesLider(true)}
+                >
+                  + {totalPendientesLider - 8} más — ver todos
+                </Text>
+              )}
+            </>
+          )}
+        </Box>
+
+        {/* Bandeja de planeación */}
+        <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
+          <Group justify="space-between" align="center" mb="sm">
+            <Group gap="sm" align="center">
+              <ThemeIcon size={36} radius="xl" color={totalPendientesPlaneacion > 0 ? "violet" : "teal"} variant="light">
                 <IconClipboardCheck size={18} />
               </ThemeIcon>
               <Box>
@@ -1097,10 +1210,10 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               </Box>
             </Group>
             <Group gap={8}>
-              {totalPendientes > 0 ? (
+              {totalPendientesPlaneacion > 0 ? (
                 <>
                   <Badge color="violet" variant="filled" radius="xl" size="md">
-                    {totalPendientes} pendiente{totalPendientes !== 1 ? "s" : ""}
+                    {totalPendientesPlaneacion} pendiente{totalPendientesPlaneacion !== 1 ? "s" : ""}
                   </Badge>
                   <ActionIcon variant="light" color="violet" size="md" onClick={() => setModalAprobaciones(true)} title="Ver todos">
                     <IconSearch size={14} />
@@ -1112,7 +1225,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
             </Group>
           </Group>
 
-          {totalPendientes === 0 ? (
+          {totalPendientesPlaneacion === 0 ? (
             <Text size="sm" c="dimmed">No hay reportes esperando validación de planeación.</Text>
           ) : (
             <>
@@ -1143,17 +1256,75 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   </Box>
                 ))}
               </SimpleGrid>
-              {totalPendientes > 8 && (
+              {totalPendientesPlaneacion > 8 && (
                 <Text
                   size="xs" c="violet.6" fw={600} mt="xs" style={{ cursor: "pointer" }}
                   onClick={() => setModalAprobaciones(true)}
                 >
-                  + {totalPendientes - 8} más — ver todos
+                  + {totalPendientesPlaneacion - 8} más — ver todos
                 </Text>
               )}
             </>
           )}
         </Box>
+
+        <Modal
+          opened={modalPendientesLider}
+          onClose={() => setModalPendientesLider(false)}
+          title={
+            <Group gap="xs">
+              <ThemeIcon size={28} radius="xl" color="orange" variant="light">
+                <IconShieldCheck size={16} />
+              </ThemeIcon>
+              <div>
+                <Text fw={700} size="sm" lh={1.2}>Reportes pendientes de evaluación</Text>
+                <Text size="xs" c="dimmed">Enviados por responsables · Requieren aval del líder</Text>
+              </div>
+            </Group>
+          }
+          size="lg"
+          radius="lg"
+        >
+          <Text size="xs" c="dimmed" mb="sm">
+            {totalPendientesLider} reporte{totalPendientesLider !== 1 ? "s" : ""} pendiente{totalPendientesLider !== 1 ? "s" : ""} de evaluación por líder de macroproyecto.
+          </Text>
+          <ScrollArea h={440} offsetScrollbars>
+            <List spacing={8} size="sm" icon={
+              <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#f59f00", flexShrink: 0 }} />
+            }>
+              {pendientesLider.map((item, i) => (
+                <List.Item key={`modal-lider-${item.indicadorId}-${item.corte}-${i}`}>
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setModalPendientesLider(false);
+                      abrirPendienteLider(item);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setModalPendientesLider(false);
+                        abrirPendienteLider(item);
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Group gap={6} align="center">
+                      <Text size="xs" fw={800} c="orange.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                      <Badge color="orange" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
+                    </Group>
+                    <Text size="xs" lh={1.4} mt={2}>{item.indicadorNombre}</Text>
+                    <Group gap={10} mt={2} wrap="wrap">
+                      {item.respondidoPor && <Text size="10px" c="dimmed">Responsable: {item.respondidoPor}</Text>}
+                      {item.liderEmail && <Text size="10px" c="dimmed">Líder: {item.liderEmail}</Text>}
+                    </Group>
+                  </Box>
+                </List.Item>
+              ))}
+            </List>
+          </ScrollArea>
+        </Modal>
 
         <Modal
           opened={modalAprobaciones}
@@ -1173,7 +1344,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           radius="lg"
         >
           <Text size="xs" c="dimmed" mb="sm">
-            {totalPendientes} reporte{totalPendientes !== 1 ? "s" : ""} aprobado{totalPendientes !== 1 ? "s" : ""} por el líder, pendiente{totalPendientes !== 1 ? "s" : ""} de validación de planeación.
+            {totalPendientesPlaneacion} reporte{totalPendientesPlaneacion !== 1 ? "s" : ""} aprobado{totalPendientesPlaneacion !== 1 ? "s" : ""} por el líder, pendiente{totalPendientesPlaneacion !== 1 ? "s" : ""} de validación de planeación.
           </Text>
           <ScrollArea h={440} offsetScrollbars>
             <List spacing={8} size="sm" icon={
@@ -1312,6 +1483,7 @@ export default function PdiPage() {
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
+  const [pendientesLider, setPendientesLider] = useState<PendienteAprobacion[]>([]);
   const [pendientesAprobacion, setPendientesAprobacion] = useState<PendienteAprobacion[]>([]);
   const [loadingMacros, setLoadingMacros] = useState(true);
   const [macroModal, setMacroModal] = useState(false);
@@ -1319,14 +1491,16 @@ export default function PdiPage() {
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
   const cargarPortfolio = async () => {
     try {
-      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes, pendientesPlaneacionRes] = await Promise.all([
+      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes, pendientesLiderRes, pendientesPlaneacionRes] = await Promise.all([
         axios.get(PDI_ROUTES.macroproyectos()),
         axios.get(PDI_ROUTES.proyectos()),
         axios.get(PDI_ROUTES.acciones()),
         axios.get(PDI_ROUTES.indicadores()),
         axios.get(PDI_ROUTES.dashboardResumen()),
-        axios.get<PendientePlaneacionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
-          .catch(() => ({ data: [] as PendientePlaneacionResponse[] })),
+        axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesLider())
+          .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+        axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
+          .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
       ]);
       setResumen(resumenRes.data);
 
@@ -1374,29 +1548,15 @@ export default function PdiPage() {
         return acc;
       }, {});
 
+      const pendientesLiderMapeados = (pendientesLiderRes.data ?? [])
+        .map((item) => mapPendienteRevision(item, "lider"))
+        .filter((item): item is PendienteAprobacion => Boolean(item));
+
       // Solo los que el líder ya aprobó y planeación debe validar
       const pendientes = (pendientesPlaneacionRes.data ?? [])
-        .map((item): PendienteAprobacion | null => {
-          const indicador = item.indicador_id && typeof item.indicador_id === "object"
-            ? item.indicador_id
-            : null;
-          const indicadorId = item.indicador_id_ref
-            || indicador?._id
-            || (typeof item.indicador_id === "string" ? item.indicador_id : "");
-          if (!indicadorId) return null;
-
-          return {
-            indicadorId,
-            indicadorCodigo: indicador?.codigo ?? "Indicador",
-            indicadorNombre: indicador?.nombre ?? "Reporte pendiente de validacion",
-            corte: item.corte ?? "",
-            tipo: "planeacion" as const,
-            respuestaId: item.respuesta_id ?? item._id,
-            formularioId: item.formulario_id_ref
-              || (typeof item.formulario_id === "string" ? item.formulario_id : item.formulario_id?._id),
-          };
-        })
+        .map((item) => mapPendienteRevision(item, "planeacion"))
         .filter((item): item is PendienteAprobacion => Boolean(item));
+      setPendientesLider(pendientesLiderMapeados);
       setPendientesAprobacion(pendientes);
 
       setMacros(macrosData);
@@ -1471,7 +1631,7 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
-      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} pendientesAprobacion={pendientesAprobacion} />
+      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} pendientesLider={pendientesLider} pendientesAprobacion={pendientesAprobacion} />
 
       <Group justify="space-between" align="center" mb="md">
         <div>

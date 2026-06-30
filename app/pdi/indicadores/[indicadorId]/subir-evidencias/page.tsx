@@ -468,7 +468,7 @@ export default function SubirEvidenciasPage() {
     // Verificar si el período vigente tiene meta definida
     const tieneMeta = periodoVigente.meta != null && periodoVigente.meta !== "";
     const tieneAvanceReal = periodoVigente.avance != null && periodoVigente.avance !== 0 && periodoVigente.avance !== "0";
-    const tieneReporte = periodoVigente.estado_reporte === "Enviado" || periodoVigente.estado_reporte === "Aprobado";
+    const tieneReporte = periodoVigente.estado_reporte === "Enviado" || periodoVigente.estado_reporte === "Aprobado" || periodoVigente.estado_reporte === "Validado";
 
     console.log(`📊 Período vigente ${corteActivo}: meta=${tieneMeta}, avance=${periodoVigente.avance}, tieneReporte=${periodoVigente.estado_reporte}`);
 
