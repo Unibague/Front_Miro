@@ -788,6 +788,7 @@ function LiderRevisionPanelV2({
   onlyEvaluated?: boolean;
   preferredPeriodo?: string;
 }) {
+  const router = useRouter();
   const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
@@ -857,6 +858,7 @@ function LiderRevisionPanelV2({
           : [],
       });
       load();
+      router.refresh();
       showNotification({
         title: estadoSeleccionado,
         message: `Formulario ${estadoSeleccionado.toLowerCase()} correctamente`,
@@ -1268,6 +1270,7 @@ function PlaneacionRevisionPanel({
   adminEmail?: string;
   preferredPeriodo?: string;
 }) {
+  const router = useRouter();
   const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
   const [loading, setLoading]       = useState(true);
   const [estados, setEstados]       = useState<Record<string, "Validado" | "Devuelto">>({});
@@ -1279,7 +1282,7 @@ function PlaneacionRevisionPanel({
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
       .then((res) => setRespuestas(
         deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
-          (item) => item.estado === "Enviado" && item.estado_aval === "Aprobado"
+          (item) => item.estado === "Enviado" && (item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
         ))
       ))
       .catch(() => {})
@@ -1303,6 +1306,7 @@ function PlaneacionRevisionPanel({
         comentario: comentarios[r._id] ?? "",
       });
       load();
+      router.refresh();
       showNotification({
         title: estado === "Validado" ? "Validado por Planeación" : "Devuelto",
         message: `Formulario ${estado === "Validado" ? "validado y consolidado" : "devuelto con observaciones"} correctamente`,

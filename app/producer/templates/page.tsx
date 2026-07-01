@@ -203,6 +203,8 @@ const ProducerTemplatesPage = () => {
   const [qrUrl, setQrUrl] = useState('');
   const [qrTemplateName, setQrTemplateName] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
+  const uploadedSectionRef = useRef<HTMLDivElement>(null);
+  const [uploadedRefreshKey, setUploadedRefreshKey] = useState(0);
 
   const getQrBaseUrl = () => {
     const configuredUrl = process.env.NEXT_PUBLIC_QR_BASE_URL?.trim().replace(/\/+$/, "");
@@ -353,9 +355,17 @@ const ProducerTemplatesPage = () => {
     }
   }, [page, search, session, selectedPeriodId, selectedCategory, pageSize]); // Agregar pageSize a las dependencias  
 
-  const refreshTemplates = () => {
+  const refreshTemplates = (options?: { refreshUploaded?: boolean; scrollToUploaded?: boolean }) => {
     if (session?.user?.email) {
       fetchTemplates(page, search, selectedCategory, pageSize);
+    }
+    if (options?.refreshUploaded) {
+      setUploadedRefreshKey((current) => current + 1);
+    }
+    if (options?.scrollToUploaded) {
+      setTimeout(() => {
+        uploadedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 350);
     }
   };
   
@@ -1577,15 +1587,18 @@ if (field.multiple) {
             pubTemId={selectedTemplateId}
             endDate={undefined}
             onClose={closeUploadModal}
-            onUploadSuccess={refreshTemplates}
+            onUploadSuccess={() => refreshTemplates({ refreshUploaded: true, scrollToUploaded: true })}
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage
-        fetchTemp={refreshTemplates}
-        selectedCategory={selectedCategory}
-        userDependencies={userDependencies}
-      />
+      <div ref={uploadedSectionRef}>
+        <ProducerUploadedTemplatesPage
+          fetchTemp={refreshTemplates}
+          selectedCategory={selectedCategory}
+          userDependencies={userDependencies}
+          refreshKey={uploadedRefreshKey}
+        />
+      </div>
 
       <Modal
         opened={qrModalOpen}

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Text, Group, Button, rem, useMantineTheme, Modal, ScrollArea, Table, Stack, Divider, Badge } from '@mantine/core';
+import { Text, Group, Button, rem, useMantineTheme } from '@mantine/core';
 import { Dropzone, MIME_TYPES } from '@mantine/dropzone';
 import { IconCloudUpload, IconX, IconDownload } from '@tabler/icons-react';
 import ExcelJS from 'exceljs';
@@ -26,7 +26,7 @@ interface DropzoneButtonProps {
   pubTemId: string;
   endDate: Date | undefined;
   onClose: () => void;
-  onUploadSuccess: () => void;
+  onUploadSuccess: () => void | Promise<void>;
 }
 
 interface PreviewData {
@@ -101,16 +101,125 @@ const showRequiredUploadErrors = (details: any[]) => {
   });
 };
 
+const normalizeExcelCellValue = (value: any): any => {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+      /"?(richText|hyperlink|text|result|formula|value)"?\s*:/.test(trimmed)
+    ) {
+      try {
+        return normalizeExcelCellValue(JSON.parse(trimmed));
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  if (value instanceof Date) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeExcelCellValue(item)).filter((item) => item !== null && item !== undefined).join(', ');
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) {
+      return value.richText.map((item: any) => normalizeExcelCellValue(item?.text ?? '')).join('');
+    }
+    if (value.text !== undefined || value.hyperlink !== undefined) {
+      return normalizeExcelCellValue(value.text ?? value.hyperlink ?? '');
+    }
+    if (value.result !== undefined || value.formula !== undefined) {
+      return normalizeExcelCellValue(value.result ?? value.formula ?? '');
+    }
+    if (value.value !== undefined) {
+      return normalizeExcelCellValue(value.value);
+    }
+    if (value.$numberInt !== undefined || value.$numberDouble !== undefined) {
+      return value.$numberInt ?? value.$numberDouble;
+    }
+    return String(value);
+  }
+
+  return value;
+};
+
 
 export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: DropzoneButtonProps) {
   const theme = useMantineTheme();
   const openRef = useRef<() => void>(null);
   const { data: session } = useSession();
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
-  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [isSendingDraft, setIsSendingDraft] = useState(false);
-  const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set());
+
+  const sendData = async (uploadData: PreviewData, asDraft = false) => {
+    if (!session?.user?.email) return;
+
+    try {
+      setIsSendingDraft(true);
+
+      const dataToSend: any = {
+        email: session.user.email,
+        pubTem_id: pubTemId,
+        asDraft,
+        bypassValidation: true,
+      };
+
+      if (uploadData.sheetsData) {
+        dataToSend.sheetsData = uploadData.sheetsData;
+      } else if (uploadData.data) {
+        dataToSend.data = uploadData.data;
+      }
+
+      const response = await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
+        dataToSend
+      );
+
+      const recordsLoaded = response.data.recordsLoaded;
+      const message = asDraft
+        ? `Se guardó como borrador: ${recordsLoaded} registros.`
+        : `Se enviaron ${recordsLoaded} registros correctamente.`;
+
+      setShowSuccessAnimation(true);
+      showNotification({
+        title: asDraft ? 'Guardado como borrador' : 'Información enviada',
+        message,
+        color: 'teal',
+        autoClose: 4000,
+      });
+
+      void Promise.resolve(onUploadSuccess()).catch((refreshError) => {
+        console.error('Error refrescando plantillas despues de cargar:', refreshError);
+      });
+
+      setTimeout(() => {
+        setShowSuccessAnimation(false);
+        onClose();
+      }, 3000);
+    } catch (error) {
+      console.error('Error enviando los datos:', error);
+
+      if (axios.isAxiosError(error)) {
+        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
+          localStorage.setItem('errorDetails', JSON.stringify(normalizedErrors));
+          if (typeof window !== 'undefined') window.open('/logs', '_blank');
+        }
+      }
+
+      showNotification({
+        title: 'Error al enviar datos',
+        message: 'No se pudieron procesar los datos. Revisa los logs.',
+        color: 'red',
+      });
+    } finally {
+      setIsSendingDraft(false);
+    }
+  };
 
   const handleFileDrop = async (files: File[]) => {
     if (endDate && endOfDayGMT5(new Date(endDate)) < new Date()) {
@@ -242,7 +351,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
       const parseCellValue = (cell: ExcelJS.Cell, key: string): any => {
         const tipo = fieldTypeMap[key];
         const multiple = allFields.find((f: any) => f.name === key)?.multiple;
-        let parsedValue: any = cell.value;
+        let parsedValue: any = normalizeExcelCellValue(cell.value);
 
         // Handle Excel formula errors
         if (
@@ -255,17 +364,12 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
         // Handle hyperlinks
         if (tipo === 'Link' && (cell as any).hyperlink) {
-          const hyperlink = (cell as any).hyperlink;
-          return typeof hyperlink === 'object'
-            ? hyperlink.hyperlink || hyperlink.text || JSON.stringify(hyperlink)
-            : String(hyperlink);
+          return String(normalizeExcelCellValue(cell.value) || normalizeExcelCellValue((cell as any).hyperlink) || '');
         }
 
         // Handle multiple-value fields
         if (multiple) {
-          let rawValue = cell.value;
-          if (typeof rawValue === 'object' && rawValue !== null)
-            rawValue = JSON.stringify(rawValue);
+          const rawValue = normalizeExcelCellValue(cell.value);
           return String(rawValue ?? '')
             .trim()
             .split(',')
@@ -275,7 +379,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
         // Resolve validator code before type conversion
         if (fieldValidatorLookup[key]) {
-          const rawStr = _vStr(cell.value);
+          const rawStr = _vStr(normalizeExcelCellValue(cell.value));
           if (rawStr) {
             const found = fieldValidatorLookup[key].get(_vNorm(rawStr));
             if (found !== undefined) parsedValue = found;
@@ -285,7 +389,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
         switch (tipo) {
           case 'Entero': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
-              return String(parsedValue);
+              parsedValue = normalizeExcelCellValue(parsedValue);
             const intVal = parseInt(String(parsedValue));
             return isNaN(intVal) ? String(parsedValue) : intVal;
           }
@@ -293,14 +397,14 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
           case 'Decimal':
           case 'Porcentaje': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
-              return String(parsedValue);
+              parsedValue = normalizeExcelCellValue(parsedValue);
             const floatVal = parseFloat(String(parsedValue));
             return isNaN(floatVal) ? String(parsedValue) : floatVal;
           }
 
           case 'Fecha': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
-              return String(parsedValue);
+              parsedValue = normalizeExcelCellValue(parsedValue);
             const dateValue = new Date(String(parsedValue));
             return isNaN(dateValue.getTime())
               ? String(parsedValue)
@@ -309,20 +413,18 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
           case 'True/False': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
-              return String(parsedValue);
+              parsedValue = normalizeExcelCellValue(parsedValue);
             return String(parsedValue).toLowerCase() === 'si' || parsedValue === true;
           }
 
           case 'Texto Corto':
           case 'Texto Largo': {
-            return typeof parsedValue === 'object' && parsedValue !== null
-              ? JSON.stringify(parsedValue)
-              : String(parsedValue ?? '');
+            return String(normalizeExcelCellValue(parsedValue) ?? '');
           }
 
           case 'Fecha Inicial / Fecha Final': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
-              return JSON.stringify(parsedValue);
+              parsedValue = normalizeExcelCellValue(parsedValue);
             try {
               const parsed = JSON.parse(String(parsedValue));
               if (!Array.isArray(parsed) || parsed.length !== 2) throw new Error();
@@ -333,9 +435,7 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
           }
 
           default: {
-            return typeof parsedValue === 'object' && parsedValue !== null
-              ? JSON.stringify(parsedValue)
-              : parsedValue;
+            return normalizeExcelCellValue(parsedValue);
           }
         }
       };
@@ -348,12 +448,12 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             result[key] = null;
           } else if (Array.isArray(value)) {
             result[key] = value.map(v =>
-              typeof v === 'object' && v !== null ? String(v) : v
+              typeof v === 'object' && v !== null ? normalizeExcelCellValue(v) : normalizeExcelCellValue(v)
             );
           } else if (typeof value === 'object') {
-            result[key] = String(value);
+            result[key] = normalizeExcelCellValue(value);
           } else {
-            result[key] = value;
+            result[key] = normalizeExcelCellValue(value);
           }
         }
         return result;
@@ -497,14 +597,10 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             return;
           }
 
-          // Mostrar preview en lugar de enviar directamente
-          setPreviewData({
+          await sendData({
             sheetsData,
             totalRecords: sheetsData.reduce((sum, s) => sum + s.data.length, 0),
           });
-          // Si hay múltiples hojas, todas están seleccionadas por defecto
-          setSelectedSheets(new Set(sheetsData.map(s => s.name)));
-          setShowPreviewModal(true);
 
         } else {
           // === SINGLE-SHEET MODE ===
@@ -542,12 +638,10 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             return;
           }
 
-          // Mostrar preview en lugar de enviar directamente
-          setPreviewData({
+          await sendData({
             data,
             totalRecords: data.length,
           });
-          setShowPreviewModal(true);
         }
 
       } catch (error) {
@@ -579,89 +673,6 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
     reader.readAsArrayBuffer(file);
   };
-
-  const handleSendData = async (asDraft: boolean) => {
-    if (!previewData || !session?.user?.email) return;
-    
-    try {
-      setIsSendingDraft(true);
-      
-      // Si hay hojas, filtrar por las seleccionadas
-      let dataToSend: any = {
-        email: session.user.email,
-        pubTem_id: pubTemId,
-        asDraft,
-        bypassValidation: true,
-      };
-
-      if (previewData.sheetsData) {
-        const filteredSheets = previewData.sheetsData.filter(s => selectedSheets.has(s.name));
-        if (filteredSheets.length === 0) {
-          showNotification({
-            title: 'Selecciona al menos una hoja',
-            message: 'Debes seleccionar al menos una hoja para enviar',
-            color: 'orange',
-          });
-          setIsSendingDraft(false);
-          return;
-        }
-        dataToSend.sheetsData = filteredSheets;
-      } else if (previewData.data) {
-        dataToSend.data = previewData.data;
-      }
-
-      const response = await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
-        dataToSend
-      );
-
-      const recordsLoaded = response.data.recordsLoaded;
-      const message = asDraft 
-        ? `Se guardó como borrador: ${recordsLoaded} registros.`
-        : `Se enviaron ${recordsLoaded} registros correctamente.`;
-
-      setShowSuccessAnimation(true);
-      showNotification({
-        title: asDraft ? 'Guardado como borrador' : 'Información enviada',
-        message,
-        color: 'teal',
-        autoClose: 4000,
-      });
-
-      setTimeout(() => {
-        setShowSuccessAnimation(false);
-        setShowPreviewModal(false);
-        setPreviewData(null);
-        setSelectedSheets(new Set());
-        onUploadSuccess();
-        onClose();
-      }, 3000);
-    } catch (error) {
-      console.error('Error enviando los datos:', error);
-
-      if (axios.isAxiosError(error)) {
-        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
-        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
-          localStorage.setItem('errorDetails', JSON.stringify(normalizedErrors));
-          if (typeof window !== 'undefined') window.open('/logs', '_blank');
-        }
-      }
-
-      showNotification({
-        title: 'Error al enviar datos',
-        message: 'No se pudieron procesar los datos. Revisa los logs.',
-        color: 'red',
-      });
-    } finally {
-      setIsSendingDraft(false);
-    }
-  };
-
-  const handleCancelPreview = () => {
-    setShowPreviewModal(false);
-    setPreviewData(null);
-  };
-
 
   return (
     <div className={classes.wrapper}>
@@ -711,134 +722,13 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             </div>
           </Dropzone>
 
-          <Button className={classes.control} size="md" radius="xl" onClick={() => openRef.current?.()}>
+          <Button className={classes.control} size="md" radius="xl" loading={isSendingDraft} onClick={() => openRef.current?.()}>
             Seleccionar archivos
           </Button>
         </>
       )}
 
-      {/* Modal de preview de datos */}
-      <Modal
-        opened={showPreviewModal}
-        onClose={handleCancelPreview}
-        title="Validar y Enviar Información"
-        size="lg"
-        centered
-      >
-        {previewData && (
-          <Stack>
-            <div>
-              <Text fw={600} mb="sm"> Resumen de Datos</Text>
-              <Text size="sm" c="dimmed">
-                Total de registros: <Text span fw={700} c="blue">{previewData.totalRecords}</Text>
-              </Text>
-              
-              {previewData.sheetsData && previewData.sheetsData.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <Text size="sm" fw={500} mb="xs">Hojas:</Text>
-                  {previewData.sheetsData.length >= 3 ? (
-                    // Si hay 3 o más hojas, mostrar checkboxes
-                    <Group>
-                      {previewData.sheetsData.map((sheet) => (
-                        <label key={sheet.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedSheets.has(sheet.name)}
-                            onChange={(e) => {
-                              const newSelected = new Set(selectedSheets);
-                              if (e.target.checked) {
-                                newSelected.add(sheet.name);
-                              } else {
-                                newSelected.delete(sheet.name);
-                              }
-                              setSelectedSheets(newSelected);
-                            }}
-                          />
-                          <Badge variant="light" style={{ marginTop: 0 }}>
-                            {sheet.name}: {sheet.data.length} registros
-                          </Badge>
-                        </label>
-                      ))}
-                    </Group>
-                  ) : (
-                    // Si hay menos de 3 hojas, mostrar solo badges
-                    <Group>
-                      {previewData.sheetsData.map((sheet) => (
-                        <Badge key={sheet.name} variant="light">
-                          {sheet.name}: {sheet.data.length} registros
-                        </Badge>
-                      ))}
-                    </Group>
-                  )}
-                </div>
-              )}
-            </div>
 
-            <Divider />
-
-            <div>
-              <Text fw={600} mb="sm"> Preview de Datos (primeras 3 filas)</Text>
-              <ScrollArea>
-                <Table striped>
-                  <Table.Thead>
-                    <Table.Tr>
-                      {previewData.data && previewData.data.length > 0 && Object.keys(previewData.data[0]).map((key) => (
-                        <Table.Th key={key} style={{ minWidth: 100 }}>{key}</Table.Th>
-                      ))}
-                      {previewData.sheetsData && previewData.sheetsData.length > 0 && previewData.sheetsData[0].data.length > 0 && Object.keys(previewData.sheetsData[0].data[0]).map((key) => (
-                        <Table.Th key={key} style={{ minWidth: 100 }}>{key}</Table.Th>
-                      ))}
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {previewData.data && previewData.data.slice(0, 3).map((row, idx) => (
-                      <Table.Tr key={idx}>
-                        {Object.values(row).map((val, colIdx) => (
-                          <Table.Td key={colIdx}>
-                            <Text size="xs" truncate>{String(val)}</Text>
-                          </Table.Td>
-                        ))}
-                      </Table.Tr>
-                    ))}
-                    {previewData.sheetsData && previewData.sheetsData[0]?.data.slice(0, 3).map((row, idx) => (
-                      <Table.Tr key={idx}>
-                        {Object.values(row).map((val, colIdx) => (
-                          <Table.Td key={colIdx}>
-                            <Text size="xs" truncate>{String(val)}</Text>
-                          </Table.Td>
-                        ))}
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </ScrollArea>
-            </div>
-
-            <Group justify="flex-end" mt="lg">
-              <Button
-                variant="outline"
-                onClick={handleCancelPreview}
-                disabled={isSendingDraft}
-              >
-                 Cancelar
-              </Button>
-              <Button
-                variant="light"
-                onClick={() => handleSendData(true)}
-                loading={isSendingDraft}
-              >
-                 Guardar como Borrador
-              </Button>
-              <Button
-                onClick={() => handleSendData(false)}
-                loading={isSendingDraft}
-              >
-                 Enviar Información
-              </Button>
-            </Group>
-          </Stack>
-        )}
-      </Modal>
     </div>
   );
 }

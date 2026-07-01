@@ -139,6 +139,7 @@ interface ProducerUploadedTemplatesPageProps {
   selectedCategory?: string | null;
   userDependencies?: {value: string, label: string}[];
   isAdmin?: boolean;
+  refreshKey?: number;
 }
 
 const cloneExcelValue = <T,>(value: T): T => {
@@ -184,7 +185,7 @@ const toExcelCellValue = (value: any): ExcelJS.CellValue => {
   return value as ExcelJS.CellValue;
 };
 
-const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies, isAdmin = false }: ProducerUploadedTemplatesPageProps) => {
+const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies, isAdmin = false, refreshKey = 0 }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
   const router = useRouter();
   const { data: session } = useSession();
@@ -302,6 +303,18 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
       fetchTemplates(page, search, selectedCategory, pageSize);
     }
   }, [page, search, session, selectedPeriodId, selectedCategory, pageSize]);
+
+  useEffect(() => {
+    if (!refreshKey || !session?.user?.email || !selectedPeriodId) return;
+
+    if (page !== 1) {
+      setPage(1);
+      return;
+    }
+
+    fetchTemplates(1, search, selectedCategory, pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -624,7 +637,25 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               <Button
                 variant="outline"
                 color="red"
-                onClick={() => handleDeleteClick(publishedTemplate._id)}
+                onClick={() =>
+                  modals.openConfirmModal({
+                    title: "Eliminar información",
+                    children: (
+                      <Text size="sm">
+                        ¿Estás seguro de que deseas eliminar la información de esta plantilla?
+                        {publishedTemplate.final_submitted && (
+                          <Text size="sm" c="orange" fw={600} mt={4}>
+                            Esta plantilla ya fue enviada al SNIES. Eliminarla también reseteará ese estado.
+                          </Text>
+                        )}
+                        <Text size="sm" c="dimmed" mt={4}>Esta acción no se puede deshacer.</Text>
+                      </Text>
+                    ),
+                    labels: { confirm: "Sí, eliminar", cancel: "Cancelar" },
+                    confirmProps: { color: "red" },
+                    onConfirm: () => handleDeleteClick(publishedTemplate._id),
+                  })
+                }
                 disabled={uploadDisable}
               >
                 <IconTrash size={16} />
