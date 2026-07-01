@@ -148,6 +148,52 @@ const fieldIsRequired = (field: Field, skipComment = false): boolean => {
   return false;
 };
 
+const normalizeExcelStoredValue = (value: any): any => {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith("{") || trimmed.startsWith("[")) &&
+      /"?(richText|hyperlink|text|result|formula|value)"?\s*:/.test(trimmed)
+    ) {
+      try {
+        return normalizeExcelStoredValue(JSON.parse(trimmed));
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  if (value instanceof Date) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeExcelStoredValue(item));
+  }
+
+  if (typeof value === "object") {
+    if (Array.isArray(value.richText)) {
+      return value.richText.map((item: any) => normalizeExcelStoredValue(item?.text ?? "")).join("");
+    }
+    if (value.text !== undefined || value.hyperlink !== undefined) {
+      return normalizeExcelStoredValue(value.text ?? value.hyperlink ?? "");
+    }
+    if (value.result !== undefined || value.formula !== undefined) {
+      return normalizeExcelStoredValue(value.result ?? value.formula ?? "");
+    }
+    if (value.value !== undefined) {
+      return normalizeExcelStoredValue(value.value);
+    }
+    if (value.$numberInt !== undefined || value.$numberDouble !== undefined) {
+      return value.$numberInt ?? value.$numberDouble;
+    }
+    return String(value);
+  }
+
+  return value;
+};
+
 const normalizeFieldRequired = (field: Field, skipComment = false): Field => ({
   ...field,
   required: fieldIsRequired(field, skipComment),
@@ -310,7 +356,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     return Array.from({ length: maxLen }, (_, rowIndex) => {
       const row: Record<string, any> = {};
       filledData.forEach((fieldData) => {
-        const nextValue = fieldData.values?.[rowIndex] ?? null;
+        const nextValue = normalizeExcelStoredValue(fieldData.values?.[rowIndex] ?? null);
         const currentValue = row[fieldData.field_name];
         if (isBlankQrValue(currentValue) || !isBlankQrValue(nextValue)) {
           row[fieldData.field_name] = nextValue;
@@ -1156,6 +1202,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const storedDisplayValue = rowDisplayValues[scopedFieldKey] ?? (!sheetName ? rowDisplayValues[field.name] : undefined);
     const rawError = readOnly ? undefined : errors[scopedFieldKey]?.[rowIndex];
     const fieldError = rawError?.includes('obligatorio') ? 'Este campo es obligatorio' : rawError;
+    const fieldValue = normalizeExcelStoredValue(row[field.name]);
 
     const clearDisplayValue = () => {
       setDisplayValues(prev => {
@@ -1203,7 +1250,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     if (field.multiple && (field.validate_with || hasDropdownOptions)) {
       return wrapWithTooltip(
         <MultiSelect
-          value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
+          value={Array.isArray(fieldValue) ? fieldValue.map(String) : []}
           onChange={(value) => !readOnly && inputChange(rowIndex, field.name, value)}
           data={Array.from(new Set(multiOptions)).map(value => ({ value: String(value), label: String(value) }))}
           searchable
@@ -1220,8 +1267,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     // Si el campo tiene validador pero NO es múltiple, usar Select
     if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
       const selectDisplayValue = storedDisplayValue
-        ? opts.find(opt => opt.label === storedDisplayValue)?.value || row[field.name]
-        : row[field.name];
+        ? opts.find(opt => opt.label === storedDisplayValue)?.value || fieldValue
+        : fieldValue;
 
       return wrapWithTooltip(
         <Select
@@ -1247,7 +1294,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const numericDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (typeof row[field.name] === 'number' ? row[field.name] : "");
+          : (typeof fieldValue === 'number' ? fieldValue : "");
           
         return wrapWithTooltip(
           <TextInput
@@ -1265,7 +1312,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Texto Largo":
         const textareaDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (row[field.name] === null ? "" : row[field.name]);
+          : (fieldValue === null ? "" : fieldValue);
           
         return wrapWithTooltip(
           <Textarea
@@ -1286,7 +1333,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const displayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (row[field.name] === null ? "" : row[field.name]);
+          : (fieldValue === null ? "" : fieldValue);
           
         return wrapWithTooltip(
           <TextInput
@@ -1303,7 +1350,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "True/False":
         const switchDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : row[field.name];
+          : fieldValue;
 
         return wrapWithTooltip(
           <Switch
@@ -1320,7 +1367,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Fecha":
         const dateDisplayValue = field.validate_with && storedDisplayValue
           ? new Date(storedDisplayValue)
-          : (row[field.name] ? new Date(row[field.name]) : null);
+          : (fieldValue ? new Date(fieldValue) : null);
           
         return wrapWithTooltip(
           <DateInput
@@ -1339,7 +1386,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const defaultDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (row[field.name] === null ? "" : row[field.name]);
+          : (fieldValue === null ? "" : fieldValue);
           
         return wrapWithTooltip(
           <TextInput
@@ -1356,6 +1403,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const renderCellContent = (value: any) => {
+    value = normalizeExcelStoredValue(value);
+
     // Manejar valores undefined, null o cadenas vacías
     if (value === undefined || value === null || value === '') {
       return <Text size="sm" c="dimmed">Sin datos</Text>;
@@ -1373,12 +1422,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         if (value.length === 0) {
           return <Text size="sm">-</Text>;
         }
-        const arrayText = value.map(item => {
-          if (typeof item === 'object' && item !== null) {
-            return item.text || item.hyperlink || JSON.stringify(item);
-          }
-          return item;
-        }).join(', ');
+        const arrayText = value.map(item => normalizeExcelStoredValue(item)).join(', ');
         return <Text size="sm" lineClamp={2}>{arrayText}</Text>;
       }
 

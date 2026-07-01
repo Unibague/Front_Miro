@@ -402,23 +402,18 @@ export default function SubirEvidenciasPage() {
   // ── Carga formularios ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!indicadorId || !email) return;
-    
-    // Si el usuario dice "no por ahora", NO cargar formularios
-    // Si el usuario dice "sí reportar avance", cargar formularios
-    if (!usuarioEligioReportarAvance) {
+    if (!corteActivo) return;
+
+    // Cargar si el usuario eligió reportar O si el período activo ya tiene meta definida
+    const currentPeriodo = indicador?.periodos?.find((p: any) => p.periodo === corteActivo);
+    const periodoTieneMeta = currentPeriodo?.meta != null && currentPeriodo?.meta !== "";
+    if (!usuarioEligioReportarAvance && !periodoTieneMeta) {
       setFormularios([]);
       setRespuestas({});
       return;
     }
-    
-    // SOLO cargar formularios si:
-    // 1. Usuario eligió reportar avance
-    // 2. Hay corte activo (vigente hoy)
-    if (!corteActivo) return;
-    
-    // Usar el corte activo (vigente hoy)
+
     const corteAUsar = corteActivo;
-    
     setLoadingForms(true);
     axios.get(PDI_ROUTES.formularios(), { params: { indicador_id: indicadorId } })
       .then(async r => {
@@ -428,7 +423,7 @@ export default function SubirEvidenciasPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingForms(false));
-  }, [indicadorId, email, corteActivo, usuarioEligioReportarAvance]);
+  }, [indicadorId, email, corteActivo, usuarioEligioReportarAvance, indicador]);
 
   // ── Detectar si hay períodos sin datos para ofrecer al usuario ─────────────────────────────────
   useEffect(() => {
@@ -473,15 +468,16 @@ export default function SubirEvidenciasPage() {
 
     console.log(`📊 Período vigente ${corteActivo}: meta=${tieneMeta}, avance=${periodoVigente.avance}, tieneReporte=${periodoVigente.estado_reporte}`);
 
-    // Mostrar modal SOLO si:
-    // 1. Hay corte vigente hoy (ya verificado)
-    // 2. El período vigente tiene meta definida pero aún no ha reportado avance ni enviado
-    // 3. No acaba de enviar exitosamente
-    if (tieneMeta && !tieneAvanceReal && !tieneReporte && !sentSuccessfully) {
+    if (!tieneMeta && !sentSuccessfully) {
+      // Sin meta definida → preguntar si quiere reportar
       setPeriodosAtrasados([periodoVigente]);
       setMostrarModalPeriodoAtrasado(true);
     } else {
+      // Con meta definida → mostrar formulario directamente, sin modal
       setMostrarModalPeriodoAtrasado(false);
+      if (!sentSuccessfully) {
+        setUsuarioEligioReportarAvance(true);
+      }
     }
   }, [indicador, corteActivo, sentSuccessfully]);
 
@@ -1164,8 +1160,8 @@ export default function SubirEvidenciasPage() {
                   { label: "Avance actual", value: (() => {
                     const metaN = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
                     const avN = periodoActivo ? parseAvance(avancesStr[periodoActivo.periodo] ?? String(avanceActual)) : null;
-                    if (metaN != null && metaN > 0 && avN != null) return `${Math.round((avN / metaN) * 100)}%`;
-                    return `${avanceActual}%`;
+                    if (metaN != null && metaN > 0 && avN != null) return `${Math.min(100, Math.round((avN / metaN) * 100))}%`;
+                    return `${Math.min(100, avanceActual)}%`;
                   })() },
                 ].map((s, i, arr) => (
                   <div key={s.label} style={{
@@ -1330,7 +1326,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {corteActivo && usuarioEligioReportarAvance && (<>
+            {corteActivo && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
             <Divider />
 
             {/* Resumen del período vigente */}

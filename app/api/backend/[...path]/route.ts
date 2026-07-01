@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "";
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url: string, options: RequestInit, method: string) => {
+  const maxAttempts = method === "GET" || method === "HEAD" ? 3 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) break;
+      await sleep(250 * attempt);
+    }
+  }
+
+  throw lastError;
+};
 
 async function proxy(req: NextRequest, params: { path: string[] }) {
   if (!BACKEND) {
@@ -20,12 +38,21 @@ async function proxy(req: NextRequest, params: { path: string[] }) {
     try { body = await req.arrayBuffer(); } catch { /* empty body */ }
   }
 
-  const res = await fetch(url, {
-    method: req.method,
-    headers,
-    body,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetchWithRetry(url, {
+      method: req.method,
+      headers,
+      body,
+      cache: "no-store",
+    }, req.method);
+  } catch (error) {
+    console.error(`Backend proxy error for ${req.method} ${url}:`, error);
+    return NextResponse.json(
+      { error: "No se pudo conectar con el backend. Intenta nuevamente." },
+      { status: 502 }
+    );
+  }
 
   const data = await res.arrayBuffer();
   return new NextResponse(data, {

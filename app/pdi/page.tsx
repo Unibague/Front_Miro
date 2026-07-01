@@ -1572,6 +1572,31 @@ export default function PdiPage() {
 
   useEffect(() => {
     cargarPortfolio();
+
+    const recargarBandejas = async () => {
+      try {
+        const [liderRes, planeacionRes] = await Promise.all([
+          axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesLider())
+            .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+          axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
+            .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+        ]);
+        const liderMapeados = (liderRes.data ?? [])
+          .map((item) => mapPendienteRevision(item, "lider"))
+          .filter((item): item is PendienteAprobacion => Boolean(item));
+        const planeacionMapeados = (planeacionRes.data ?? [])
+          .map((item) => mapPendienteRevision(item, "planeacion"))
+          .filter((item): item is PendienteAprobacion => Boolean(item));
+        setPendientesLider(liderMapeados);
+        setPendientesAprobacion(planeacionMapeados);
+      } catch (e) { console.error(e); }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") recargarBandejas();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
   const refrescarMacro = async (macroId: string) => {
