@@ -173,9 +173,15 @@ export default function UpdateSniesTemplatePage() {
         setFileName(response.data.file_name || "");
         setFileDescription(response.data.file_description || "");
         setActive(response.data.active ?? true);
+        const stripValidateWithColumn = (val: string | undefined) =>
+          (val || "").split(" - ")[0].trim();
+
         setFields(
           response.data.fields?.length
-            ? response.data.fields
+            ? response.data.fields.map((f: Field) => ({
+                ...f,
+                validate_with: stripValidateWithColumn(f.validate_with),
+              }))
             : [{
                 name: "",
                 worksheet_name: "",
@@ -190,7 +196,15 @@ export default function UpdateSniesTemplatePage() {
                 multiple: false,
               }]
         );
-        setWorkbookSheets(response.data.workbook_sheets || []);
+        setWorkbookSheets(
+          (response.data.workbook_sheets || []).map((sheet: any) => ({
+            ...sheet,
+            visual_fields: (sheet.visual_fields || []).map((f: any) => ({
+              ...f,
+              validate_with: stripValidateWithColumn(f.validate_with),
+            })),
+          }))
+        );
         if (response.data.workbook_sheets?.length) {
           const firstWorksheet = response.data.workbook_sheets[0]?.worksheetName || "";
           setSelectedOriginalWorksheet(firstWorksheet);

@@ -321,7 +321,7 @@ export default function SubirEvidenciasPage() {
 
   const shouldShowCampo = (campo: CampoFormulario): boolean => {
     if (!campo.condicional_valor) return true;
-    if (estadoCumplimientoMeta === null) return true;
+    if (estadoCumplimientoMeta === null) return false;
     if (estadoCumplimientoMeta === "cumplio") return false;
     if (campo.condicional_valor === "supero_meta") return estadoCumplimientoMeta === "supero";
     if (campo.condicional_valor === "no_supero_meta") return estadoCumplimientoMeta === "no_supero";
@@ -449,7 +449,7 @@ export default function SubirEvidenciasPage() {
     // Si HAY corte vigente hoy, buscar ese período en los indicadores
     let periodoVigente: Periodo = periodos.find((p: Periodo) => p.periodo === corteActivo) ?? {
       periodo: corteActivo,
-      meta: indicador.meta_final_2029 ?? null,
+      meta: null,
       avance: null,
       estado_reporte: null,
       bloqueado: false,
@@ -2210,10 +2210,9 @@ export default function SubirEvidenciasPage() {
                     <IconAlertCircle size={14} />
                   </ThemeIcon>
                   <Stack gap={2} style={{ flex: 1 }}>
-                    <Text size="sm" fw={700} c="violet.7">Período vigente pendiente de reporte</Text>
+                    <Text size="sm" fw={700} c="violet.7">Período vigente sin meta definida</Text>
                     <Text size="xs" c="dimmed">
-                      El período {corteActivo} está activo y tiene una meta definida
-                      {periodosAtrasados[0]?.meta != null ? ` (${periodosAtrasados[0].meta})` : ""}. Aún no has reportado el avance.
+                      El período {corteActivo} está activo pero aún no tiene una meta definida. ¿Deseas reportar tu avance de todas formas?
                     </Text>
                   </Stack>
                 </Group>
@@ -2237,15 +2236,6 @@ export default function SubirEvidenciasPage() {
                   }}
                 >
                   No por ahora
-                </Button>
-                <Button
-                  color="gray"
-                  variant="light"
-                  radius="xl"
-                  loading={sending}
-                  onClick={handleReportarEnCero}
-                >
-                  Reportar en cero
                 </Button>
                 <Button
                   color="blue"

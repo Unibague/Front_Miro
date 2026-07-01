@@ -142,7 +142,7 @@ const UpdateTemplatePage = () => {
     name: field.name || "",
     datatype: field.datatype || "",
     required: field.required ?? true,
-    validate_with: field.validate_with || "",
+    validate_with: (field.validate_with || "").split(" - ")[0].trim(),
     comment: field.comment || "",
     multiple: field.multiple ?? false,
     locked: field.locked ?? defaultLocked,
