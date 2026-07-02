@@ -810,7 +810,12 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
             </Badge>
           </Group>
           <Title order={4}>{proyecto.nombre}</Title>
-          {proyecto.responsable && (
+          {Array.isArray(proyecto.responsables) && proyecto.responsables.length > 0 ? (
+            <Text size="sm" c="dimmed" mt={2}>
+              {proyecto.responsables.length > 1 ? "Responsables: " : "Responsable: "}
+              <b>{proyecto.responsables.map((r) => r.nombre).join(", ")}</b>
+            </Text>
+          ) : proyecto.responsable && (
             <Text size="sm" c="dimmed" mt={2}>Responsable: <b>{proyecto.responsable}</b></Text>
           )}
           {proyecto.descripcion && (

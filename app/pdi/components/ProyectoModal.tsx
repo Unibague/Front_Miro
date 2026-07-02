@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, TextInput, Button, Group, Stack, Select, Autocomplete, NumberInput } from "@mantine/core";
+import { Modal, TextInput, Button, Group, Stack, Select, MultiSelect, NumberInput } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useSession } from "next-auth/react";
@@ -35,8 +35,7 @@ export default function ProyectoModal({
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
-  const [responsable, setResponsable] = useState("");
-  const [responsableEmail, setResponsableEmail] = useState("");
+  const [responsablesSeleccionados, setResponsablesSeleccionados] = useState<string[]>([]);
   const [usuarios, setUsuarios] = useState<string[]>([]);
   const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
   const [proposito, setProposito] = useState("");
@@ -68,8 +67,13 @@ export default function ProyectoModal({
     if (selected) {
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
-      setResponsable(selected.responsable ?? "");
-      setResponsableEmail(selected.responsable_email ?? "");
+      if (Array.isArray(selected.responsables) && selected.responsables.length > 0) {
+        setResponsablesSeleccionados(selected.responsables.map((r) => r.nombre));
+      } else if (selected.responsable) {
+        setResponsablesSeleccionados([selected.responsable]);
+      } else {
+        setResponsablesSeleccionados([]);
+      }
       setProposito(selected.descripcion ?? "");
       setMacroId(selected.macroproyecto_id._id);
       setNumAcciones(selected.num_acciones ?? 0);
@@ -80,8 +84,7 @@ export default function ProyectoModal({
 
     setCodigo("");
     setNombre("");
-    setResponsable("");
-    setResponsableEmail("");
+    setResponsablesSeleccionados([]);
     setProposito("");
     setMacroId(defaultMacroId ?? null);
     setNumAcciones(0);
@@ -103,7 +106,7 @@ export default function ProyectoModal({
     const formulador = selected?.formulador
       ?? sessionUser?.full_name
       ?? sessionUser?.name
-      ?? responsable.trim()
+      ?? responsablesSeleccionados[0]?.trim()
       ?? sessionUser?.email
       ?? "";
 
@@ -114,13 +117,17 @@ export default function ProyectoModal({
 
     setLoading(true);
     try {
+      const responsables = responsablesSeleccionados.map((nombreResp) => {
+        const usuario = usuariosData.find((u) => u.label === nombreResp);
+        return { nombre: nombreResp.trim(), email: usuario?.email.trim().toLowerCase() || "" };
+      });
+
       const payload = {
         codigo: codigo.trim(),
         nombre: nombre.trim(),
         descripcion: proposito.trim(),
         formulador: formulador.trim(),
-        responsable: responsable.trim(),
-        responsable_email: responsableEmail.trim(),
+        responsables,
         peso: pesoAuto,
         num_acciones: Number(numAcciones) || 0,
         macroproyecto_id: macroId,
@@ -168,17 +175,17 @@ export default function ProyectoModal({
           />
         </Group>
         <TextInput label="Nombre" placeholder="Nombre del proyecto" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
-        <Autocomplete
-          label="Responsable"
-          placeholder="Buscar usuario..."
-          value={responsable}
-          onChange={(val) => {
-            setResponsable(val);
-            const found = usuariosData.find((u) => u.label === val);
-            setResponsableEmail(found?.email ?? "");
+        <MultiSelect
+          label="Responsables del Proyecto"
+          placeholder="Seleccionar uno o más responsables..."
+          value={responsablesSeleccionados}
+          onChange={(valores) => {
+            setResponsablesSeleccionados(valores);
             setHasChanges(true);
           }}
           data={usuarios}
+          searchable
+          clearable
           limit={8}
         />
         <TextInput label="Propósito" placeholder="Propósito del proyecto" value={proposito} onChange={(e) => { setProposito(e.currentTarget.value); setHasChanges(true); }} />
