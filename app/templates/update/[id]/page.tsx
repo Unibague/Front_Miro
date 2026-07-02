@@ -9,7 +9,7 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconDownload, IconArrowLeft } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
@@ -1502,9 +1502,6 @@ router.back();
       </DragDropContext>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-        <Button variant="outline" onClick={handleDownloadTemplate} leftSection={<IconDownload />}>
-          Descargar Plantilla Actualizada
-        </Button>
         <Button variant="outline" onClick={() => confirmNavigation(() => router.back())}>
           Cancelar
         </Button>

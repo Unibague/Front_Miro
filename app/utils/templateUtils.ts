@@ -786,6 +786,39 @@ const normalizeToken = (value: string): string =>
     .trim()
     .toUpperCase();
 
+const collapseRepeatedCompositeOption = (value: string): string => {
+  const option = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!option) return "";
+
+  const dashParts = option.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  if (dashParts.length >= 4 && dashParts.length % 2 === 0) {
+    const midpoint = dashParts.length / 2;
+    const left = dashParts.slice(0, midpoint).join(" - ");
+    const right = dashParts.slice(midpoint).join(" - ");
+
+    if (normalizeToken(left) === normalizeToken(right)) {
+      return left;
+    }
+  }
+
+  return option;
+};
+
+const normalizeDropdownOptionTexts = (options: string[]): string[] => {
+  const seen = new Set<string>();
+
+  return options.flatMap((option) => {
+    const cleaned = collapseRepeatedCompositeOption(String(option || "").trim());
+    if (!cleaned) return [];
+
+    const key = normalizeOptionKey(cleaned);
+    if (!key || seen.has(key)) return [];
+
+    seen.add(key);
+    return [cleaned];
+  });
+};
+
 const resolveValueByKey = (row: Record<string, unknown>, targetKey: string): unknown => {
   if (Object.prototype.hasOwnProperty.call(row, targetKey)) return row[targetKey];
   const normalizedTarget = normalizeToken(targetKey);
@@ -838,11 +871,11 @@ const getValidatorOptions = (
       );
     });
 
-    const rawIdText = toOptionText(idValue);
+    const rawIdText = collapseRepeatedCompositeOption(toOptionText(idValue));
     if (!rawIdText) return;
 
     const descValue = descKey ? resolveValueByKey(row, descKey) : undefined;
-    const descText = toOptionText(descValue);
+    const descText = collapseRepeatedCompositeOption(toOptionText(descValue));
     if (descKey && !descText) return;
 
     // When there is no separate description column, detect "CODE description" in a single value
@@ -854,10 +887,14 @@ const getValidatorOptions = (
       if (codeMatch) storedValue = codeMatch[1];
     }
 
-    const displayLabel = descText ? `${rawIdText} - ${descText}` : rawIdText;
+    const displayLabel = collapseRepeatedCompositeOption(
+      descText ? `${rawIdText} - ${descText}` : rawIdText
+    );
+    const seenKey = normalizeOptionKey(displayLabel);
 
-    if (seen.has(storedValue)) return;
+    if (seen.has(storedValue) || seen.has(seenKey)) return;
     seen.add(storedValue);
+    seen.add(seenKey);
     options.push({ value: storedValue, displayLabel });
   });
 
@@ -915,7 +952,7 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
     }
   }
 
-  return [...new Set(options)].filter(Boolean);
+  return normalizeDropdownOptionTexts(options);
 };
 
 const stripOptionPrefix = (value: string): string =>
@@ -934,7 +971,7 @@ const appendOptionTexts = (
   const merged = [...options];
 
   optionTexts.forEach((optionText) => {
-    const displayLabel = String(optionText || "").trim();
+    const displayLabel = collapseRepeatedCompositeOption(String(optionText || "").trim());
     if (!displayLabel) return;
 
     const key = normalizeOptionKey(displayLabel);
@@ -993,7 +1030,7 @@ export const applyValidatorDropdowns = ({
     if (options.length === 0 && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
       const seen = new Set<string>();
       options = field.dropdown_options
-        .map((o) => String(o || "").trim())
+        .map((o) => collapseRepeatedCompositeOption(String(o || "").trim()))
         .filter((o) => o && !seen.has(o) && !!seen.add(o));
     }
 
@@ -1019,6 +1056,7 @@ export const applyValidatorDropdowns = ({
       }
     }
 
+    options = normalizeDropdownOptionTexts(options);
     if (options.length === 0) return;
 
     const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
@@ -1159,9 +1197,9 @@ export const fetchValidatorOptionsForFields = async (
           (c: any) => !c.is_validator && /desc/i.test(c.name)
         ) ?? validator.columns.find((c: any) => !c.is_validator);
         result[field.name] = idCol.values.map((v: any, i: number) => {
-          const id = String(v ?? '').trim();
-          const desc = descCol ? String(descCol.values[i] ?? '').trim() : '';
-          return desc ? `${id} - ${desc}` : id;
+          const id = collapseRepeatedCompositeOption(String(v ?? '').trim());
+          const desc = descCol ? collapseRepeatedCompositeOption(String(descCol.values[i] ?? '').trim()) : '';
+          return collapseRepeatedCompositeOption(desc ? `${id} - ${desc}` : id);
         }).filter(Boolean);
       } catch { /* ignorar errores individuales */ }
     })

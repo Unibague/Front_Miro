@@ -40,7 +40,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, fetchValidatorOptionsForFields, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns, applyWorkbookSheetDropdowns, fetchValidatorOptionsForFields, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -415,6 +415,21 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         const ws = workbook.getWorksheet(freshTemplate.name) || workbook.worksheets[0];
         if (ws) populateSheet(ws, freshTemplate.fields);
       }
+      const dropdownSheets = workbookSheets.length > 0
+        ? workbookSheets
+        : freshTemplate.fields?.length
+          ? [{
+              name: (workbook.getWorksheet(freshTemplate.name) ? freshTemplate.name : workbook.worksheets[0]?.name) || freshTemplate.name,
+              fields: freshTemplate.fields,
+            }]
+          : [];
+      applyWorkbookSheetDropdowns({
+        workbook,
+        workbookSheets: dropdownSheets,
+        validators,
+        originalCommentsBySheet: commentsBySheet,
+        preloadedValidatorOptions,
+      });
       const buffer = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${freshTemplate.file_name || publishedTemplate.name}.xlsx`);
       return;
