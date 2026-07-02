@@ -97,6 +97,7 @@ export interface Proyecto {
   formulador: string;
   responsable: string;
   responsable_email: string;
+  responsables?: Array<{ nombre: string; email: string }>;
   fecha_inicio: string | null;
   fecha_fin: string | null;
   presupuesto: number;

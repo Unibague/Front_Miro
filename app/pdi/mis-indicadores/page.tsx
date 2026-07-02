@@ -38,7 +38,7 @@ interface CorteVigente {
 // ── Interfaces para informes del líder ───────────────────────────────────────
 interface IndicadorInforme { _id: string; codigo: string; nombre: string; avance: number; responsable: string; }
 interface AccionInforme    { _id: string; codigo: string; nombre: string; avance: number; responsable: string; indicadores: IndicadorInforme[]; }
-interface ProyectoInforme  { _id: string; codigo: string; nombre: string; avance: number; responsable: string; informe_drive_web_view_link: string | null; acciones: AccionInforme[]; }
+interface ProyectoInforme  { _id: string; codigo: string; nombre: string; avance: number; responsable: string; responsables?: Array<{ nombre: string; email: string }>; informe_drive_web_view_link: string | null; acciones: AccionInforme[]; }
 interface MacroInforme     { _id: string; codigo: string; nombre: string; avance: number; lider: string; informe_drive_web_view_link: string | null; proyectos: ProyectoInforme[]; }
 
 interface AccionResponsableView {
@@ -75,6 +75,20 @@ function matchesUserResponsable(email: string, fullName: string, responsable?: s
   if (fullName && responsable?.toLowerCase().trim() === fullName) return true;
   if (responsable?.toLowerCase().trim() === email) return true;
   return false;
+}
+
+// Un proyecto puede tener varios responsables (proyecto.responsables[]); si no tiene, cae al legacy responsable/responsable_email
+function proyectoTieneResponsable(
+  proyecto: { responsables?: Array<{ nombre: string; email: string }>; responsable?: string; responsable_email?: string } | null | undefined,
+  email: string,
+  fullName: string
+) {
+  if (Array.isArray(proyecto?.responsables) && proyecto.responsables.length > 0) {
+    return proyecto.responsables.some(
+      (r) => matchesUserResponsable(email, fullName, r.nombre) || r.email?.toLowerCase().trim() === email
+    );
+  }
+  return matchesUserResponsable(email, fullName, proyecto?.responsable, proyecto?.responsable_email);
 }
 
 function getAccionId(indicador: Indicador) {
@@ -1624,7 +1638,12 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
             <Text size="xs" fw={700} c="dimmed">{vista.proyecto.codigo}</Text>
             <Title order={3} style={{ lineHeight: 1.2,  WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{vista.proyecto.nombre}</Title>
             <Group gap="md" mt={6} wrap="wrap">
-              {vista.proyecto.responsable && (
+              {Array.isArray(vista.proyecto.responsables) && vista.proyecto.responsables.length > 0 ? (
+                <Text size="xs" c="dimmed">
+                  {vista.proyecto.responsables.length > 1 ? "Responsables: " : "Responsable: "}
+                  <b>{vista.proyecto.responsables.map((r) => r.nombre).join(", ")}</b>
+                </Text>
+              ) : vista.proyecto.responsable && (
                 <Text size="xs" c="dimmed">Responsable: <b>{vista.proyecto.responsable}</b></Text>
               )}
             </Group>
@@ -1966,7 +1985,12 @@ function FilaProyectoInforme({ proyecto, corte }: { proyecto: ProyectoInforme; c
               <Badge size="xs" variant="dot" color="blue">{proyecto.acciones.length} acción{proyecto.acciones.length !== 1 ? "es" : ""}</Badge>
             </Group>
             <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
-            {proyecto.responsable && <Text size="xs" c="dimmed">Responsable: {proyecto.responsable}</Text>}
+            {Array.isArray(proyecto.responsables) && proyecto.responsables.length > 0 ? (
+              <Text size="xs" c="dimmed">
+                {proyecto.responsables.length > 1 ? "Responsables: " : "Responsable: "}
+                {proyecto.responsables.map((r) => r.nombre).join(", ")}
+              </Text>
+            ) : proyecto.responsable && <Text size="xs" c="dimmed">Responsable: {proyecto.responsable}</Text>}
             <Progress value={proyecto.avance} color={semaforoColorInforme(proyecto.avance)} size="xs" radius="xl" mt={6} />
           </Box>
         </Group>
@@ -2161,7 +2185,7 @@ export default function MisIndicadoresPage() {
             return (
               matchesUserResponsable(email, fullName, indicador.responsable, indicador.responsable_email) ||
               (accion && matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email)) ||
-              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email)) ||
+              (proyecto && proyectoTieneResponsable(proyecto, email, fullName)) ||
               (macro && macroIdsSet.has(macro._id))
             );
           })
@@ -2176,7 +2200,7 @@ export default function MisIndicadoresPage() {
             return (
               tieneIndicadores ||
               matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email) ||
-              (proyecto && matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email)) ||
+              (proyecto && proyectoTieneResponsable(proyecto, email, fullName)) ||
               (macro && macroIdsSet.has(macro._id))
             );
           })
@@ -2193,7 +2217,7 @@ export default function MisIndicadoresPage() {
             return (
               tieneAcciones ||
               tieneIndicadores ||
-              matchesUserResponsable(email, fullName, proyecto.responsable, proyecto.responsable_email) ||
+              proyectoTieneResponsable(proyecto, email, fullName) ||
               macroIdsSet.has(proyecto.macroproyecto_id?._id)
             );
           })
@@ -2254,7 +2278,7 @@ export default function MisIndicadoresPage() {
     ? `${macroNombresLiderados[0]} y ${macroNombresLiderados.length - 1} mas`
     : "Macroproyecto";
   const isDirectlyResponsable = proyectosVista.some(v =>
-    matchesUserResponsable(requesterEmail, userFullName, v.proyecto.responsable, v.proyecto.responsable_email)
+    proyectoTieneResponsable(v.proyecto, requesterEmail, userFullName)
   );
 
   const pageTitle = isLider && !isDirectlyResponsable
@@ -2451,11 +2475,10 @@ export default function MisIndicadoresPage() {
                 return vista.proyecto._id === busquedaProyecto;
               })
               .map((vista) => {
-                const esResponsableProyecto = matchesUserResponsable(
+                const esResponsableProyecto = proyectoTieneResponsable(
+                  vista.proyecto,
                   requesterEmail,
-                  userFullName,
-                  vista.proyecto.responsable,
-                  vista.proyecto.responsable_email
+                  userFullName
                 );
                 const esLiderProyecto = macroIdsLiderados.has(vista.proyecto.macroproyecto_id?._id);
                 return (

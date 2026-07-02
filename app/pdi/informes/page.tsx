@@ -23,6 +23,7 @@ interface ProyectoResumen {
   nombre: string;
   avance: number;
   responsable: string;
+  responsables?: Array<{ nombre: string; email: string }>;
   informe_drive_web_view_link: string | null;
   acciones: AccionResumen[];
 }
@@ -238,7 +239,12 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
               </Badge>
             </Group>
             <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
-            {proyecto.responsable && (
+            {Array.isArray(proyecto.responsables) && proyecto.responsables.length > 0 ? (
+              <Text size="xs" c="dimmed" mt={2}>
+                {proyecto.responsables.length > 1 ? "Responsables: " : "Responsable: "}
+                {proyecto.responsables.map((r) => r.nombre).join(", ")}
+              </Text>
+            ) : proyecto.responsable && (
               <Text size="xs" c="dimmed" mt={2}>Responsable: {proyecto.responsable}</Text>
             )}
             <Progress value={proyecto.avance} color={semaforoColor(proyecto.avance)} size="xs" radius="xl" mt={6} />

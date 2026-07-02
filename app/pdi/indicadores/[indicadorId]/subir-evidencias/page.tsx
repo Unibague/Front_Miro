@@ -560,8 +560,10 @@ export default function SubirEvidenciasPage() {
 
     await Promise.all(formsToLoad.map(async (f) => {
       try {
+        // Borrador compartido: no se filtra por respondido_por, para que cualquier
+        // responsable asignado al proyecto encuentre y continue el mismo reporte.
         const res = await axios.get(PDI_ROUTES.formularioRespuestas(f._id), {
-          params: { respondido_por: email, corte: corteAUsar, indicador_id: indicadorId },
+          params: { corte: corteAUsar, indicador_id: indicadorId },
         });
         const resp: RespuestaFormulario | null = res.data[0] ?? null;
         respMap[f._id] = resp;
@@ -1495,6 +1497,11 @@ export default function SubirEvidenciasPage() {
                             </Badge>
                           </Group>
                         </Group>
+                        {resp?.respondido_por && !enviado && (
+                          <Text size="xs" c="dimmed" mt={-8} mb="sm">
+                            Última edición del borrador por: {resp.respondido_por}
+                          </Text>
+                        )}
                         {(resp?.estado === "Enviado" || resp?.estado_aval === "Rechazado") && (
                           <Paper
                             withBorder

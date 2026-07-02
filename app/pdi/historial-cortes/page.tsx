@@ -30,7 +30,7 @@ interface IndicadorResumen {
   meta_corte: any; avance_corte: any;
 }
 interface AccionResumen { _id: string; codigo: string; nombre: string; peso: number; avance: number; semaforo: string; indicadores: IndicadorResumen[]; }
-interface ProyectoResumen { _id: string; codigo: string; nombre: string; peso: number; avance: number; semaforo: string; formulador: string; responsable: string; acciones: AccionResumen[]; }
+interface ProyectoResumen { _id: string; codigo: string; nombre: string; peso: number; avance: number; semaforo: string; formulador: string; responsable: string; responsables?: Array<{ nombre: string; email: string }>; acciones: AccionResumen[]; }
 interface MacroResumen { _id: string; codigo: string; nombre: string; peso: number; avance: number; semaforo: string; proyectos: ProyectoResumen[]; }
 
 function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
@@ -144,7 +144,12 @@ function ProyectoSeccion({ proyecto }: { proyecto: ProyectoResumen }) {
               </Group>
               <Text fw={700} size="md">{proyecto.nombre}</Text>
               {proyecto.formulador && <Text size="xs" c="dimmed" mt={2}>Formulador: <b>{proyecto.formulador}</b></Text>}
-              {proyecto.responsable && <Text size="xs" c="dimmed">Responsable: <b>{proyecto.responsable}</b></Text>}
+              {Array.isArray(proyecto.responsables) && proyecto.responsables.length > 0 ? (
+                <Text size="xs" c="dimmed">
+                  {proyecto.responsables.length > 1 ? "Responsables: " : "Responsable: "}
+                  <b>{proyecto.responsables.map((r) => r.nombre).join(", ")}</b>
+                </Text>
+              ) : proyecto.responsable && <Text size="xs" c="dimmed">Responsable: <b>{proyecto.responsable}</b></Text>}
             </div>
           </Group>
           <Group gap={10} align="center">
