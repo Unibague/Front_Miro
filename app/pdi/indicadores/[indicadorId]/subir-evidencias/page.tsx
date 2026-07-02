@@ -1336,7 +1336,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {corteActivo && !periodoYaReportado(periodoActivo?.estado_reporte) && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
+            {corteActivo && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
             <Divider />
 
             {/* Resumen del período vigente - se oculta una vez que ya fue reportado, para no duplicar la tarjeta bloqueada que ya se ve en "Avance por periodo" */}
