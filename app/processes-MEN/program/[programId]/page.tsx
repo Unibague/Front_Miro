@@ -412,7 +412,7 @@ export default function ProgramaProcessesMenPage() {
               variant="default"
               size="sm"
               mb={8}
-              onClick={() => confirmNavigation(() => router.back())}
+              onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
               aria-label="Volver"
             >
               <IconChevronLeft size={16} />

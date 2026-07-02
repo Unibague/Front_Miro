@@ -4,10 +4,17 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { Modal, Button, Group, Text, ThemeIcon, Stack } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 
+interface ConfirmNavigationOptions {
+  // Pasar true cuando onConfirm es router.back(): mientras hay cambios sin guardar
+  // se empuja una entrada "dummy" al historial (ver efecto de popstate más abajo), así
+  // que un router.back() normal solo consume esa entrada dummy y no navega a ninguna parte.
+  isBackNavigation?: boolean;
+}
+
 interface UnsavedChangesContextType {
   setHasChanges: (val: boolean) => void;
   hasChanges: boolean;
-  confirmNavigation: (onConfirm: () => void) => void;
+  confirmNavigation: (onConfirm: () => void, options?: ConfirmNavigationOptions) => void;
 }
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextType>({
@@ -21,12 +28,16 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   const [modalOpen, setModalOpen] = useState(false);
   const pendingCallback = useRef<(() => void) | null>(null);
 
-  const confirmNavigation = useCallback((onConfirm: () => void) => {
+  const confirmNavigation = useCallback((onConfirm: () => void, options?: ConfirmNavigationOptions) => {
     if (!hasChanges) {
       onConfirm();
       return;
     }
-    pendingCallback.current = onConfirm;
+    // Si es una navegación "atrás", hay que saltar la entrada dummy que se agregó al detectar
+    // cambios sin guardar, igual que hace el interceptor del botón atrás nativo del navegador.
+    pendingCallback.current = options?.isBackNavigation
+      ? () => window.history.go(-2)
+      : onConfirm;
     setModalOpen(true);
   }, [hasChanges]);
 

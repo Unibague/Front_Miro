@@ -161,7 +161,7 @@ const CreateCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => confirmNavigation(() => router.back())}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
           color="red"
         >
           Cancelar

@@ -438,7 +438,7 @@ const UpdateTemplatePage = () => {
       </Group>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-        <Button variant="outline" onClick={() => confirmNavigation(() => router.back())}>
+        <Button variant="outline" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
           Cancelar
         </Button>
       </Group>
