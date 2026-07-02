@@ -1339,9 +1339,10 @@ export default function SubirEvidenciasPage() {
             {corteActivo && !periodoYaReportado(periodoActivo?.estado_reporte) && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
             <Divider />
 
-            {/* Resumen del período vigente */}
+            {/* Resumen del período vigente - se oculta una vez que ya fue reportado, para no duplicar la tarjeta bloqueada que ya se ve en "Avance por periodo" */}
+            {!periodoYaReportado(periodoActivo?.estado_reporte) && (
             <div>
-              
+
               {/* Debug logs */}
               {(() => {
                 console.log("🔍 DEBUG Vigente - corteActivo:", corteActivo);
@@ -1349,7 +1350,7 @@ export default function SubirEvidenciasPage() {
                 console.log("🔍 DEBUG Vigente - usuarioEligioReportarAvance:", usuarioEligioReportarAvance);
                 return null;
               })()}
-              
+
               {/* Tarjeta del período vigente - mismo diseño que los demás */}
               {periodoActivo ? (() => {
                 const metaNumerica = periodoActivo.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
@@ -1413,6 +1414,7 @@ export default function SubirEvidenciasPage() {
                 </Paper>
               )}
             </div>
+            )}
 
             <Divider />
 
