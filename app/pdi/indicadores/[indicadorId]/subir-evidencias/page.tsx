@@ -105,6 +105,11 @@ function esPeriodoEditable(periodo: string, cortes: CorteVigente[]) {
   return cortes.some(c => c.nombre === periodo);
 }
 
+const ESTADOS_YA_REPORTADOS = ["Enviado", "Aprobado", "Validado"];
+function periodoYaReportado(estadoReporte: string | null | undefined) {
+  return ESTADOS_YA_REPORTADOS.includes(estadoReporte ?? "");
+}
+
 // Nueva función: Verifica si el período está en "Cortes de seguimiento" del indicador
 function estaEnCortesSegimiento(periodo: string, indicador: Indicador | null): boolean {
   if (!indicador?.fecha_seguimiento) return false;
@@ -264,7 +269,7 @@ export default function SubirEvidenciasPage() {
   const [usuarioEligioReportarAvance, setUsuarioEligioReportarAvance] = useState(false); // false: solo vigente, true: todos
 
   const email = (session?.user?.email ?? "").toLowerCase().trim();
-  const { setHasChanges } = useUnsavedChanges();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   // Activar protección de cambios sin guardar
   useEffect(() => {
@@ -308,6 +313,12 @@ export default function SubirEvidenciasPage() {
       estado_reporte: "Borrador",
       bloqueado: false,
     } as any);
+  // Períodos reales del indicador + el período vigente virtual (sin meta) si no está entre ellos.
+  // Necesario para que el corte activo sin meta cuente como "editable" al validar el envío.
+  const periodosParaValidacion: Periodo[] = corteActivo && !indicador?.periodos?.some((p: Periodo) => p.periodo === corteActivo)
+    ? [...(indicador?.periodos ?? []), periodoActivo as Periodo]
+    : (indicador?.periodos ?? []);
+  const periodoActivoTieneMeta = periodoActivo?.meta != null && periodoActivo?.meta !== "";
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
   const estadoCumplimientoMeta =
@@ -405,9 +416,7 @@ export default function SubirEvidenciasPage() {
     if (!corteActivo) return;
 
     // Cargar si el usuario eligió reportar O si el período activo ya tiene meta definida
-    const currentPeriodo = indicador?.periodos?.find((p: any) => p.periodo === corteActivo);
-    const periodoTieneMeta = currentPeriodo?.meta != null && currentPeriodo?.meta !== "";
-    if (!usuarioEligioReportarAvance && !periodoTieneMeta) {
+    if (!usuarioEligioReportarAvance && !periodoActivoTieneMeta) {
       setFormularios([]);
       setRespuestas({});
       return;
@@ -423,7 +432,8 @@ export default function SubirEvidenciasPage() {
       })
       .catch(() => {})
       .finally(() => setLoadingForms(false));
-  }, [indicadorId, email, corteActivo, usuarioEligioReportarAvance, indicador]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- se excluye `indicador` a propósito: no debe recargar/pisar las respuestas en edición al guardar avances
+  }, [indicadorId, email, corteActivo, usuarioEligioReportarAvance, periodoActivoTieneMeta]);
 
   // ── Detectar si hay períodos sin datos para ofrecer al usuario ─────────────────────────────────
   useEffect(() => {
@@ -468,18 +478,18 @@ export default function SubirEvidenciasPage() {
 
     console.log(`📊 Período vigente ${corteActivo}: meta=${tieneMeta}, avance=${periodoVigente.avance}, tieneReporte=${periodoVigente.estado_reporte}`);
 
-    if (!tieneMeta && !sentSuccessfully) {
-      // Sin meta definida → preguntar si quiere reportar
+    if (!tieneMeta && !sentSuccessfully && !usuarioEligioReportarAvance) {
+      // Sin meta definida y el usuario aún no respondió → preguntar si quiere reportar
       setPeriodosAtrasados([periodoVigente]);
       setMostrarModalPeriodoAtrasado(true);
     } else {
-      // Con meta definida → mostrar formulario directamente, sin modal
+      // Con meta definida, o el usuario ya eligió reportar → mostrar formulario directamente, sin modal
       setMostrarModalPeriodoAtrasado(false);
-      if (!sentSuccessfully) {
+      if (!sentSuccessfully && tieneMeta) {
         setUsuarioEligioReportarAvance(true);
       }
     }
-  }, [indicador, corteActivo, sentSuccessfully]);
+  }, [indicador, corteActivo, sentSuccessfully, usuarioEligioReportarAvance]);
 
   // ── Resetear flags cuando envía exitosamente ────────────────────────────────
   useEffect(() => {
@@ -528,7 +538,7 @@ export default function SubirEvidenciasPage() {
     }
     return Boolean(getRespuestaCampo(formId, campo._id)?.url);
   };
-  const periodosEditablesSinAvance = (indicador?.periodos ?? []).filter((p: Periodo) => {
+  const periodosEditablesSinAvance = periodosParaValidacion.filter((p: Periodo) => {
     if (!esPeriodoEditable(p.periodo, cortesVigentes)) return false;
     return parseAvance(avancesStr[p.periodo] ?? "") == null;
   });
@@ -1058,7 +1068,7 @@ export default function SubirEvidenciasPage() {
 
   const avanceActual = getAvanceMostrado(indicador);
   const semColor = SEMAFORO_COLORS[indicador.semaforo] ?? "#aaa";
-  const hayPeriodosEditables = indicador.periodos.some((p: Periodo) =>
+  const hayPeriodosEditables = periodosParaValidacion.some((p: Periodo) =>
     esPeriodoEditable(p.periodo, cortesVigentes)
   );
   
@@ -1124,7 +1134,7 @@ export default function SubirEvidenciasPage() {
 
           {/* Header */}
           <Group gap={10} mb="lg">
-            <ActionIcon variant="subtle" onClick={() => router.back()}>
+            <ActionIcon variant="subtle" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
               <IconArrowLeft size={18} />
             </ActionIcon>
             <ThemeIcon size={42} radius="xl" color="violet" variant="light">
@@ -1207,8 +1217,8 @@ export default function SubirEvidenciasPage() {
                 <Stack gap="sm">
                   {indicador.periodos
                     .filter((p: Periodo) => {
-                      // Si el usuario eligió reportar, la sección de abajo maneja el período vigente — excluirlo aquí
-                      if (usuarioEligioReportarAvance && esPeriodoEditable(p.periodo, cortesVigentes)) return false;
+                      // Mientras el período vigente todavía no se reporta, la sección de abajo lo maneja — excluirlo aquí
+                      if (usuarioEligioReportarAvance && esPeriodoEditable(p.periodo, cortesVigentes) && !periodoYaReportado(p.estado_reporte)) return false;
                       return mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes);
                     })
                     .map((p: Periodo) => {
@@ -1326,7 +1336,7 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
 
-            {corteActivo && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
+            {corteActivo && !periodoYaReportado(periodoActivo?.estado_reporte) && (usuarioEligioReportarAvance || (periodoActivo?.meta != null && periodoActivo?.meta !== "")) && (<>
             <Divider />
 
             {/* Resumen del período vigente */}
@@ -1369,9 +1379,11 @@ export default function SubirEvidenciasPage() {
                         value={avancesStr[periodoActivo.periodo] ?? ""}
                         onChange={(e) => {
                           const nextValue = e?.currentTarget?.value ?? "";
+                          if (bloqueado) return;
                           if (/[^0-9.,%\s]/.test(nextValue)) return;
                           setAvancesStr((prev) => ({ ...prev, [periodoActivo.periodo]: nextValue }));
                         }}
+                        disabled={bloqueado}
                         rightSection={String(periodoActivo.meta ?? "").includes("%") ? <Text size="sm" c="dimmed">%</Text> : undefined}
                         style={{ width: 150 }}
                         size="sm"

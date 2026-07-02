@@ -992,7 +992,7 @@ router.back();
   return (
     <Container size="xl">
       <Group justify="space-between" align="center" mb="md">
-        <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back())}>
+        <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
           <IconArrowLeft size={20} />
         </ActionIcon>
         <Switch
@@ -1502,7 +1502,7 @@ router.back();
       </DragDropContext>
       <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-        <Button variant="outline" onClick={() => confirmNavigation(() => router.back())}>
+        <Button variant="outline" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
           Cancelar
         </Button>
       </Group>

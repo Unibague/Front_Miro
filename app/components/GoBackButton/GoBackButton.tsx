@@ -21,7 +21,7 @@ const GoBackButton = () => {
   if (pathname?.startsWith("/historico-docentes")) return null;
 
   const handleVolver = () => {
-    confirmNavigation(() => router.back());
+    confirmNavigation(() => router.back(), { isBackNavigation: true });
   };
 
   return (

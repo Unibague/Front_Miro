@@ -120,7 +120,7 @@ const EditCategoryPage = () => {
 
   return (
     <Container size="xl">
-      <ActionIcon variant="subtle" size="lg" mb="sm" onClick={() => confirmNavigation(() => router.back())}>
+      <ActionIcon variant="subtle" size="lg" mb="sm" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
         <IconArrowLeft size={18} />
       </ActionIcon>
       <TextInput
@@ -190,7 +190,7 @@ const EditCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => confirmNavigation(() => router.back())}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
           color="red"
         >
           Cancelar

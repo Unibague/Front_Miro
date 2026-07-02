@@ -232,7 +232,7 @@ const ReportCreatePage = () => {
           variant="light"
           color="red"
           leftSection={<IconCancel />}
-          onClick={() => confirmNavigation(() => router.back())}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
         >
           Cancelar
         </Button>
