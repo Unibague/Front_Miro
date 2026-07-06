@@ -612,7 +612,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     try {
       const [ptRes, sniesRes] = await Promise.all([
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
-          params: { email: session.user.email, page: 1, limit: 200, periodId: selectedPeriodId },
+          params: { email: session.user.email, page: 1, limit: 200, periodId: selectedPeriodId, summary: true },
         }),
         // Sin filtro de periodo para encontrar todas las plantillas SNIES sin importar el periodo
         axios.get(apiBasePath, {

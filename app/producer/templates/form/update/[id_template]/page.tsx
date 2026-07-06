@@ -32,6 +32,7 @@ import {
   buildSelectOptionsFromStrings,
   buildValidatorOptions,
   getPreferredValidatorColumnName,
+  resolveStoredSelectValue,
 } from "../../../../../utils/validatorOptions";
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
 import "dayjs/locale/es";
@@ -208,7 +209,11 @@ const ProducerTemplateUpdatePage = ({
               vRes.data?.validator,
               getPreferredValidatorColumnName(validateWith)
             );
-            const options = buildSelectOptionsFromStrings([...optionStrings, ...fieldDropdownOptions]);
+            // Prioridad: comentario/dropdown_options primero; el validador solo
+            // se usa como respaldo si el campo no trae opciones en el comentario.
+            const options = buildSelectOptionsFromStrings(
+              fieldDropdownOptions.length > 0 ? fieldDropdownOptions : optionStrings
+            );
             return { fieldName: field.name, options, isMultiple: field.multiple };
           } catch (error) {
             console.error(`Error obteniendo opciones para ${field.name}:`, error);
@@ -611,7 +616,11 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
     if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
       return (
         <Select
-          value={row[field.name] !== null && row[field.name] !== undefined ? String(row[field.name]) : null}
+          value={
+            row[field.name] !== null && row[field.name] !== undefined
+              ? resolveStoredSelectValue(row[field.name], opts) ?? String(row[field.name])
+              : null
+          }
           onChange={(value) => handleInputChange(rowIndex, field.name, value)}
           data={opts}
           searchable

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Container, Table, Button, Pagination, Center, TextInput, Group, ActionIcon, Tooltip } from "@mantine/core";
+import { Container, Table, Button, Pagination, Center, TextInput, Group, ActionIcon, Tooltip, Modal, Select, Text } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconEdit, IconTrash, IconCirclePlus, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconArrowLeft } from "@tabler/icons-react";
+import { IconEdit, IconTrash, IconCopy, IconCirclePlus, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconArrowLeft } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useDisclosure } from '@mantine/hooks';
 import { useSession } from "next-auth/react";
@@ -29,8 +29,11 @@ const AdminValidationsPage = () => {
   const [search, setSearch] = useState("");
   const router = useRouter();
   const { data: session } = useSession();
-  const { selectedPeriodId } = usePeriod();
+  const { selectedPeriodId, availablePeriods } = usePeriod();
   const { sortedItems: sortedValidations, handleSort, sortConfig } = useSort<Validation>(validations, { key: null, direction: "asc" });
+  const [duplicateTarget, setDuplicateTarget] = useState<Validation | null>(null);
+  const [duplicateTargetPeriodId, setDuplicateTargetPeriodId] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
 
 
   const fetchValidations = async (page: number, search: string) => {
@@ -83,6 +86,45 @@ const AdminValidationsPage = () => {
     }
   };
 
+  const openDuplicateModal = (validation: Validation) => {
+    setDuplicateTarget(validation);
+    setDuplicateTargetPeriodId(null);
+  };
+
+  const closeDuplicateModal = () => {
+    if (duplicating) return;
+    setDuplicateTarget(null);
+    setDuplicateTargetPeriodId(null);
+  };
+
+  const handleDuplicate = async () => {
+    if (!duplicateTarget || !duplicateTargetPeriodId) return;
+    setDuplicating(true);
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/validators/duplicate`, {
+        id: duplicateTarget._id,
+        periodId: selectedPeriodId,
+        targetPeriodId: duplicateTargetPeriodId,
+        email: session?.user?.email,
+      });
+      showNotification({
+        title: "Duplicada",
+        message: "Validación duplicada exitosamente en el periodo seleccionado",
+        color: "teal",
+      });
+      setDuplicateTarget(null);
+      setDuplicateTargetPeriodId(null);
+    } catch (error: any) {
+      showNotification({
+        title: "Error",
+        message: error?.response?.data?.status || "Hubo un error al duplicar la validación",
+        color: "red",
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const rows = sortedValidations.map((validation) => (
     <Table.Tr key={validation._id}>
       <Table.Td>{validation.name}</Table.Td>
@@ -99,6 +141,11 @@ const AdminValidationsPage = () => {
             <Button color="red" variant="outline" onClick={() => handleDelete(validation._id)}>
               <IconTrash size={16} />
             </Button>
+            <Tooltip label="Duplicar en otro periodo" withArrow>
+              <Button variant="outline" color="grape" onClick={() => openDuplicateModal(validation)}>
+                <IconCopy size={16} />
+              </Button>
+            </Tooltip>
           </Group>
         </Center>
       </Table.Td>
@@ -162,6 +209,35 @@ const AdminValidationsPage = () => {
           boundaries={3}
         />
       </Center>
+      <Modal
+        opened={!!duplicateTarget}
+        onClose={closeDuplicateModal}
+        title={`Duplicar validación "${duplicateTarget?.name ?? ""}"`}
+        centered
+      >
+        <Text size="sm" mb="md">
+          Selecciona el periodo en el que se creará una copia de esta validación.
+        </Text>
+        <Select
+          label="Periodo destino"
+          placeholder="Seleccionar periodo"
+          data={availablePeriods
+            .filter((period) => period._id !== selectedPeriodId)
+            .map((period) => ({ value: period._id, label: period.name }))}
+          value={duplicateTargetPeriodId}
+          onChange={setDuplicateTargetPeriodId}
+          searchable
+          mb="md"
+        />
+        <Group justify="flex-end">
+          <Button variant="outline" onClick={closeDuplicateModal} disabled={duplicating}>
+            Cancelar
+          </Button>
+          <Button onClick={handleDuplicate} loading={duplicating} disabled={!duplicateTargetPeriodId}>
+            Duplicar
+          </Button>
+        </Group>
+      </Modal>
     </Container>
   );
 };

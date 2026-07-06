@@ -34,6 +34,7 @@ import { ValidatorModal } from "../../../../components/Validators/ValidatorModal
 import {
   buildSelectOptionsFromStrings,
   extractDropdownOptionsFromComment,
+  resolveStoredSelectValue,
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 
@@ -793,7 +794,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       });
       setValidatorExists(validatorExistsMap);
 
-      // Opciones: comentario → dropdown_options → valores del validador del período
+      // Opciones: primero el comentario, luego dropdown_options; el validador
+      // conectado solo se usa como respaldo si el campo no trae opciones ahí. Sin combinar.
       const allValidatorOptions = allTemplateFields.map((field) => {
         const fromComment = extractDropdownOptionsFromComment(field.comment);
         let opts: string[];
@@ -802,7 +804,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         } else if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
           opts = field.dropdown_options.map(o => String(o || '').trim()).filter(Boolean);
         } else {
-          opts = validatorValuesMap[field.name] || [];
+          opts = field.validate_with ? (validatorValuesMap[field.name] || []) : [];
         }
         return { fieldName: field.name, options: buildSelectOptionsFromStrings(opts), isMultiple: field.multiple };
       });
@@ -1268,7 +1270,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
       const selectDisplayValue = storedDisplayValue
         ? opts.find(opt => opt.label === storedDisplayValue)?.value || fieldValue
-        : fieldValue;
+        : (resolveStoredSelectValue(fieldValue, opts) ?? fieldValue);
 
       return wrapWithTooltip(
         <Select

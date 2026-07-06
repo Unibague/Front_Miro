@@ -1013,16 +1013,8 @@ export const applyValidatorDropdowns = ({
   fields.forEach((field, fieldIndex) => {
     let options: string[] = [];
 
-    const validatorMatch = validators.length > 0 ? findValidatorForField(field, validators) : null;
-    if (validatorMatch) {
-      const matched = getValidatorOptions(validatorMatch.validator, validatorMatch.columnName || field.name);
-      if (matched.length > 0) {
-        options = matched.map((option) => option.displayLabel);
-      }
-    }
-
     // 1. Extraer del comentario
-    if (options.length === 0 && field.comment) {
+    if (field.comment) {
       options = extractOptionsFromCommentValidators(field.comment);
     }
 
@@ -1034,12 +1026,24 @@ export const applyValidatorDropdowns = ({
         .filter((o) => o && !seen.has(o) && !!seen.add(o));
     }
 
-    // 3. Respaldo: valores del validador del período (precargados)
+    // 3. Respaldo: validador conectado explícitamente al campo (solo si el
+    // campo no trae ya sus propias opciones en el comentario/dropdown_options)
+    if (options.length === 0) {
+      const validatorMatch = validators.length > 0 ? findValidatorForField(field, validators) : null;
+      if (validatorMatch) {
+        const matched = getValidatorOptions(validatorMatch.validator, validatorMatch.columnName || field.name);
+        if (matched.length > 0) {
+          options = matched.map((option) => option.displayLabel);
+        }
+      }
+    }
+
+    // 4. Respaldo: valores del validador del período (precargados)
     if (options.length === 0 && preloadedValidatorOptions[field.name]?.length) {
       options = preloadedValidatorOptions[field.name];
     }
 
-    // 4. Auto-detección: buscar en validadores cuya columna coincida con el nombre del campo
+    // 5. Auto-detección: buscar en validadores cuya columna coincida con el nombre del campo
     if (options.length === 0 && validators.length > 0) {
       const fieldNorm = normalizeToken(field.name);
       for (const validator of validators) {
