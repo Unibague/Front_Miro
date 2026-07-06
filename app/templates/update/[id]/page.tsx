@@ -111,6 +111,7 @@ const UpdateTemplatePage = () => {
   const [fechaFinalResponsables, setFechaFinalResponsables] = useState<Date | null>(null);
   const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
   const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
+  const [qrAuthorizedProducers, setQrAuthorizedProducers] = useState<string[]>([]);
   const [notifyProducers, setNotifyProducers] = useState(false);
   const [isSnies, setIsSnies] = useState(false);
   const [skipCommentValidation, setSkipCommentValidation] = useState(false);
@@ -263,6 +264,7 @@ const UpdateTemplatePage = () => {
             setFechaFinalResponsables(response.data.fecha_final_responsables ? new Date(response.data.fecha_final_responsables) : null);
             setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
             setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
+            setQrAuthorizedProducers((response.data.qr_authorized_producers || []).map((p: any) => String(p)));
             setNotifyProducers(response.data.notify_producers ?? false);
             setSkipCommentValidation(response.data.skip_comment_validation ?? false);
             const categoryName: string = response.data.category?.name ?? "";
@@ -514,6 +516,7 @@ const UpdateTemplatePage = () => {
       fecha_final_responsables: fechaFinalResponsables,
       fecha_final: fechaFinal,
       responsible_producers: responsibleProducers,
+      qr_authorized_producers: qrAuthorizedProducers,
       dimensions: selectedDimensions,
       producers: derivedProducers,
       email: session?.user?.email,
@@ -1111,13 +1114,19 @@ router.back();
         }}
         mb="sm"
       />
-      <Switch
-        label="Omitir validación de campos obligatorios por comentario"
-        description="Cuando está activo, solo los campos marcados como obligatorios explícitamente serán requeridos. Los campos cuyo comentario diga 'obligatorio' no serán validados."
-        checked={skipCommentValidation}
-        onChange={(e) => { setSkipCommentValidation(e.currentTarget.checked); setHasChanges(true); }}
-        mb="md"
-      />
+      {allowsQr && (
+        <MultiSelect
+          mb="sm"
+          label="Dependencias autorizadas para generar QR"
+          description="Además del productor encargado, estas dependencias también podrán generar el código QR de esta plantilla. Si no seleccionas ninguna, solo el encargado podrá generarlo."
+          placeholder="Seleccionar dependencias"
+          data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+          value={qrAuthorizedProducers}
+          onChange={(v) => { setQrAuthorizedProducers(v); setHasChanges(true); }}
+          searchable
+          clearable
+        />
+      )}
       <Divider label="Fechas de la plantilla" labelPosition="left" mb="sm" />
       <Group grow mb="xs">
         <DateInput

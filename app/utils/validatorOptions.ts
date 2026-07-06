@@ -135,15 +135,52 @@ export const extractDropdownOptionsFromComment = (comment?: unknown): string[] =
   return uniqueOptionTexts(options);
 };
 
+// Prioridad (sin combinar): comentario primero; si no trae lista, se usan
+// dropdown_options/excel_validation_options ya almacenadas.
 export const buildFieldDropdownOptions = (field: {
   dropdown_options?: unknown[];
   excel_validation_options?: unknown[];
   comment?: unknown;
-}): string[] => uniqueOptionTexts([
-  ...(Array.isArray(field.dropdown_options) ? field.dropdown_options.map(toOptionText) : []),
-  ...(Array.isArray(field.excel_validation_options) ? field.excel_validation_options.map(toOptionText) : []),
-  ...extractDropdownOptionsFromComment(field.comment),
-]);
+}): string[] => {
+  const fromComment = extractDropdownOptionsFromComment(field.comment);
+  if (fromComment.length > 0) return fromComment;
+
+  return uniqueOptionTexts([
+    ...(Array.isArray(field.dropdown_options) ? field.dropdown_options.map(toOptionText) : []),
+    ...(Array.isArray(field.excel_validation_options) ? field.excel_validation_options.map(toOptionText) : []),
+  ]);
+};
 
 export const buildSelectOptionsFromStrings = (values: string[]) =>
   uniqueOptionTexts(values).map((value) => ({ value, label: value }));
+
+// Extrae el código inicial de una opción compuesta, soportando tanto
+// "CODIGO - Descripción" (con guion) como "CODIGO Descripción" (solo espacio,
+// formato típico de las listas de valores extraídas de comentarios de Excel).
+const extractInitialCode = (value: string) => {
+  const codeMatch = /^([A-Za-z]{1,6}[A-Za-z0-9]*|\d+(?:[.,]\d+)*)(?:\s*[.):;-]\s*|\s+).+$/.exec(value);
+  if (!codeMatch) return value.trim();
+  return codeMatch[1].replace(/[.,]+$/g, "").trim();
+};
+
+// Resuelve el valor guardado (que puede ser solo el código, ej. "CC", cuando el
+// dato vino de una carga Excel sin validación) contra las opciones compuestas
+// del Select ("CC - Cédula de Ciudadanía"), para que el valor quede preseleccionado
+// en vez de mostrarse vacío. No modifica el dato guardado, solo la preselección visual.
+export const resolveStoredSelectValue = (
+  storedValue: unknown,
+  options: { value: string; label: string }[]
+): string | null => {
+  if (storedValue === null || storedValue === undefined) return null;
+  const text = String(storedValue).trim();
+  if (!text) return null;
+
+  const normalizedText = normalizeValidatorText(text);
+  const exactMatch = options.find((opt) => normalizeValidatorText(opt.value) === normalizedText);
+  if (exactMatch) return exactMatch.value;
+
+  const codeMatch = options.find(
+    (opt) => normalizeValidatorText(extractInitialCode(opt.value)) === normalizedText
+  );
+  return codeMatch ? codeMatch.value : null;
+};

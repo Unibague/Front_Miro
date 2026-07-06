@@ -14,21 +14,13 @@ import {
   IconBuilding, IconCalendar, IconCircleCheck,
   IconAlertCircle, IconForms, IconPlus, IconSend, IconTrash,
 } from "@tabler/icons-react";
-import { extractDropdownOptionsFromComment } from "../../../utils/validatorOptions";
-
-const extractValidatorDisplayValues = (validator: any): string[] => {
-  if (!validator?.columns?.length) return [];
-  const idCol = validator.columns.find((c: any) => c.is_validator) ?? validator.columns[0];
-  if (!idCol?.values?.length) return [];
-  const descCol = validator.columns.find(
-    (c: any) => !c.is_validator && /desc/i.test(c.name)
-  ) ?? validator.columns.find((c: any) => !c.is_validator);
-  return idCol.values.map((v: any, i: number) => {
-    const id = String(v ?? '').trim();
-    const desc = descCol ? String(descCol.values[i] ?? '').trim() : '';
-    return desc ? `${id} - ${desc}` : id;
-  }).filter(Boolean);
-};
+import {
+  buildFieldDropdownOptions,
+  buildSelectOptionsFromStrings,
+  buildValidatorOptions,
+  getPreferredValidatorColumnName,
+  resolveStoredSelectValue,
+} from "../../../utils/validatorOptions";
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../utils/requiredFields";
 
 interface Field {
@@ -91,39 +83,52 @@ export default function PublicFormPage() {
         setSheetRows(initialRows);
         if (fd.sheets.length > 0) setActiveTab(fd.sheets[0].name);
 
-        // Cargar opciones: comentario → dropdown_options → validador del período
+        // Cargar opciones combinando validador conectado + comentario/dropdown_options,
+        // igual que en la edición en línea y en la descarga de la plantilla Excel.
         const allFields = fd.sheets.flatMap(s => s.fields);
         const periodId = fd.periodId;
         const vMap: Record<string, string[]> = {};
 
         await Promise.all(allFields.map(async (field) => {
-          const fromComment = extractDropdownOptionsFromComment(field.comment);
-          if (fromComment.length > 0) {
-            vMap[field.name] = fromComment;
-            return;
-          }
-          if (Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
-            vMap[field.name] = field.dropdown_options.map(o => String(o || '').trim()).filter(Boolean);
-            return;
-          }
+          const fieldDropdownOptions = buildFieldDropdownOptions(field);
+          let validatorOptionStrings: string[] = [];
+
           if (field.validate_with && periodId) {
             try {
               let validatorId = '';
+              let validateWith = '';
               if (typeof field.validate_with === 'string') {
                 const parts = field.validate_with.split(' - ');
-                validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
-              } else {
+                if (parts.length >= 2) {
+                  validatorId = parts[parts.length - 1].trim();
+                  validateWith = field.validate_with;
+                } else if (field.validate_with.trim()) {
+                  validatorId = field.validate_with.trim();
+                  validateWith = field.validate_with.trim();
+                }
+              } else if ((field.validate_with as any)?.id) {
                 validatorId = (field.validate_with as any).id;
+                validateWith = (field.validate_with as any).name || '';
               }
-              if (!validatorId) return;
-              const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-                params: { id: validatorId, periodId },
-              });
-              const validator = vRes.data.validator;
-              const values = extractValidatorDisplayValues(validator);
-              if (values.length) vMap[field.name] = values;
-            } catch { /* sin opciones */ }
+
+              if (validatorId) {
+                const vRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
+                  params: { id: validatorId, periodId },
+                });
+                validatorOptionStrings = buildValidatorOptions(
+                  vRes.data?.validator,
+                  getPreferredValidatorColumnName(validateWith)
+                );
+              }
+            } catch { /* sin opciones de validador */ }
           }
+
+          // Prioridad: comentario/dropdown_options primero; el validador conectado
+          // solo se usa como respaldo si el campo no trae opciones ahí. Sin combinar.
+          const resolved = buildSelectOptionsFromStrings(
+            fieldDropdownOptions.length > 0 ? fieldDropdownOptions : validatorOptionStrings
+          ).map((opt) => opt.value);
+          if (resolved.length) vMap[field.name] = resolved;
         }));
 
         setValidatorOptions(vMap);
@@ -405,9 +410,13 @@ export default function PublicFormPage() {
     const label   = withLabel ? `${field.name}${getEffectiveRequired(field) ? " *" : ""}` : undefined;
 
     if (options?.length) {
+      const selectOptions = options.map((opt) => ({ value: opt, label: opt }));
+      const resolvedValue = value !== null && value !== undefined
+        ? resolveStoredSelectValue(value, selectOptions) ?? String(value)
+        : null;
       return (
         <Select label={label} placeholder={`Seleccionar ${field.name}`}
-          data={options} value={value ?? null} onChange={onChange}
+          data={options} value={resolvedValue} onChange={onChange}
           searchable clearable radius="md" />
       );
     }

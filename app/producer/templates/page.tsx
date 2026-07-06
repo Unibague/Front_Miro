@@ -174,12 +174,14 @@ interface PublishedTemplate {
   isPending: boolean;
   category_name?: string;
   responsible_producers?: string[];
+  qr_authorized_producers?: string[];
   final_submitted?: boolean;
   final_submitted_date?: string;
   fecha_final_productores?: string | Date;
   fecha_final_responsables?: string | Date;
   fecha_final?: string | Date;
   isEncargado?: boolean;
+  canGenerateQr?: boolean;
 }
 
 const ProducerTemplatesPage = () => {
@@ -1148,8 +1150,23 @@ if (field.multiple) {
     return depId ? responsibleIds.includes(depId) : false;
   };
 
+  // Verifica si el usuario puede generar QR: el encargado o alguna dependencia
+  // autorizada explícitamente vía qr_authorized_producers.
+  const isQrAuthorizedForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
+    if (isResponsibleForTemplate(publishedTemplate)) return true;
+    if (typeof publishedTemplate.canGenerateQr === 'boolean') return publishedTemplate.canGenerateQr;
+    // Fallback local: comparar todas las dependencias del usuario con qr_authorized_producers
+    const authorizedIds = publishedTemplate.qr_authorized_producers || [];
+    if (authorizedIds.length === 0) return false;
+    const userDepCodes = new Set((userDependencies || []).map((dependency) => dependency.value));
+    const depId = publishedTemplate.template?.producers?.find(
+      (p: any) => userDepCodes.has(p.dep_code)
+    )?._id;
+    return depId ? authorizedIds.includes(depId) : false;
+  };
+
   const canGenerateQrForTemplate = (publishedTemplate: PublishedTemplate): boolean => (
-    isResponsibleForTemplate(publishedTemplate) && publishedTemplate.template?.allows_qr === true
+    isQrAuthorizedForTemplate(publishedTemplate) && publishedTemplate.template?.allows_qr === true
   );
 
   const handleConfirmFinalSubmit = async (pubTemId: string) => {
