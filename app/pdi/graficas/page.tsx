@@ -129,7 +129,7 @@ export default function PdiGraficasPage() {
             <div>
               <Title order={3}>Graficas PDI</Title>
               <Text size="xs" c="dimmed">
-                Visualizacion del Plan de Desarrollo Institucional
+                Visualizacion del Proyecto de Desarrollo Institucional
               </Text>
             </div>
           </Group>

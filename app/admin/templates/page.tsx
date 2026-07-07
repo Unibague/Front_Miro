@@ -1830,7 +1830,7 @@ const AdminTemplatesPage = () => {
             variant="subtle"
             color="blue"
             size="lg"
-            onClick={() => router.back()}
+            onClick={() => router.push("/dashboard")}
             aria-label="Volver"
           >
             <IconArrowLeft size={20} />

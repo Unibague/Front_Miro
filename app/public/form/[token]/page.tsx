@@ -22,6 +22,7 @@ import {
   resolveStoredSelectValue,
 } from "../../../utils/validatorOptions";
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../utils/requiredFields";
+import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../utils/periodUtils";
 
 interface Field {
   name: string;
@@ -43,6 +44,7 @@ interface FormData {
   dependency: string;
   deadline: string;
   periodId: string;
+  periodName?: string | null;
   sheets: Sheet[];
 }
 
@@ -69,10 +71,11 @@ export default function PublicFormPage() {
         const fd: FormData = res.data;
         setFormData(fd);
 
-        // Inicializar una fila por hoja con AÑO y SEMESTRE prellenados
-        const _now = new Date();
-        const _year = _now.getFullYear();
-        const _semester = _now.getMonth() < 6 ? 1 : 2;
+        // Inicializar una fila por hoja con AÑO y SEMESTRE prellenados a partir
+        // del periodo activo (ej. "2026A" → año 2026, semestre 1); si el nombre
+        // del periodo no se puede interpretar, se usa la fecha actual como respaldo.
+        const _year = getYearFromPeriodName(fd.periodName) ?? new Date().getFullYear();
+        const _semester = getSemesterFromPeriodName(fd.periodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
         const initialRows: Record<string, Record<string, any>[]> = {};
         fd.sheets.forEach(s => {
           const prefilled: Record<string, any> = {};
@@ -150,9 +153,8 @@ export default function PublicFormPage() {
   };
 
   const addRow = (sheetName: string) => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const semester = now.getMonth() < 6 ? 1 : 2;
+    const year = getYearFromPeriodName(formData?.periodName) ?? new Date().getFullYear();
+    const semester = getSemesterFromPeriodName(formData?.periodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
     const sheet = formData?.sheets.find(s => s.name === sheetName);
     const prefilled: Record<string, any> = {};
     if (sheet?.fields?.some(f => f.name.toUpperCase() === 'AÑO')) prefilled['AÑO'] = year;

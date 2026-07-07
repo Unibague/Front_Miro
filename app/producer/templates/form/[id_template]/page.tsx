@@ -37,6 +37,7 @@ import {
   resolveStoredSelectValue,
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
+import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../utils/periodUtils";
 
 interface Field {
   name: string;
@@ -251,6 +252,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [displayValues, setDisplayValues] = useState<Record<string, Record<string, string>>>({});
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
+  const [templatePeriodName, setTemplatePeriodName] = useState<string>("");
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
   const [sharedSheetsData, setSharedSheetsData] = useState<Record<string, Record<string, any>[]>>({});
@@ -412,9 +414,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Cargar todas las hojas y determinar cuáles son editables
       const wbSheets = normalizedTemplate.workbook_sheets || [];
 
-      const _now = new Date();
-      const prefilledYear = _now.getFullYear();
-      const prefilledSemester = _now.getMonth() < 6 ? 1 : 2;
+      const resolvedPeriodName =
+        typeof response.data.publishedTemplate?.period === "object"
+          ? response.data.publishedTemplate.period?.name
+          : undefined;
+      const prefilledYear = getYearFromPeriodName(resolvedPeriodName) ?? new Date().getFullYear();
+      const prefilledSemester = getSemesterFromPeriodName(resolvedPeriodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
 
       // Conjunto de hojas accesibles para este productor — usado también al cargar borradores
       let editableSheetNames = new Set<string>();
@@ -509,6 +514,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           ? response.data.publishedTemplate.period
           : response.data.publishedTemplate?.period?._id || "";
       setTemplatePeriodId(periodId);
+      setTemplatePeriodName(resolvedPeriodName || "");
 
       // Pre-cargar datos ya enviados para que la edicion en linea conserve la informacion cargada.
       if (session?.user?.email) {
@@ -855,9 +861,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const addSheetRow = (sheetName: string) => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const semester = now.getMonth() < 6 ? 1 : 2;
+    const year = getYearFromPeriodName(templatePeriodName) ?? new Date().getFullYear();
+    const semester = getSemesterFromPeriodName(templatePeriodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
     const sheet = accessibleSheets.find(s => s.name === sheetName);
     const prefilled: Record<string, any> = {};
     if (sheet?.fields?.some(f => f.name.toUpperCase() === 'AÑO')) prefilled['AÑO'] = String(year);

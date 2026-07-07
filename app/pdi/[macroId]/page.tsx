@@ -453,7 +453,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           { label: "Indicadores",value: loaded ? indicadores.length : (indicadoresCount ?? "—"),                               color: undefined },
           { label: "Gasto",      value: Number(accion.gasto) > 0 ? formatCOP(Number(accion.gasto)) : "$ 0",                   color: "#2563eb" },
           { label: "Inversión",  value: Number(accion.inversion) > 0 ? formatCOP(Number(accion.inversion)) : "$ 0",           color: "#7c3aed" },
-          { label: "Causado",    value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0", color: "#0d9488" },
+          { label: "Ejecutado",  value: Number(accion.presupuesto_ejecutado) > 0 ? formatCOP(Number(accion.presupuesto_ejecutado)) : "$ 0", color: "#0d9488" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "10px 6px" }}>
             <Text fw={800} size="lg" lh={1} style={item.color ? { color: item.color } : undefined}>{item.value}</Text>
@@ -510,7 +510,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         const ppa  = accion.presupuesto_por_anio ?? {};
         const epaRaw = accion.presupuesto_ejecutado_por_anio ?? {};
         const totalEjecutado = Number(accion.presupuesto_ejecutado) || 0;
-        // Si todos los valores por año son 0 pero hay causado total, asignarlo al año vigente
+        // Si todos los valores por año son 0 pero hay ejecutado total, asignarlo al año vigente
         const epaAllZero = Object.values(epaRaw).every((v) => Number(v) === 0);
         const epa: Record<string, number> = epaAllZero && totalEjecutado > 0
           ? { ...epaRaw, [String(new Date().getFullYear())]: totalEjecutado }
@@ -865,7 +865,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           { label: "Peso", value: `${Number(proyecto.peso).toFixed(2)}%` },
           { label: "Acciones", value: loaded ? acciones.length : (accionesCount ?? "—") },
           { label: "Presupuesto", value: formatCOP(presupuestoProyecto) },
-          { label: "Causado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
+          { label: "Ejecutado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
         ].map((item) => (
           <Box key={item.label} style={{ textAlign: "center", background: "rgba(255,255,255,0.82)", border: "1px solid rgba(124,58,237,0.08)", borderRadius: 16, padding: "12px 8px" }}>
             <Text fw={800} size="1.1rem" lh={1}>{item.value}</Text>
@@ -1079,7 +1079,7 @@ export default function MacroproyectoDetallePage() {
                       <Text size="sm" c="dimmed">
                         Presupuesto: <b>{formatCOP(presupuestoMacro)}</b>
                         {presupuestoEjecutadoMacro > 0 && (
-                          <> · Causado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
+                          <> · Ejecutado: <b>{formatCOP(presupuestoEjecutadoMacro)}</b></>
                         )}
                       </Text>
                     )}

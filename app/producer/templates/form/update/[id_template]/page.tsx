@@ -35,6 +35,7 @@ import {
   resolveStoredSelectValue,
 } from "../../../../../utils/validatorOptions";
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
+import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../../utils/periodUtils";
 import "dayjs/locale/es";
 
 interface Field {
@@ -58,7 +59,7 @@ interface PublishedTemplateResponse {
   name: string;
   template: Template;
   publishedTemplate?: {
-    period?: string | { _id: string };
+    period?: string | { _id: string; name?: string };
   };
 }
 
@@ -96,6 +97,7 @@ const ProducerTemplateUpdatePage = ({
   const [activeFieldName, setActiveFieldName] = useState<string | null>(null);
   const [currentValidatorId, setCurrentValidatorId] = useState<string>("");
   const [templatePeriodId, setTemplatePeriodId] = useState<string>("");
+  const [templatePeriodName, setTemplatePeriodName] = useState<string>("");
   
   useEffect(() => {
     if (id_template) {
@@ -115,6 +117,11 @@ const ProducerTemplateUpdatePage = ({
           ? templateResponse.data.publishedTemplate.period
           : templateResponse.data.publishedTemplate?.period?._id || "";
       setTemplatePeriodId(periodId);
+      const periodName =
+        typeof templateResponse.data.publishedTemplate?.period === "object"
+          ? templateResponse.data.publishedTemplate.period?.name
+          : undefined;
+      setTemplatePeriodName(periodName || "");
       const dataResponse = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/uploaded/${id_template}`,
         {
@@ -479,9 +486,18 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
   };
 
   const addRow = () => {
+    const prefilledYear = getYearFromPeriodName(templatePeriodName);
+    const prefilledSemester = getSemesterFromPeriodName(templatePeriodName);
     const newRow: Record<string, any> = {};
     template?.fields.forEach((field) => {
-      newRow[field.name] = null;
+      const fieldNameUpper = field.name.toUpperCase();
+      if (fieldNameUpper === 'AÑO' && prefilledYear !== null) {
+        newRow[field.name] = prefilledYear;
+      } else if (fieldNameUpper === 'SEMESTRE' && prefilledSemester !== null) {
+        newRow[field.name] = prefilledSemester;
+      } else {
+        newRow[field.name] = null;
+      }
     });
     const newRows = [...rows, newRow];
     setRows(newRows);

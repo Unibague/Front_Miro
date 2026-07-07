@@ -146,8 +146,8 @@ export default function ReporteAvanceModal({ opened, onClose, indicador, periodo
             disabled={estadoBloqueado}
           />
           <NumberInput
-            label="Presupuesto causado"
-            placeholder="Valor causado en este periodo"
+            label="Total ejecutado"
+            placeholder="Valor ejecutado en este periodo"
             value={presupuestoEjecutado}
             onChange={setPresupuestoEjecutado}
             decimalSeparator=","

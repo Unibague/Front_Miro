@@ -339,6 +339,13 @@ export default function SubirEvidenciasPage() {
     return true;
   };
 
+  const debeJustificarSeleccion = (campo: CampoFormulario) =>
+    ["select", "select_con_otro", "select_multiple", "select_multiple_con_otro"].includes(campo.tipo) &&
+    campo.condicional_valor !== "supero_meta";
+
+  const esCampoRequerido = (campo: CampoFormulario) =>
+    Boolean(campo.requerido && campo.condicional_valor !== "supero_meta");
+
   const getOtroTexto = (formId: string, campoId: string) => otrosTextos[`${formId}-${campoId}`] ?? "";
   const setOtroTexto = (formId: string, campoId: string, val: string) =>
     setOtrosTextos(prev => ({ ...prev, [`${formId}-${campoId}`]: val }));
@@ -515,10 +522,10 @@ export default function SubirEvidenciasPage() {
     if (campo.tipo === "texto_largo" || campo.tipo === "texto_corto") {
       const texto = getTexto(formId, campo._id).trim();
       const maxChars = getMaxCaracteres(campo);
-      if (campo.requerido && !texto) return false;
+      if (esCampoRequerido(campo) && !texto) return false;
       return !texto || !maxChars || texto.length <= maxChars;
     }
-    if (!campo.requerido) return true;
+    if (!esCampoRequerido(campo)) return true;
     if (campo.tipo === "select") {
       return Boolean(getTexto(formId, campo._id).trim());
     }
@@ -682,18 +689,18 @@ export default function SubirEvidenciasPage() {
     if (c.tipo === "texto_largo" || c.tipo === "texto_corto") return getTexto(form._id, c._id);
     if (c.tipo === "select") {
       const sel = getTexto(form._id, c._id).trim();
-      const just = getJustificacion(form._id, c._id);
+      const just = debeJustificarSeleccion(c) ? getJustificacion(form._id, c._id) : "";
       return just ? `${sel}\nJustificación: ${just}` : sel;
     }
     if (c.tipo === "select_con_otro") {
       const val = getTexto(form._id, c._id).trim();
       const base = val === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : val;
-      const just = getJustificacion(form._id, c._id);
+      const just = debeJustificarSeleccion(c) ? getJustificacion(form._id, c._id) : "";
       return just ? `${base}\nJustificación: ${just}` : base;
     }
     if (c.tipo === "select_multiple") {
       const sel = formatSelectValues(getSelectValues(form._id, c._id));
-      const just = getJustificacion(form._id, c._id);
+      const just = debeJustificarSeleccion(c) ? getJustificacion(form._id, c._id) : "";
       return just ? `${sel}\nJustificación: ${just}` : sel;
     }
     if (c.tipo === "select_multiple_con_otro") {
@@ -701,7 +708,7 @@ export default function SubirEvidenciasPage() {
         value === "Otro" ? `Otro: ${getOtroTexto(form._id, c._id).trim()}` : value
       );
       const base = formatSelectValues(values);
-      const just = getJustificacion(form._id, c._id);
+      const just = debeJustificarSeleccion(c) ? getJustificacion(form._id, c._id) : "";
       return just ? `${base}\nJustificación: ${just}` : base;
     }
     if (c.tipo === "checkbox") return getTexto(form._id, c._id) || "false";
@@ -1202,7 +1209,7 @@ export default function SubirEvidenciasPage() {
                       ? "Reporte rechazado. Revisa las observaciones del líder, ajusta el formulario y vuelve a enviarlo."
                       : (todosLosEnviadosAprobados || (autoAprobadoUsuario && todosEnviados))
                         ? "Reporte enviado y aprobado."
-                        : "Reporte enviado. El líder del macroproyecto revisará y avalará tu evidencia."}
+                        : "Reporte enviado. Tu evidencia pasará a revisión y aval."}
                   </Text>
                 </Group>
               </Paper>
@@ -1591,7 +1598,7 @@ export default function SubirEvidenciasPage() {
                                   <>
                                     <Group gap={6} mb={6}>
                                       <Text size="sm" fw={700}>{campo.etiqueta}</Text>
-                                      {campo.requerido && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
+                                      {esCampoRequerido(campo) && <Badge size="xs" color="red" variant="dot">Requerido</Badge>}
                                     </Group>
                                     {campo.descripcion && (
                                       <Text size="xs" c="dimmed" mb={8}>{campo.descripcion}</Text>
@@ -1610,7 +1617,7 @@ export default function SubirEvidenciasPage() {
                                         rows={4} disabled={bloqueado} autosize minRows={3}
                                         maxLength={maxChars ?? undefined}
                                         error={
-                                          !bloqueado && campo.requerido && currentLen === 0
+                                          !bloqueado && esCampoRequerido(campo) && currentLen === 0
                                             ? "Este campo es obligatorio"
                                             : !bloqueado && maxChars && currentLen > maxChars
                                             ? `Has superado el máximo de ${maxChars} caracteres`
@@ -1675,7 +1682,7 @@ export default function SubirEvidenciasPage() {
                                       data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
                                       disabled={bloqueado} clearable
                                     />
-                                    {getTexto(form._id, campo._id) && (() => {
+                                    {getTexto(form._id, campo._id) && debeJustificarSeleccion(campo) && (() => {
                                       const jMin = campo.justificacion_min_caracteres ?? null;
                                       const jMax = campo.justificacion_max_caracteres ?? null;
                                       const jLen = getJustificacion(form._id, campo._id).length;
@@ -1736,7 +1743,7 @@ export default function SubirEvidenciasPage() {
                                         disabled={bloqueado}
                                       />
                                     )}
-                                    {getTexto(form._id, campo._id) && (() => {
+                                    {getTexto(form._id, campo._id) && debeJustificarSeleccion(campo) && (() => {
                                       const jMin = campo.justificacion_min_caracteres ?? null;
                                       const jMax = campo.justificacion_max_caracteres ?? null;
                                       const jLen = getJustificacion(form._id, campo._id).length;
@@ -1780,7 +1787,7 @@ export default function SubirEvidenciasPage() {
                                       data={(campo.opciones ?? []).map(op => ({ value: op, label: op }))}
                                       disabled={bloqueado} clearable
                                     />
-                                    {selectedValues.length > 0 && (() => {
+                                    {selectedValues.length > 0 && debeJustificarSeleccion(campo) && (() => {
                                       const jMin = campo.justificacion_min_caracteres ?? null;
                                       const jMax = campo.justificacion_max_caracteres ?? null;
                                       const jLen = getJustificacion(form._id, campo._id).length;
@@ -1841,7 +1848,7 @@ export default function SubirEvidenciasPage() {
                                         disabled={bloqueado}
                                       />
                                     )}
-                                    {selectedValues.length > 0 && (() => {
+                                    {selectedValues.length > 0 && debeJustificarSeleccion(campo) && (() => {
                                       const jMin = campo.justificacion_min_caracteres ?? null;
                                       const jMax = campo.justificacion_max_caracteres ?? null;
                                       const jLen = getJustificacion(form._id, campo._id).length;
@@ -2122,8 +2129,8 @@ export default function SubirEvidenciasPage() {
                     : "Guarda los cambios para continuar después, o envía el reporte cuando todo esté listo."}
                   <b>
                     {tieneFormulariosRechazados
-                      ? " Cuando vuelvas a enviarlo, el líder del macroproyecto recibirá nuevamente tu reporte."
-                      : " Una vez enviado, el líder del macroproyecto recibirá tu reporte para revisión."}
+                      ? " Cuando vuelvas a enviarlo, tu reporte pasará nuevamente a revisión."
+                      : " Una vez enviado, tu reporte pasará a revisión."}
                   </b>
                 </Text>
                 {!puedeEnviarTodo && (() => {
@@ -2139,12 +2146,12 @@ export default function SubirEvidenciasPage() {
                       if (!shouldShowCampo(campo)) return;
                       const maxChars = getMaxCaracteres(campo);
                       const currentLen = getTexto(form._id, campo._id).trim().length;
-                      if (campo.requerido && currentLen === 0) {
+                      if (esCampoRequerido(campo) && currentLen === 0) {
                         erroresDetalle.push(`"${campo.etiqueta}" está vacío (obligatorio).`);
                       } else if (maxChars && currentLen > maxChars) {
                         erroresDetalle.push(`"${campo.etiqueta}": tienes ${currentLen} caracteres, el máximo permitido es ${maxChars}.`);
                       }
-                      if (["select", "select_con_otro", "select_multiple", "select_multiple_con_otro"].includes(campo.tipo)) {
+                      if (debeJustificarSeleccion(campo)) {
                         const sel = getTexto(form._id, campo._id);
                         if (sel && !getJustificacion(form._id, campo._id).trim()) {
                           erroresDetalle.push(`"${campo.etiqueta}": debes justificar tu respuesta.`);

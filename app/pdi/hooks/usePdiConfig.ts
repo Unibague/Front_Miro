@@ -5,7 +5,7 @@ import type { PdiConfig } from "../types";
 
 const DEFAULT_CONFIG: PdiConfig = {
   nombre:      "PDI 2026–2029",
-  descripcion: "Plan de Desarrollo Institucional",
+  descripcion: "Proyecto de Desarrollo Institucional",
   anio_inicio: 2026,
   anio_fin:    2029,
   lema:        "Tejiendo futuros: soñar, actuar y transformar juntos",

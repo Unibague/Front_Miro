@@ -180,7 +180,7 @@ function FormularioModal({
           ...(c._id ? { _id: c._id } : {}),
           etiqueta: c.etiqueta,
           tipo: c.tipo,
-          requerido: c.requerido,
+          requerido: c.condicional_valor === "supero_meta" ? false : c.requerido,
           descripcion: c.descripcion,
           orden: index,
           min_caracteres: c.min_caracteres,
@@ -208,6 +208,8 @@ function FormularioModal({
 
   const tieneTexto = (t: TipoCampo) => t === "texto_largo" || t === "texto_corto";
   const tieneOpciones = (t: TipoCampo) => t === "select" || t === "select_con_otro" || t === "select_multiple" || t === "select_multiple_con_otro";
+  const requiereJustificacionSeleccion = (campo: Campo) =>
+    tieneOpciones(campo.tipo) && campo.condicional_valor !== "supero_meta";
 
   return (
     <Modal
@@ -281,7 +283,8 @@ function FormularioModal({
                 <Switch
                   size="xs"
                   label="Requerido"
-                  checked={campo.requerido}
+                  checked={campo.condicional_valor === "supero_meta" ? false : campo.requerido}
+                  disabled={campo.condicional_valor === "supero_meta"}
                   onChange={e => updateCampo(idx, "requerido", e.currentTarget.checked)}
                 />
               </Group>
@@ -342,7 +345,7 @@ function FormularioModal({
                 </Stack>
               )}
 
-              {tieneOpciones(campo.tipo) && (
+              {requiereJustificacionSeleccion(campo) && (
                 <Stack gap={4}>
                   <Text size="xs" fw={600}>Justificación (siempre visible)</Text>
                   <Text size="xs" c="dimmed">El responsable debe justificar su selección.</Text>
@@ -391,7 +394,11 @@ function FormularioModal({
                   { value: "supero_meta", label: "Solo si superó la meta del período" },
                 ]}
                 value={campo.condicional_valor ?? "siempre"}
-                onChange={v => updateCampo(idx, "condicional_valor", (v === "siempre" || !v) ? null : v as "supero_meta" | "no_supero_meta")}
+                onChange={v => {
+                  const condicional = (v === "siempre" || !v) ? null : v as "supero_meta" | "no_supero_meta";
+                  updateCampo(idx, "condicional_valor", condicional);
+                  if (condicional === "supero_meta") updateCampo(idx, "requerido", false);
+                }}
                 allowDeselect={false}
               />
             </Stack>
