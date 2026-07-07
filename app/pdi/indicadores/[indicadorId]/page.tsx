@@ -175,11 +175,13 @@ function PeriodoCard({
   p,
   onReportar,
   admin = false,
+  puedeReportar = true,
   evidenciasPeriodo = [],
 }: {
   p: Periodo;
   onReportar: (periodo: string) => void;
   admin?: boolean;
+  puedeReportar?: boolean;
   evidenciasPeriodo?: Indicador["evidencias"];
 }) {
   const avanceNum = p.avance != null ? Number(p.avance) : null;
@@ -274,7 +276,7 @@ function PeriodoCard({
             {p.estado_reporte ?? "Borrador"}
           </Badge>
         </Group>
-        {!admin && (
+        {!admin && puedeReportar && (
           <Button
             size="xs"
             variant="light"
@@ -778,6 +780,9 @@ function LiderRevisionPanelV2({
   onlyApproved = false,
   onlyEvaluated = false,
   preferredPeriodo = "",
+  titulo,
+  subtitulo,
+  emptyMessage = "No hay reportes enviados para este indicador.",
 }: {
   indicadorId: string;
   periodos: Periodo[];
@@ -787,6 +792,9 @@ function LiderRevisionPanelV2({
   onlyApproved?: boolean;
   onlyEvaluated?: boolean;
   preferredPeriodo?: string;
+  titulo?: string;
+  subtitulo?: string;
+  emptyMessage?: string;
 }) {
   const router = useRouter();
   const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
@@ -875,7 +883,7 @@ function LiderRevisionPanelV2({
   if (respuestas.length === 0) {
     return (
       <Paper withBorder radius="xl" p="lg">
-        <Text size="sm" c="dimmed" ta="center">No hay reportes enviados para este indicador.</Text>
+        <Text size="sm" c="dimmed" ta="center">{emptyMessage}</Text>
       </Paper>
     );
   }
@@ -900,13 +908,13 @@ function LiderRevisionPanelV2({
             ? Math.min(Math.round((avanceNum / metaNum) * 100), 100)
             : null;
           const avalEstado = r.estado_aval ?? "Pendiente";
-          const puedoAval =
-            !readOnly &&
-            avalEstado === "Pendiente" &&
-            (
-              permitirEvaluacion ||
-              r.lider_email_aval?.toLowerCase().trim() === liderEmail.toLowerCase().trim()
-            );
+          // `permitirEvaluacion` ya refleja que la sesión actual es realmente el líder
+          // (ver isLider más abajo). No se debe volver a "abrir" el permiso comparando
+          // r.lider_email_aval con liderEmail: ese campo es el líder real configurado
+          // para el indicador (se resuelve igual sin importar quién esté logueado), así
+          // que esa comparación no verifica identidad y dejaba aprobar a cualquiera que
+          // entrara con ?modo=evaluar (por ejemplo, el responsable del proyecto).
+          const puedoAval = !readOnly && avalEstado === "Pendiente" && permitirEvaluacion;
           const estadoSeleccionado = estadosSeleccionados[r._id] ?? avalEstado;
           const formularioNombre =
             typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
@@ -1065,11 +1073,11 @@ function LiderRevisionPanelV2({
               </div>
 
               <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
-                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{readOnly ? "Aprobación del líder" : "Evaluación del líder"}</Title>
+                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{titulo ?? (readOnly ? "Aprobación del líder" : "Evaluación del líder")}</Title>
                 <Text size="sm" c="dimmed" mb="md">
-                  {readOnly
+                  {subtitulo ?? (readOnly
                     ? "Vista de solo lectura del estado definido por el líder."
-                    : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte."}
+                    : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte.")}
                 </Text>
 
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
@@ -1253,6 +1261,476 @@ function LiderRevisionPanelV2({
   );
 }
 
+function ResponsableProyectoRevisionPanel({
+  indicadorId,
+  periodos,
+  proyectoEmail = "",
+  permitirEvaluacion = false,
+  preferredPeriodo = "",
+}: {
+  indicadorId: string;
+  periodos: Periodo[];
+  proyectoEmail?: string;
+  permitirEvaluacion?: boolean;
+  preferredPeriodo?: string;
+}) {
+  const router = useRouter();
+  const [respuestas, setRespuestas] = useState<RespuestaFormulario[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [comentarios, setComentarios] = useState<Record<string, string>>({});
+  const [comentariosCampos, setComentariosCampos] = useState<Record<string, Record<string, string>>>({});
+  const [estadosSeleccionados, setEstadosSeleccionados] = useState<Record<string, "Pendiente" | "Aprobado" | "Rechazado">>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [razonesSeleccionadas, setRazonesSeleccionadas] = useState<Record<string, string[]>>({});
+  const [otrosCuales, setOtrosCuales] = useState<Record<string, string>>({});
+  const [razonesDisponibles, setRazonesDisponibles] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    axios.get(PDI_ROUTES.razonesRechazo())
+      .then((res) => {
+        const base = (res.data as { _id: string; texto: string }[]).map((r) => ({ value: r.texto, label: r.texto }));
+        setRazonesDisponibles([...base, { value: "Otro", label: "Otro ¿Cuál?" }]);
+      })
+      .catch(() => {});
+  }, []);
+
+  const load = () => {
+    if (!indicadorId) return;
+    setLoading(true);
+    axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
+      .then((r) => setRespuestas(
+        deduplicarRespuestas(r.data.filter((item: RespuestaFormulario) =>
+          item.estado === "Enviado" && item.estado_aval_proyecto != null
+        ))
+      ))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [indicadorId]);
+
+  const handleAval = async (r: RespuestaFormulario) => {
+    const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
+    const estadoSeleccionado = estadosSeleccionados[r._id] ?? "Pendiente";
+    const comentarioAval = estadoSeleccionado === "Rechazado" ? (comentarios[r._id] ?? "").trim() : "";
+    const razones = estadoSeleccionado === "Rechazado" ? (razonesSeleccionadas[r._id] ?? []) : [];
+    const otroCual = estadoSeleccionado === "Rechazado" && razones.includes("Otro") ? (otrosCuales[r._id] ?? "").trim() : "";
+
+    if (estadoSeleccionado === "Pendiente") {
+      return;
+    }
+
+    if (estadoSeleccionado === "Rechazado" && razones.length === 0) {
+      showNotification({ title: "Requerido", message: "Selecciona al menos una razón de rechazo", color: "orange" });
+      return;
+    }
+
+    if (estadoSeleccionado === "Rechazado" && razones.includes("Otro") && !otroCual) {
+      showNotification({ title: "Requerido", message: 'Especifica el "Otro ¿Cuál?"', color: "orange" });
+      return;
+    }
+
+    setSavingId(r._id);
+    try {
+      await axios.put(PDI_ROUTES.formularioAvalProyecto(formId, r._id), {
+        estado_aval_proyecto: estadoSeleccionado,
+        aval_por: proyectoEmail,
+        aval_comentario: comentarioAval,
+        aval_razones: razones,
+        aval_otro_cual: otroCual,
+        comentarios_campos: estadoSeleccionado === "Rechazado"
+          ? getComentariosCamposPayload(r, comentariosCampos)
+          : [],
+      });
+      load();
+      router.refresh();
+      showNotification({
+        title: estadoSeleccionado,
+        message: `Formulario ${estadoSeleccionado.toLowerCase()} correctamente`,
+        color: estadoSeleccionado === "Aprobado" ? "teal" : "red",
+      });
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo guardar el aval", color: "red" });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (loading) return <Center py="sm"><Loader size="sm" /></Center>;
+  if (respuestas.length === 0) {
+    return (
+      <Paper withBorder radius="xl" p="lg">
+        <Text size="sm" c="dimmed" ta="center">No hay reportes enviados para este indicador.</Text>
+      </Paper>
+    );
+  }
+
+  return (
+    <Stack gap="md">
+      {respuestas
+        .slice()
+        .sort((a, b) => {
+          const periodoA = resolvePeriodoForRespuesta(periodos, a, preferredPeriodo);
+          const periodoB = resolvePeriodoForRespuesta(periodos, b, preferredPeriodo);
+          const claveA = normalizePeriodo(periodoA?.periodo ?? a.corte);
+          const claveB = normalizePeriodo(periodoB?.periodo ?? b.corte);
+          return claveB.localeCompare(claveA);
+        })
+        .map((r) => {
+          const periodo = resolvePeriodoForRespuesta(periodos, r, preferredPeriodo);
+          const periodoMostrado = periodo?.periodo ?? "Sin periodo asociado";
+          const avanceNum = periodo?.avance != null ? Number(periodo.avance) : null;
+          const metaNum = periodo?.meta != null ? Number(periodo.meta) : null;
+          const pct = avanceNum != null && metaNum && metaNum > 0
+            ? Math.min(Math.round((avanceNum / metaNum) * 100), 100)
+            : null;
+          const avalEstado = r.estado_aval_proyecto ?? "Pendiente";
+          // Mismo criterio que en LiderRevisionPanelV2: `permitirEvaluacion` ya refleja
+          // que la sesión actual es realmente el responsable del proyecto (isResponsableProyecto).
+          const puedoAval = avalEstado === "Pendiente" && permitirEvaluacion;
+          const estadoSeleccionado = estadosSeleccionados[r._id] ?? avalEstado;
+          const formularioNombre =
+            typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
+          const documentosFormulario = getDocumentosFormulario(r);
+
+          return (
+            <Paper key={r._id} withBorder radius="xl" p="lg" shadow="sm">
+              <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+                <div>
+                  <Group gap={8} mb={6}>
+                    <Badge color="violet" variant="filled" radius="xl">{periodoMostrado}</Badge>
+                    <Badge
+                      color={AVAL_COLOR[avalEstado]}
+                      variant="light"
+                      radius="xl"
+                      leftSection={
+                        avalEstado === "Aprobado"
+                          ? <IconShieldCheck size={12} />
+                          : avalEstado === "Rechazado"
+                          ? <IconShieldX size={12} />
+                          : <IconClockHour4 size={12} />
+                      }
+                    >
+                      Estado: {AVAL_LABEL[avalEstado]}
+                    </Badge>
+                  </Group>
+                  <Text fw={700}>Reporte enviado por {r.respondido_por}</Text>
+                  <Text size="sm" c="dimmed">
+                    {r.fecha_envio ? `Enviado el ${new Date(r.fecha_envio).toLocaleDateString("es-CO")}` : "Sin fecha de envio"}
+                  </Text>
+                </div>
+              </Group>
+
+              <div>
+                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #7c3aed, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Avance por periodo</Title>
+                <Paper withBorder radius="xl" p="md" mb="lg" style={{ borderLeft: "4px solid #7c3aed", background: "#fff" }}>
+                  <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                    <div>
+                      <Group gap={8}>
+                        <Text size="lg" fw={800}>{periodoMostrado}</Text>
+                        <Badge size="sm" radius="xl" color={AVAL_COLOR[avalEstado]} variant="light">
+                          {AVAL_LABEL[avalEstado]}
+                        </Badge>
+                      </Group>
+                      <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodo?.meta ?? "Sin dato"}</b></Text>
+                    </div>
+                    <Box
+                      style={{
+                        minWidth: 160,
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        background: "var(--mantine-color-default-hover)",
+                        border: "1px solid rgba(124,58,237,0.08)",
+                      }}
+                    >
+                      <Text size="xs" c="dimmed">Avance reportado</Text>
+                      <Text fw={700} mt={2}>{avanceNum ?? "Sin dato"}</Text>
+                    </Box>
+                  </Group>
+                  {pct != null && (
+                    <>
+                      <Group justify="space-between" mb={4}>
+                        <Text size="xs" c="dimmed">Progreso del periodo</Text>
+                        <Text size="xs" fw={700}>{pct}%</Text>
+                      </Group>
+                      <Progress value={pct} color="violet" size="sm" radius="xl" />
+                    </>
+                  )}
+                </Paper>
+              </div>
+
+              <Divider mb="lg" />
+
+              <div>
+                <Group gap={8} mb="md">
+                  <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+                    <IconForms size={16} />
+                  </ThemeIcon>
+                  <div>
+                    <Title order={5} style={{ background: "linear-gradient(90deg, #7c3aed, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Formulario de evidencias</Title>
+                    <Text size="xs" c="dimmed">
+                      {`${formularioNombre} · vista tipo Word del formulario enviado por el responsable`}
+                    </Text>
+                  </div>
+                </Group>
+
+                <Paper
+                  withBorder
+                  radius="xl"
+                  p="lg"
+                  mb="lg"
+                  style={{
+                    background: "#fff",
+                    borderColor: "#d9d9d9",
+                    boxShadow: "0 10px 24px rgba(15,23,42,0.05)",
+                  }}
+                >
+                  <Group justify="space-between" mb="md" wrap="wrap">
+                    <div>
+                      <Text size="xs" fw={700} c="dimmed" tt="uppercase">Documento evaluado</Text>
+                      <Title order={6}>{formularioNombre}</Title>
+                      <Text size="xs" c="dimmed" mt={4}>Periodo: {periodoMostrado}</Text>
+                    </div>
+                    <Group gap="xs">
+                      {r.word_url && (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="blue"
+                            component="a"
+                            href={r.word_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver reporte
+                          </Button>
+                      )}
+                    </Group>
+                  </Group>
+
+                  <Paper withBorder radius="md" p="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                    <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                      <div>
+                        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Evidencias adjuntas</Text>
+                        <Text size="sm" fw={600} mt={3}>
+                          {documentosFormulario.length > 0
+                            ? `${documentosFormulario.length} archivo(s) PDF`
+                            : "Sin evidencia adjunta"}
+                        </Text>
+                        <Text size="xs" c="dimmed" mt={2}>PDF enviado por el responsable</Text>
+                      </div>
+                      {documentosFormulario.length > 0 ? (
+                        <Group gap="xs" wrap="wrap">
+                          {documentosFormulario.filter((doc) => !!doc.url).map((doc, index) => (
+                            <Button
+                              key={doc._id ?? `${doc.url}-${index}`}
+                              size="xs"
+                              variant="light"
+                              color="violet"
+                              component="a"
+                              href={doc.url!}
+                              target="_blank"
+                              rel="noreferrer"
+                              leftSection={<IconFileTypePdf size={13} />}
+                            >
+                              {documentosFormulario.length > 1 ? `Abrir evidencia ${index + 1}` : "Abrir evidencia"}
+                            </Button>
+                          ))}
+                        </Group>
+                      ) : (
+                        <Badge color="gray" variant="light">Sin archivo</Badge>
+                      )}
+                    </Group>
+                  </Paper>
+                </Paper>
+              </div>
+
+              <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
+                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Evaluación del responsable del proyecto</Title>
+                <Text size="sm" c="dimmed" mb="md">
+                  Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte. Al aprobar, pasará a revisión del líder del macroproyecto.
+                </Text>
+
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
+                  <Select
+                    label="Estado de evaluación"
+                    data={[
+                      { value: "Pendiente", label: "En revisión" },
+                      { value: "Rechazado", label: "Rechazado" },
+                      { value: "Aprobado", label: "Aprobado" },
+                    ]}
+                    value={estadoSeleccionado}
+                    disabled={!puedoAval}
+                    onChange={(value) => {
+                      if (!value) return;
+                      setEstadosSeleccionados((prev) => ({
+                        ...prev,
+                        [r._id]: value as "Pendiente" | "Aprobado" | "Rechazado",
+                      }));
+                    }}
+                  />
+                  <Box
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      background: "var(--mantine-color-default-hover)",
+                      alignSelf: "end",
+                    }}
+                  >
+                    <Text size="xs" c="dimmed">Estado actual</Text>
+                    <Text fw={700} mt={4}>{AVAL_LABEL[avalEstado]}</Text>
+                  </Box>
+                </SimpleGrid>
+
+                {estadoSeleccionado === "Rechazado" && (
+                  <Stack gap="sm" mb="md">
+                    {razonesDisponibles.length > 1 && (
+                      <MultiSelect
+                        label="Razones de rechazo"
+                        placeholder="Selecciona una o varias razones..."
+                        data={razonesDisponibles}
+                        value={razonesSeleccionadas[r._id] ?? []}
+                        onChange={(vals) => {
+                          setRazonesSeleccionadas((prev) => ({ ...prev, [r._id]: vals }));
+                          if (!vals.includes("Otro")) setOtrosCuales((prev) => ({ ...prev, [r._id]: "" }));
+                        }}
+                        disabled={!puedoAval}
+                        radius="md"
+                      />
+                    )}
+                    {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
+                      <TextInput
+                        label='Especifica "Otro ¿Cuál?"'
+                        placeholder="Escribe aquí..."
+                        value={otrosCuales[r._id] ?? ""}
+                        onChange={(e) => { const v = e.currentTarget.value; setOtrosCuales((prev) => ({ ...prev, [r._id]: v })); }}
+                        disabled={!puedoAval}
+                        radius="md"
+                      />
+                    )}
+                    <Textarea
+                      label="Observaciones del rechazo"
+                      placeholder="Escribe aquí el motivo del rechazo para el responsable..."
+                      value={comentarios[r._id] ?? r.aval_proyecto_comentario ?? ""}
+                      onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
+                      rows={4}
+                      radius="md"
+                      disabled={!puedoAval}
+                    />
+
+                    <Paper withBorder radius="lg" p="md" style={{ background: "#fff", borderColor: "#fee2e2" }}>
+                      <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                        <div>
+                          <Text size="sm" fw={700}>Formulario enviado por el responsable</Text>
+                          <Text size="xs" c="dimmed">
+                            Revisa las respuestas en linea. Solo puedes agregar comentarios; las respuestas no se editan.
+                          </Text>
+                        </div>
+                        <Badge color="red" variant="light">Comentarios por campo</Badge>
+                      </Group>
+
+                      <Stack gap="sm">
+                        {r.respuestas.map((respuestaCampo, index) => {
+                          const campoKey = getRespuestaCampoKey(respuestaCampo, index);
+                          const valorCampo = getRespuestaCampoValor(respuestaCampo);
+                          const comentarioCampo =
+                            comentariosCampos[r._id]?.[campoKey] ?? respuestaCampo.comentario_lider ?? "";
+
+                          return (
+                            <Paper
+                              key={campoKey}
+                              withBorder
+                              radius="md"
+                              p="sm"
+                              style={{ background: "var(--mantine-color-default-hover)" }}
+                            >
+                              <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>
+                                {respuestaCampo.etiqueta || `Pregunta ${index + 1}`}
+                              </Text>
+
+                              {respuestaCampo.url ? (
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  color="blue"
+                                  component="a"
+                                  href={respuestaCampo.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  leftSection={<IconFileTypePdf size={13} />}
+                                  mb="sm"
+                                >
+                                  {respuestaCampo.nombre_original || "Abrir archivo"}
+                                </Button>
+                              ) : (
+                                <Text size="sm" mb="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                  {valorCampo || <span style={{ color: "#94a3b8" }}>Sin respuesta</span>}
+                                </Text>
+                              )}
+
+                              <Textarea
+                                label="Comentario del responsable del proyecto"
+                                placeholder="Comentario puntual para esta respuesta..."
+                                value={comentarioCampo}
+                                onChange={(e) => {
+                                  const value = e.currentTarget.value;
+                                  setComentariosCampos((prev) => ({
+                                    ...prev,
+                                    [r._id]: {
+                                      ...(prev[r._id] ?? {}),
+                                      [campoKey]: value,
+                                    },
+                                  }));
+                                }}
+                                minRows={2}
+                                autosize
+                                radius="md"
+                                disabled={!puedoAval}
+                              />
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                    </Paper>
+                  </Stack>
+                )}
+
+                {!puedoAval && (
+                  <Paper withBorder radius="md" p="sm" mb="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                    <Text size="sm" c="dimmed">
+                      {avalEstado === "Pendiente"
+                        ? "Este formulario sigue en revisión."
+                        : `La evaluación ya fue cerrada con estado ${AVAL_LABEL[avalEstado].toLowerCase()}.`}
+                    </Text>
+                  </Paper>
+                )}
+
+                {puedoAval && (
+                  <Group justify="flex-end">
+                    <Button
+                      color={estadoSeleccionado === "Aprobado" ? "teal" : "red"}
+                      radius="xl"
+                      loading={savingId === r._id}
+                      disabled={estadoSeleccionado === "Pendiente"}
+                      leftSection={
+                        estadoSeleccionado === "Aprobado"
+                          ? <IconShieldCheck size={14} />
+                          : <IconShieldX size={14} />
+                      }
+                      onClick={() => handleAval(r)}
+                    >
+                      Guardar evaluación
+                    </Button>
+                  </Group>
+                )}
+              </Paper>
+            </Paper>
+          );
+        })}
+    </Stack>
+  );
+}
+
 const PLAN_COLOR: Record<string, string> = { Validado: "teal", Devuelto: "orange" };
 const PLAN_LABEL: Record<string, string> = {
   Validado: "Validado por Planeación",
@@ -1305,6 +1783,11 @@ function PlaneacionRevisionPanel({
         por: adminEmail,
         comentario: comentarios[r._id] ?? "",
       });
+      // Quitamos la tarjeta de inmediato (en vez de esperar el refetch de load())
+      // para que no quede clicable con datos obsoletos mientras la lista se
+      // recarga: eso era lo que dejaba "Guardar" disponible sobre un reporte
+      // que ya había sido evaluado, provocando el error en el segundo clic.
+      setRespuestas((prev) => prev.filter((item) => item._id !== r._id));
       load();
       router.refresh();
       showNotification({
@@ -1312,8 +1795,13 @@ function PlaneacionRevisionPanel({
         message: `Formulario ${estado === "Validado" ? "validado y consolidado" : "devuelto con observaciones"} correctamente`,
         color: estado === "Validado" ? "teal" : "orange",
       });
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo guardar la evaluación de Planeación", color: "red" });
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.error;
+      showNotification({
+        title: "Error",
+        message: backendMessage || "No se pudo guardar la evaluación de Planeación",
+        color: "red",
+      });
     } finally {
       setSavingId(null);
     }
@@ -1540,6 +2028,9 @@ export default function IndicadorEvidenciasPage() {
   const [reportePeriodo, setReportePeriodo] = useState<string | null>(null);
   const [isLider, setIsLider]     = useState(false);
   const [liderEmail, setLiderEmail] = useState("");
+  const [isResponsableProyecto, setIsResponsableProyecto] = useState(false);
+  const [proyectoEmail, setProyectoEmail] = useState("");
+  const [puedeReportar, setPuedeReportar] = useState(false);
   const [cortesVigentes, setCortesVigentes] = useState<Array<{ nombre: string; estado: string }>>([]);
 
   const load = () => {
@@ -1569,12 +2060,41 @@ export default function IndicadorEvidenciasPage() {
   }, [indicadorId, session?.user?.email]);
 
   useEffect(() => {
+    if (!indicadorId || !session?.user?.email) return;
+    const email = session.user.email.toLowerCase().trim();
+    axios.get(PDI_ROUTES.formularioResponsableProyectoEmailIndicador(), { params: { indicador_id: indicadorId } })
+      .then((r) => {
+        const pe = (r.data.responsable_email ?? "").toLowerCase().trim();
+        setProyectoEmail(pe);
+        setIsResponsableProyecto(Boolean(pe) && pe === email);
+      })
+      .catch(() => {});
+  }, [indicadorId, session?.user?.email]);
+
+  useEffect(() => {
+    if (!indicadorId || !session?.user?.email) return;
+    const email = session.user.email.toLowerCase().trim();
+    axios.get(PDI_ROUTES.formularioReportersEmailIndicador(), { params: { indicador_id: indicadorId } })
+      .then((r) => {
+        const emails: string[] = Array.isArray(r.data.emails) ? r.data.emails : [];
+        setPuedeReportar(emails.map((e) => e.toLowerCase().trim()).includes(email));
+      })
+      .catch(() => {});
+  }, [indicadorId, session?.user?.email]);
+
+  useEffect(() => {
     axios.get(PDI_ROUTES.cortesVigentes())
       .then(r => setCortesVigentes(r.data))
       .catch(() => {});
   }, []);
 
-  const mostrarVistaLider = isLider || fuerzaVistaEvaluacion;
+  // `fuerzaVistaEvaluacion` (?modo=evaluar) viene del mismo enlace de "bandeja de pendientes"
+  // sin importar el rol real de quien lo abre. Si la persona es de verdad la responsable del
+  // proyecto (y no la líder), debe ver su propio panel — solo se cae al panel del líder cuando
+  // realmente es el líder, o cuando no es responsable del proyecto (p. ej. un admin navegando
+  // con el enlace genérico).
+  const mostrarVistaLider = isLider || (fuerzaVistaEvaluacion && !isResponsableProyecto);
+  const mostrarVistaResponsableProyecto = !mostrarVistaLider && isResponsableProyecto;
   const emailSesion = (session?.user?.email ?? "").toLowerCase().trim();
   const corteActivo = indicador
     ? (cortesVigentes.find((c) =>
@@ -1723,8 +2243,48 @@ export default function IndicadorEvidenciasPage() {
                     indicadorId={indicador._id}
                     periodos={indicador.periodos}
                     liderEmail={liderEmail || emailSesion}
-                    permitirEvaluacion={mostrarVistaLider}
+                    permitirEvaluacion={isLider}
                     preferredPeriodo={preferredPeriodo}
+                  />
+                </div>
+              ) : mostrarVistaResponsableProyecto ? (
+                <div>
+                  <Title order={5} mb="sm">
+                    <Group gap={6}>
+                      <IconForms size={18} />
+                      Revisión de reportes por periodo
+                    </Group>
+                  </Title>
+                  <Text size="sm" c="dimmed" mb="md">
+                    Como responsable del proyecto, revisa cada corte reportado por la acción antes de que pase al líder del macroproyecto.
+                  </Text>
+                  <ResponsableProyectoRevisionPanel
+                    indicadorId={indicador._id}
+                    periodos={indicador.periodos}
+                    proyectoEmail={proyectoEmail || emailSesion}
+                    permitirEvaluacion={isResponsableProyecto}
+                    preferredPeriodo={preferredPeriodo}
+                  />
+                </div>
+              ) : !admin && !puedeReportar ? (
+                <div>
+                  <Title order={5} mb="sm">
+                    <Group gap={6}>
+                      <IconForms size={18} />
+                      Reportes de este indicador
+                    </Group>
+                  </Title>
+                  <Text size="sm" c="dimmed" mb="md">
+                    No eres el responsable asignado para reportar este indicador. Aquí puedes consultar, en modo solo lectura, lo que ya se reportó — igual que lo ve el líder del macroproyecto.
+                  </Text>
+                  <LiderRevisionPanelV2
+                    indicadorId={indicador._id}
+                    periodos={indicador.periodos}
+                    readOnly
+                    preferredPeriodo={preferredPeriodo}
+                    titulo="Reporte enviado"
+                    subtitulo="Vista de solo lectura del reporte enviado para este indicador."
+                    emptyMessage="Todavía no hay reportes enviados para este indicador."
                   />
                 </div>
               ) : (
@@ -1790,7 +2350,7 @@ export default function IndicadorEvidenciasPage() {
                   <div>
                     <Group justify="space-between" mb="sm">
                       <Title order={5}>{admin ? "Avance por periodo" : "Reportes de avance por corte"}</Title>
-                      {!admin && (
+                      {!admin && puedeReportar && (
                         <Button
                           size="xs"
                           variant="light"
@@ -1808,7 +2368,9 @@ export default function IndicadorEvidenciasPage() {
                         <Text c="dimmed" ta="center" size="sm">
                           {admin
                             ? "Este indicador todavía no tiene periodos reportados."
-                            : "Sin reportes registrados. Haz clic en \"Nuevo periodo\" para agregar el primer corte."}
+                            : puedeReportar
+                              ? "Sin reportes registrados. Haz clic en \"Nuevo periodo\" para agregar el primer corte."
+                              : "Sin reportes registrados para este indicador."}
                         </Text>
                       </Paper>
                     ) : (
@@ -1820,6 +2382,7 @@ export default function IndicadorEvidenciasPage() {
                               key={p.periodo}
                               p={p}
                               admin={admin}
+                              puedeReportar={puedeReportar}
                               evidenciasPeriodo={(indicador.evidencias ?? []).filter((ev) => ev.periodo === p.periodo)}
                               onReportar={(per) => setReportePeriodo(per)}
                             />
@@ -1839,7 +2402,7 @@ export default function IndicadorEvidenciasPage() {
                           {admin ? "Evidencias enviadas para revisión" : "Evidencias documentales"}
                         </Group>
                       </Title>
-                      <EvidenciasPanel indicadorId={indicador._id} readOnly={admin} periodos={indicador.periodos} />
+                      <EvidenciasPanel indicadorId={indicador._id} readOnly={admin || !puedeReportar} periodos={indicador.periodos} />
                     </div>
                   )}
 

@@ -44,6 +44,7 @@ import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { getSemesterFromPeriodName, getYearFromPeriodName } from "@/app/utils/periodUtils";
 import {
   appendMissingFieldComments,
   applyFieldCommentNote,
@@ -517,9 +518,9 @@ const ProducerTemplatesPage = () => {
       ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
     };
 
-    const _now = new Date();
-    const prefilledYear = _now.getFullYear();
-    const prefilledSemester = _now.getMonth() < 6 ? 1 : 2; // ene-jun = 1, jul-dic = 2
+    const periodName = (publishedTemplate as any).period?.name as string | undefined;
+    const prefilledYear = getYearFromPeriodName(periodName) ?? new Date().getFullYear();
+    const prefilledSemester = getSemesterFromPeriodName(periodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
     const applyPeriodPrefill = (ws: ExcelJS.Worksheet, fields: Field[]) => {
       fields.forEach((field, idx) => {
         const col = (Number.isFinite(Number(field.column)) && Number(field.column) > 0) ? Number(field.column) : idx + 1;

@@ -70,6 +70,13 @@ export interface RespuestaFormulario {
   documento_mimetype: string;
   documento_size?: number;
   documentos?: DocumentoEvidenciaFormulario[];
+  estado_aval_proyecto?: EstadoAval | null;
+  proyecto_email_aval?: string;
+  aval_proyecto_por?: string;
+  aval_proyecto_comentario?: string;
+  aval_proyecto_razones?: string[];
+  aval_proyecto_otro_cual?: string;
+  aval_proyecto_fecha?: string | null;
   estado_aval: EstadoAval | null;
   lider_email_aval: string;
   aval_por: string;
@@ -173,6 +180,7 @@ export interface EjecutadoAccionImportada {
   gasto?: number;
   inversion?: number;
   presupuesto_ejecutado: number;
+  fecha_pago?: string;
   observacion?: string;
 }
 
@@ -212,6 +220,7 @@ export interface Accion {
   alcance: string;
   responsable: string;
   responsable_email: string;
+  responsables?: Array<{ nombre: string; email: string }>;
   num_indicadores?: number;
   peso: number;
   avance: number;
@@ -220,6 +229,7 @@ export interface Accion {
   fecha_fin: string | null;
   presupuesto: number;
   presupuesto_ejecutado: number;
+  fecha_pago?: string;
   gasto: number;
   inversion: number;
   presupuesto_por_anio?: Record<string, number>;
@@ -431,6 +441,7 @@ export interface DashboardCorte {
     _id: string;
     codigo: string;
     nombre: string;
+    meta: number | string | null;
     responsable: string;
     responsable_email: string;
   }[];

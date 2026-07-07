@@ -1245,7 +1245,11 @@ const DashboardPage = () => {
               if (avRcOpen) {
                 setAvRcOpen(false);
               } else {
-                router.back();
+                // Navegación explícita en vez de router.back(): activeModule se deriva
+                // de la URL, así que "volver" siempre significa ir al home del dashboard,
+                // sin depender del historial del navegador (que puede estar roto por
+                // redirecciones duras de NextAuth, impersonación, recargas, etc.).
+                router.push("/dashboard");
               }
             }}>
               Volver al módulo
@@ -1421,7 +1425,7 @@ const DashboardPage = () => {
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         {userRole === "Responsable"
                           ? "Seguimiento de tus proyectos, acciones e indicadores PDI."
-                          : "Plan de Desarrollo Institucional."}
+                          : "Proyecto de Desarrollo Institucional."}
                       </Text>
                     </Stack>
                     <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>

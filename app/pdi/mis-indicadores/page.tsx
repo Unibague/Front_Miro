@@ -91,6 +91,43 @@ function proyectoTieneResponsable(
   return matchesUserResponsable(email, fullName, proyecto?.responsable, proyecto?.responsable_email);
 }
 
+// Una Acción Estratégica puede tener varios responsables propios (accion.responsables[]);
+// si no tiene, cae al legacy responsable/responsable_email de la acción.
+function accionTieneResponsablePropio(
+  accion: { responsables?: Array<{ nombre: string; email: string }>; responsable?: string; responsable_email?: string } | null | undefined,
+  email: string,
+  fullName: string
+) {
+  if (Array.isArray(accion?.responsables) && accion.responsables.length > 0) {
+    return accion.responsables.some(
+      (r) => matchesUserResponsable(email, fullName, r.nombre) || r.email?.toLowerCase().trim() === email
+    );
+  }
+  return matchesUserResponsable(email, fullName, accion?.responsable, accion?.responsable_email);
+}
+
+function accionTieneResponsablesAsignados(
+  accion: { responsables?: Array<{ nombre: string; email: string }>; responsable?: string; responsable_email?: string } | null | undefined
+) {
+  if (Array.isArray(accion?.responsables) && accion.responsables.length > 0) return true;
+  return Boolean(accion?.responsable_email || accion?.responsable);
+}
+
+// Quién puede REPORTAR una acción: sus propios responsables; si la acción todavía no
+// tiene responsables asignados, se usa como respaldo el responsable del proyecto
+// (para no bloquear el reporte mientras un admin no asigne un líder de acción).
+function puedeReportarAccion(
+  accion: { responsables?: Array<{ nombre: string; email: string }>; responsable?: string; responsable_email?: string } | null | undefined,
+  proyecto: { responsables?: Array<{ nombre: string; email: string }>; responsable?: string; responsable_email?: string } | null | undefined,
+  email: string,
+  fullName: string
+) {
+  if (accionTieneResponsablesAsignados(accion)) {
+    return accionTieneResponsablePropio(accion, email, fullName);
+  }
+  return proyectoTieneResponsable(proyecto, email, fullName);
+}
+
 function getAccionId(indicador: Indicador) {
   return typeof indicador.accion_id === "string" ? indicador.accion_id : indicador.accion_id?._id;
 }
@@ -1583,7 +1620,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   );
 }
 
-function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, esLiderProyecto = false, esResponsableProyecto = false, esAdmin = false }: {
+function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, anioMeta, onSolicitarCambio, email, fullName, esLiderProyecto = false, esResponsableProyecto = false, esAdmin = false }: {
   vista: ProyectoResponsableView;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
@@ -1591,6 +1628,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   anioMeta: number;
   onSolicitarCambio: (entity: CambioEntityContext) => void;
   email: string;
+  fullName: string;
   esLiderProyecto?: boolean;
   esResponsableProyecto?: boolean;
   esAdmin?: boolean;
@@ -1609,11 +1647,28 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
     : Number(vista.proyecto.avance) || 0;
   const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
   const avanceProyectoBarra = Math.min(Math.max(avanceProyecto, 0), 100);
-  const reportesPendientesProyecto = (esResponsableProyecto || esAdmin)
-    ? getReportesPendientesAccion(indicadoresProyecto, cortesVigentes)
+  // El permiso de reportar ahora es por Acción Estratégica (su(s) responsable(s)
+  // propios; si la acción no tiene responsables asignados, cae al responsable del
+  // proyecto como respaldo — ver puedeReportarAccion).
+  const indicadoresQuePuedoReportar = esAdmin
+    ? indicadoresProyecto
+    : vista.acciones
+        .filter((item) => puedeReportarAccion(item.accion, vista.proyecto, email, fullName))
+        .flatMap((item) => item.indicadores);
+  const reportesPendientesProyecto = indicadoresQuePuedoReportar.length
+    ? getReportesPendientesAccion(indicadoresQuePuedoReportar, cortesVigentes)
     : [];
-  const evaluacionesPendientesProyecto = (esLiderProyecto || esAdmin)
-    ? getEvaluacionesPendientesAccion(indicadoresProyecto)
+  // El responsable del proyecto evalua las acciones que NO reporta el mismo, es decir,
+  // aquellas con un lider de accion propio (puedeReportarAccion da false para el).
+  const indicadoresQuePuedoEvaluar = esAdmin || esLiderProyecto
+    ? indicadoresProyecto
+    : esResponsableProyecto
+      ? vista.acciones
+          .filter((item) => !puedeReportarAccion(item.accion, vista.proyecto, email, fullName))
+          .flatMap((item) => item.indicadores)
+      : [];
+  const evaluacionesPendientesProyecto = indicadoresQuePuedoEvaluar.length
+    ? getEvaluacionesPendientesAccion(indicadoresQuePuedoEvaluar)
     : [];
   const reportesRechazadosProyecto = reportesPendientesProyecto.filter((r) => r.estado === "Rechazado");
   const reportesPorEnviarProyecto = reportesPendientesProyecto.filter((r) => r.estado !== "Rechazado");
@@ -1733,22 +1788,28 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
           </Paper>
         ) : (
           <Stack gap="lg">
-            {vista.acciones.map((item) => (
-              <AccionResponsableCard
-                key={item.accion._id}
-                accion={item.accion}
-                indicadores={item.indicadores}
-                cortesVigentes={cortesVigentes}
-                aniosPdi={aniosPdi}
-                anioMeta={anioMeta}
-                onUpdated={onUpdated}
-                onSolicitarCambio={onSolicitarCambio}
-                email={email}
-                esLider={esLiderProyecto}
-                esResponsable={esResponsableProyecto}
-                canManage={esLiderProyecto || esResponsableProyecto}
-              />
-            ))}
+            {vista.acciones.map((item) => {
+              const esResponsableAccion = esAdmin || puedeReportarAccion(item.accion, vista.proyecto, email, fullName);
+              // El responsable del proyecto evalua esta accion cuando no es el mismo
+              // quien la reporta (es decir, la accion tiene su propio lider asignado).
+              const esEvaluadorAccion = esLiderProyecto || esAdmin || (esResponsableProyecto && !esResponsableAccion);
+              return (
+                <AccionResponsableCard
+                  key={item.accion._id}
+                  accion={item.accion}
+                  indicadores={item.indicadores}
+                  cortesVigentes={cortesVigentes}
+                  aniosPdi={aniosPdi}
+                  anioMeta={anioMeta}
+                  onUpdated={onUpdated}
+                  onSolicitarCambio={onSolicitarCambio}
+                  email={email}
+                  esLider={esEvaluadorAccion}
+                  esResponsable={esResponsableAccion}
+                  canManage={esLiderProyecto || esResponsableProyecto || esResponsableAccion}
+                />
+              );
+            })}
           </Stack>
         )}
       </Collapse>
@@ -2184,7 +2245,7 @@ export default function MisIndicadoresPage() {
 
             return (
               matchesUserResponsable(email, fullName, indicador.responsable, indicador.responsable_email) ||
-              (accion && matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email)) ||
+              (accion && accionTieneResponsablePropio(accion, email, fullName)) ||
               (proyecto && proyectoTieneResponsable(proyecto, email, fullName)) ||
               (macro && macroIdsSet.has(macro._id))
             );
@@ -2199,7 +2260,7 @@ export default function MisIndicadoresPage() {
 
             return (
               tieneIndicadores ||
-              matchesUserResponsable(email, fullName, accion.responsable, accion.responsable_email) ||
+              accionTieneResponsablePropio(accion, email, fullName) ||
               (proyecto && proyectoTieneResponsable(proyecto, email, fullName)) ||
               (macro && macroIdsSet.has(macro._id))
             );
@@ -2277,9 +2338,13 @@ export default function MisIndicadoresPage() {
     : macroNombresLiderados.length > 1
     ? `${macroNombresLiderados[0]} y ${macroNombresLiderados.length - 1} mas`
     : "Macroproyecto";
-  const isDirectlyResponsable = proyectosVista.some(v =>
+  // "Proyectos a cargo" solo cuenta proyectos donde el usuario ES el responsable del
+  // proyecto; un proyecto que aparece en proyectosVista solo porque el usuario lidera
+  // una accion dentro de el no cuenta como proyecto a su cargo.
+  const proyectosACargoCount = proyectosVista.filter(v =>
     proyectoTieneResponsable(v.proyecto, requesterEmail, userFullName)
-  );
+  ).length;
+  const isDirectlyResponsable = proyectosACargoCount > 0;
 
   const pageTitle = isLider && !isDirectlyResponsable
     ? "Mi Macroproyecto PDI"
@@ -2290,12 +2355,12 @@ export default function MisIndicadoresPage() {
   const statCards = isLider
     ? [
         { label: "Macroproyectos que lidero", value: macroIdsLiderados.size, color: "violet", icon: <IconListCheck size={22} /> },
-        { label: "Proyectos a cargo", value: proyectosVista.length, color: "blue", icon: <IconTrendingUp size={22} /> },
+        { label: "Proyectos a cargo", value: proyectosACargoCount, color: "blue", icon: <IconTrendingUp size={22} /> },
         { label: "Indicadores para evaluar", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
         { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
       ]
     : [
-        { label: "Mis proyectos", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
+        { label: "Mis proyectos", value: proyectosACargoCount, color: "violet", icon: <IconListCheck size={22} /> },
         { label: "Mis acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
         { label: "Mis indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
         { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
@@ -2314,7 +2379,7 @@ export default function MisIndicadoresPage() {
   };
 
   const unifiedStatCards = [
-    { label: "Proyectos a cargo", value: proyectosVista.length, color: "violet", icon: <IconListCheck size={22} /> },
+    { label: "Proyectos a cargo", value: proyectosACargoCount, color: "violet", icon: <IconListCheck size={22} /> },
     { label: "Acciones", value: acciones.length, color: "blue", icon: <IconTrendingUp size={22} /> },
     { label: "Indicadores", value: indicadores.length, color: "green", icon: <IconTarget size={22} /> },
     { label: "Indicadores próximos a reporte", value: alertas, color: "red", icon: <IconFlag size={22} /> },
@@ -2491,6 +2556,7 @@ export default function MisIndicadoresPage() {
                     onUpdated={handleIndicadorUpdated}
                     onSolicitarCambio={handleSolicitarCambio}
                     email={requesterEmail}
+                    fullName={userFullName}
                     esLiderProyecto={canManagePdi && esLiderProyecto}
                     esResponsableProyecto={canManagePdi && esResponsableProyecto}
                     esAdmin={admin}

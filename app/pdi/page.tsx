@@ -29,12 +29,21 @@ import PermissionGate from "@/app/components/PermissionGate";
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
+const formatMetaValue = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || String(value).trim() === "") return "-";
+  const raw = String(value);
+  const parsed = Number(raw.replace("%", "").replace(",", "."));
+  if (!Number.isFinite(parsed)) return raw;
+  const formatted = parsed.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+  return raw.includes("%") ? `${formatted}%` : formatted;
+};
+
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
   verde: "Cumplimiento adecuado", amarillo: "Requiere atención", rojo: "Crítico",
 };
 const isAdmin = (role: string) => role === "Administrador";
-const PDI_FIXED_NAME = "Plan de Desarrollo Institucional (PDI)";
+const PDI_FIXED_NAME = "Proyecto de Desarrollo Institucional (PDI)";
 const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
   anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
 
@@ -353,7 +362,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoAccion)}</b></Text>
         )}
         {presupuestoEjecutadoAccion > 0 && (
-          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoAccion)}</b></Text>
+          <Text size="xs" c="dimmed">Ejecutado: <b>{formatCOP(presupuestoEjecutadoAccion)}</b></Text>
         )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar indicadores" : "Ver indicadores"}
@@ -486,7 +495,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
         <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
         <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
         {presupuestoEjecutadoProyecto > 0 && (
-          <Text size="xs" c="dimmed">Causado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
+          <Text size="xs" c="dimmed">Ejecutado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
         )}
         <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
           {open ? "Ocultar acciones" : "Ver acciones estratégicas"}
@@ -594,7 +603,7 @@ interface CorteResumenPeriodo {
   con_reporte: number;
   total_indicadores: number;
   porcentaje_cobertura: number;
-  indicadores_pendientes?: { _id: string; codigo: string; nombre: string; responsable?: string }[];
+  indicadores_pendientes?: { _id: string; codigo: string; nombre: string; meta?: number | string | null; responsable?: string }[];
 }
 
 type PresupuestoDetalleResumen = {
@@ -1037,7 +1046,14 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                       {corteActual!.indicadores_pendientes!.map((ind) => (
                         <List.Item key={ind._id}>
                           <Box>
-                            <Text size="xs" fw={700} c="red.7" lh={1.2}>{ind.codigo}</Text>
+                            <Group gap={6} wrap="wrap" align="center">
+                              <Text size="xs" fw={700} c="red.7" lh={1.2}>{ind.codigo}</Text>
+                              {ind.meta !== undefined && ind.meta !== null && String(ind.meta).trim() !== "" && (
+                                <Badge size="xs" color="red" variant="light" radius="sm">
+                                  Meta: {formatMetaValue(ind.meta)}
+                                </Badge>
+                              )}
+                            </Group>
                             <Text size="xs" c="dimmed" lh={1.4}>{ind.nombre}</Text>
                             {ind.responsable && (
                               <Text size="xs" c="dimmed" lh={1.4}>Responsable: {ind.responsable}</Text>
@@ -1085,7 +1101,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 {presupuestoAnioTotal > 0 ? (
                   <Stack gap={4}>
                     <Text size="xs" c="dimmed">
-                      {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                      {formatCOP(presupuestoAnioCausado)} ejecutado de {formatCOP(presupuestoAnioTotal)}
                     </Text>
                     <SimpleGrid cols={2} spacing={6}>
                       <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
@@ -1094,7 +1110,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                           <Text size="10px" fw={700} c="blue.6">Gasto</Text>
                         </Group>
                         <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoGasto)}</Text>
-                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioGasto)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioGasto)}</Text>
                       </Box>
                       <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
                         <Group gap={4} mb={4}>
@@ -1102,12 +1118,12 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                           <Text size="10px" fw={700} c="violet.6">Inversión</Text>
                         </Group>
                         <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoInversion)}</Text>
-                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>causado de {formatCOP(presupuestoAnioInversion)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioInversion)}</Text>
                       </Box>
                     </SimpleGrid>
                     {presupuestoAnioSinDesagregar > 0 && (
                       <Text size="10px" c="dimmed">
-                        Causado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
+                        Ejecutado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
                       </Text>
                     )}
                     {presupuestoAnioPlaneadoSinDesagregar > 0 && (

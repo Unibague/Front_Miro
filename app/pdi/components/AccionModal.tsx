@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack, NumberInput,
-  Divider, Text, SimpleGrid,
+  Divider, Text, SimpleGrid, MultiSelect,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -36,7 +36,26 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [presupuesto, setPresupuesto] = useState<number | string>(0);
   const [presupuestoAnios, setPresupuestoAnios] = useState<Record<string, number | string>>({});
   const [ejecutadoAnios, setEjecutadoAnios] = useState<Record<string, number | string>>({});
+  const [responsablesSeleccionados, setResponsablesSeleccionados] = useState<string[]>([]);
+  const [usuarios, setUsuarios] = useState<string[]>([]);
+  const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users/all`)
+      .then((res) => {
+        const lista = Array.isArray(res.data) ? res.data : (res.data.users ?? []);
+        const data = lista
+          .filter((u: any) => u.full_name)
+          .map((u: any) => ({ label: u.full_name as string, email: (u.email ?? "") as string }));
+        const unicos = Array.from(
+          new Map<string, { label: string; email: string }>(data.map((u: { label: string; email: string }) => [u.label, u])).values()
+        );
+        setUsuariosData(unicos);
+        setUsuarios(unicos.map((u: { label: string; email: string }) => u.label));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!opened) { setHasChanges(false); return; }
@@ -47,6 +66,13 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       setPresupuesto(selected.presupuesto ?? 0);
       setPresupuestoAnios(buildAniosMap(config.anios, selected.presupuesto_por_anio));
       setEjecutadoAnios(buildAniosMap(config.anios, selected.presupuesto_ejecutado_por_anio));
+      if (Array.isArray(selected.responsables) && selected.responsables.length > 0) {
+        setResponsablesSeleccionados(selected.responsables.map((r) => r.nombre));
+      } else if (selected.responsable) {
+        setResponsablesSeleccionados([selected.responsable]);
+      } else {
+        setResponsablesSeleccionados([]);
+      }
       return;
     }
     setCodigo("");
@@ -55,6 +81,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     setPresupuesto(0);
     setPresupuestoAnios(buildAniosMap(config.anios));
     setEjecutadoAnios(buildAniosMap(config.anios));
+    setResponsablesSeleccionados([]);
   }, [opened, selected, config.anios]);
 
   const pesoAuto = selected
@@ -73,6 +100,11 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     }
     setLoading(true);
     try {
+      const responsables = responsablesSeleccionados.map((nombreResp) => {
+        const usuario = usuariosData.find((u) => u.label === nombreResp);
+        return { nombre: nombreResp.trim(), email: usuario?.email.trim().toLowerCase() || "" };
+      });
+
       const payload = {
         codigo: codigo.trim(),
         nombre: nombre.trim(),
@@ -83,8 +115,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         presupuesto_por_anio: toNumberMap(presupuestoAnios),
         presupuesto_ejecutado_por_anio: toNumberMap(ejecutadoAnios),
         proyecto_id: defaultProyectoId,
-        responsable: selected?.responsable ?? "",
-        responsable_email: selected?.responsable_email ?? "",
+        responsables,
         fecha_inicio: selected?.fecha_inicio ?? null,
         fecha_fin: selected?.fecha_fin ?? null,
       };
@@ -114,6 +145,20 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
           <NumberInput label="Número de indicadores" value={numIndicadores} onChange={(v) => { setNumIndicadores(v); setHasChanges(true); }} min={0} step={1} allowDecimal={false} />
         </Group>
         <TextInput label="Nombre" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
+        <MultiSelect
+          label="Responsables de la Acción"
+          description="Quienes reportan el avance de esta acción. El responsable del proyecto evaluará lo que reporten."
+          placeholder="Seleccionar uno o más responsables..."
+          value={responsablesSeleccionados}
+          onChange={(valores) => {
+            setResponsablesSeleccionados(valores);
+            setHasChanges(true);
+          }}
+          data={usuarios}
+          searchable
+          clearable
+          limit={8}
+        />
         <NumberInput
           label="Presupuesto global (COP)"
           value={presupuesto}
