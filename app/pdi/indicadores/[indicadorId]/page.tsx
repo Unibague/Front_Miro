@@ -779,6 +779,7 @@ function LiderRevisionPanelV2({
   readOnly = false,
   onlyApproved = false,
   onlyEvaluated = false,
+  onlyPending = false,
   preferredPeriodo = "",
   titulo,
   subtitulo,
@@ -791,6 +792,7 @@ function LiderRevisionPanelV2({
   readOnly?: boolean;
   onlyApproved?: boolean;
   onlyEvaluated?: boolean;
+  onlyPending?: boolean;
   preferredPeriodo?: string;
   titulo?: string;
   subtitulo?: string;
@@ -824,13 +826,14 @@ function LiderRevisionPanelV2({
         deduplicarRespuestas(r.data.filter((item: RespuestaFormulario) =>
           item.estado === "Enviado" && (!onlyApproved || item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
           && (!onlyEvaluated || (item.estado_aval != null && item.estado_aval !== "Pendiente"))
+          && (!onlyPending || item.estado_aval == null || item.estado_aval === "Pendiente")
         ))
       ))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [indicadorId, onlyApproved, onlyEvaluated]);
+  useEffect(() => { load(); }, [indicadorId, onlyApproved, onlyEvaluated, onlyPending]);
 
   const handleAval = async (r: RespuestaFormulario) => {
     const formId = typeof r.formulario_id === "string" ? r.formulario_id : (r.formulario_id as any)._id;
@@ -1761,6 +1764,7 @@ function PlaneacionRevisionPanel({
       .then((res) => setRespuestas(
         deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
           (item) => item.estado === "Enviado" && (item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
+          && (item.aval_planeacion == null || item.aval_planeacion === "Pendiente")
         ))
       ))
       .catch(() => {})
@@ -2245,6 +2249,8 @@ export default function IndicadorEvidenciasPage() {
                     liderEmail={liderEmail || emailSesion}
                     permitirEvaluacion={isLider}
                     preferredPeriodo={preferredPeriodo}
+                    onlyPending
+                    emptyMessage="No hay reportes pendientes de tu evaluación para este indicador."
                   />
                 </div>
               ) : mostrarVistaResponsableProyecto ? (
