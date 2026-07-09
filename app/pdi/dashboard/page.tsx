@@ -7,11 +7,9 @@ import {
   ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { modals } from "@mantine/modals";
 import {
   IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
   IconListCheck, IconBulb, IconChartDonut3, IconNetwork, IconFileSpreadsheet,
-  IconCalculator,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -71,7 +69,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [exportandoIndicadores, setExportandoIndicadores] = useState(false);
-  const [recalculando, setRecalculando] = useState(false);
 
   const cargarDatos = async () => {
     setLoading(true);
@@ -136,48 +133,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Recalcula desde cero el avance de todos los indicadores y lo propaga en
-  // cascada (Indicador -> Accion -> Proyecto -> Macroproyecto), para que el
-  // valor guardado quede sincronizado sin tener que editar/guardar cada
-  // elemento a mano.
-  const handleRecalcularTodos = () => {
-    modals.openConfirmModal({
-      title: "Recalcular todo el PDI",
-      centered: true,
-      children: (
-        <Text size="sm">
-          Esto recalcula el avance de todos los indicadores y lo propaga a acciones,
-          proyectos y macroproyectos, para sincronizar cualquier valor guardado que
-          haya quedado desactualizado. No se pierde ni se modifica ningún dato cargado,
-          solo se vuelve a calcular el avance.
-        </Text>
-      ),
-      labels: { confirm: "Sí, recalcular", cancel: "Cancelar" },
-      confirmProps: { color: "violet" },
-      onConfirm: async () => {
-        setRecalculando(true);
-        try {
-          const response = await axios.post(PDI_ROUTES.recalcularTodos());
-          showNotification({
-            title: "Recalculado",
-            message: response.data?.message || "El avance del PDI se recalculó correctamente.",
-            color: "teal",
-          });
-          await cargarDatos();
-        } catch (e) {
-          console.error(e);
-          showNotification({
-            title: "Error",
-            message: "No se pudo recalcular el avance del PDI.",
-            color: "red",
-          });
-        } finally {
-          setRecalculando(false);
-        }
-      },
-    });
-  };
-
   const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
   const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
@@ -237,18 +192,6 @@ export default function DashboardPage() {
               >
                 Red de nodos
               </Button>
-              {isAdmin && (
-                <Button
-                  variant="light"
-                  color="orange"
-                  radius="xl"
-                  leftSection={<IconCalculator size={17} />}
-                  onClick={handleRecalcularTodos}
-                  loading={recalculando}
-                >
-                  Recalcular todo
-                </Button>
-              )}
               <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
                 <IconRefresh size={18} />
               </ActionIcon>
