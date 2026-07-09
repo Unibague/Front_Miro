@@ -258,7 +258,7 @@ export default function CortesPage() {
       title: "Notificar usuarios PDI",
       children: (
         <Text size="sm">
-          Se enviara un correo a lideres de macroproyecto y responsables de proyecto para informar que el corte{" "}
+          Se enviara un correo a lideres de macroproyecto, responsables de proyecto y responsables de acciones estrategicas (los que tengan responsable asignado) para informar que el corte{" "}
           <b>{corteAbierto.nombre}</b> esta abierto del{" "}
           <b>{formatFechaCorte(corteAbierto.fecha_inicio)}</b> al{" "}
           <b>{formatFechaCorte(corteAbierto.fecha_fin)}</b>.

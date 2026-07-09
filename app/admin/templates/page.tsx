@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState, useRef, FormEvent } from "react";
 import { Container, Table, Button, Pagination, Center, TextInput, Group, Modal, Select, Tooltip, Text, Checkbox, ActionIcon, FileInput, Stack } from "@mantine/core";
 import axios,{ AxiosError } from "axios";
 import { showNotification } from "@mantine/notifications";
 import { IconEdit, IconTrash, IconDownload, IconUser, IconArrowRight, IconArrowLeft, IconCirclePlus, IconArrowsTransferDown, IconArrowBigUpFilled, IconArrowBigDownFilled, IconCopy, IconHistory, IconFileSpreadsheet, IconUpload } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from 'file-saver';
@@ -799,7 +799,11 @@ const AdminTemplatesPage = () => {
   const { selectedPeriodId } = usePeriod();
   const { canManage } = useViewPermission("adminTemplates");
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [page, setPage] = useState(1);
+  const searchParams = useSearchParams();
+  const [page, setPage] = useState(() => {
+    const fromUrl = Number(searchParams.get("page"));
+    return fromUrl > 0 ? fromUrl : 1;
+  });
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const router = useRouter();
@@ -824,30 +828,40 @@ const AdminTemplatesPage = () => {
 
   const fetchTemplates = async (page: number, search: string) => {
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, {
-        params: { page, limit: 10, search, periodId: selectedPeriodId, onlyPublishedInPeriod: true },
-      });
+      // La busqueda se limita a las plantillas publicadas en el periodo
+      // actualmente seleccionado, igual que el listado normal sin busqueda.
+      const params: Record<string, unknown> = {
+        page, limit: 10, search,
+        periodId: selectedPeriodId,
+        onlyPublishedInPeriod: true,
+      };
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, { params });
       if (response.data) {
-        console.log(response.data.templates);
-        const templatesWithAudit = await Promise.all(
-          (response.data.templates || []).map(async (template: Template) => {
-            try {
-              const auditResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/config-audit/template/${template._id}`, {
-                params: { email: session?.user?.email },
-              });
-              const lastAudit = auditResponse.data.audits?.[0]; // Más reciente
-              return {
-                ...template,
-                lastModified: lastAudit ? {
-                  user: lastAudit.user.full_name,
-                  date: new Date(lastAudit.timestamp).toLocaleDateString('es-ES')
-                } : undefined
-              };
-            } catch {
-              return template;
-            }
-          })
-        );
+        const fetchedTemplates: Template[] = response.data.templates || [];
+        const ids = fetchedTemplates.map((t) => t._id).filter(Boolean).join(",");
+
+        let latestAudits: Record<string, { user: { full_name: string }; timestamp: string }> = {};
+        if (ids) {
+          try {
+            const auditResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/config-audit/templates/latest`, {
+              params: { ids, email: session?.user?.email },
+            });
+            latestAudits = auditResponse.data || {};
+          } catch {
+            latestAudits = {};
+          }
+        }
+
+        const templatesWithAudit = fetchedTemplates.map((template) => {
+          const lastAudit = latestAudits[template._id];
+          return {
+            ...template,
+            lastModified: lastAudit ? {
+              user: lastAudit.user.full_name,
+              date: new Date(lastAudit.timestamp).toLocaleDateString('es-ES')
+            } : undefined
+          };
+        });
         setTemplates(templatesWithAudit);
         setTotalPages(response.data.pages || 1);
       }
@@ -861,9 +875,25 @@ const AdminTemplatesPage = () => {
     fetchTemplates(page, search);
   }, [page, selectedPeriodId]);
 
+  // selectedPeriodId arranca en null y se resuelve de forma asincrona al cargar
+  // los periodos; solo se reinicia la pagina cuando el periodo cambia de un
+  // valor real a otro (no en esa resolucion inicial null -> id), para no pisar
+  // la pagina restaurada desde la URL al volver de editar/duplicar.
+  const previousPeriodId = useRef(selectedPeriodId);
   useEffect(() => {
-    setPage(1);
+    if (previousPeriodId.current !== null && previousPeriodId.current !== selectedPeriodId) {
+      setPage(1);
+    }
+    previousPeriodId.current = selectedPeriodId;
   }, [selectedPeriodId]);
+
+  // Guarda la pagina actual en la URL para que "volver" desde editar/duplicar
+  // (que usan router.back()) regrese a la misma pagina en vez de reiniciar a la 1.
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(page));
+    router.replace(`/admin/templates?${params.toString()}`, { scroll: false });
+  }, [page]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -885,8 +915,14 @@ const AdminTemplatesPage = () => {
         console.log('📅 Periods array:', data.periods);
         console.log('📅 Periods length:', data.periods?.length);
         
-        setPeriods(data.periods || []);
+        const availablePeriods: Period[] = data.periods || [];
+        setPeriods(availablePeriods);
         setProducers(data.producers || []);
+        const currentPeriod = availablePeriods.find((period) => period._id === selectedPeriodId);
+        if (selectedPeriodId && currentPeriod) {
+          setSelectedPeriod(selectedPeriodId);
+          setDeadline(currentPeriod.producer_end_date ? new Date(currentPeriod.producer_end_date) : null);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       }
@@ -894,7 +930,7 @@ const AdminTemplatesPage = () => {
     if (modalOpen && selectedTemplate) {
       fetchData();
     }
-  }, [modalOpen, session, selectedTemplate]);
+  }, [modalOpen, session, selectedTemplate, selectedPeriodId]);
 
   const handleDelete = async (id: string) => {
     const templateToDelete = templates.find(t => t._id === id);
@@ -1485,7 +1521,7 @@ const AdminTemplatesPage = () => {
 
     do {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, {
-        params: { page: currentPage, limit, search: '', periodId: selectedPeriodId, onlyPublishedInPeriod: true },
+        params: { page: currentPage, limit, search: '', periodId: selectedPeriodId, onlyPublishedInPeriod: true, withValidators: true },
       });
 
       allTemplates.push(...(response.data?.templates || []));
@@ -1497,16 +1533,18 @@ const AdminTemplatesPage = () => {
   };
 
   const handleDownload = async (template: Template) => {
-    // Re-fetch validators frescos para incluir cualquier opción añadida desde que se cargó la página
+    // El listado ya no trae el workbook saneado ni los validadores (se omiten
+    // por rendimiento en la busqueda/paginacion), asi que aca se piden
+    // completos y frescos justo antes de generar la descarga.
     try {
       const freshRes = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
         { params: { withValidators: 'true', periodId: selectedPeriodId } }
       );
-      if (freshRes.data?.validators) {
-        template = { ...template, validators: freshRes.data.validators };
+      if (freshRes.data) {
+        template = { ...template, ...freshRes.data };
       }
-    } catch { /* si falla, se usan los validators cacheados */ }
+    } catch { /* si falla, se usan los datos cacheados del listado */ }
 
     const worksheets = getTemplateWorksheets(template);
     const allFields = worksheets.flatMap(s => s.fields || []);
@@ -1687,12 +1725,14 @@ const AdminTemplatesPage = () => {
       confirmProps: { color: 'blue' },
       onConfirm: async () => {
         try {
+          const selectedTemplateId = selectedTemplate?._id;
+          const publishedPeriodId = selectedPeriod;
           await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/publish`, {
             name: publicationName,
-            template_id: selectedTemplate?._id,
-            period_id: selectedPeriod,
+            template_id: selectedTemplateId,
+            period_id: publishedPeriodId,
             user_email: session?.user?.email,
-            deadline: customDeadline ? deadline : periods.find(period => period._id === selectedPeriod)?.producer_end_date,
+            deadline: customDeadline ? deadline : periods.find(period => period._id === publishedPeriodId)?.producer_end_date,
           });
           console.log('Template successfully pubished');
           showNotification({
@@ -1700,12 +1740,24 @@ const AdminTemplatesPage = () => {
             message: "La plantilla ha sido publicada exitosamente",
             color: "teal",
           });
+          if (selectedTemplateId && publishedPeriodId === selectedPeriodId) {
+            setTemplates((currentTemplates) =>
+              currentTemplates.map((template) =>
+                template._id === selectedTemplateId ? { ...template, published: true } : template
+              )
+            );
+          }
           close();
+          setSelectedTemplate(null);
+          setSelectedPeriod('');
+          setCustomDeadline(false);
+          setDeadline(null);
+          fetchTemplates(page, search);
         } catch (error) {
           console.error('Error publishing template:', error);
           showNotification({
             title: "Error",
-            message: "Hubo un error al publicar la plantilla",
+            message: getRequestErrorMessage(error),
             color: "red",
           });
         }
@@ -1804,6 +1856,8 @@ const AdminTemplatesPage = () => {
               onClick={() => { 
               setSelectedTemplate(template);
               setPublicationName(template.name)
+              setSelectedPeriod('')
+              setDeadline(null)
               open(); 
               console.log("Modal open state:", modalOpen);
             }}>
@@ -1830,7 +1884,7 @@ const AdminTemplatesPage = () => {
             variant="subtle"
             color="blue"
             size="lg"
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/reports")}
             aria-label="Volver"
           >
             <IconArrowLeft size={20} />

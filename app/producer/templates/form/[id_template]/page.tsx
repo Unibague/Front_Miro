@@ -23,7 +23,8 @@ import {
   Tabs,
   Alert,
   Badge,
-  Box
+  Box,
+  Divider
 } from "@mantine/core";
 import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
 import { DateInput } from "@mantine/dates";
@@ -256,6 +257,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [hasQrDraft, setHasQrDraft] = useState(false);
   const [activeSheetForValidator, setActiveSheetForValidator] = useState<string | null>(null);
   const [sharedSheetsData, setSharedSheetsData] = useState<Record<string, Record<string, any>[]>>({});
+  // El productor encargado de la plantilla ve y puede editar, ademas de lo
+  // suyo, lo enviado por las demas dependencias (tenga o no activo "shared").
+  // Se agrupa por dependencia -> hoja para poder guardar cada dependencia por separado.
+  const [isEncargadoTemplate, setIsEncargadoTemplate] = useState(false);
+  const OTHER_PRODUCERS_FLAT_KEY = "__flat__";
+  const [otherProducersData, setOtherProducersData] = useState<
+    Record<string, Record<string, { rows: Record<string, any>[]; sources: (QrRowSource | null)[] }>>
+  >({});
+  const [otherProducersDepNames, setOtherProducersDepNames] = useState<Record<string, string>>({});
 
   const getScopedFieldKey = (fieldName: string, sheetName?: string | null) =>
     sheetName ? `${sheetName}::${fieldName}` : fieldName;
@@ -389,6 +399,70 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       rows: loadedRows,
       sources: loadedRows.map(() => getLoadedRowSource(entry)),
     };
+  };
+
+  // Agrupa, por dependencia y luego por hoja (o en un solo bloque si la
+  // plantilla no usa hojas), las filas ya enviadas por dependencias DISTINTAS
+  // a la del usuario actual. Se agrupa por dependencia (no todo mezclado) para
+  // poder guardar despues los cambios de cada una por separado.
+  const buildOtherProducersData = (
+    loadedData: ProducerLoadedEntry[],
+    ownDepCodes: string[],
+    wbSheets: WorkbookSheet[]
+  ) => {
+    const foreignEntries = loadedData.filter((entry) =>
+      !ownDepCodes.includes(getEntryDependencyCode(entry)) && entry.filled_data?.length
+    );
+
+    const byDep: Record<string, Record<string, { rows: Record<string, any>[]; sources: (QrRowSource | null)[] }>> = {};
+    const depNames: Record<string, string> = {};
+    if (!foreignEntries.length) return { byDep, depNames };
+
+    foreignEntries.forEach((entry) => {
+      const depCode = getEntryDependencyCode(entry);
+      if (!depCode) return;
+      depNames[depCode] = entry.dependency_name || depCode;
+      if (!byDep[depCode]) byDep[depCode] = {};
+
+      const addToSheet = (sheetKey: string, sheetFilled: FilledFieldEntry[]) => {
+        const built = buildRowsAndSourcesFromLoadedEntry(entry, sheetFilled);
+        const existing = byDep[depCode][sheetKey] || { rows: [], sources: [] };
+        byDep[depCode][sheetKey] = {
+          rows: [...existing.rows, ...built.rows],
+          sources: [...existing.sources, ...built.sources],
+        };
+      };
+
+      if (wbSheets.length > 0) {
+        const hasSheetTaggedFields = entry.filled_data.some((fd) => getDraftFieldSheetName(fd));
+        let legacyCursor = 0;
+
+        wbSheets.forEach((sheet) => {
+          const sheetFields = sheet.fields || [];
+          const sheetFieldNames = new Set(sheetFields.map((f: Field) => f.name));
+          let sheetFilled: FilledFieldEntry[] = [];
+
+          if (hasSheetTaggedFields) {
+            sheetFilled = entry.filled_data.filter((fd) => {
+              const fieldSheetName = getDraftFieldSheetName(fd);
+              return fieldSheetName === sheet.name ||
+                fieldSheetName?.trim?.().toLowerCase() === sheet.name?.trim?.().toLowerCase();
+            });
+          } else {
+            sheetFilled = entry.filled_data
+              .slice(legacyCursor, legacyCursor + sheetFields.length)
+              .filter((fd) => sheetFieldNames.has(fd.field_name));
+          }
+
+          if (!hasSheetTaggedFields && sheetFilled.length) legacyCursor += sheetFields.length;
+          if (sheetFilled.length) addToSheet(sheet.name, sheetFilled);
+        });
+      } else {
+        addToSheet(OTHER_PRODUCERS_FLAT_KEY, entry.filled_data);
+      }
+    });
+
+    return { byDep, depNames };
   };
 
   const fetchTemplate = async () => {
@@ -761,6 +835,69 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         } catch { /* ignorar error de pre-carga */ }
       }
 
+      // El productor encargado de esta plantilla (misma dependencia asignada
+      // en "responsible_producers") ve, ademas de sus propios datos, lo ya
+      // enviado por TODAS las demas dependencias — tenga o no activo "shared".
+      if (session?.user?.email) {
+        try {
+          const [userResForEncargado, depsResForEncargado] = await Promise.all([
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session.user.email } }),
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${encodeURIComponent(session.user.email)}`),
+          ]);
+          const ownDepCodes: string[] = [
+            userResForEncargado.data?.dep_code,
+            ...(userResForEncargado.data?.additional_dependencies || []),
+          ].filter(Boolean);
+          const allDepsForEncargado: any[] = depsResForEncargado.data || [];
+          const ownDepIds = allDepsForEncargado
+            .filter((d: any) => ownDepCodes.includes(d.dep_code))
+            .map((d: any) => String(d._id));
+
+          const responsibleIdsForTemplate: string[] = (
+            (response.data.publishedTemplate as any)?.responsible_producers || []
+          ).map((id: any) => String(id));
+          const encargado = responsibleIdsForTemplate.length > 0 &&
+            ownDepIds.some((id) => responsibleIdsForTemplate.includes(id));
+          setIsEncargadoTemplate(encargado);
+
+          if (encargado) {
+            const loadedData = response.data.publishedTemplate?.loaded_data || [];
+            const { byDep, depNames } = buildOtherProducersData(
+              loadedData,
+              ownDepCodes,
+              normalizedTemplate.workbook_sheets || []
+            );
+            // dependency_name no siempre viene guardado en loaded_data; se
+            // resuelve el nombre real desde el catalogo de dependencias, tanto
+            // para el encabezado de la seccion como para la columna "Origen"
+            // de cada fila.
+            const depNameByCode = new Map(allDepsForEncargado.map((d: any) => [d.dep_code, d.name]));
+            const byDepWithNames = Object.fromEntries(
+              Object.entries(byDep).map(([code, sheets]) => {
+                const resolvedName = depNameByCode.get(code) || depNames[code] || code;
+                const sheetsWithNames = Object.fromEntries(
+                  Object.entries(sheets).map(([sheetKey, sheetData]) => [
+                    sheetKey,
+                    {
+                      ...sheetData,
+                      sources: sheetData.sources.map((source) =>
+                        source ? { ...source, dependencyName: resolvedName } : source
+                      ),
+                    },
+                  ])
+                );
+                return [code, sheetsWithNames];
+              })
+            );
+            setOtherProducersData(byDepWithNames);
+            const resolvedDepNames = Object.fromEntries(
+              Object.keys(byDep).map((code) => [code, depNameByCode.get(code) || depNames[code] || code])
+            );
+            setOtherProducersDepNames(resolvedDepNames);
+          }
+        } catch { /* si falla, simplemente no se muestra la informacion de otros productores */ }
+      }
+
       // Recolectar campos de top-level + todos los workbook_sheets
       const allTemplateFields: Field[] = [
         ...(normalizedTemplate.fields || []),
@@ -872,6 +1009,108 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     // NO resetear hasQrOrigin - el backend preservará el origen original
   };
 
+  // ── Edicion de datos de OTRAS dependencias (solo para el productor encargado) ──
+  const updateOtherProducerCell = (depCode: string, sheetKey: string, rowIdx: number, fieldName: string, value: any) => {
+    setOtherProducersData(prev => {
+      const depData = prev[depCode] || {};
+      const sheetData = depData[sheetKey] || { rows: [], sources: [] };
+      const rows = [...sheetData.rows];
+      rows[rowIdx] = { ...rows[rowIdx], [fieldName]: value === "" ? null : value };
+      return { ...prev, [depCode]: { ...depData, [sheetKey]: { ...sheetData, rows } } };
+    });
+  };
+
+  const addOtherProducerRow = (depCode: string, sheetKey: string) => {
+    setOtherProducersData(prev => {
+      const depData = prev[depCode] || {};
+      const sheetData = depData[sheetKey] || { rows: [], sources: [] };
+      return {
+        ...prev,
+        [depCode]: {
+          ...depData,
+          [sheetKey]: { rows: [...sheetData.rows, {}], sources: [...sheetData.sources, null] },
+        },
+      };
+    });
+  };
+
+  const removeOtherProducerRow = (depCode: string, sheetKey: string, rowIdx: number) => {
+    setOtherProducersData(prev => {
+      const depData = prev[depCode] || {};
+      const sheetData = depData[sheetKey] || { rows: [], sources: [] };
+      return {
+        ...prev,
+        [depCode]: {
+          ...depData,
+          [sheetKey]: {
+            rows: sheetData.rows.filter((_, i) => i !== rowIdx),
+            sources: sheetData.sources.filter((_, i) => i !== rowIdx),
+          },
+        },
+      };
+    });
+  };
+
+  // Guarda los cambios de UNA dependencia ajena. Se envian TODAS sus hojas
+  // (no solo la que se esta viendo) para no perder informacion de las demas.
+  // Guarda los cambios de UNA dependencia ajena, sin notificar individualmente
+  // (se llama en lote desde los botones generales "Guardar"/"Enviar").
+  const saveOneOtherProducerData = async (depCode: string) => {
+    const depData = otherProducersData[depCode];
+    if (!depData) return;
+    if (allSheets.length > 0) {
+      const sheetsPayload = Object.entries(depData).map(([sheetKey, sheetData]) => ({
+        name: sheetKey,
+        data: sheetData.rows,
+      }));
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
+        email: session?.user?.email,
+        pubTem_id: id_template,
+        sheetsData: sheetsPayload,
+        asDraft: false,
+        onBehalfOfDependency: depCode,
+        // El encargado es un rol de confianza que corrige datos ya enviados
+        // (a veces originados en Excel con validacion flexible); se omite la
+        // validacion estricta de validadores para no bloquear correcciones
+        // menores por reglas que la carga original no exigia.
+        bypassValidation: true,
+      });
+    } else {
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
+        email: session?.user?.email,
+        pubTem_id: id_template,
+        data: depData[OTHER_PRODUCERS_FLAT_KEY]?.rows || [],
+        asDraft: false,
+        onBehalfOfDependency: depCode,
+        bypassValidation: true,
+      });
+    }
+  };
+
+  // Guarda TODAS las dependencias ajenas con datos cargados. Se invoca desde
+  // los botones generales "Guardar" y "Enviar" — no hay un boton separado por
+  // dependencia.
+  const saveAllOtherProducersData = async () => {
+    const depCodes = Object.keys(otherProducersData);
+    if (!depCodes.length) return;
+    const failed: string[] = [];
+    for (const depCode of depCodes) {
+      try {
+        await saveOneOtherProducerData(depCode);
+      } catch (error) {
+        console.error(`[saveAllOtherProducersData] Error guardando ${depCode}:`, error);
+        failed.push(otherProducersDepNames[depCode] || depCode);
+      }
+    }
+    if (failed.length) {
+      showNotification({
+        title: "Aviso",
+        message: `No se pudo guardar la información de: ${failed.join(', ')}.`,
+        color: "orange",
+      });
+    }
+  };
+
   const saveDraftRows = async (
     updatedRows?: Record<string, any>[],
     updatedSheetRows?: Record<string, Record<string, any>[]>
@@ -922,6 +1161,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     setSaving(true);
     try {
       await saveDraftRows();
+      if (isEncargadoTemplate) await saveAllOtherProducersData();
       showNotification({
         title: "Guardado",
         message: "Tu progreso ha sido guardado. Puedes continuar más tarde.",
@@ -1157,6 +1397,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si viene de ruta /public/form/, marcar como QR (fallback para datos nuevos no desde draft)
         ...(isFromPublicQr && !detectedOrigin.source ? { isFromPublicQr: true } : {}),
       });
+      if (isEncargadoTemplate) await saveAllOtherProducersData();
       showNotification({
         title: "Información enviada",
         message: "Los datos se enviaron correctamente.",
@@ -1188,6 +1429,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           message: `Revisa los campos marcados en rojo (${camposObligatorios.length} campo${camposObligatorios.length !== 1 ? 's' : ''}).`,
           color: "red",
           autoClose: 5000,
+        });
+      } else {
+        showNotification({
+          title: "Error al enviar",
+          message: axios.isAxiosError(error)
+            ? (error.response?.data?.status || "No se pudo enviar la información.")
+            : "No se pudo enviar la información.",
+          color: "red",
+          autoClose: 6000,
         });
       }
     } finally {
@@ -1482,16 +1732,24 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     );
   };
 
-  const renderSheetTable = (fields: Field[], sheetName?: string, readOnly = false) => {
+  const renderSheetTable = (
+    fields: Field[],
+    sheetName?: string,
+    readOnly = false,
+    overrideRows?: Record<string, any>[],
+    overrideSources?: (QrRowSource | null)[],
+    overrideOnInputChange?: (rowIndex: number, fieldName: string, value: any) => void,
+    overrideOnRemoveRow?: (rowIndex: number) => void
+  ) => {
     const isSheetMode = !!sheetName;
-    const currentRows = isSheetMode ? (sheetRows[sheetName] || [{}]) : rows;
-    const onInputChange = isSheetMode
+    const currentRows = overrideRows ?? (isSheetMode ? (sheetRows[sheetName] || [{}]) : rows);
+    const onInputChange = overrideOnInputChange ?? (isSheetMode
       ? (rowIndex: number, fieldName: string, value: any) => updateSheetCell(sheetName, rowIndex, fieldName, value)
-      : handleInputChange;
-    const onRemoveRow = isSheetMode
+      : handleInputChange);
+    const onRemoveRow = overrideOnRemoveRow ?? (isSheetMode
       ? (rowIndex: number) => removeSheetRow(sheetName, rowIndex)
-      : removeRow;
-    const currentRowSources = isSheetMode ? (sheetRowSources[sheetName] || []) : rowSources;
+      : removeRow);
+    const currentRowSources = overrideSources ?? (isSheetMode ? (sheetRowSources[sheetName] || []) : rowSources);
     const showQrSourceColumn = currentRowSources.some(Boolean);
 
     return (
@@ -1624,6 +1882,38 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     </Button>
                   </Group>
                 )}
+                {isEncargadoTemplate && canEdit && Object.keys(otherProducersData).some(
+                  (depCode) => (otherProducersData[depCode]?.[sheet.name]?.rows?.length ?? 0) > 0
+                ) && (
+                  <>
+                    <Divider
+                      my="md"
+                      label="Información de otras dependencias (puedes editarla por ser productor encargado)"
+                      labelPosition="center"
+                    />
+                    {Object.entries(otherProducersData)
+                      .filter(([, sheets]) => (sheets[sheet.name]?.rows?.length ?? 0) > 0)
+                      .map(([depCode, sheets]) => (
+                        <Box key={depCode} mb="lg">
+                          <Text fw={700} size="sm" mb={4}>{otherProducersDepNames[depCode] || depCode}</Text>
+                          {renderSheetTable(
+                            sheet.fields,
+                            `${sheet.name}__other__${depCode}`,
+                            false,
+                            sheets[sheet.name].rows,
+                            sheets[sheet.name].sources,
+                            (rowIndex, fieldName, value) => updateOtherProducerCell(depCode, sheet.name, rowIndex, fieldName, value),
+                            (rowIndex) => removeOtherProducerRow(depCode, sheet.name, rowIndex)
+                          )}
+                          <Group justify="center" mt="xs" mb="sm">
+                            <Button size="xs" variant="light" onClick={() => addOtherProducerRow(depCode, sheet.name)} leftSection={<IconPlus size={14} />}>
+                              Agregar Fila
+                            </Button>
+                          </Group>
+                        </Box>
+                      ))}
+                  </>
+                )}
               </Tabs.Panel>
             );
           })}
@@ -1631,6 +1921,38 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       ) : (
         <>
           {renderSheetTable(template.fields)}
+          {isEncargadoTemplate && Object.keys(otherProducersData).some(
+            (depCode) => (otherProducersData[depCode]?.[OTHER_PRODUCERS_FLAT_KEY]?.rows?.length ?? 0) > 0
+          ) && (
+            <>
+              <Divider
+                my="md"
+                label="Información de otras dependencias (puedes editarla por ser productor encargado)"
+                labelPosition="center"
+              />
+              {Object.entries(otherProducersData)
+                .filter(([, sheets]) => (sheets[OTHER_PRODUCERS_FLAT_KEY]?.rows?.length ?? 0) > 0)
+                .map(([depCode, sheets]) => (
+                  <Box key={depCode} mb="lg">
+                    <Text fw={700} size="sm" mb={4}>{otherProducersDepNames[depCode] || depCode}</Text>
+                    {renderSheetTable(
+                      template.fields,
+                      `${OTHER_PRODUCERS_FLAT_KEY}__other__${depCode}`,
+                      false,
+                      sheets[OTHER_PRODUCERS_FLAT_KEY].rows,
+                      sheets[OTHER_PRODUCERS_FLAT_KEY].sources,
+                      (rowIndex, fieldName, value) => updateOtherProducerCell(depCode, OTHER_PRODUCERS_FLAT_KEY, rowIndex, fieldName, value),
+                      (rowIndex) => removeOtherProducerRow(depCode, OTHER_PRODUCERS_FLAT_KEY, rowIndex)
+                    )}
+                    <Group justify="center" mt="xs" mb="sm">
+                      <Button size="xs" variant="light" onClick={() => addOtherProducerRow(depCode, OTHER_PRODUCERS_FLAT_KEY)} leftSection={<IconPlus size={14} />}>
+                        Agregar Fila
+                      </Button>
+                    </Group>
+                  </Box>
+                ))}
+            </>
+          )}
         </>
       )}
       <Group justify="center" mt={rem(50)}>

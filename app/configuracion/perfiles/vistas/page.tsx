@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import axios from "axios";
@@ -28,8 +28,10 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import {
   IconAlertCircle,
+  IconApps,
   IconArrowLeft,
   IconBriefcase,
   IconBuilding,
@@ -49,6 +51,7 @@ interface ViewOption {
   key: string;
   label: string;
   path: string;
+  module?: string;
   group: string;
 }
 
@@ -84,6 +87,8 @@ interface AccessProfile {
   _id: string;
   name: string;
   positions: string[];
+  individualMembers?: number[];
+  excludedMembers?: number[];
   createdBy?: string | null;
   updatedBy?: string | null;
   createdAt?: string | null;
@@ -91,6 +96,7 @@ interface AccessProfile {
 }
 
 const DEFAULT_PROFILES = ["Ver", "Gestionar"];
+const MODULE_COLORS = ["blue", "cyan", "green", "red", "violet", "gray", "orange", "teal"];
 
 const countPermissionChecks = (permissions: Record<string, string[]>) =>
   Object.values(permissions || {}).reduce((total, profiles) => total + profiles.length, 0);
@@ -152,6 +158,7 @@ export default function PositionViewsPage() {
   const [views, setViews] = useState<ViewOption[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<AccessProfile | null>(null);
   const [selectedPositions, setSelectedPositions] = useState<PositionPermission[]>([]);
+  const [individualUsers, setIndividualUsers] = useState<PositionUser[]>([]);
   const [selectedPositionPermissions, setSelectedPositionPermissions] = useState<Record<string, string[]>>({});
   const [allDimensions, setAllDimensions] = useState<SimpleItem[]>([]);
   const [allDependencies, setAllDependencies] = useState<SimpleItem[]>([]);
@@ -163,10 +170,16 @@ export default function PositionViewsPage() {
   const [removingIdentification, setRemovingIdentification] = useState<number | null>(null);
   const [identification, setIdentification] = useState("");
 
-  const groupedViews = useMemo(() => {
-    return views.reduce<Record<string, ViewOption[]>>((result, view) => {
+  // Jerarquia dinamica: modulo grande (tarjetas del dashboard) -> submodulo ->
+  // vistas. Viene declarada en el backend (viewPermissionOptions), asi que una
+  // vista nueva aparece sola en el lugar correcto sin tocar este componente.
+  const groupedViewsByModule = useMemo(() => {
+    return views.reduce<Record<string, Record<string, ViewOption[]>>>((result, view) => {
+      const moduleName = view.module || "General";
       const group = view.group || "General";
-      result[group] = [...(result[group] || []), view];
+      const moduleGroups = result[moduleName] || {};
+      moduleGroups[group] = [...(moduleGroups[group] || []), view];
+      result[moduleName] = moduleGroups;
       return result;
     }, {});
   }, [views]);
@@ -176,15 +189,14 @@ export default function PositionViewsPage() {
     [selectedPositions]
   );
 
-  const activeUsers = useMemo(
-    () =>
-      selectedPositions.flatMap((positionItem) =>
-        (positionItem.users || [])
-          .filter((user) => user.isActive)
-          .map((user) => ({ ...user, position: positionItem.position }))
-      ),
-    [selectedPositions]
-  );
+  const activeUsers = useMemo(() => {
+    const fromLinkedPositions = selectedPositions.flatMap((positionItem) =>
+      (positionItem.users || [])
+        .filter((user) => user.isActive)
+        .map((user) => ({ ...user, position: positionItem.position }))
+    );
+    return [...fromLinkedPositions, ...individualUsers.filter((user) => user.isActive)];
+  }, [selectedPositions, individualUsers]);
 
   const latestUpdatedAt = useMemo(
     () =>
@@ -244,6 +256,7 @@ export default function PositionViewsPage() {
       setAllDimensions(response.data?.allDimensions || []);
       setAllDependencies(response.data?.allDependencies || []);
       setSelectedPositions(fallbackPositions);
+      setIndividualUsers(response.data?.individualUsers || []);
       setSelectedPositionPermissions(mergePositionPermissions(fallbackPositions));
       // Cargar restricciones guardadas del primer cargo
       const firstPos = fallbackPositions[0];
@@ -286,12 +299,12 @@ export default function PositionViewsPage() {
     });
   };
 
-  const setLevelForAllViews = (profile: string, checked: boolean) => {
+  const setLevelForViews = (viewsToUpdate: ViewOption[], profile: string, checked: boolean) => {
     setHasChanges(true);
     setSelectedPositionPermissions((current) => {
       const nextPermissions = { ...current };
 
-      views.forEach((view) => {
+      viewsToUpdate.forEach((view) => {
         const currentProfiles = nextPermissions[view.key] || [];
         const nextProfiles = checked
           ? Array.from(new Set([...currentProfiles, profile]))
@@ -307,6 +320,8 @@ export default function PositionViewsPage() {
       return nextPermissions;
     });
   };
+
+  const setLevelForAllViews = (profile: string, checked: boolean) => setLevelForViews(views, profile, checked);
 
   const handleSavePermissions = async () => {
     if (managedPositionNames.length === 0 || !session?.user?.email || !apiUrl) return;
@@ -401,7 +416,7 @@ export default function PositionViewsPage() {
       showNotification({
         title: "Usuario agregado",
         message: isProfileMode
-          ? "La persona fue asociada al perfil usando su cargo actual."
+          ? "La persona fue agregada individualmente al perfil (no se vinculo su cargo completo)."
           : "La persona activa fue asociada al cargo seleccionado.",
         color: "teal",
       });
@@ -422,51 +437,60 @@ export default function PositionViewsPage() {
     }
   };
 
-  const handleRemoveUser = async (user: PositionUser) => {
+  const handleRemoveUser = (user: PositionUser) => {
     const userPosition = user.position || (!isProfileMode ? managedPositionNames[0] : "");
-    if (!userPosition || !session?.user?.email || !apiUrl) return;
+    const adminEmail = session?.user?.email;
+    if (!userPosition || !adminEmail || !apiUrl) return;
 
-    const shouldRemove = window.confirm(
-      isProfileMode
-        ? `¿Quitar el cargo ${userPosition} del perfil ${managementTitle}?`
-        : `¿Quitar a ${user.full_name} del cargo ${userPosition}?`
-    );
-    if (!shouldRemove) return;
+    modals.openConfirmModal({
+      title: "Confirmar acción",
+      centered: true,
+      children: (
+        <Text size="sm">
+          {isProfileMode
+            ? <>¿Quitar a <strong>{user.full_name}</strong> del perfil <strong>{managementTitle}</strong>? Su cargo seguira vinculado para el resto de las personas.</>
+            : <>¿Quitar a <strong>{user.full_name}</strong> del cargo <strong>{userPosition}</strong>?</>}
+        </Text>
+      ),
+      labels: { confirm: "Quitar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        setRemovingIdentification(user.identification);
+        try {
+          await axios.delete(`${apiUrl}/users/position-members`, {
+            data: {
+              ...(isProfileMode ? { profileId } : { position: userPosition }),
+              identification: user.identification,
+              adminEmail,
+            },
+            headers: { "user-email": adminEmail },
+          });
 
-    setRemovingIdentification(user.identification);
-    try {
-      await axios.delete(`${apiUrl}/users/position-members`, {
-        data: {
-          ...(isProfileMode ? { profileId } : { position: userPosition }),
-          identification: user.identification,
-          adminEmail: session.user.email,
-        },
-        headers: { "user-email": session.user.email },
-      });
-
-      await fetchPositionPermissions();
-      showNotification({
-        title: "Usuario removido",
-        message: isProfileMode
-          ? "El cargo actual de la persona fue retirado del perfil."
-          : "La persona fue retirada del cargo correctamente.",
-        color: "teal",
-      });
-    } catch (error) {
-      console.error("Error removing user from position:", error);
-      showNotification({
-        title: "Error",
-        message: getErrorMessage(
-          error,
-          isProfileMode
-            ? "No fue posible retirar la persona del perfil."
-            : "No fue posible retirar la persona del cargo."
-        ),
-        color: "red",
-      });
-    } finally {
-      setRemovingIdentification(null);
-    }
+          await fetchPositionPermissions();
+          showNotification({
+            title: "Usuario removido",
+            message: isProfileMode
+              ? "La persona fue retirada del perfil."
+              : "La persona fue retirada del cargo correctamente.",
+            color: "teal",
+          });
+        } catch (error) {
+          console.error("Error removing user from position:", error);
+          showNotification({
+            title: "Error",
+            message: getErrorMessage(
+              error,
+              isProfileMode
+                ? "No fue posible retirar la persona del perfil."
+                : "No fue posible retirar la persona del cargo."
+            ),
+            color: "red",
+          });
+        } finally {
+          setRemovingIdentification(null);
+        }
+      },
+    });
   };
 
   if (!profileId && !position) {
@@ -586,7 +610,7 @@ export default function PositionViewsPage() {
                     <Title order={4}>{isProfileMode ? "Personas activas del perfil" : "Personas activas del cargo"}</Title>
                     <Text size="sm" c="dimmed">
                       {isProfileMode
-                        ? "Incluye todas las personas activas que pertenecen a los cargos del perfil."
+                        ? "Incluye a las personas de los cargos vinculados y a las agregadas individualmente por cédula."
                         : "Agrega una persona activa al cargo usando su cédula."}
                     </Text>
                   </div>
@@ -664,7 +688,7 @@ export default function PositionViewsPage() {
                             </Table.Td>
                             <Table.Td>
                               <Center>
-                                <Tooltip label={isProfileMode ? "Quitar cargo del perfil" : "Quitar del cargo"}>
+                                <Tooltip label={isProfileMode ? "Quitar persona del perfil" : "Quitar del cargo"}>
                                   <ActionIcon
                                     variant="light"
                                     color="red"
@@ -818,50 +842,101 @@ export default function PositionViewsPage() {
                   </Button>
                 </Group>
 
-                <ScrollArea h="60vh" offsetScrollbars>
-                  <Table withTableBorder verticalSpacing="sm" style={{ minWidth: 760 }}>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Vista</Table.Th>
-                        {permissionLevels.map((profile) => (
-                          <Table.Th key={profile}>
-                            <Center>{profile}</Center>
-                          </Table.Th>
-                        ))}
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {Object.entries(groupedViews).map(([group, groupViews]) => (
-                        <Fragment key={group}>
-                          <Table.Tr key={`${group}-header`}>
-                            <Table.Td colSpan={permissionLevels.length + 1} bg="var(--mantine-color-gray-light)">
-                              <Text size="sm" fw={700}>{group}</Text>
-                            </Table.Td>
-                          </Table.Tr>
-                          {groupViews.map((view) => (
-                            <Table.Tr key={view.key}>
-                              <Table.Td>
-                                <Text fw={600}>{view.label}</Text>
-                              </Table.Td>
-                              {permissionLevels.map((profile) => (
-                                <Table.Td key={`${view.key}-${profile}`}>
-                                  <Center>
-                                    <Checkbox
-                                      aria-label={`${profile} ${view.label}`}
-                                      checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
-                                      onChange={() => toggleViewPermission(view.key, profile)}
-                                      disabled={!canManage}
-                                    />
-                                  </Center>
-                                </Table.Td>
-                              ))}
-                            </Table.Tr>
-                          ))}
-                        </Fragment>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                </ScrollArea>
+                <Stack gap="xl">
+                  {Object.entries(groupedViewsByModule).map(([moduleName, moduleGroups], moduleIndex) => {
+                    const moduleColor = MODULE_COLORS[moduleIndex % MODULE_COLORS.length];
+                    const moduleViewsFlat = Object.values(moduleGroups).flat();
+                    const moduleChecksTotal = permissionLevels.reduce(
+                      (total, profile) =>
+                        total + moduleViewsFlat.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                      0
+                    );
+
+                    return (
+                      <Stack key={moduleName} gap="sm">
+                        <Group gap={8} align="center">
+                          <ThemeIcon size="md" radius="md" color={moduleColor} variant="light">
+                            <IconApps size={16} />
+                          </ThemeIcon>
+                          <Title order={4}>{moduleName}</Title>
+                          <Badge size="sm" variant="light" color={moduleColor}>
+                            {moduleChecksTotal} check{moduleChecksTotal === 1 ? "" : "s"}
+                          </Badge>
+                        </Group>
+
+                        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+                          {Object.entries(moduleGroups).map(([group, groupViews]) => {
+                            const groupCounts = permissionLevels.map((profile) => ({
+                              profile,
+                              count: groupViews.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                            }));
+
+                            return (
+                              <Card key={group} withBorder radius="md" p="md">
+                                <Stack gap="sm">
+                                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                                    <Text fw={700}>{group}</Text>
+                                    <Group gap={6}>
+                                      {groupCounts.map(({ profile, count }) => (
+                                        <Badge
+                                          key={profile}
+                                          size="sm"
+                                          variant={count > 0 ? "filled" : "light"}
+                                          color={profile === "Gestionar" ? "orange" : "blue"}
+                                        >
+                                          {count}/{groupViews.length} {profile}
+                                        </Badge>
+                                      ))}
+                                    </Group>
+                                  </Group>
+
+                                  <Group gap="md">
+                                    {groupCounts.map(({ profile, count }) => {
+                                      const allChecked = groupViews.length > 0 && count === groupViews.length;
+                                      return (
+                                        <Checkbox
+                                          key={`${group}-all-${profile}`}
+                                          size="xs"
+                                          label={`Todo ${profile}`}
+                                          checked={allChecked}
+                                          indeterminate={count > 0 && !allChecked}
+                                          onChange={(event) => setLevelForViews(groupViews, profile, event.currentTarget.checked)}
+                                          disabled={!canManage}
+                                        />
+                                      );
+                                    })}
+                                  </Group>
+
+                                  <Divider />
+
+                                  <Stack gap={8}>
+                                    {groupViews.map((view) => (
+                                      <Group key={view.key} justify="space-between" wrap="nowrap" gap="md">
+                                        <Text size="sm" style={{ flex: 1 }}>{view.label}</Text>
+                                        <Group gap="md" wrap="nowrap">
+                                          {permissionLevels.map((profile) => (
+                                            <Checkbox
+                                              key={`${view.key}-${profile}`}
+                                              label={profile}
+                                              size="sm"
+                                              checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
+                                              onChange={() => toggleViewPermission(view.key, profile)}
+                                              disabled={!canManage}
+                                            />
+                                          ))}
+                                        </Group>
+                                      </Group>
+                                    ))}
+                                  </Stack>
+                                </Stack>
+                              </Card>
+                            );
+                          })}
+                        </SimpleGrid>
+                      </Stack>
+                    );
+                  })}
+                </Stack>
 
                 <Group justify="flex-end">
                   <Button

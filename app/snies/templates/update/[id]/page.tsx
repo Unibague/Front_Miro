@@ -101,6 +101,19 @@ const allowedDataTypes = [
   "Link",
 ];
 
+const validateWithToText = (value: unknown) => {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    const ref = value as { name?: string; id?: string };
+    return String(ref.name || ref.id || "").trim();
+  }
+  return String(value).trim();
+};
+
+const normalizeValidatorText = (value: unknown) =>
+  validateWithToText(value).toLowerCase().replace(/\s+/g, " ").trim();
+
 export default function UpdateSniesTemplatePage() {
   const router = useRouter();
   const params = useParams();
@@ -144,6 +157,59 @@ export default function UpdateSniesTemplatePage() {
     label: option.name,
     option,
   }));
+  const findValidatorOption = (value: unknown) => {
+    const raw = validateWithToText(value);
+    const normalized = normalizeValidatorText(raw);
+    if (!normalized) return undefined;
+
+    return validatorOptions.find((option) => {
+      const optionName = normalizeValidatorText(option.name);
+      const validatorName = normalizeValidatorText(option.validator_name);
+      const optionBaseName = normalizeValidatorText(option.name.split(" - ")[0]);
+
+      return (
+        optionName === normalized ||
+        validatorName === normalized ||
+        optionBaseName === normalized
+      );
+    });
+  };
+  const getValidatorSelectValue = (value: unknown) => {
+    const raw = validateWithToText(value);
+    return findValidatorOption(raw)?.name || raw || null;
+  };
+  const getValidatorSelectOptions = (value?: unknown) => {
+    const currentValue = getValidatorSelectValue(value);
+    if (currentValue && !validatorSelectOptions.some((option) => option.value === currentValue)) {
+      return [
+        {
+          value: currentValue,
+          label: currentValue,
+          option: { name: currentValue, type: "" },
+        },
+        ...validatorSelectOptions,
+      ];
+    }
+    return validatorSelectOptions;
+  };
+  const applyValidatorDatatype = (field: Field, validateWith: string): Field => {
+    const selectedOption = findValidatorOption(validateWith);
+    if (!selectedOption) {
+      return { ...field, validate_with: validateWith };
+    }
+
+    const optionType = String(selectedOption.type || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const datatype = optionType.includes("numero")
+      ? "Entero"
+      : optionType.includes("texto")
+        ? "Texto Largo"
+        : field.datatype;
+
+    return { ...field, validate_with: selectedOption.name, datatype };
+  };
   const additionalFieldEntries = fields
     .map((field, index) => ({ field, index }))
     .filter(({ field }) => field.field_origin !== "snies_original");
@@ -173,14 +239,12 @@ export default function UpdateSniesTemplatePage() {
         setFileName(response.data.file_name || "");
         setFileDescription(response.data.file_description || "");
         setActive(response.data.active ?? true);
-        const stripValidateWithColumn = (val: string | undefined) =>
-          (val || "").split(" - ")[0].trim();
 
         setFields(
           response.data.fields?.length
             ? response.data.fields.map((f: Field) => ({
                 ...f,
-                validate_with: stripValidateWithColumn(f.validate_with),
+                validate_with: validateWithToText(f.validate_with),
               }))
             : [{
                 name: "",
@@ -201,7 +265,7 @@ export default function UpdateSniesTemplatePage() {
             ...sheet,
             visual_fields: (sheet.visual_fields || []).map((f: any) => ({
               ...f,
-              validate_with: stripValidateWithColumn(f.validate_with),
+              validate_with: validateWithToText(f.validate_with),
             })),
           }))
         );
@@ -264,7 +328,10 @@ export default function UpdateSniesTemplatePage() {
 
   const handleFieldChange = (index: number, field: FieldKey, value: string | boolean) => {
     const updatedFields = [...fields];
-    updatedFields[index] = { ...updatedFields[index], [field]: value };
+    const nextField = { ...updatedFields[index], [field]: value };
+    updatedFields[index] = field === "validate_with"
+      ? applyValidatorDatatype(nextField, typeof value === "string" ? value : "")
+      : nextField;
 
     if (field === "worksheet_name") {
       updatedFields[index].insert_after = "";
@@ -350,16 +417,29 @@ export default function UpdateSniesTemplatePage() {
       return;
     }
 
+    const baseField = {
+      ...getOriginalFieldConfig(worksheetName, fieldName),
+      [fieldKey]: value,
+    };
+    const nextField = fieldKey === "validate_with"
+      ? applyValidatorDatatype(baseField, typeof value === "string" ? value : "")
+      : baseField;
+
     const selectedOption = fieldKey === "validate_with"
-      ? validatorOptions.find((option) => option.name === value)
+      ? findValidatorOption(value)
       : undefined;
 
     setFields((currentFields) => [
       ...currentFields,
       {
-        ...getOriginalFieldConfig(worksheetName, fieldName),
-        [fieldKey]: value,
-        datatype: selectedOption
+        ...nextField,
+        datatype: selectedOption && String(selectedOption.type || "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .includes("numero")
+          ? "Entero"
+          : selectedOption
           ? selectedOption.type === "Número"
             ? "Entero"
             : "Texto Largo"
@@ -460,6 +540,11 @@ export default function UpdateSniesTemplatePage() {
 
     setSaving(true);
     try {
+      const fieldsToSave = fields.map((field) => ({
+        ...field,
+        validate_with: getValidatorSelectValue(field.validate_with) || "",
+      }));
+
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${id}`, {
         email: session.user.email,
         name: name.trim(),
@@ -468,7 +553,7 @@ export default function UpdateSniesTemplatePage() {
         active,
         dimensions: selectedDimensions,
         producers: selectedDependencies,
-        fields,
+        fields: fieldsToSave,
       });
 
       showNotification({
@@ -622,8 +707,8 @@ export default function UpdateSniesTemplatePage() {
               <Table.Td>
                 <Select
                   placeholder="Validar con"
-                  data={validatorSelectOptions}
-                  value={getOriginalFieldConfig(selectedOriginalWorksheet, selectedOriginalField).validate_with || ""}
+                  data={getValidatorSelectOptions(getOriginalFieldConfig(selectedOriginalWorksheet, selectedOriginalField).validate_with)}
+                  value={getValidatorSelectValue(getOriginalFieldConfig(selectedOriginalWorksheet, selectedOriginalField).validate_with)}
                   onChange={(value) =>
                     handleOriginalFieldChange(
                       selectedOriginalWorksheet,
@@ -741,8 +826,8 @@ export default function UpdateSniesTemplatePage() {
                         <Table.Td w={rem(280)}>
                           <Select
                             placeholder="Validar con"
-                            data={validatorSelectOptions}
-                            value={field.validate_with || ""}
+                            data={getValidatorSelectOptions(field.validate_with)}
+                            value={getValidatorSelectValue(field.validate_with)}
                             onChange={(value) => handleFieldChange(index, "validate_with", value || "")}
                             searchable
                             clearable

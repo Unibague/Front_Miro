@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack, NumberInput,
   Divider, Text, SimpleGrid, MultiSelect,
@@ -8,10 +8,17 @@ import {
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import "dayjs/locale/es";
-import type { Accion } from "../types";
+import type { Accion, Proyecto } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import {
+  extractNumberSegment,
+  getActionPrefix,
+  getEntityId,
+  getFirstAvailableNumber,
+  normalizePdiCode,
+} from "../code-validation";
 
 interface Props {
   opened: boolean;
@@ -39,6 +46,9 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [responsablesSeleccionados, setResponsablesSeleccionados] = useState<string[]>([]);
   const [usuarios, setUsuarios] = useState<string[]>([]);
   const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
+  const [proyectoPadre, setProyectoPadre] = useState<Proyecto | null>(null);
+  const [accionesProyecto, setAccionesProyecto] = useState<Accion[]>([]);
+  const [accionesProyectoLoaded, setAccionesProyectoLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -82,7 +92,27 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     setPresupuestoAnios(buildAniosMap(config.anios));
     setEjecutadoAnios(buildAniosMap(config.anios));
     setResponsablesSeleccionados([]);
-  }, [opened, selected, config.anios]);
+  }, [opened, selected, config.anios, setHasChanges]);
+
+  useEffect(() => {
+    if (!opened || !defaultProyectoId) {
+      setProyectoPadre(null);
+      setAccionesProyecto([]);
+      setAccionesProyectoLoaded(false);
+      return;
+    }
+
+    if (!selected) setCodigo("");
+    setAccionesProyectoLoaded(false);
+    axios.get(PDI_ROUTES.proyecto(defaultProyectoId))
+      .then((res) => setProyectoPadre(res.data))
+      .catch(() => setProyectoPadre(null));
+
+    axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: defaultProyectoId } })
+      .then((res) => setAccionesProyecto(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setAccionesProyecto([]))
+      .finally(() => setAccionesProyectoLoaded(true));
+  }, [opened, defaultProyectoId, selected]);
 
   const pesoAuto = selected
     ? selected.peso
@@ -93,9 +123,69 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const toNumberMap = (m: Record<string, number | string>) =>
     Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Number(v) || 0]));
 
+  const expectedActionPrefix = useMemo(
+    () => getActionPrefix(proyectoPadre?.codigo),
+    [proyectoPadre?.codigo]
+  );
+
+  const codigoNormalizado = normalizePdiCode(codigo);
+  const codigoError = useMemo(() => {
+    if (!codigo.trim()) return null;
+    if (!expectedActionPrefix) return "No se pudo validar la accion porque el proyecto padre no tiene codigo M#-P# valido.";
+    if (!/^M[1-9]\d*-P[1-9]\d*-A[1-9]\d*$/.test(codigoNormalizado)) {
+      return "El codigo de la accion debe tener formato M#-P#-A# (por ejemplo, M2-P3-A1).";
+    }
+    if (!codigoNormalizado.startsWith(expectedActionPrefix)) {
+      return `Para el proyecto ${proyectoPadre?.codigo} el codigo debe iniciar con ${expectedActionPrefix}.`;
+    }
+
+    const duplicada = accionesProyecto.find((accion) =>
+      accion._id !== selected?._id && normalizePdiCode(accion.codigo) === codigoNormalizado
+    );
+    if (duplicada) return `Ya existe una accion con el codigo ${duplicada.codigo}.`;
+
+    const numero = extractNumberSegment(codigoNormalizado, "A");
+    if (!numero) return null;
+
+    const existentes = accionesProyecto.filter((accion) => accion._id !== selected?._id);
+    const numerosUsados = new Set(
+      existentes
+        .map((accion) => extractNumberSegment(accion.codigo, "A"))
+        .filter((value): value is number => value !== null)
+    );
+    const numeroOriginal = extractNumberSegment(selected?.codigo, "A");
+    const conservaNumero = Boolean(
+      selected &&
+      getEntityId(selected.proyecto_id) === defaultProyectoId &&
+      numeroOriginal === numero
+    );
+    if (conservaNumero) return null;
+
+    const esperado = getFirstAvailableNumber(numerosUsados);
+    if (numero !== esperado) {
+      return `La numeracion no es consecutiva. El siguiente codigo esperado es ${expectedActionPrefix}${esperado}.`;
+    }
+
+    return null;
+  }, [accionesProyecto, codigo, codigoNormalizado, defaultProyectoId, expectedActionPrefix, proyectoPadre?.codigo, selected]);
+
+  useEffect(() => {
+    if (!opened || selected || !expectedActionPrefix || !accionesProyectoLoaded || codigo.trim()) return;
+    const numerosUsados = new Set(
+      accionesProyecto
+        .map((accion) => extractNumberSegment(accion.codigo, "A"))
+        .filter((value): value is number => value !== null)
+    );
+    setCodigo(`${expectedActionPrefix}${getFirstAvailableNumber(numerosUsados)}`);
+  }, [accionesProyecto, accionesProyectoLoaded, codigo, expectedActionPrefix, opened, selected]);
+
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim()) {
       showNotification({ title: "Error", message: "Codigo y nombre son requeridos", color: "red" });
+      return;
+    }
+    if (codigoError) {
+      showNotification({ title: "Codigo invalido", message: codigoError, color: "red" });
       return;
     }
     setLoading(true);
@@ -106,7 +196,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       });
 
       const payload = {
-        codigo: codigo.trim(),
+        codigo: codigoNormalizado,
         nombre: nombre.trim(),
         alcance: selected?.alcance ?? "",
         peso: pesoAuto,
@@ -141,7 +231,14 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     <Modal opened={opened} onClose={() => confirmNavigation(onClose)} title={selected ? "Editar Accion Estrategica" : "Nueva Accion Estrategica"} centered size="lg">
       <Stack gap="sm">
         <Group grow>
-          <TextInput label="Codigo" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
+          <TextInput
+            label="Codigo"
+            placeholder={expectedActionPrefix ? `${expectedActionPrefix}1` : "Ej: M2-P3-A1"}
+            value={codigo}
+            error={codigoError ?? undefined}
+            description={expectedActionPrefix ? `Debe iniciar con ${expectedActionPrefix}` : undefined}
+            onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }}
+          />
           <NumberInput label="Número de indicadores" value={numIndicadores} onChange={(v) => { setNumIndicadores(v); setHasChanges(true); }} min={0} step={1} allowDecimal={false} />
         </Group>
         <TextInput label="Nombre" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
@@ -200,7 +297,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
 
       <Group justify="flex-end" mt="lg">
         <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
-        <Button loading={loading} onClick={handleSave}>Guardar</Button>
+        <Button loading={loading} disabled={Boolean(codigoError)} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>
   );

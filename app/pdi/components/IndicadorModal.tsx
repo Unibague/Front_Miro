@@ -20,10 +20,17 @@ import { CSS } from "@dnd-kit/utilities";
 import axios from "axios";
 import "dayjs/locale/es";
 import { useSession } from "next-auth/react";
-import type { Indicador } from "../types";
+import type { Accion, Indicador, Proyecto } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import {
+  extractNumberSegment,
+  getEntityId,
+  getFirstAvailableNumber,
+  getIndicatorPrefix,
+  normalizePdiCode,
+} from "../code-validation";
 
 interface Props {
   opened: boolean;
@@ -105,6 +112,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [loading, setLoading] = useState(false);
   const [cortesData, setCortesData] = useState<{ nombre: string; descripcion: string }[]>([]);
   const [cortes, setCortes] = useState<string[]>([]);
+  const [accionPadre, setAccionPadre] = useState<Accion | null>(null);
+  const [proyectoPadre, setProyectoPadre] = useState<Proyecto | null>(null);
+  const [indicadoresPdi, setIndicadoresPdi] = useState<Indicador[]>([]);
+  const [indicadoresLoaded, setIndicadoresLoaded] = useState(false);
 
   useEffect(() => {
     axios.get(PDI_ROUTES.cortesActivos())
@@ -229,6 +240,107 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     ? selected.peso
     : (config.indicadores_por_accion > 0 ? parseFloat((100 / config.indicadores_por_accion).toFixed(6)) : 0);
 
+  useEffect(() => {
+    if (!opened || !defaultAccionId) {
+      setAccionPadre(null);
+      setProyectoPadre(null);
+      setIndicadoresPdi([]);
+      setIndicadoresLoaded(false);
+      return;
+    }
+
+    if (!selected) setCodigo("");
+    setIndicadoresLoaded(false);
+    axios.get(PDI_ROUTES.accion(defaultAccionId))
+      .then((res) => {
+        const accion = res.data as Accion;
+        setAccionPadre(accion);
+        const proyectoId = getEntityId(accion.proyecto_id);
+        if (!proyectoId) {
+          setProyectoPadre(null);
+          return;
+        }
+        axios.get(PDI_ROUTES.proyecto(proyectoId))
+          .then((proyectoRes) => setProyectoPadre(proyectoRes.data))
+          .catch(() => setProyectoPadre(null));
+      })
+      .catch(() => {
+        setAccionPadre(null);
+        setProyectoPadre(null);
+      });
+
+    axios.get(PDI_ROUTES.indicadores())
+      .then((res) => setIndicadoresPdi(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setIndicadoresPdi([]))
+      .finally(() => setIndicadoresLoaded(true));
+  }, [opened, defaultAccionId, selected]);
+
+  const expectedIndicatorPrefix = useMemo(
+    () => getIndicatorPrefix(proyectoPadre?.macroproyecto_id?.codigo, proyectoPadre?.codigo, accionPadre?.codigo),
+    [accionPadre?.codigo, proyectoPadre?.codigo, proyectoPadre?.macroproyecto_id?.codigo]
+  );
+
+  const codigoNormalizado = normalizePdiCode(codigo);
+  const codigoError = useMemo(() => {
+    if (!codigo.trim()) return null;
+    if (!expectedIndicatorPrefix) return "No se pudo validar el indicador porque la jerarquia seleccionada no tiene codigos M/P/A validos.";
+    if (!/^M[1-9]\d*-P[1-9]\d*-A[1-9]\d*-I[1-9]\d*$/.test(codigoNormalizado)) {
+      return "El codigo del indicador debe tener formato M#-P#-A#-I# (por ejemplo, M2-P3-A1-I1).";
+    }
+    if (!codigoNormalizado.startsWith(expectedIndicatorPrefix)) {
+      return `Para la accion ${accionPadre?.codigo} el codigo debe iniciar con ${expectedIndicatorPrefix}.`;
+    }
+
+    const duplicado = indicadoresPdi.find((indicador) =>
+      indicador._id !== selected?._id && normalizePdiCode(indicador.codigo) === codigoNormalizado
+    );
+    if (duplicado) return `Ya existe un indicador con el codigo ${duplicado.codigo}.`;
+
+    const numero = extractNumberSegment(codigoNormalizado, "I");
+    if (!numero) return null;
+
+    const indicadoresAccion = indicadoresPdi.filter((indicador) =>
+      indicador._id !== selected?._id && getEntityId(indicador.accion_id) === defaultAccionId
+    );
+    const mismoNumero = indicadoresAccion.find((indicador) =>
+      extractNumberSegment(indicador.codigo, "I") === numero
+    );
+    if (mismoNumero) {
+      return `Ya existe un indicador con la numeracion I${numero} dentro de esta accion (${mismoNumero.codigo}).`;
+    }
+
+    const numerosUsados = new Set(
+      indicadoresAccion
+        .map((indicador) => extractNumberSegment(indicador.codigo, "I"))
+        .filter((value): value is number => value !== null)
+    );
+    const numeroOriginal = extractNumberSegment(selected?.codigo, "I");
+    const conservaNumero = Boolean(
+      selected &&
+      getEntityId(selected.accion_id) === defaultAccionId &&
+      numeroOriginal === numero
+    );
+    if (conservaNumero) return null;
+
+    const esperado = getFirstAvailableNumber(numerosUsados);
+    if (numero !== esperado) {
+      return `La numeracion no es consecutiva. El siguiente codigo esperado es ${expectedIndicatorPrefix}${esperado}.`;
+    }
+
+    return null;
+  }, [accionPadre?.codigo, codigo, codigoNormalizado, defaultAccionId, expectedIndicatorPrefix, indicadoresPdi, selected]);
+
+  useEffect(() => {
+    if (!opened || selected || !expectedIndicatorPrefix || !indicadoresLoaded || codigo.trim()) return;
+    const numerosUsados = new Set(
+      indicadoresPdi
+        .filter((indicador) => getEntityId(indicador.accion_id) === defaultAccionId)
+        .map((indicador) => extractNumberSegment(indicador.codigo, "I"))
+        .filter((value): value is number => value !== null)
+    );
+    setCodigo(`${expectedIndicatorPrefix}${getFirstAvailableNumber(numerosUsados)}`);
+  }, [codigo, defaultAccionId, expectedIndicatorPrefix, indicadoresLoaded, indicadoresPdi, opened, selected]);
+
   const toNum = (val: string) => {
     const normalizado = val
       .replace(/%/g, "")
@@ -240,6 +352,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim()) {
       showNotification({ title: "Error", message: "Código y nombre son requeridos", color: "red" });
+      return;
+    }
+    if (codigoError) {
+      showNotification({ title: "Codigo invalido", message: codigoError, color: "red" });
       return;
     }
 
@@ -267,7 +383,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       }));
 
       const payload = {
-        codigo: codigo.trim(),
+        codigo: codigoNormalizado,
         nombre: nombre.trim(),
         indicador_resultado: "",
         peso: pesoAuto,
@@ -330,7 +446,14 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         <Tabs.Panel value="general">
           <Stack gap="sm">
             <Group grow>
-              <TextInput label="Código" placeholder="Ej: 1.1.1.1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
+              <TextInput
+                label="Codigo"
+                placeholder={expectedIndicatorPrefix ? `${expectedIndicatorPrefix}1` : "Ej: M2-P3-A1-I1"}
+                value={codigo}
+                error={codigoError ?? undefined}
+                description={expectedIndicatorPrefix ? `Debe iniciar con ${expectedIndicatorPrefix}` : undefined}
+                onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }}
+              />
               <TextInput label="Peso (%)" value={String(pesoAuto)} readOnly styles={{ input: { color: "gray" } }} />
             </Group>
             <TextInput label="Nombre" placeholder="Nombre del indicador" value={nombre} onChange={(e) => { setNombre(e.currentTarget.value); setHasChanges(true); }} />
@@ -430,7 +553,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
 
       <Group justify="flex-end" mt="lg">
         <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
-        <Button loading={loading} onClick={handleSave}>Guardar</Button>
+        <Button loading={loading} disabled={Boolean(codigoError)} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>
   );

@@ -29,6 +29,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import axios from "axios";
+import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 
 type PreviewRow = {
@@ -83,6 +84,7 @@ const statusColor = (status: string) => {
 };
 
 export default function ApoyosPlantillasPage() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<SheetPreview[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -174,6 +176,15 @@ export default function ApoyosPlantillasPage() {
   return (
     <Container size="xl" py="xl">
       <Stack gap="lg">
+        <Group justify="flex-start">
+          <Button
+            variant="subtle"
+            onClick={() => router.push("/dashboard")}
+          >
+            Volver al módulo
+          </Button>
+        </Group>
+
         <Paper withBorder radius="lg" p="lg">
           <Group justify="space-between" align="flex-start">
             <Box>

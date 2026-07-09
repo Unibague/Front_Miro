@@ -16,6 +16,20 @@ import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 
+// Llaves de permiso que viven dentro de cada modulo grande del dashboard.
+// Se usan para decidir si la tarjeta de ENTRADA a ese modulo debe verse:
+// basta con tener acceso a cualquiera de sus vistas hijas, no a una llave fija.
+const GESTION_REPORTES_KEYS = [
+  "adminTemplates", "publishedTemplates", "producerTemplates", "templatesWithFilters",
+  "adminReports", "publishedReports", "producerReportsConfig", "producerReportsManagement",
+  "producerReports", "responsibleReports", "ambitosReportsConfig", "ambitosReportsManagement",
+  "templatesLogs", "reminders", "audit", "templatesManagement", "dependenciesHierarchy",
+  "traceability", "validationsView", "historicoDocentes", "snies", "cna",
+];
+const PDI_KEYS = ["pdi", "pdiMine", "pdiDashboard", "pdiForms", "pdiCharts"];
+const RESPONSIBLE_ADMIN_KEYS = ["responsibleReports", "dependency", "childDependenciesTemplates", "childDependenciesReports"];
+const CONFIGURATION_KEYS = ["configuration", "users", "profiles", "homeSettings"];
+
 const DashboardPage = () => {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -54,6 +68,12 @@ const DashboardPage = () => {
     if (hasProfile) return hasViewPermission(key);
     return roles.includes(userRole);
   };
+
+  // Para tarjetas "entrada de modulo": deben verse si el usuario puede ver
+  // CUALQUIERA de las vistas que viven dentro de ese modulo, no solo una
+  // llave suelta (si no, un perfil con acceso a una vista hija nunca podria
+  // llegar a ella porque la tarjeta de entrada estaria oculta).
+  const canSeeAny = (keys: string[], roles: string[]) => keys.some((key) => canSee(key, roles));
   const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
@@ -435,506 +455,285 @@ const DashboardPage = () => {
     }
   };
 
+  const renderActionCard = (opts: {
+    permissionKey: string;
+    roles: string[];
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    route: string;
+    buttonLabel: string;
+  }) => {
+    if (!canSee(opts.permissionKey, opts.roles)) return null;
+
+    return (
+      <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key={opts.permissionKey}>
+        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push(opts.route)} style={{ cursor: "pointer" }}>
+          <Center>{opts.icon}</Center>
+          <Group mt="md" mb="xs">
+            <Text ta={"center"} w={500}>{opts.title}</Text>
+          </Group>
+          <Text ta={"center"} size="sm" color="dimmed">
+            {opts.description}
+          </Text>
+          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(opts.route)}>
+            {opts.buttonLabel}
+          </Button>
+        </Card>
+      </Grid.Col>
+    );
+  };
+
+  // Cada tarjeta se filtra por permiso (canSee): si el usuario tiene un perfil
+  // personalizado, manda el permiso de la vista; si no tiene perfil, manda el
+  // rol por defecto listado aqui. Asi una tarjeta nueva solo necesita entrar a
+  // esta lista, sin depender de un switch(userRole) rigido.
   const renderCards = () => {
-    const cards = [];
-    console.log('DEBUG - Current userRole:', userRole);
+    const cardDefs: Array<Parameters<typeof renderActionCard>[0]> = [
+      {
+        permissionKey: "adminTemplates",
+        roles: ["Administrador"],
+        icon: <IconFileAnalytics size={80} />,
+        title: "Configurar Plantillas",
+        description: "Crea, edita, elimina o asigna plantillas a los productores.",
+        route: "/admin/templates",
+        buttonLabel: "Ir a Configurar Plantillas",
+      },
+      {
+        permissionKey: "publishedTemplates",
+        roles: ["Administrador", "Responsable"],
+        icon: <IconChecklist size={80} />,
+        title: "Gestionar Plantillas",
+        description: "Administra las plantillas cargadas por los productores.",
+        route: "/templates/published",
+        buttonLabel: "Ir a Gestión de Plantillas",
+      },
+      {
+        permissionKey: "producerReportsConfig",
+        roles: ["Administrador"],
+        icon: <IconClipboardData size={80} />,
+        title: "Configurar Informes de Gestión de Productores",
+        description: "Crea, edita y asigna los informes que generarán los productores.",
+        route: "/admin/reports/producers",
+        buttonLabel: "Ir a Configuración de Informes",
+      },
+      {
+        permissionKey: "producerReportsManagement",
+        roles: ["Administrador", "Responsable"],
+        icon: <IconReportSearch size={80} />,
+        title: "Gestionar Informes Productores",
+        description: "Gestiona el proceso de cargue de los informes por parte de los productores.",
+        route: "/reportproducers",
+        buttonLabel: "Ir a Gestión de Informes",
+      },
+      {
+        permissionKey: "ambitosReportsConfig",
+        roles: ["Administrador"],
+        icon: (
+          <Center style={{ position: "relative" }}>
+            <IconClipboard size={80} />
+            <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }} />
+          </Center>
+        ),
+        title: "Configurar Informes de Ámbitos",
+        description: "Crea, edita y asigna los informes que generarán los Ámbitos.",
+        route: "/admin/reports/ambitos",
+        buttonLabel: "Ir a Configuración de Informes",
+      },
+      {
+        permissionKey: "ambitosReportsManagement",
+        roles: ["Administrador"],
+        icon: <IconReportSearch size={80} />,
+        title: "Gestionar Informes Ámbitos",
+        description: "Gestiona el proceso de cargue de los informes por parte de las Ámbitos.",
+        route: "/admin/reports/ambitos/uploaded",
+        buttonLabel: "Ir a Gestión de Informes",
+      },
+      {
+        permissionKey: "adminReports",
+        roles: ["Administrador"],
+        icon: <IconChartBarPopular size={80} />,
+        title: "Configurar Informes de Gestión de Responsables",
+        description: "Crea, edita y asigna los informes de gestión de responsables.",
+        route: "/admin/reports",
+        buttonLabel: "Ir a Configuración de Informes.",
+      },
+      {
+        permissionKey: "publishedReports",
+        roles: ["Administrador"],
+        icon: <IconReportSearch size={80} />,
+        title: "Gestionar informes Responsables",
+        description: "Adminsitra el proceso de cargue de los informes de gestión.",
+        route: "/admin/reports/uploaded",
+        buttonLabel: "Ir a administración de Informes",
+      },
+      {
+        permissionKey: "periods",
+        roles: ["Administrador"],
+        icon: <IconCalendarMonth size={80} />,
+        title: "Gestionar Periodos",
+        description: "Administra todos los periodos de la plataforma Miró.",
+        route: "/admin/periods",
+        buttonLabel: "Ir a Gestión de Periodos",
+      },
+      {
+        permissionKey: "dimensions",
+        roles: ["Administrador"],
+        icon: <IconHexagon3d size={80} />,
+        title: "Gestionar Ámbitos",
+        description: "Administra los Ámbitos y sus responsables.",
+        route: "/admin/dimensions",
+        buttonLabel: "Ir a Gestión de Ámbitos",
+      },
+      {
+        permissionKey: "dependencies",
+        roles: ["Administrador"],
+        icon: <IconBuilding size={80} />,
+        title: "Gestionar Dependencias",
+        description: "Administra las dependencias y sus responsables.",
+        route: "/admin/dependencies",
+        buttonLabel: "Ir a Gestión de Dependencias",
+      },
+      {
+        permissionKey: "validations",
+        roles: ["Administrador"],
+        icon: <IconZoomCheck size={80} />,
+        title: "Gestionar Validaciones",
+        description: "Administra todas las validaciones para asignarlas en las plantillas.",
+        route: "/admin/validations",
+        buttonLabel: "Ir a Gestión de Validaciones",
+      },
+      {
+        permissionKey: "templatesLogs",
+        roles: ["Administrador"],
+        icon: <IconFilesOff size={80} />,
+        title: "Valida los Registros de Error",
+        description: "Verifica los registros de error de las plantillas cargadas.",
+        route: "/admin/logs",
+        buttonLabel: "Ir a los registros de error",
+      },
+      {
+        permissionKey: "reminders",
+        roles: ["Administrador"],
+        icon: <IconMail size={80} />,
+        title: "Recordatorios por correo",
+        description: "Ajusta cuándo se deben enviar recordatorios por email para plantillas e informes pendientes.",
+        route: "/admin/reminders",
+        buttonLabel: "Ir a Recordatorios",
+      },
+      {
+        permissionKey: "audit",
+        roles: ["Administrador"],
+        icon: <IconChartHistogram size={80} />,
+        title: "Historial de Trazabilidad",
+        description: "Consulta el historial de cambios en plantillas y Ámbitos",
+        route: "/admin/audit",
+        buttonLabel: "Ir a Historial",
+      },
+      {
+        permissionKey: "templatesManagement",
+        roles: ["Administrador"],
+        icon: <IconFilter size={80} />,
+        title: "Gestión de Plantillas con Filtros",
+        description: "Gestiona plantillas con filtros avanzados y configuraciones administrativas",
+        route: "/admin/templates-management",
+        buttonLabel: "Ir a Plantillas con Filtros",
+      },
+      {
+        permissionKey: "dependenciesHierarchy",
+        roles: ["Administrador"],
+        icon: <IconHierarchy2 size={80} />,
+        title: "Jerarquía de Dependencias",
+        description: "Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.",
+        route: "/admin/dependencies-hierarchy",
+        buttonLabel: "Ir a Jerarquía de Dependencias",
+      },
+      {
+        permissionKey: "responsibleReports",
+        roles: ["Responsable"],
+        icon: <IconChartBarPopular size={80} />,
+        title: "Informe de Gestión de Responsables",
+        description: "Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones",
+        route: "/responsible/reports",
+        buttonLabel: "Ir a Informes de Gestión de Responsables",
+      },
+      {
+        permissionKey: "producerTemplates",
+        roles: ["Productor"],
+        icon: <IconFileAnalytics size={80} />,
+        title: "Gestionar Plantillas",
+        description: "Consulta las plantillas que debes llenar, carga y edita los datos solicitados.",
+        route: "/producer/templates",
+        buttonLabel: "Ir a Gestionar Plantillas",
+      },
+      {
+        permissionKey: "producerReports",
+        roles: ["Productor"],
+        icon: <IconClipboardData size={80} />,
+        title: "Informe de gestión de productor",
+        description: "Revisa los informes que debes entregar, carga los informes y haz los ajustes de acuerdo a las observaciones",
+        route: "/producer/reports",
+        buttonLabel: "Ir a Informes de Productores",
+      },
+      {
+        permissionKey: "templatesWithFilters",
+        roles: ["Responsable", "Productor"],
+        icon: <IconFilter size={80} />,
+        title: "Gestión de Plantillas con Filtros",
+        description: "Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito",
+        route: "/templates-with-filters",
+        buttonLabel: "Ir a Plantillas con Filtros",
+      },
+      {
+        permissionKey: "validationsView",
+        roles: ["Responsable"],
+        icon: <IconCheckbox size={80} />,
+        title: "Validaciones",
+        description: "Conoce las validaciones que deben cumplir los datos de tus plantillas.",
+        route: "/validations",
+        buttonLabel: "Ir a Validaciones",
+      },
+      {
+        permissionKey: "traceability",
+        roles: ["Responsable", "Productor"],
+        icon: <IconChartHistogram size={80} />,
+        title: "Historial de Cambios",
+        description: "Consulta los cambios realizados en plantillas e informes de tus dependencias",
+        route: "/traceability",
+        buttonLabel: "Ir a Historial de Cambios",
+      },
+    ];
 
-    switch (userRole) {
-      case "Administrador":
-        cards.push(
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-configure-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/templates')} style={{ cursor: "pointer" }}>
-              <Center>
-                <IconFileAnalytics size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Plantillas</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita, elimina o asigna plantillas a los productores.
-              </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push('/admin/templates')}
-              >
-                Ir a Configurar Plantillas
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-manage-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates/published')} style={{ cursor: "pointer" }}>
-              <Center>
-                <IconChecklist size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra las plantillas cargadas por los productores.
-              </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push('/templates/published')}
-              >
-                Ir a Gestión de Plantillas
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producers-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/producers')} style={{ cursor: "pointer" }}>
-              <Center>
-                <IconClipboardData size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Productores</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes que generarán los productores.
-                </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push('/admin/reports/producers')}
-              >
-                Ir a Configuración de Informes
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports-producers">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/reportproducers')} style={{ cursor: "pointer" }}>
-              <Center>
-                <IconReportSearch size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Informes Productores</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el proceso de cargue de los informes por parte de los productores.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reportproducers')}>
-                Ir a Gestión de Informes
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos')} style={{ cursor: "pointer" }}>
-               <Center style={{ position: "relative" }}>
-                <IconClipboard size={80}/>
-                <IconHexagon3d size={36} style={{ position: "absolute", top: "57%", left: "50%", transform: "translate(-50%, -50%)" }}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes de Ámbitos</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes que generarán los Ámbitos.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos')}>
-                Ir a Configuración de Informes
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="uploaded-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/admin/reports/ambitos/uploaded')} style={{ cursor: "pointer" }}>
-              <Center>
-                <IconReportSearch size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Informes Ámbitos</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Gestiona el proceso de cargue de los informes por parte de las Ámbitos.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/ambitos/uploaded')}>
-                Ir a Gestión de Informes
-              </Button>
-            </Card>
-          </Grid.Col>,
+    const cards = cardDefs.map(renderActionCard).filter(Boolean);
 
-
-<Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-gestion-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-               <Center style={{ position: "relative" }}>
-                <IconChartBarPopular size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Configurar Informes de Gestión de Responsables</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Crea, edita y asigna los informes de gestión de responsables.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports')}>
-                Ir a Configuración de Informes.
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-gestion-uploaded-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center>
-                <IconReportSearch size={80}/>
-              </Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar informes Responsables</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Adminsitra el proceso de cargue de los informes de gestión.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/reports/uploaded')}>
-                Ir a administración de Informes 
-              </Button>
-            </Card>
-          </Grid.Col>,
-
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-periods">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconCalendarMonth size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Periodos</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra todos los periodos de la plataforma Miró.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/periods')}>
-                Ir a Gestión de Periodos
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-dimensions">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconHexagon3d size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Ámbitos</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra los Ámbitos y sus responsables.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dimensions')}>
-                Ir a Gestión de Ámbitos
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-dependencies">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconBuilding size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Dependencias</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra las dependencias y sus responsables.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies')}>
-                Ir a Gestión de Dependencias
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-validations">
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconZoomCheck size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Validaciones</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Administra todas las validaciones para asignarlas en las plantillas.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/validations')}>
-                Ir a Gestión de Validaciones
-              </Button>
-            </Card>
-          </Grid.Col>,
-              <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-logs">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconFilesOff size={80}/></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Valida los Registros de Error</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Verifica los registros de error de las plantillas cargadas.
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/logs')}>
-                  Ir a los registros de error
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-reminders">
-  <Card shadow="sm" padding="lg" radius="md" withBorder>
-    <Center><IconMail   size={80}/></Center>
-    <Group mt="md" mb="xs">
-      <Text ta={"center"} w={500}>Recordatorios por correo</Text>
-    </Group>
-    <Text ta={"center"} size="sm" color="dimmed">
-      Ajusta cuándo se deben enviar recordatorios por email para plantillas e informes pendientes.
-    </Text>
-    <Button
-      variant="light"
-      fullWidth
-      mt="md"
-      radius="md"
-      onClick={() => router.push('/admin/reminders')}
-    >
-      Ir a Recordatorios
-    </Button>
-  </Card>
-</Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-audit">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconChartHistogram size={80}/></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Historial de Trazabilidad</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Consulta el historial de cambios en plantillas y Ámbitos
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/audit')}>
-                  Ir a Historial
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-templates-management">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconFilter size={80}/></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Gestiona plantillas con filtros avanzados y configuraciones administrativas
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/templates-management')}>
-                  Ir a Plantillas con Filtros
-                </Button>
-              </Card>
-            </Grid.Col>,
-            <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="admin-dependencies-hierarchy">
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconHierarchy2 size={80}/></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Jerarquía de Dependencias</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/admin/dependencies-hierarchy')}>
-                  Ir a Jerarquía de Dependencias
-                </Button>
-              </Card>
-            </Grid.Col>,
-
-
-
-
-        );
-        break;
-      case "Responsable":
-        cards.push(
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-published-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates/published')} style={{ cursor: "pointer" }}>
-              <Center><IconChecklist size={80}></IconChecklist></Center>
-              <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestionar Plantillas Productores</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Haz seguimiento y descarga las plantillas de tus productores.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates/published')}>
-                Ir a Plantillas Cargadas
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-reports">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/reportproducers')} style={{ cursor: "pointer" }}>
-             <Center><IconClipboardData size={80}/></Center>
-             <Group mt="md" mb="xs">
-               <Text ta={"center"} w={500}>Visualizar Informes de Gestión de Productores</Text>
-             </Group>
-             <Text ta={"center"} size="sm" color="dimmed">
-             Visualiza y da seguimiento a los informes de gestión cargados por los productores de tu ámbito
-             </Text>
-             <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/reportproducers')}>
-               Ir a Informes de Gestión de Productores
-             </Button>
-            </Card>
-         </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-view-producer-management-reports">
-  <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/responsible/reports')} style={{ cursor: "pointer" }}>
-    <Center>
-      <IconChartBarPopular size={80} />
-    </Center>
-
-    <Group mt="md" mb="xs">
-      <Text ta="center" w={500}>
-       Informe de Gestión de Responsables
-      </Text>
-    </Group>
-
-    <Text ta="center" size="sm" color="dimmed">
-      Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones
-    </Text>
-
-    <Button
-      variant="light"
-      fullWidth
-      mt="md"
-      radius="md"
-      onClick={() => router.push('/responsible/reports')}
-    >
-       Ir a Informes de Gestión de Responsables
-    </Button>
-  </Card>
-</Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-templates-with-filters">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
-              <Center><IconFilter size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-               Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
-                Ir a Plantillas con Filtros
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-validations">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/validations')} style={{ cursor: "pointer" }}>
-              <Center><IconCheckbox size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Validaciones</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Conoce las validaciones que deben cumplir los datos de tus plantillas.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/validations')}>
-                Ir a Validaciones
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="responsible-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
-              <Center><IconChartHistogram size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Historial de Cambios</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta los cambios realizados en plantillas e informes de tus dependencias
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
-                Ir a Historial de Cambios
-              </Button>
-            </Card>
-          </Grid.Col>,
-        );
-        break;
-      case "Productor":
-        cards.push(
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-my-templates">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/templates')} style={{ cursor: "pointer" }}>
-              <Center><IconFileAnalytics size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestionar Plantillas</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta las plantillas que debes llenar, carga y edita los datos solicitados.
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/producer/templates')}>
-                Ir a Gestionar Plantillas
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-reports">
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/producer/reports')} style={{ cursor: "pointer" }}>
-            <Center><IconClipboardData size={80}/></Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Informe de gestión de productor</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Revisa los informes que debes entregar, carga los informes y haz los ajustes de acuerdo a las observaciones
+    if (cards.length === 0) {
+      cards.push(
+        <Grid.Col span={12} key="no-roles-message">
+          <Paper
+            withBorder
+            radius="xl"
+            p="xl"
+            style={{ textAlign: "center", background: "var(--mantine-color-gray-0)" }}
+          >
+            <Text fw={600} size="lg" mb="xs">Sin módulos asignados</Text>
+            <Text size="sm" c="dimmed">
+              {hasProfile ? (
+                <>
+                  Tu perfil no tiene permisos asignados para este módulo.<br />
+                  Contacta al administrador del sistema para que ajuste tu perfil.
+                </>
+              ) : (
+                <>
+                  Tu cuenta aún no tiene roles ni permisos configurados.<br />
+                  Contacta al administrador del sistema para que te asigne un rol.
+                </>
+              )}
             </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/producer/reports')}>
-              Ir a Informes de Productores
-            </Button>
-          </Card>
-        </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-templates-with-filters-all">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/templates-with-filters')} style={{ cursor: "pointer" }}>
-              <Center><IconFilter size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Gestión de Plantillas con Filtros</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/templates-with-filters')}>
-                Ir a Plantillas con Filtros
-              </Button>
-            </Card>
-          </Grid.Col>,
-          <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="producer-traceability">
-            <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push('/traceability')} style={{ cursor: "pointer" }}>
-              <Center><IconChartHistogram size={80}/></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Historial de Cambios</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta los cambios realizados en plantillas e informes de tus dependencias
-              </Text>
-              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/traceability')}>
-                Ir a Historial de Cambios
-              </Button>
-            </Card>
-          </Grid.Col>,
-        );
-        break;
-      case "Usuario":
-      default:
-        if (Object.keys(viewPermissions).length > 0) {
-          // Usuario con permisos por cargo: no mostrar tarjetas extra aquí,
-          // las tarjetas de módulo ya aparecen en el home por hasViewPermission
-          break;
-        }
-        cards.push(
-          <Grid.Col span={12} key="no-roles-message">
-            <Paper
-              withBorder
-              radius="xl"
-              p="xl"
-              style={{ textAlign: "center", background: "var(--mantine-color-gray-0)" }}
-            >
-              <Text fw={600} size="lg" mb="xs">Sin módulos asignados</Text>
-              <Text size="sm" c="dimmed">
-                Tu cuenta aún no tiene roles ni permisos configurados.<br />
-                Contacta al administrador del sistema para que te asigne un rol.
-              </Text>
-            </Paper>
-          </Grid.Col>
-        );
-        break;
+          </Paper>
+        </Grid.Col>
+      );
     }
 
-    // if (isResponsible) {
-    //   cards.push(
-    //     <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key="administer-dependency">
-    //       <Card shadow="sm" padding="lg" radius="md" withBorder>
-    //         <Center><IconUserStar size={80}/></Center>
-    //         <Group mt="md" mb="xs">
-    //           <Text ta={"center"} w={500}>Administrar Mi Dependencia</Text>
-    //         </Group>
-    //         <Text ta={"center"} size="sm" color="dimmed">
-    //           Selecciona quÃ© miembros de tu equipo tendrÃ¡n acceso a MirÃ³
-    //         </Text>
-    //         <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push('/dependency')}>
-    //           Ir a GestiÃ³n de Dependencia
-    //         </Button>
-    //       </Card>
-    //     </Grid.Col>
-    //   );
-    // }
     return cards;
   };
 
@@ -986,170 +785,96 @@ const DashboardPage = () => {
     );
   };
 
+  const renderCardsFallback = () => (
+    <Grid.Col span={12}>
+      <Center>
+        <Text c="dimmed">No tienes permisos para este modulo.</Text>
+      </Center>
+    </Grid.Col>
+  );
+
   const renderConfigurationCards = () => {
-    if (!hasViewPermission("configuration") && !hasViewPermission("profiles") && !hasViewPermission("users") && userRole !== "Administrador") {
-      return (
-        <Grid.Col span={12}>
-          <Center>
-            <Text c="dimmed">No tienes permisos para este modulo.</Text>
-          </Center>
-        </Grid.Col>
-      );
-    }
+    const cards = [
+      renderActionCard({
+        permissionKey: "users",
+        roles: ["Administrador"],
+        icon: <IconUserHexagon size={80} />,
+        title: "Gestionar Usuarios",
+        description: "Administra los roles y permisos de los usuarios.",
+        route: "/admin/users",
+        buttonLabel: "Ir a Gestión de Usuarios",
+      }),
+      renderActionCard({
+        permissionKey: "profiles",
+        roles: ["Administrador"],
+        icon: <IconShield size={80} />,
+        title: "Gestionar perfiles",
+        description: "Define qué vistas puede consultar o administrar cada perfil del sistema.",
+        route: "/configuracion/perfiles",
+        buttonLabel: "Ir a Gestion de Perfiles",
+      }),
+      renderActionCard({
+        permissionKey: "homeSettings",
+        roles: ["Administrador"],
+        icon: <IconHomeCog size={80} />,
+        title: "Ajustes Pagina Inicial",
+        description: "Ajusta la información de la pagina de inicio.",
+        route: "/admin/homeSettings",
+        buttonLabel: "Ir a los ajustes de inicio",
+      }),
+    ].filter(Boolean);
 
-    return (
-      <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/users")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconUserHexagon size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta="center" w={500}>Gestionar Usuarios</Text>
-            </Group>
-            <Text ta="center" size="sm" color="dimmed">
-              Administra los roles y permisos de los usuarios.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/admin/users")}>
-              Ir a Gestión de Usuarios
-            </Button>
-          </Card>
-        </Grid.Col>
-
-
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/configuracion/perfiles")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconShield size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta="center" w={500}>Gestionar perfiles</Text>
-            </Group>
-            <Text ta="center" size="sm" color="dimmed">
-              Define qué vistas puede consultar o administrar cada perfil del sistema.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/configuracion/perfiles")}>
-              Ir a Gestion de Perfiles
-            </Button>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/admin/homeSettings")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconHomeCog size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta="center" w={500}>Ajustes Pagina Inicial</Text>
-            </Group>
-            <Text ta="center" size="sm" color="dimmed">
-              Ajusta la información de la pagina de inicio.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/admin/homeSettings")}>
-              Ir a los ajustes de inicio
-            </Button>
-          </Card>
-        </Grid.Col>
-      </>
-    );
+    return cards.length > 0 ? <>{cards}</> : renderCardsFallback();
   };
 
   const renderResponsiblePdiCards = () => {
-    if (!hasViewPermission("pdi") && !hasViewPermission("pdiMine") && !hasViewPermission("pdiDashboard") && userRole !== "Responsable" && userRole !== "Administrador") {
-      return (
-        <Grid.Col span={12}>
-          <Center>
-            <Text c="dimmed">No tienes permisos para este modulo.</Text>
-          </Center>
-        </Grid.Col>
-      );
-    }
+    const cards = [
+      renderActionCard({
+        permissionKey: "pdiMine",
+        roles: ["Responsable", "Administrador"],
+        icon: <IconTarget size={80} />,
+        title: "Proyectos PDI",
+        description: "Consulta y actualiza el avance de los proyectos PDI asignados a ti.",
+        route: "/pdi/mis-indicadores",
+        buttonLabel: "Ir a Mis Proyectos PDI",
+      }),
+    ].filter(Boolean);
 
-    return (
-      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-        <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/pdi/mis-indicadores")} style={{ cursor: "pointer" }}>
-          <Center>
-            <IconTarget size={80} />
-          </Center>
-          <Group mt="md" mb="xs">
-            <Text ta={"center"} w={500}>Proyectos PDI</Text>
-          </Group>
-          <Text ta={"center"} size="sm" color="dimmed">
-            Consulta y actualiza el avance de los proyectos PDI asignados a ti.
-          </Text>
-          <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/pdi/mis-indicadores")}>
-            Ir a Mis Proyectos PDI
-          </Button>
-        </Card>
-      </Grid.Col>
-    );
+    return cards.length > 0 ? <>{cards}</> : renderCardsFallback();
   };
 
   const renderResponsibleAdminCards = () => {
-    if (!hasViewPermission("responsibleReports") && !hasViewPermission("publishedTemplates") && userRole !== "Responsable" && userRole !== "Administrador") {
-      return (
-        <Grid.Col span={12}>
-          <Center>
-            <Text c="dimmed">No tienes permisos para este modulo.</Text>
-          </Center>
-        </Grid.Col>
-      );
-    }
+    const cards = [
+      renderActionCard({
+        permissionKey: "dependency",
+        roles: ["Responsable", "Administrador"],
+        icon: <IconUserStar size={80} />,
+        title: "Ver Mi Dependencia",
+        description: "Selecciona que miembros de tu equipo tendran acceso a Miro.",
+        route: "/dependency",
+        buttonLabel: "Ir a Gestion de Dependencia",
+      }),
+      renderActionCard({
+        permissionKey: "childDependenciesTemplates",
+        roles: ["Responsable", "Administrador"],
+        icon: <IconHierarchy2 size={80} />,
+        title: "Visualizar plantillas de dependencias hijo",
+        description: "Observa el progreso de carga de las plantillas de tus dependencias hijo.",
+        route: "/dependency/children-dependencies/templates",
+        buttonLabel: "Ir a visualizador",
+      }),
+      renderActionCard({
+        permissionKey: "childDependenciesReports",
+        roles: ["Responsable", "Administrador"],
+        icon: <IconClipboardData size={80} />,
+        title: "Visualizar reportes de dependencias hijo",
+        description: "Observa los reportes generados por las dependencias hijo y su estado de cumplimiento.",
+        route: "/dependency/children-dependencies/reports",
+        buttonLabel: "Ir a visualizador de reportes",
+      }),
+    ].filter(Boolean);
 
-    return (
-      <>
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconUserStar size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Ver Mi Dependencia</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Selecciona que miembros de tu equipo tendran acceso a Miro.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency")}>
-              Ir a Gestion de Dependencia
-            </Button>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/templates")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconHierarchy2 size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Visualizar plantillas de dependencias hijo</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Observa el progreso de carga de las plantillas de tus dependencias hijo.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/templates")}>
-              Ir a visualizador
-            </Button>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push("/dependency/children-dependencies/reports")} style={{ cursor: "pointer" }}>
-            <Center>
-              <IconClipboardData size={80} />
-            </Center>
-            <Group mt="md" mb="xs">
-              <Text ta={"center"} w={500}>Visualizar reportes de dependencias hijo</Text>
-            </Group>
-            <Text ta={"center"} size="sm" color="dimmed">
-              Observa los reportes generados por las dependencias hijo y su estado de cumplimiento.
-            </Text>
-            <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push("/dependency/children-dependencies/reports")}>
-              Ir a visualizador de reportes
-            </Button>
-          </Card>
-        </Grid.Col>
-      </>
-    );
+    return cards.length > 0 ? <>{cards}</> : renderCardsFallback();
   };
 
   if (shouldRedirectFromDashboardHome || shouldWaitDashboardRedirect) {
@@ -1244,6 +969,11 @@ const DashboardPage = () => {
             <Button variant="subtle" onClick={() => {
               if (avRcOpen) {
                 setAvRcOpen(false);
+              } else if (["reports", "snies", "cna"].includes(activeModule)) {
+                // "Plantillas y reportes", SNIES y CNA son hijos del submenú
+                // "Gestión de reportes", así que volver debe regresar ahí
+                // (nivel intermedio) en lugar de saltar al home del dashboard.
+                router.push("/dashboard?view=gestion");
               } else {
                 // Navegación explícita en vez de router.back(): activeModule se deriva
                 // de la URL, así que "volver" siempre significa ir al home del dashboard,
@@ -1258,7 +988,7 @@ const DashboardPage = () => {
         )}
         {activeModule === "home" && !avRcOpen && !gestionReportesOpen ? (
           <Grid justify="center" align="stretch">
-            {canSee("adminTemplates", ["Administrador", "Responsable", "Productor"]) && (
+            {canSeeAny(GESTION_REPORTES_KEYS, ["Administrador", "Responsable", "Productor"]) && (
             <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
               <Card
                 radius="xl"
@@ -1395,7 +1125,7 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
-            {canSee("pdi", ["Administrador", "Responsable"]) && (
+            {canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1437,7 +1167,7 @@ const DashboardPage = () => {
             )}
 
 
-            {canSee("responsibleReports", ["Responsable"]) && (
+            {canSeeAny(RESPONSIBLE_ADMIN_KEYS, ["Responsable"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1477,7 +1207,7 @@ const DashboardPage = () => {
             )}
             
 
-            {canSee("configuration", ["Administrador"]) && (
+            {canSeeAny(CONFIGURATION_KEYS, ["Administrador"]) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1517,12 +1247,12 @@ const DashboardPage = () => {
             )}
 
             {/* Fallback: usuario sin roles ni permisos */}
-            {!canSee("adminTemplates", ["Administrador", "Responsable", "Productor"]) &&
+            {!canSeeAny(GESTION_REPORTES_KEYS, ["Administrador", "Responsable", "Productor"]) &&
              !canSee("dateReview", ["Administrador", "Responsable", "Productor"]) &&
              !["Responsable", "Productor"].includes(userRole) &&
-             !canSee("pdi", ["Administrador", "Responsable"]) &&
-             !canSee("responsibleReports", ["Administrador", "Responsable"]) &&
-             !canSee("configuration", ["Administrador"]) && (
+             !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) &&
+             !canSeeAny(RESPONSIBLE_ADMIN_KEYS, ["Administrador", "Responsable"]) &&
+             !canSeeAny(CONFIGURATION_KEYS, ["Administrador"]) && (
               <Grid.Col span={12}>
                 <Paper
                   withBorder
@@ -1585,8 +1315,7 @@ const DashboardPage = () => {
                   </Grid.Col>
 
                   {canSee("snies", ["Administrador"]) && (
-                    <>
-                      <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                    <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                         <Card
                           radius="xl"
                           p="xl"
@@ -1622,7 +1351,9 @@ const DashboardPage = () => {
                           </Stack>
                         </Card>
                       </Grid.Col>
+                  )}
 
+                  {canSee("cna", ["Administrador"]) && (
                       <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                         <Card
                           radius="xl"
@@ -1659,10 +1390,9 @@ const DashboardPage = () => {
                           </Stack>
                         </Card>
                       </Grid.Col>
-                    </>
                   )}
 
-                  {canSee("dashboard", ["Administrador", "Responsable", "Productor"]) && (
+                  {canSee("historicoDocentes", ["Administrador", "Responsable", "Productor"]) && (
                     <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                       <Card
                         radius="xl"

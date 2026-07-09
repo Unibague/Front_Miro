@@ -25,6 +25,7 @@ import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { getWeightedContribution as getWeightedProgress } from "../avance-utils";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -229,10 +230,6 @@ function getIndicadorAvanceMostrado(ind: Indicador) {
   return ind.avance_total_real ?? ind.avance;
 }
 
-function getIndicadorAvanceTotalReal(ind: Indicador) {
-  return ind.avance_total_real != null ? Number(ind.avance_total_real) : (Number(ind.avance) || 0);
-}
-
 function getIndicadorAvancePonderado(ind: Indicador) {
   return Math.min(Math.max(Number(ind.avance) || 0, 0), 100);
 }
@@ -242,9 +239,15 @@ function indicadorUsaPorcentaje(ind: Indicador) {
   return ind.periodos.some((p) => typeof p.meta === "string" && p.meta.includes("%"));
 }
 
-function formatIndicadorTotalActual(ind: Indicador) {
-  if (ind.avance == null) return "—";
-  return indicadorUsaPorcentaje(ind) ? `${ind.avance}%` : String(ind.avance);
+function getPeriodoActualIndicador(ind: Indicador) {
+  const periodosOrdenados = [...(ind.periodos ?? [])].sort((a, b) => b.periodo.localeCompare(a.periodo));
+  const conDato = periodosOrdenados.find((p) => p.avance != null && p.avance !== "");
+  const periodo = conDato ?? periodosOrdenados[0];
+  if (!periodo) return { label: "Sin corte", value: "—" };
+  const value = periodo.avance != null && periodo.avance !== ""
+    ? (indicadorUsaPorcentaje(ind) ? `${periodo.avance}%` : String(periodo.avance))
+    : "—";
+  return { label: periodo.periodo, value };
 }
 
 function formatPeriodoAvance(ind: Indicador, avance: Periodo["avance"]) {
@@ -275,17 +278,6 @@ function getSemaforoByAvance(avance: number) {
   if (avance >= 90) return "verde";
   if (avance >= 60) return "amarillo";
   return "rojo";
-}
-
-function normalizePeso(peso: number) {
-  const value = Number(peso) || 0;
-  return value <= 1 ? value * 100 : value;
-}
-
-function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
-  );
 }
 
 // ── Panel de formularios del indicador ───────────────────────────────────
@@ -878,7 +870,6 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
   const avanceMostrado = getIndicadorAvanceMostrado(ind);
   const avanceBarra = Math.min(Math.max(avanceMostrado, 0), 100);
   const avanceVisible = avanceBarra;
-  const avanceTotalReal = getIndicadorAvanceTotalReal(ind);
   const barColor = avanceMostrado >= 70 ? "#22c55e" : avanceMostrado >= 40 ? "#f59e0b" : "#ef4444";
   const periodoSugeridoEvaluacion = getPeriodoSugeridoParaEvaluacion(ind);
   const reportesPendientes = esResponsable ? getReportesPendientesAccion([ind], cortesVigentes) : [];
@@ -1011,33 +1002,13 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
               );
             })}
           </Group>
-          <Box
-            mb="md"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 10px",
-              borderRadius: 999,
-              background: "rgba(59,130,246,0.12)",
-              border: "1px solid rgba(59,130,246,0.22)",
-            }}
-          >
-            <Text size="10px" fw={800} c="blue">
-              AVANCE TOTAL REAL
-            </Text>
-            <Text size="sm" fw={900} c="blue">
-              {avanceTotalReal}%
-            </Text>
-          </Box>
         </>
       )}
 
       {/* Mini stats */}
-      <SimpleGrid cols={2} mb="md">
+      <SimpleGrid cols={1} mb="md">
         {[
-          { label: "Seguimiento", value: ind.tipo_seguimiento || "Semestral" },
-          { label: "Total actual", value: formatIndicadorTotalActual(ind) },
+          getPeriodoActualIndicador(ind),
         ].map(s => (
           <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
             <Text fw={700} size="sm" lh={1}>{s.value}</Text>
