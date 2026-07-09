@@ -24,6 +24,7 @@ import {
   Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import {
   IconAlertCircle,
   IconArrowLeft,
@@ -241,39 +242,52 @@ export default function ProfilesManagementPage() {
     }
   };
 
-  const handleDeleteProfile = async (profile: AccessProfile) => {
-    if (!apiUrl || !session?.user?.email) return;
+  const handleDeleteProfile = (profile: AccessProfile) => {
+    const adminEmail = session?.user?.email;
+    if (!apiUrl || !adminEmail) return;
 
-    const shouldDelete = window.confirm(`¿Eliminar el perfil ${profile.name}?`);
-    if (!shouldDelete) return;
+    modals.openConfirmModal({
+      title: "Confirmar eliminación",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Eliminar el perfil <strong>{profile.name}</strong>?
+          <br />
+          Esta acción no se puede deshacer.
+        </Text>
+      ),
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        setDeletingProfileId(profile._id);
+        try {
+          await axios.delete(`${apiUrl}/users/position-profiles/${profile._id}`, {
+            data: { adminEmail },
+            headers: { "user-email": adminEmail },
+          });
 
-    setDeletingProfileId(profile._id);
-    try {
-      await axios.delete(`${apiUrl}/users/position-profiles/${profile._id}`, {
-        data: { adminEmail: session.user.email },
-        headers: { "user-email": session.user.email },
-      });
+          if (editingProfileId === profile._id) {
+            resetProfileForm();
+          }
 
-      if (editingProfileId === profile._id) {
-        resetProfileForm();
-      }
-
-      await fetchAccessProfiles();
-      showNotification({
-        title: "Perfil eliminado",
-        message: "El perfil fue eliminado correctamente.",
-        color: "teal",
-      });
-    } catch (error) {
-      console.error("Error deleting profile:", error);
-      showNotification({
-        title: "Error",
-        message: getErrorMessage(error, "No fue posible eliminar el perfil."),
-        color: "red",
-      });
-    } finally {
-      setDeletingProfileId(null);
-    }
+          await fetchAccessProfiles();
+          showNotification({
+            title: "Perfil eliminado",
+            message: "El perfil fue eliminado correctamente.",
+            color: "teal",
+          });
+        } catch (error) {
+          console.error("Error deleting profile:", error);
+          showNotification({
+            title: "Error",
+            message: getErrorMessage(error, "No fue posible eliminar el perfil."),
+            color: "red",
+          });
+        } finally {
+          setDeletingProfileId(null);
+        }
+      },
+    });
   };
 
   return (

@@ -40,7 +40,19 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, applyWorkbookSheetDropdowns, fetchValidatorOptionsForFields, loadWorkbookFromBase64, extractWorkbookCommentsFromBase64 } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  fetchValidatorOptionsForFields,
+  loadWorkbookFromBase64,
+  extractWorkbookCommentsFromBase64,
+  getConfiguredFieldPosition,
+  getSheetDataStartRow,
+  copyCellPresentation,
+  toExcelCellValue,
+  mergeFilledDataAcrossDependencies,
+} from "@/app/utils/templateUtils";
 
 const DropzoneUpdateButton = dynamic(
   () =>
@@ -142,48 +154,6 @@ interface ProducerUploadedTemplatesPageProps {
   refreshKey?: number;
 }
 
-const cloneExcelValue = <T,>(value: T): T => {
-  if (value === undefined || value === null) return value;
-  return JSON.parse(JSON.stringify(value));
-};
-
-const getConfiguredFieldPosition = (field: Field, fieldIndex: number) => {
-  const configuredColumn = Number(field.column);
-  const configuredHeaderRow = Number(field.header_row);
-
-  return {
-    col: Number.isFinite(configuredColumn) && configuredColumn > 0
-      ? configuredColumn
-      : fieldIndex + 1,
-    headerRow: Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0
-      ? configuredHeaderRow
-      : 1,
-  };
-};
-
-const getSheetDataStartRow = (fields: Field[]) => {
-  const headerRows = fields
-    .map((field, index) => getConfiguredFieldPosition(field, index).headerRow)
-    .filter((row) => Number.isFinite(row) && row > 0);
-
-  return (headerRows.length ? Math.min(...headerRows) : 1) + 1;
-};
-
-const copyCellPresentation = (target: ExcelJS.Cell, source: ExcelJS.Cell) => {
-  target.style = cloneExcelValue(source.style || {});
-  if (source.dataValidation) target.dataValidation = cloneExcelValue(source.dataValidation);
-  if (source.note) target.note = cloneExcelValue(source.note);
-};
-
-const toExcelCellValue = (value: any): ExcelJS.CellValue => {
-  if (value === undefined || value === null || value === "") return null;
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "object") {
-    if ("text" in value || "hyperlink" in value) return value as ExcelJS.CellValue;
-    return JSON.stringify(value);
-  }
-  return value as ExcelJS.CellValue;
-};
 
 const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDependencies, isAdmin = false, refreshKey = 0 }: ProducerUploadedTemplatesPageProps) => {
   const { selectedPeriodId } = usePeriod();
@@ -344,17 +314,30 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
       ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
       : {};
 
-    // Buscar datos del usuario
-    const filledData: any = publishedTemplate.loaded_data.find(
-      (entry) => entry.dependency === depCode || (entry as any).dependency_code === depCode
-    );
+    // El productor encargado de esta plantilla descarga lo enviado por TODAS
+    // las dependencias; el resto solo descarga lo de su propia dependencia.
+    const isEncargado = isResponsibleForTemplate(publishedTemplate);
+    let allFilledData: FilledFieldData[];
 
-    if (!filledData) {
-      showNotification({ title: "Sin datos cargados", message: "No se encontraron datos cargados para tu dependencia.", color: "yellow" });
-      return;
+    if (isEncargado) {
+      const allEntries = publishedTemplate.loaded_data || [];
+      if (!allEntries.length) {
+        showNotification({ title: "Sin datos cargados", message: "Aún no hay información cargada por ningún productor.", color: "yellow" });
+        return;
+      }
+      allFilledData = mergeFilledDataAcrossDependencies(allEntries);
+    } else {
+      const filledData: any = publishedTemplate.loaded_data.find(
+        (entry) => entry.dependency === depCode || (entry as any).dependency_code === depCode
+      );
+
+      if (!filledData) {
+        showNotification({ title: "Sin datos cargados", message: "No se encontraron datos cargados para tu dependencia.", color: "yellow" });
+        return;
+      }
+
+      allFilledData = filledData.filled_data || [];
     }
-
-    const allFilledData: FilledFieldData[] = filledData.filled_data || [];
 
     // Fill the saved data into the configured cells while preserving the base worksheet content.
     const populateSheet = (ws: ExcelJS.Worksheet, fields: any[], sheetName?: string) => {
@@ -535,6 +518,10 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
     if (isAdmin || (session?.user as any)?.role === "Administrador") return false;
+    // Una vez el productor encargado hizo el envio final al SNIES, ninguna
+    // dependencia puede seguir cargando o editando informacion (solo se
+    // permite "Eliminar envío" para deshacerlo si fue un error).
+    if (publishedTemplate.final_submitted) return true;
     if (!publishedTemplate.period.is_active) return true;
     const effectiveDeadline = publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date;
     if (!effectiveDeadline) return false;
@@ -579,9 +566,11 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               </Tooltip>
               <Tooltip
                 label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Editar plantilla (Hoja de cálculo)"
+                  publishedTemplate.final_submitted
+                    ? "Esta plantilla ya fue enviada al SNIES"
+                    : uploadDisable
+                      ? "El periodo ya se encuentra cerrado"
+                      : "Editar plantilla (Hoja de cálculo)"
                 }
                 position="top"
                 transitionProps={{ transition: "fade-up", duration: 300 }}
@@ -597,9 +586,11 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               </Tooltip>
               <Tooltip
                 label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Edición en línea"
+                  publishedTemplate.final_submitted
+                    ? "Esta plantilla ya fue enviada al SNIES"
+                    : uploadDisable
+                      ? "El periodo ya se encuentra cerrado"
+                      : "Edición en línea"
                 }
                 position="top"
                 transitionProps={{ transition: "fade-up", duration: 300 }}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal, TextInput, Button, Group, Stack, Select, MultiSelect, NumberInput } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -10,6 +10,13 @@ import type { Proyecto, Macroproyecto } from "../types";
 import { PDI_ROUTES } from "../api";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import {
+  extractNumberSegment,
+  getEntityId,
+  getFirstAvailableNumber,
+  getProjectPrefix,
+  normalizePdiCode,
+} from "../code-validation";
 
 interface Props {
   opened: boolean;
@@ -43,6 +50,8 @@ export default function ProyectoModal({
   const [numAcciones, setNumAcciones] = useState<number | string>(0);
   const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
   const [fechaFin, setFechaFin] = useState<Date | null>(null);
+  const [proyectosMacro, setProyectosMacro] = useState<Proyecto[]>([]);
+  const [proyectosMacroLoaded, setProyectosMacroLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -90,15 +99,95 @@ export default function ProyectoModal({
     setNumAcciones(0);
     setFechaInicio(null);
     setFechaFin(null);
-  }, [opened, selected, defaultMacroId]);
+  }, [opened, selected, defaultMacroId, setHasChanges]);
+
+  useEffect(() => {
+    if (!opened || !macroId) {
+      setProyectosMacro([]);
+      setProyectosMacroLoaded(false);
+      return;
+    }
+
+    setProyectosMacroLoaded(false);
+    axios.get(PDI_ROUTES.proyectos(), { params: { macroproyecto_id: macroId } })
+      .then((res) => setProyectosMacro(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setProyectosMacro([]))
+      .finally(() => setProyectosMacroLoaded(true));
+  }, [opened, macroId]);
 
   const pesoAuto = selected
     ? selected.peso
     : (config.proyectos_por_macro > 0 ? parseFloat((100 / config.proyectos_por_macro).toFixed(6)) : 0);
 
+  const macroSeleccionado = useMemo(
+    () => macroproyectos.find((macro) => macro._id === macroId) ?? null,
+    [macroId, macroproyectos]
+  );
+
+  const expectedProjectPrefix = useMemo(
+    () => getProjectPrefix(macroSeleccionado?.codigo),
+    [macroSeleccionado?.codigo]
+  );
+
+  const codigoNormalizado = normalizePdiCode(codigo);
+  const codigoError = useMemo(() => {
+    if (!codigo.trim()) return null;
+    if (!macroId) return "Selecciona un macroproyecto antes de definir el codigo.";
+    if (!expectedProjectPrefix) return "El macroproyecto seleccionado no tiene un codigo M# valido.";
+    if (!/^M[1-9]\d*-P[1-9]\d*$/.test(codigoNormalizado)) {
+      return "El codigo del proyecto debe tener formato M#-P# (por ejemplo, M2-P3).";
+    }
+    if (!codigoNormalizado.startsWith(expectedProjectPrefix)) {
+      return `Para el macroproyecto ${macroSeleccionado?.codigo} el codigo debe iniciar con ${expectedProjectPrefix}.`;
+    }
+
+    const duplicado = proyectosMacro.find((proyecto) =>
+      proyecto._id !== selected?._id && normalizePdiCode(proyecto.codigo) === codigoNormalizado
+    );
+    if (duplicado) return `Ya existe un proyecto con el codigo ${duplicado.codigo}.`;
+
+    const numero = extractNumberSegment(codigoNormalizado, "P");
+    if (!numero) return null;
+
+    const existentes = proyectosMacro.filter((proyecto) => proyecto._id !== selected?._id);
+    const numerosUsados = new Set(
+      existentes
+        .map((proyecto) => extractNumberSegment(proyecto.codigo, "P"))
+        .filter((value): value is number => value !== null)
+    );
+    const numeroOriginal = extractNumberSegment(selected?.codigo, "P");
+    const conservaNumero = Boolean(
+      selected &&
+      getEntityId(selected.macroproyecto_id) === macroId &&
+      numeroOriginal === numero
+    );
+    if (conservaNumero) return null;
+
+    const esperado = getFirstAvailableNumber(numerosUsados);
+    if (numero !== esperado) {
+      return `La numeracion no es consecutiva. El siguiente codigo esperado es ${expectedProjectPrefix}${esperado}.`;
+    }
+
+    return null;
+  }, [codigo, codigoNormalizado, expectedProjectPrefix, macroId, macroSeleccionado?.codigo, proyectosMacro, selected]);
+
+  useEffect(() => {
+    if (!opened || selected || !expectedProjectPrefix || !proyectosMacroLoaded || codigo.trim()) return;
+    const numerosUsados = new Set(
+      proyectosMacro
+        .map((proyecto) => extractNumberSegment(proyecto.codigo, "P"))
+        .filter((value): value is number => value !== null)
+    );
+    setCodigo(`${expectedProjectPrefix}${getFirstAvailableNumber(numerosUsados)}`);
+  }, [codigo, expectedProjectPrefix, opened, proyectosMacro, proyectosMacroLoaded, selected]);
+
   const handleSave = async () => {
     if (!codigo.trim() || !nombre.trim() || !macroId) {
       showNotification({ title: "Error", message: "Codigo, nombre y macroproyecto son requeridos", color: "red" });
+      return;
+    }
+    if (codigoError) {
+      showNotification({ title: "Codigo invalido", message: codigoError, color: "red" });
       return;
     }
 
@@ -123,7 +212,7 @@ export default function ProyectoModal({
       });
 
       const payload = {
-        codigo: codigo.trim(),
+        codigo: codigoNormalizado,
         nombre: nombre.trim(),
         descripcion: proposito.trim(),
         formulador: formulador.trim(),
@@ -159,11 +248,18 @@ export default function ProyectoModal({
           placeholder="Selecciona un macroproyecto"
           data={macroproyectos.map((m) => ({ value: m._id, label: `${m.codigo} - ${m.nombre}` }))}
           value={macroId}
-          onChange={(v) => { setMacroId(v); setHasChanges(true); }}
+          onChange={(v) => { setMacroId(v); if (!selected) setCodigo(""); setHasChanges(true); }}
           searchable
         />
         <Group grow>
-          <TextInput label="Codigo" placeholder="Ej: 1.1" value={codigo} onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }} />
+          <TextInput
+            label="Codigo"
+            placeholder={expectedProjectPrefix ? `${expectedProjectPrefix}1` : "Ej: M2-P3"}
+            value={codigo}
+            error={codigoError ?? undefined}
+            description={expectedProjectPrefix ? `Debe iniciar con ${expectedProjectPrefix}` : undefined}
+            onChange={(e) => { setCodigo(e.currentTarget.value); setHasChanges(true); }}
+          />
           <NumberInput
             label="Número de acciones"
             placeholder="Ej: 4"
@@ -193,7 +289,7 @@ export default function ProyectoModal({
 
       <Group justify="flex-end" mt="lg">
         <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
-        <Button loading={loading} onClick={handleSave}>Guardar</Button>
+        <Button loading={loading} disabled={Boolean(codigoError)} onClick={handleSave}>Guardar</Button>
       </Group>
     </Modal>
   );

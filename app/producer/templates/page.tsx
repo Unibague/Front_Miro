@@ -31,6 +31,7 @@ import {
   IconPencil,
   IconUpload,
   IconQrcode,
+  IconListDetails,
 } from "@tabler/icons-react";
 import QRCode from "react-qr-code";
 import { useSession } from "next-auth/react";
@@ -206,6 +207,8 @@ const ProducerTemplatesPage = () => {
   const [qrUrl, setQrUrl] = useState('');
   const [qrTemplateName, setQrTemplateName] = useState('');
   const qrRef = useRef<HTMLDivElement>(null);
+  const [statusModalTemplate, setStatusModalTemplate] = useState<PublishedTemplate | null>(null);
+  const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
   const uploadedSectionRef = useRef<HTMLDivElement>(null);
   const [uploadedRefreshKey, setUploadedRefreshKey] = useState(0);
 
@@ -1137,6 +1140,41 @@ if (field.multiple) {
       }
     }
   }
+
+  // Boton "Enviar" de la lista: si la dependencia ya tiene un borrador
+  // guardado (p.ej. con "Guardar" en el formulario, o por QR), lo confirma
+  // directamente sin pasar por el formulario. Si no hay borrador, no hay
+  // nada que enviar todavia, asi que lleva al formulario para completarlo.
+  const handleDirectSend = async (publishedTemplate: PublishedTemplate) => {
+    setSendingDraftId(publishedTemplate._id);
+    try {
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmDraft`, {
+        pubTemId: publishedTemplate._id,
+        email: session?.user?.email,
+      });
+      showNotification({
+        title: "Información enviada",
+        message: "Se confirmó y envió la información guardada.",
+        color: "teal",
+      });
+      refreshTemplates();
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        router.push(`/producer/templates/form/${publishedTemplate._id}`);
+        return;
+      }
+      showNotification({
+        title: "Error",
+        message: axios.isAxiosError(error)
+          ? (error.response?.data?.status || "No se pudo enviar la información.")
+          : "No se pudo enviar la información.",
+        color: "red",
+      });
+    } finally {
+      setSendingDraftId(null);
+    }
+  };
+
   // Verifica si el usuario es productor encargado de una plantilla publicada
   const isResponsibleForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
     // Usar el flag calculado en el backend cuando esté disponible
@@ -1149,6 +1187,34 @@ if (field.multiple) {
       (p: any) => userDepCodes.has(p.dep_code)
     )?._id;
     return depId ? responsibleIds.includes(depId) : false;
+  };
+
+  // Agrupa las dependencias productoras de una plantilla segun si ya enviaron
+  // datos, enviaron en cero, o aun no han enviado nada. Usa lo que ya viene
+  // cargado con la plantilla (template.producers + loaded_data), sin pedir
+  // datos adicionales al backend.
+  const getDependencyStatusGroups = (publishedTemplate: PublishedTemplate) => {
+    const producers = publishedTemplate.template?.producers || [];
+    const loadedByDepCode = new Map(
+      (publishedTemplate.loaded_data || []).map((entry) => [entry.dependency, entry])
+    );
+
+    const sent: Producer[] = [];
+    const empty: Producer[] = [];
+    const pending: Producer[] = [];
+
+    producers.forEach((producer) => {
+      const entry = loadedByDepCode.get(producer.dep_code);
+      if (!entry) {
+        pending.push(producer);
+      } else if (Array.isArray(entry.filled_data) && entry.filled_data.length > 0) {
+        sent.push(producer);
+      } else {
+        empty.push(producer);
+      }
+    });
+
+    return { sent, empty, pending };
   };
 
   // Verifica si el usuario puede generar QR: el encargado o alguna dependencia
@@ -1243,12 +1309,20 @@ if (field.multiple) {
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
+    // Una vez el productor encargado hizo el envio final al SNIES, ninguna
+    // dependencia puede seguir cargando, editando o reportando en cero.
+    if (publishedTemplate.final_submitted) return true;
     return new Date() > getEffectiveDeadline(publishedTemplate);
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
     //console.log("Published Template:", publishedTemplate); // Agregar el log aquí para inspeccionar los datos
     const uploadDisable = handleDisableUpload(publishedTemplate);
+    const disabledReason = publishedTemplate.final_submitted
+      ? "Esta plantilla ya fue enviada al SNIES"
+      : uploadDisable
+        ? "El periodo ya se encuentra cerrado"
+        : null;
     return (
       <Table.Tr key={publishedTemplate._id}>
 <Table.Td>
@@ -1332,11 +1406,7 @@ if (field.multiple) {
           <Center>
             <Group>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Realizar envío en ceros"
-                }
+                label={disabledReason ?? "Realizar envío en ceros"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -1349,11 +1419,7 @@ if (field.multiple) {
                 </Button>
               </Tooltip>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Cargar plantilla (Hoja de cálculo)"
-                }
+                label={disabledReason ?? "Cargar plantilla (Hoja de cálculo)"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -1366,11 +1432,7 @@ if (field.multiple) {
                 </Button>
               </Tooltip>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Edición en línea"
-                }
+                label={disabledReason ?? "Edición en línea"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -1387,27 +1449,34 @@ if (field.multiple) {
                 </Button>
               </Tooltip>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Enviar información"
-                }
+                label={disabledReason ?? "Enviar información"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
                   variant="filled"
                   color="green"
-                  onClick={() =>
-                    router.push(
-                      `/producer/templates/form/${publishedTemplate._id}`
-                    )
-                  }
+                  onClick={() => handleDirectSend(publishedTemplate)}
                   disabled={uploadDisable}
+                  loading={sendingDraftId === publishedTemplate._id}
                   leftSection={<IconUpload size={14} />}
                 >
                   Enviar
                 </Button>
               </Tooltip>
+              {isResponsibleForTemplate(publishedTemplate) && (
+                <Tooltip
+                  label="Ver estado de las dependencias"
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant="outline"
+                    color="blue"
+                    onClick={() => setStatusModalTemplate(publishedTemplate)}
+                  >
+                    <IconListDetails size={16} />
+                  </Button>
+                </Tooltip>
+              )}
             </Group>
           </Center>
         </Table.Td>
@@ -1651,6 +1720,43 @@ if (field.multiple) {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!statusModalTemplate}
+        onClose={() => setStatusModalTemplate(null)}
+        title={`Estado de dependencias — ${statusModalTemplate?.name || ""}`}
+        centered
+        size="lg"
+      >
+        {statusModalTemplate && (() => {
+          const { sent, empty, pending } = getDependencyStatusGroups(statusModalTemplate);
+          const renderGroup = (title: string, color: string, items: Producer[], emptyText: string) => (
+            <Stack gap={4}>
+              <Group gap={6}>
+                <Text fw={700} size="sm">{title}</Text>
+                <Badge size="sm" color={color} variant="light">{items.length}</Badge>
+              </Group>
+              {items.length === 0 ? (
+                <Text size="sm" c="dimmed">{emptyText}</Text>
+              ) : (
+                items.map((producer) => (
+                  <Text key={producer._id} size="sm">{producer.name}</Text>
+                ))
+              )}
+            </Stack>
+          );
+
+          return (
+            <Stack gap="md">
+              {renderGroup("Enviaron información", "teal", sent, "Ninguna dependencia ha enviado información con datos.")}
+              <Divider />
+              {renderGroup("Enviaron en cero", "yellow", empty, "Ninguna dependencia ha enviado en cero.")}
+              <Divider />
+              {renderGroup("No han enviado", "red", pending, "Todas las dependencias ya enviaron su información.")}
+            </Stack>
+          );
+        })()}
       </Modal>
     </Container>
   );

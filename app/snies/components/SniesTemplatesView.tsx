@@ -5,6 +5,15 @@ import axios from "axios";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import {
+  loadWorkbookFromBase64,
+  populateWorksheetWithFilledData,
+  mergeFilledDataAcrossDependencies,
+  getConfiguredFieldPosition,
+  extractWorkbookCommentsFromBase64,
+  applyFieldCommentNote,
+  getExcelCellAddress,
+} from "@/app/utils/templateUtils";
+import {
   ActionIcon,
   Badge,
   Box,
@@ -548,6 +557,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [dataModalRows, setDataModalRows] = useState<Record<string, any>[]>([]);
   const [dataModalColumns, setDataModalColumns] = useState<string[]>([]);
   const [dataModalLoading, setDataModalLoading] = useState(false);
+  const [downloadingModalExcel, setDownloadingModalExcel] = useState(false);
+  const [downloadingDirectId, setDownloadingDirectId] = useState<string | null>(null);
   const [equivalenceOpened, { open: openEquivalence, close: closeEquivalence }] = useDisclosure(false);
   const [equivalenceTemplate, setEquivalenceTemplate] = useState<SniesTemplate | null>(null);
   const [cnaFieldOptions, setCnaFieldOptions] = useState<CnaFieldOption[]>([]);
@@ -1378,23 +1389,143 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     );
   };
 
-  const handleDownloadDataModal = () => {
-    if (dataModalRows.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(dataModalRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Datos");
-    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    const name = dataModalTemplate?.name || dataModalTemplate?.template?.name || "datos";
-    saveAs(new Blob([buf], { type: "application/octet-stream" }), `${name}.xlsx`);
+  // En las plantillas de Miro, el encabezado de los campos que SI son de
+  // SNIES esta pintado en azul; los campos extra que Miro agrego (no pedidos
+  // por SNIES) quedan en otro color o sin relleno. Se detecta por el color
+  // real de la celda en el archivo original, no hay una bandera en la BD.
+  const isBlueHeaderColor = (argb?: string | null): boolean => {
+    if (!argb) return false;
+    const hex = argb.length === 8 ? argb.slice(2) : argb;
+    if (hex.length !== 6) return false;
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    if ([r, g, b].some((n) => Number.isNaN(n))) return false;
+    return b > r + 15 && b > g + 15;
   };
 
-  const handleDownloadDirectData = async (pt: any) => {
+  // Recorre las hojas configuradas de una plantilla (workbook_sheets, o los
+  // fields "planos" si no hay hojas) junto con las hojas reales del workbook.
+  const forEachTemplateSheet = (
+    workbook: any,
+    template: any,
+    callback: (ws: any, fields: any[], sheetName: string | undefined) => void
+  ) => {
+    const workbookSheets: any[] = template?.workbook_sheets || [];
+    if (workbookSheets.length > 0) {
+      workbookSheets.forEach((sheet) => callback(workbook.getWorksheet(sheet.name), sheet.fields, sheet.name));
+    } else if (template?.fields?.length) {
+      const ws = workbook.getWorksheet(template.name) || workbook.worksheets[0];
+      callback(ws, template.fields, ws?.name);
+    }
+  };
+
+  // Determina, a partir del color real del encabezado en el archivo original
+  // de la plantilla, cuales campos son de SNIES (azul) vs extra (cualquier
+  // otro color/sin relleno). Devuelve null si no hay archivo original
+  // guardado (no hay forma de saberlo sin el).
+  const getSniesBaseFieldNames = async (pubTemId: string): Promise<Set<string> | null> => {
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${pubTemId}`);
+      const template = res.data?.template;
+      const originalWorkbookBase64 = template?.original_workbook_base64;
+      if (!originalWorkbookBase64) return null;
+
+      const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
+      const baseNames = new Set<string>();
+      forEachTemplateSheet(workbook, template, (ws, fields) => {
+        if (!ws || !fields?.length) return;
+        fields.forEach((field, idx) => {
+          const { col, headerRow } = getConfiguredFieldPosition(field, idx);
+          const argb = ws.getCell(headerRow, col).style?.fill?.fgColor?.argb;
+          if (isBlueHeaderColor(argb)) baseNames.add(field.name);
+        });
+      });
+      return baseNames;
+    } catch (e) {
+      console.error("Error detectando los campos base de SNIES:", e);
+      return null;
+    }
+  };
+
+  // Descarga la plantilla ORIGINAL (tal cual se subio a Miro) con la
+  // informacion ya cargada: solo las columnas de encabezado azul (campos
+  // reales de SNIES), sin las columnas extra que Miro agrego, sin volver a
+  // aplicar validaciones/dropdowns de Excel, y con los valores de validador
+  // reducidos a su codigo (sin la descripcion). Si la plantilla no tiene el
+  // archivo original guardado, cae al Excel genérico reconstruido desde los
+  // datos. La usan tanto el boton "Descargar Excel" del modal como el
+  // "Descargar" de la lista, para que ambos generen el mismo archivo.
+  const downloadPublishedTemplateExcel = async (pt: any) => {
+    const name = pt?.name || pt?.template?.name || "datos";
+    const pubTemId = pt?._id;
+    if (!pubTemId) return;
+
+    try {
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${pubTemId}`);
+      const template = res.data?.template;
+      const loadedData = res.data?.publishedTemplate?.loaded_data || [];
+      const originalWorkbookBase64 = template?.original_workbook_base64;
+
+      if (originalWorkbookBase64 && loadedData.length > 0) {
+        // El campo "validate_with" no siempre esta configurado de forma
+        // confiable en las plantillas reales, asi que la limpieza de
+        // descripcion se aplica a todos los valores; el patron exige un
+        // codigo corto y en mayusculas/numeros, lo que evita en la
+        // practica truncar texto libre (nombres, descripciones largas).
+        const filledData = mergeFilledDataAcrossDependencies(loadedData).map((fd) => ({
+          ...fd,
+          values: (fd.values || []).map(stripValidatorDescription),
+        }));
+        const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
+        // ExcelJS no lee bien el texto de los comentarios de este formato de
+        // archivo (los deja vacios); se extraen a mano del XML original y se
+        // vuelven a poner en las celdas que se conservan.
+        const commentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
+
+        forEachTemplateSheet(workbook, template, (ws, fields, sheetName) => {
+          if (!ws || !fields?.length) return;
+          const sheetComments = sheetName ? commentsBySheet.get(sheetName) : undefined;
+
+          const sniesFields: any[] = [];
+          const extraColumns: number[] = [];
+          fields.forEach((field, idx) => {
+            const { col, headerRow } = getConfiguredFieldPosition(field, idx);
+            const headerCell = ws.getCell(headerRow, col);
+            const argb = headerCell.style?.fill?.fgColor?.argb;
+            if (isBlueHeaderColor(argb)) {
+              sniesFields.push(field);
+              const commentText = sheetComments?.get(getExcelCellAddress(headerRow, col));
+              if (commentText) applyFieldCommentNote(headerCell, commentText, { preserveText: true });
+            } else {
+              extraColumns.push(col);
+            }
+          });
+
+          populateWorksheetWithFilledData(ws, sniesFields, filledData, sheetName);
+
+          // Quitar las columnas extra (de mayor a menor indice, para que no
+          // se corran las posiciones de las que faltan por borrar).
+          extraColumns
+            .sort((a, b) => b - a)
+            .forEach((col) => ws.spliceColumns(col, 1));
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template?.file_name || name}.xlsx`);
+        return;
+      }
+    } catch (e) {
+      console.error("Error generando el Excel con la plantilla original:", e);
+    }
+
+    // Fallback: sin archivo original guardado, se reconstruye un Excel genérico.
     try {
       const res = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        { params: { pubTem_id: pt._id, email: session?.user?.email } }
+        { params: { pubTem_id: pubTemId, email: session?.user?.email } }
       );
-      const rows: Record<string, any>[] = res.data?.data || [];
+      const rows: Record<string, any>[] = (res.data?.data || []).map(cleanRowForSniesDisplay);
       if (rows.length === 0) {
         showNotification({ title: "Sin datos", message: "No hay información para descargar.", color: "yellow" });
         return;
@@ -1403,12 +1534,52 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Datos");
       const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-      const name = pt.name || pt.template?.name || "datos";
       saveAs(new Blob([buf], { type: "application/octet-stream" }), `${name}.xlsx`);
     } catch {
       showNotification({ title: "Error", message: "No se pudo descargar la información.", color: "red" });
     }
   };
+
+  const handleDownloadDataModal = async () => {
+    if (!dataModalTemplate) return;
+    setDownloadingModalExcel(true);
+    try {
+      await downloadPublishedTemplateExcel(dataModalTemplate);
+    } finally {
+      setDownloadingModalExcel(false);
+    }
+  };
+
+  // Solo aplica cuando NO hay una plantilla SNIES vinculada (handleOpenConnectedData
+  // / getConnectedData ya hacen esta transformacion correctamente contra la
+  // plantilla SNIES real). Sin un vinculo no existe un esquema SNIES para saber
+  // los "campos base", asi que aqui solo se limpia lo que sí se puede limpiar de
+  // forma generica: quitar la columna interna "Dependencia" y, para valores de
+  // validador con el formato "CODIGO - Descripcion", quedarse solo con el codigo.
+  const stripValidatorDescription = (value: any) => {
+    if (typeof value !== "string") return value;
+    // Los validadores en Miró usan varios formatos: "CODIGO - Descripción",
+    // "CODIGO (Descripción)", o simplemente "CODIGO Descripción" separados
+    // solo por un espacio (ej. "CC Cédula de ciudadanía"). En todos los casos
+    // se conserva solo el codigo inicial. La variante sin separador exige un
+    // codigo mas corto (1-3) para no confundir texto libre con un codigo.
+    const withSeparator = value.match(/^([A-Za-z0-9]{1,6})\s*[-(]/);
+    if (withSeparator) return withSeparator[1];
+    const withSpaceOnly = value.match(/^([A-Z0-9]{1,3})\s+(?=[A-ZÁÉÍÓÚÑ])/);
+    return withSpaceOnly ? withSpaceOnly[1] : value;
+  };
+
+  const cleanRowForSniesDisplay = (row: Record<string, any>) => {
+    const { Dependencia, ...rest } = row;
+    const cleaned: Record<string, any> = {};
+    Object.entries(rest).forEach(([key, value]) => {
+      cleaned[key] = stripValidatorDescription(value);
+    });
+    return cleaned;
+  };
+
+  const normalizeKeyForMatch = (value: string): string =>
+    value.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 
   const handleOpenRawData = async (pt: any) => {
     setDataModalTemplate(pt);
@@ -1417,11 +1588,31 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     setDataModalLoading(true);
     openDataModal();
     try {
-      const res = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        { params: { pubTem_id: pt._id, email: session?.user?.email } }
-      );
-      const rows: Record<string, any>[] = res.data?.data || [];
+      const [mergedRes, baseFieldNames] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          { params: { pubTem_id: pt._id, email: session?.user?.email } }
+        ),
+        getSniesBaseFieldNames(pt._id),
+      ]);
+      let rows: Record<string, any>[] = (mergedRes.data?.data || []).map(cleanRowForSniesDisplay);
+
+      // Si se pudo determinar cuales campos son de SNIES (encabezado azul en
+      // el archivo original), la tabla solo muestra esas columnas — igual que
+      // el archivo que se descarga.
+      if (baseFieldNames && baseFieldNames.size > 0) {
+        const normalizedBaseNames = new Set(Array.from(baseFieldNames).map(normalizeKeyForMatch));
+        rows = rows.map((row) => {
+          const filtered: Record<string, any> = {};
+          Object.entries(row).forEach(([key, value]) => {
+            if (normalizedBaseNames.has(normalizeKeyForMatch(key))) {
+              filtered[key] = value;
+            }
+          });
+          return filtered;
+        });
+      }
+
       if (rows.length > 0) {
         setDataModalColumns(Object.keys(rows[0]));
       }
@@ -1559,9 +1750,7 @@ const activeMiroTemplateId =
         <ActionIcon variant="subtle" color="blue" size="md" onClick={() => router.back()}>
           <IconArrowLeft size={18} />
         </ActionIcon>
-        <Title order={2}>
-          {isConfigureMode ? `Configurar Plantillas ${moduleUpper}` : `Gestionar Plantillas ${moduleUpper}`}
-        </Title>
+        <Title order={2}>Plantillas {moduleUpper}</Title>
       </Group>
 
       <Group mb="md">
@@ -1663,7 +1852,15 @@ const activeMiroTemplateId =
                                       color="teal"
                                       size="xs"
                                       leftSection={<IconDownload size={14} />}
-                                      onClick={() => handleDownloadDirectData(pt)}
+                                      loading={downloadingDirectId === pt._id}
+                                      onClick={async () => {
+                                        setDownloadingDirectId(pt._id);
+                                        try {
+                                          await downloadPublishedTemplateExcel(pt);
+                                        } finally {
+                                          setDownloadingDirectId(null);
+                                        }
+                                      }}
                                     >
                                       Descargar
                                     </Button>
@@ -2205,6 +2402,7 @@ const activeMiroTemplateId =
               size="xs"
               leftSection={<IconDownload size={14} />}
               disabled={dataModalRows.length === 0 || dataModalLoading}
+              loading={downloadingModalExcel}
               onClick={handleDownloadDataModal}
             >
               Descargar Excel

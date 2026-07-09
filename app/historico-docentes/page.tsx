@@ -1098,7 +1098,7 @@ export default function ConsultaInformacionPage() {
       {/* Encabezado */}
       <Group mb="lg" justify="space-between" align="flex-start">
         <Group gap="xs">
-          <ActionIcon variant="subtle" color="blue" size="md" onClick={() => router.push("/dashboard")} aria-label="Volver">
+          <ActionIcon variant="subtle" color="blue" size="md" onClick={() => router.push("/dashboard?view=gestion")} aria-label="Volver">
             <IconArrowLeft size={18} />
           </ActionIcon>
           <IconUsersGroup size={28} color="#7c3aed" />

@@ -6,9 +6,10 @@ import {
   Loader, Paper, SimpleGrid, Stack, Text,
   ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
+import { showNotification } from "@mantine/notifications";
 import {
   IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
-  IconListCheck, IconBulb, IconChartDonut3, IconNetwork,
+  IconListCheck, IconBulb, IconChartDonut3, IconNetwork, IconFileSpreadsheet,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -18,6 +19,7 @@ import PdiSidebar from "../components/PdiSidebar";
 import PdiGraficas from "../components/PdiGraficas";
 import type { DashboardResumen, Macroproyecto, Semaforo } from "../types";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { getWeightedAverage } from "../avance-utils";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -65,6 +67,8 @@ export default function DashboardPage() {
   const [resumen, setResumen] = useState<DashboardResumen | null>(null);
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportando, setExportando] = useState(false);
+  const [exportandoIndicadores, setExportandoIndicadores] = useState(false);
 
   const cargarDatos = async () => {
     setLoading(true);
@@ -81,10 +85,55 @@ export default function DashboardPage() {
 
   useEffect(() => { cargarDatos(); }, []);
 
-  const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
-  const avancePonderado = pesosTotal > 0
-    ? macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal
-    : 0;
+  const handleExportarAvance = async () => {
+    setExportando(true);
+    try {
+      const response = await axios.get(PDI_ROUTES.dashboardExportarAvance(), { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `pdi_memoria_calculo_avance_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      showNotification({
+        title: "Error",
+        message: "No se pudo generar el Excel de avance",
+        color: "red",
+      });
+    } finally {
+      setExportando(false);
+    }
+  };
+
+  const handleExportarIndicadoresMetas = async () => {
+    setExportandoIndicadores(true);
+    try {
+      const response = await axios.get(PDI_ROUTES.dashboardExportarIndicadoresMetas(), { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `pdi_indicadores_metas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      showNotification({
+        title: "Error",
+        message: "No se pudo generar el Excel de indicadores y metas",
+        color: "red",
+      });
+    } finally {
+      setExportandoIndicadores(false);
+    }
+  };
+
+  const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
   const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
   return (
@@ -110,6 +159,26 @@ export default function DashboardPage() {
               </div>
             </Group>
             <Group gap="xs">
+              <Button
+                variant="light"
+                color="teal"
+                radius="xl"
+                leftSection={<IconFileSpreadsheet size={17} />}
+                onClick={handleExportarAvance}
+                loading={exportando}
+              >
+                Descargar memoria de cálculo (Excel)
+              </Button>
+              <Button
+                variant="light"
+                color="blue"
+                radius="xl"
+                leftSection={<IconFileSpreadsheet size={17} />}
+                onClick={handleExportarIndicadoresMetas}
+                loading={exportandoIndicadores}
+              >
+                Descargar indicadores y metas
+              </Button>
               <Button
                 variant="light"
                 color="violet"

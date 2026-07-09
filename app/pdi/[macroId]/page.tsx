@@ -24,6 +24,7 @@ import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { getWeightedContribution as getWeightedProgress } from "../avance-utils";
 
 interface CorteVigente {
   _id: string;
@@ -83,9 +84,15 @@ function indicadorUsaPorcentaje(ind: Indicador) {
   if (typeof ind.meta_final_2029 === "string" && ind.meta_final_2029.includes("%")) return true;
   return ind.periodos.some((p) => typeof p.meta === "string" && p.meta.includes("%"));
 }
-function formatIndicadorTotalActual(ind: Indicador) {
-  if (ind.avance == null) return "—";
-  return indicadorUsaPorcentaje(ind) ? `${ind.avance}%` : String(ind.avance);
+function getPeriodoActualIndicador(ind: Indicador) {
+  const periodosOrdenados = [...(ind.periodos ?? [])].sort((a, b) => b.periodo.localeCompare(a.periodo));
+  const conDato = periodosOrdenados.find((p) => p.avance != null && p.avance !== "");
+  const periodo = conDato ?? periodosOrdenados[0];
+  if (!periodo) return { label: "Sin corte", value: "—" };
+  const value = periodo.avance != null && periodo.avance !== ""
+    ? (indicadorUsaPorcentaje(ind) ? `${periodo.avance}%` : String(periodo.avance))
+    : "—";
+  return { label: periodo.periodo, value };
 }
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
@@ -100,17 +107,6 @@ function getSemaforoByAvance(avance: number) {
   if (avance >= 90) return "verde";
   if (avance >= 60) return "amarillo";
   return "rojo";
-}
-
-function normalizePeso(peso: number) {
-  const value = Number(peso) || 0;
-  return value <= 1 ? value * 100 : value;
-}
-
-function getWeightedProgress<T extends { peso: number }>(items: T[], getValue: (item: T) => number) {
-  return Math.round(
-    items.reduce((acc, item) => acc + getValue(item) * normalizePeso(item.peso), 0) / 100
-  );
 }
 
 function getIndicadorAvanceMostrado(ind: Indicador) {
@@ -246,11 +242,10 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       </Box>
 
       {/* Mini stats */}
-      <SimpleGrid cols={3} mb="md">
+      <SimpleGrid cols={2} mb="md">
         {[
           { label: "Peso", value: `${Number(ind.peso).toFixed(2)}%` },
-          { label: "Seguimiento", value: ind.tipo_seguimiento || "—" },
-          { label: "Total actual", value: formatIndicadorTotalActual(ind) },
+          getPeriodoActualIndicador(ind),
         ].map(s => (
           <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
             <Text fw={700} size="sm" lh={1}>{s.value}</Text>
@@ -285,11 +280,6 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
                 );
               })}
           </SimpleGrid>
-          {ind.avance_total_real != null && (
-            <Badge variant="light" color="violet" radius="xl" size="sm" fullWidth style={{ textTransform: "uppercase", letterSpacing: 1 }}>
-              Avance total real {ind.avance_total_real}%
-            </Badge>
-          )}
         </Box>
       )}
     </Paper>

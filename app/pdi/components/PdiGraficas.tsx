@@ -20,6 +20,7 @@ import { PDI_ROUTES } from "../api";
 import type {
   Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen,
 } from "../types";
+import { normalizePeso } from "../avance-utils";
 
 // ── Colores ────────────────────────────────────────────────────────────────
 const BLUE   = "#228be6";
@@ -93,6 +94,12 @@ function absAvanceHastaAnio(ind: Indicador, anio: string): number | null {
     const meta = toNumberValue(last.meta);
     return meta != null && meta > 0 ? Math.min(av, meta) : av;
   }
+  if (ind.tipo_calculo === "promedio") {
+    const valores = delAnio
+      .map((p) => toNumberValue(p.avance))
+      .filter((value): value is number => value !== null);
+    return valores.length ? avg(valores) : null;
+  }
   return delAnio.reduce((acc, p) => {
     const av = toNumberValue(p.avance) ?? 0;
     const meta = toNumberValue(p.meta);
@@ -105,9 +112,16 @@ function absMetaEnAnio(ind: Indicador, anio: string): number | null {
     (p) => String(p.periodo ?? "").slice(0, 4) === anio && toNumberValue(p.meta) !== null
   );
   if (!delAnio.length) return null;
-  return ind.tipo_calculo === "ultimo_valor"
-    ? (toNumberValue(delAnio[delAnio.length - 1].meta) ?? 0)
-    : delAnio.reduce((acc, p) => acc + (toNumberValue(p.meta) ?? 0), 0);
+  if (ind.tipo_calculo === "ultimo_valor") {
+    return toNumberValue(delAnio[delAnio.length - 1].meta) ?? 0;
+  }
+  if (ind.tipo_calculo === "promedio") {
+    const valores = delAnio
+      .map((p) => toNumberValue(p.meta))
+      .filter((value): value is number => value !== null);
+    return valores.length ? avg(valores) : null;
+  }
+  return delAnio.reduce((acc, p) => acc + (toNumberValue(p.meta) ?? 0), 0);
 }
 
 function absAvanceHastaCorte(ind: Indicador, corte: string): number | null {
@@ -161,7 +175,7 @@ function weightedPdiData(
   let avancePonderado = 0;
 
   for (const ind of inds) {
-    const peso = Number(ind.peso) || 0;
+    const peso = normalizePeso(ind.peso);
     if (peso <= 0) continue;
 
     const meta = getMeta(ind);
@@ -318,12 +332,6 @@ function periodoByName(ind: Indicador, periodo: string) {
 function hasMetaEnPeriodo(ind: Indicador, periodo: string) {
   const meta = periodoByName(ind, periodo)?.meta;
   return meta !== null && meta !== undefined && String(meta).trim() !== "";
-}
-
-function hasMetaEnAnio(ind: Indicador, anio: string) {
-  return (ind.periodos ?? []).some(
-    (p) => String(p.periodo ?? "").slice(0, 4) === anio && p.meta !== null && p.meta !== undefined && String(p.meta).trim() !== ""
-  );
 }
 
 const VISTA_GENERAL = "GENERAL";
@@ -1094,7 +1102,7 @@ export default function PdiGraficas() {
   ]), [periodosDelAnioBase, anioBaseTabla]);
 
   const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
-    .filter((ind) => esVistaGeneralTabla ? hasMetaEnAnio(ind, anioBaseTabla) : hasMetaEnPeriodo(ind, periodoTabla))
+    .filter((ind) => esVistaGeneralTabla ? true : hasMetaEnPeriodo(ind, periodoTabla))
     .map((ind) => {
       const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo } = esVistaGeneralTabla
         ? metricasAnio(ind, anioBaseTabla)
@@ -1116,7 +1124,7 @@ export default function PdiGraficas() {
         usaPorcentaje,
       };
     })
-    .sort((a, b) => a.pctPeriodo - b.pctPeriodo || a.codigo.localeCompare(b.codigo))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
   , [indsFiltradas, periodoTabla, esVistaGeneralTabla, anioBaseTabla]);
 
   const indicadoresCriticosTop = indicadoresCriticosPeriodo;
@@ -1991,7 +1999,9 @@ export default function PdiGraficas() {
                 <Box>
                   <Text size="md" fw={700}>Indicadores del período</Text>
                   <Text size="xs" c="dimmed" fw={600}>
-                    {indicadoresCriticosPeriodo.length} indicadores con meta en {etiquetaVistaTabla}
+                    {esVistaGeneralTabla
+                      ? `${indicadoresCriticosPeriodo.length} indicadores en total`
+                      : `${indicadoresCriticosPeriodo.length} indicadores con meta en ${etiquetaVistaTabla}`}
                   </Text>
                 </Box>
                 <Group gap="sm" align="center">
@@ -2003,7 +2013,7 @@ export default function PdiGraficas() {
                     onChange={(v) => setVistaTablaIndicadores(v)}
                     allowDeselect={false}
                   />
-                  <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
+                  <Text size="xs" c="dimmed">{indicadoresCriticosPeriodo.length} indicadores totales</Text>
                 </Group>
               </Group>
               <Box style={tableScrollStyle}>
@@ -2234,7 +2244,7 @@ export default function PdiGraficas() {
                       onChange={(v) => setVistaTablaIndicadores(v)}
                       allowDeselect={false}
                     />
-                    <Text size="xs" c="dimmed">{metricIndicators.length} indicadores totales</Text>
+                    <Text size="xs" c="dimmed">{indicadoresCriticosPeriodo.length} indicadores totales</Text>
                   </Group>
                 </Group>
                 <Box style={tableScrollStyle}>

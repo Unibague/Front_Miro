@@ -73,6 +73,8 @@ interface Dimension {
 interface ValidatorOption {
   name: string;
   type: string;
+  validator_name?: string;
+  column_name?: string;
 }
 
 interface Validator { 
@@ -129,6 +131,67 @@ const UpdateTemplatePage = () => {
   const { selectedPeriodId } = usePeriod();
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
+  const validateWithToText = (value: unknown) => {
+    if (!value) return "";
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "object") {
+      const ref = value as { name?: string; id?: string };
+      return String(ref.name || ref.id || "").trim();
+    }
+    return String(value).trim();
+  };
+
+  const normalizeValidatorText = (value: unknown) =>
+    validateWithToText(value).toLowerCase().replace(/\s+/g, " ").trim();
+
+  const findValidatorOption = (value: unknown) => {
+    const raw = validateWithToText(value);
+    const normalized = normalizeValidatorText(raw);
+    if (!normalized) return undefined;
+
+    return validatorOptions.find((option) => {
+      const optionName = normalizeValidatorText(option.name);
+      const validatorName = normalizeValidatorText(option.validator_name);
+      const optionBaseName = normalizeValidatorText(option.name.split(" - ")[0]);
+
+      return (
+        optionName === normalized ||
+        validatorName === normalized ||
+        optionBaseName === normalized
+      );
+    });
+  };
+
+  const getValidatorSelectValue = (value: unknown) => {
+    const raw = validateWithToText(value);
+    return findValidatorOption(raw)?.name || raw || null;
+  };
+
+  const getValidatorSelectData = (value?: unknown) => {
+    const currentValue = getValidatorSelectValue(value);
+    const data = validatorOptions.map((option) => ({ value: option.name, label: option.name }));
+    if (currentValue && !data.some((item) => item.value === currentValue)) {
+      return [{ value: currentValue, label: currentValue }, ...data];
+    }
+    return data;
+  };
+
+  const applyValidatorDatatype = (field: Field, validateWith: string): Field => {
+    const selectedOption = findValidatorOption(validateWith);
+    if (!selectedOption) {
+      return { ...field, validate_with: validateWith, datatype: validateWith ? field.datatype : "" };
+    }
+
+    const optionType = String(selectedOption.type || "").toLowerCase();
+    const datatype = optionType.includes("número") || optionType.includes("numero")
+      ? "Entero"
+      : optionType.includes("texto")
+        ? "Texto Largo"
+        : field.datatype;
+
+    return { ...field, validate_with: selectedOption.name, datatype };
+  };
+
   const createEmptyField = (): Field => ({
     name: "",
     datatype: "",
@@ -143,7 +206,7 @@ const UpdateTemplatePage = () => {
     name: field.name || "",
     datatype: field.datatype || "",
     required: field.required ?? true,
-    validate_with: (field.validate_with || "").split(" - ")[0].trim(),
+    validate_with: validateWithToText(field.validate_with),
     comment: field.comment || "",
     multiple: field.multiple ?? false,
     locked: field.locked ?? defaultLocked,
@@ -363,9 +426,12 @@ const UpdateTemplatePage = () => {
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
     setHasChanges(true);
     const updatedFields = [...fields];
-    updatedFields[index] = { ...updatedFields[index], [field]: value };
+    const nextField = { ...updatedFields[index], [field]: value };
+    updatedFields[index] = field === "validate_with"
+      ? applyValidatorDatatype(nextField, value || "")
+      : nextField;
 
-    if (field === 'validate_with') {
+    if (false && field === 'validate_with') {
       const selectedOption = validatorOptions.find(option => option.name === value);
 
       if (selectedOption) {
@@ -400,9 +466,12 @@ const UpdateTemplatePage = () => {
         return currentFields;
       }
 
-      updatedFields[index] = { ...currentField, [field]: value };
+      const nextField = { ...currentField, [field]: value };
+      updatedFields[index] = field === "validate_with"
+        ? applyValidatorDatatype(nextField, value || "")
+        : nextField;
 
-      if (field === 'validate_with') {
+      if (false && field === 'validate_with') {
         const selectedOption = validatorOptions.find(option => option.name === value);
 
         if (selectedOption) {
@@ -473,7 +542,23 @@ const UpdateTemplatePage = () => {
 
   const handleSave = async () => {
     setHasChanges(false);
-    const fieldsToSave = hasWorkbookSheets ? flattenWorkbookSheets(workbookSheets) : fields;
+    const prepareFieldForSave = (field: Field): Field => {
+      const validateWith = getValidatorSelectValue(field.validate_with) || "";
+      return {
+        ...field,
+        validate_with: validateWith,
+        multiple: validateWith ? field.multiple : false,
+      };
+    };
+    const workbookSheetsToSave = hasWorkbookSheets
+      ? workbookSheets.map((sheet) => ({
+          ...sheet,
+          fields: sheet.fields.map(prepareFieldForSave),
+        }))
+      : [];
+    const fieldsToSave = hasWorkbookSheets
+      ? flattenWorkbookSheets(workbookSheetsToSave)
+      : fields.map(prepareFieldForSave);
 
     const derivedProducers = hasWorkbookSheets
       ? [...new Set(workbookSheets.flatMap(s => s.producers || []))]
@@ -503,7 +588,7 @@ const UpdateTemplatePage = () => {
       file_name: fileName,
       file_description: fileDescription,
       fields: fieldsToSave,
-      workbook_sheets: hasWorkbookSheets ? workbookSheets : [],
+      workbook_sheets: workbookSheetsToSave,
       original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
       shared,
@@ -1377,8 +1462,8 @@ router.back();
                         <Table.Td>
                           <Select
                             placeholder="Validar con"
-                            data={validatorOptions.map(option => ({ value: option.name, label: option.name }))}
-                            value={field.validate_with}
+                            data={getValidatorSelectData(field.validate_with)}
+                            value={getValidatorSelectValue(field.validate_with)}
                             onChange={(value) => handleDisplayedFieldChange(actualIndex, "validate_with", value || "")}
                             maxDropdownHeight={200}
                             searchable
@@ -1460,8 +1545,8 @@ router.back();
                   <Table.Td>
                     <Select
                       placeholder="Validar con"
-                      data={validatorOptions.map((o) => ({ value: o.name, label: o.name }))}
-                      value={newField.validate_with || null}
+                      data={getValidatorSelectData(newField.validate_with)}
+                      value={getValidatorSelectValue(newField.validate_with)}
                       onChange={(v) => setNewField({ ...newField, validate_with: v || "" })}
                       searchable
                       clearable

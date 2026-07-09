@@ -25,6 +25,7 @@ import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 import PermissionGate from "@/app/components/PermissionGate";
+import { getWeightedAverage } from "./avance-utils";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -822,10 +823,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
-  const pesosTotal = macros.reduce((s, m) => s + (m.peso ?? 0), 0);
-  const avancePonderado = pesosTotal > 0
-    ? macros.reduce((s, m) => s + m.avance * (m.peso ?? 0), 0) / pesosTotal
-    : 0;
+  const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
   const criticos = macros.filter((m) => m.semaforo === "rojo").length;
   const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
   const verdes = macros.filter((m) => m.semaforo === "verde").length;
@@ -1043,7 +1041,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                     <List spacing={6} size="sm" icon={
                       <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#fa5252", flexShrink: 0 }} />
                     }>
-                      {corteActual!.indicadores_pendientes!.map((ind) => (
+                      {[...corteActual!.indicadores_pendientes!]
+                        .sort((a, b) => String(a.codigo ?? "").localeCompare(String(b.codigo ?? ""), undefined, { numeric: true }))
+                        .map((ind) => (
                         <List.Item key={ind._id}>
                           <Box>
                             <Group gap={6} wrap="wrap" align="center">

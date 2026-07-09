@@ -30,7 +30,7 @@ interface WorkbookSheetWithFields {
   fields?: FieldWithValidator[];
 }
 
-const getConfiguredFieldPosition = (field: FieldWithValidator, fieldIndex: number) => {
+export const getConfiguredFieldPosition = (field: FieldWithValidator, fieldIndex: number) => {
   const configuredColumn = Number(field.column);
   const configuredHeaderRow = Number(field.header_row);
 
@@ -139,6 +139,110 @@ export const loadWorkbookFromBase64 = async (base64: string): Promise<ExcelJS.Wo
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(base64ToArrayBuffer(base64));
   return workbook;
+};
+
+export const cloneExcelValue = <T,>(value: T): T => {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+};
+
+export const getSheetDataStartRow = (fields: FieldWithValidator[]) => {
+  const headerRows = fields
+    .map((field, index) => getConfiguredFieldPosition(field, index).headerRow)
+    .filter((row) => Number.isFinite(row) && row > 0);
+
+  return (headerRows.length ? Math.min(...headerRows) : 1) + 1;
+};
+
+export const copyCellPresentation = (target: ExcelJS.Cell, source: ExcelJS.Cell) => {
+  target.style = cloneExcelValue(source.style || {});
+  if (source.dataValidation) target.dataValidation = cloneExcelValue(source.dataValidation);
+  if (source.note) target.note = cloneExcelValue(source.note);
+};
+
+export const toExcelCellValue = (value: any): ExcelJS.CellValue => {
+  if (value === undefined || value === null || value === "") return null;
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") {
+    if ("text" in value || "hyperlink" in value) return value as ExcelJS.CellValue;
+    return JSON.stringify(value);
+  }
+  return value as ExcelJS.CellValue;
+};
+
+// Combina el filled_data de varias dependencias en uno solo, concatenando los
+// valores de cada campo (por nombre de campo + hoja) para reportes que
+// consolidan la informacion de todos los productores en un solo archivo.
+export const mergeFilledDataAcrossDependencies = (
+  entries: Array<{ filled_data?: Array<{ field_name: string; sheet_name?: string; sheet?: string; sheetName?: string; values?: any[] }> }>
+) => {
+  const byKey = new Map<string, { field_name: string; sheet_name?: string; sheet?: string; sheetName?: string; values: any[] }>();
+  for (const entry of entries) {
+    for (const fd of entry.filled_data || []) {
+      const sheetKey = fd.sheet_name || fd.sheet || fd.sheetName || '';
+      const key = `${fd.field_name}::${sheetKey}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.values = [...(existing.values || []), ...(fd.values || [])];
+      } else {
+        byKey.set(key, { ...fd, values: [...(fd.values || [])] });
+      }
+    }
+  }
+  return Array.from(byKey.values());
+};
+
+interface FilledFieldValues {
+  field_name: string;
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
+  values?: any[];
+}
+
+// Rellena la hoja de la plantilla ORIGINAL (tal cual fue subida) con el
+// filled_data crudo (por campo, con su arreglo de valores), preservando el
+// estilo/validacion de cada celda base pero SIN volver a aplicar dropdowns:
+// es para generar un archivo final de solo lectura, no para editarlo de nuevo.
+export const populateWorksheetWithFilledData = (
+  worksheet: ExcelJS.Worksheet,
+  fields: FieldWithValidator[],
+  filledData: FilledFieldValues[],
+  sheetName?: string
+) => {
+  if (!fields.length) return;
+
+  let relevant = sheetName
+    ? filledData.filter((fd) => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
+    : filledData;
+  if (relevant.length === 0 && sheetName) {
+    const sheetFieldNames = new Set(fields.map((field) => field.name));
+    relevant = filledData.filter((fd) => sheetFieldNames.has(fd.field_name));
+  }
+
+  const numRows = relevant.reduce((max, fd) => (
+    Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0)
+  ), 0);
+  if (!numRows) return;
+
+  const startRow = getSheetDataStartRow(fields);
+  const templateRow = worksheet.getRow(startRow);
+
+  if (numRows > 1) {
+    worksheet.insertRows(startRow + 1, Array.from({ length: numRows - 1 }, () => []));
+  }
+
+  for (let i = 0; i < numRows; i++) {
+    const dataRow = startRow + i;
+    fields.forEach((field, colIdx) => {
+      const { col: fieldCol } = getConfiguredFieldPosition(field, colIdx);
+      const fd = relevant.find((entry) => entry.field_name === field.name);
+      const val = fd?.values?.[i] ?? null;
+      const targetCell = worksheet.getCell(dataRow, fieldCol);
+      copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
+      targetCell.value = toExcelCellValue(val);
+    });
+  }
 };
 
 const toColumnLetter = (index: number): string => {
