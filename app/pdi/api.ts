@@ -14,6 +14,7 @@ export const PDI_ROUTES = {
   indicadores:                 () => `${BASE()}/pdi/indicadores`,
   indicador: (id: string)      => `${BASE()}/pdi/indicadores/${id}`,
   indicadorPeriodo: (id: string) => `${BASE()}/pdi/indicadores/${id}/periodo`,
+  recalcularTodos:             () => `${BASE()}/pdi/indicadores/recalcular-todos`,
 
   evidencias:              (id: string) => `${BASE()}/pdi/indicadores/${id}/evidencias`,
   evidencia: (id: string, evId: string) => `${BASE()}/pdi/indicadores/${id}/evidencias/${evId}`,
