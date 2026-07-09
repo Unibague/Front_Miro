@@ -1762,9 +1762,11 @@ function PlaneacionRevisionPanel({
     setLoading(true);
     axios.get(PDI_ROUTES.formularioRespuestasPorIndicador(), { params: { indicador_id: indicadorId } })
       .then((res) => setRespuestas(
+        // No se filtra por aval_planeacion pendiente: el último reporte ya evaluado
+        // (Validado/Devuelto) debe seguir visible aquí hasta que llegue uno nuevo
+        // para el periodo actual, en vez de desaparecer apenas Planeación lo revisa.
         deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
           (item) => item.estado === "Enviado" && (item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
-          && (item.aval_planeacion == null || item.aval_planeacion === "Pendiente")
         ))
       ))
       .catch(() => {})
@@ -1816,7 +1818,7 @@ function PlaneacionRevisionPanel({
     return (
       <Paper withBorder radius="xl" p="lg">
         <Text size="sm" c="dimmed" ta="center">
-          No hay reportes aprobados por el líder pendientes de revisión por Planeación.
+          Todavía no hay reportes aprobados por el líder para este indicador.
         </Text>
       </Paper>
     );
@@ -2423,7 +2425,7 @@ export default function IndicadorEvidenciasPage() {
                           </Group>
                         </Title>
                         <Text size="sm" c="dimmed" mb="md">
-                          Solo se muestran reportes ya aprobados por el líder del macroproyecto. Planeación puede validarlos o devolverlos con observaciones.
+                          Solo se muestran reportes ya aprobados por el líder del macroproyecto. El último reporte evaluado se mantiene visible aquí hasta que se envíe uno nuevo para el periodo actual.
                         </Text>
                         <PlaneacionRevisionPanel
                           indicadorId={indicador._id}
