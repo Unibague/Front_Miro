@@ -801,7 +801,7 @@ const AdminTemplatesPage = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const searchParams = useSearchParams();
   const [page, setPage] = useState(() => {
-    const fromUrl = Number(searchParams.get("page"));
+    const fromUrl = Number(searchParams?.get("page"));
     return fromUrl > 0 ? fromUrl : 1;
   });
   const [totalPages, setTotalPages] = useState(1);
@@ -890,7 +890,7 @@ const AdminTemplatesPage = () => {
   // Guarda la pagina actual en la URL para que "volver" desde editar/duplicar
   // (que usan router.back()) regrese a la misma pagina en vez de reiniciar a la 1.
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString());
     params.set("page", String(page));
     router.replace(`/admin/templates?${params.toString()}`, { scroll: false });
   }, [page]);

@@ -431,20 +431,6 @@ const UpdateTemplatePage = () => {
       ? applyValidatorDatatype(nextField, value || "")
       : nextField;
 
-    if (false && field === 'validate_with') {
-      const selectedOption = validatorOptions.find(option => option.name === value);
-
-      if (selectedOption) {
-        if (selectedOption.type === 'Número') {
-          updatedFields[index].datatype = 'Entero';
-        } else if (selectedOption.type === 'Texto') {
-          updatedFields[index].datatype = 'Texto Largo';
-        }
-      } else {
-        updatedFields[index].datatype = "";
-      }
-    }
-
     setFields(updatedFields);
   };
 
@@ -470,20 +456,6 @@ const UpdateTemplatePage = () => {
       updatedFields[index] = field === "validate_with"
         ? applyValidatorDatatype(nextField, value || "")
         : nextField;
-
-      if (false && field === 'validate_with') {
-        const selectedOption = validatorOptions.find(option => option.name === value);
-
-        if (selectedOption) {
-          if (selectedOption.type === 'NÃºmero') {
-            updatedFields[index].datatype = 'Entero';
-          } else if (selectedOption.type === 'Texto') {
-            updatedFields[index].datatype = 'Texto Largo';
-          }
-        } else {
-          updatedFields[index].datatype = "";
-        }
-      }
 
       return updatedFields;
     };
