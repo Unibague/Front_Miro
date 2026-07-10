@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, ActionIcon } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, ActionIcon, Modal, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft, IconPlus, IconTrash } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
@@ -123,6 +123,10 @@ const UpdateTemplatePage = () => {
   const [newField, setNewField] = useState<Field>({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
   const [loading, setLoading] = useState(true);
   const [originalTemplate, setOriginalTemplate] = useState<any>(null);
+  const [showNewSheetModal, setShowNewSheetModal] = useState(false);
+  const [newSheetName, setNewSheetName] = useState("");
+  const [showDeleteSheetModal, setShowDeleteSheetModal] = useState(false);
+  const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
   const router = useRouter();
   const params = useParams();
   const id = paramId(params);
@@ -510,6 +514,101 @@ const UpdateTemplatePage = () => {
     } else {
       setFields(removeEditableField);
     }
+  };
+
+  const handleCreateNewSheet = () => {
+    if (!newSheetName.trim()) {
+      showNotification({
+        title: "Error",
+        message: "El nombre de la hoja es requerido",
+        color: "red",
+      });
+      return;
+    }
+
+    // Validar que el nombre sea único
+    if (workbookSheets.some((sheet) => sheet.name.toLowerCase() === newSheetName.toLowerCase())) {
+      showNotification({
+        title: "Error",
+        message: "Ya existe una hoja con ese nombre",
+        color: "red",
+      });
+      return;
+    }
+
+    // Crear la nueva hoja con campos vacíos
+    const newSheet: TemplateWorksheet = {
+      name: newSheetName,
+      fields: [createEmptyField()],
+      preserveOriginalContent: false,
+      producers: [],
+      shared: false,
+    };
+
+    setWorkbookSheets([...workbookSheets, newSheet]);
+    setActiveSheet(newSheetName);
+    setNewSheetName("");
+    setShowNewSheetModal(false);
+    setHasChanges(true);
+
+    showNotification({
+      title: "Éxito",
+      message: `Hoja "${newSheetName}" creada exitosamente`,
+      color: "teal",
+    });
+  };
+
+  const handleDeleteSheet = (sheetName: string) => {
+    // Validación 1: No permitir eliminar la única hoja
+    if (workbookSheets.length === 1) {
+      showNotification({
+        title: "Error",
+        message: "No puedes eliminar la única hoja de la plantilla",
+        color: "red",
+      });
+      return;
+    }
+
+    // Abrir modal de confirmación
+    setSheetToDelete(sheetName);
+    setShowDeleteSheetModal(true);
+  };
+
+  const confirmDeleteSheet = () => {
+    if (!sheetToDelete) return;
+
+    // Validación 2: Verificar si la hoja tiene campos
+    const sheet = workbookSheets.find((s) => s.name === sheetToDelete);
+    if (sheet?.fields && sheet.fields.length > 0) {
+      const editableFields = sheet.fields.filter((f) => f.locked !== true);
+      if (editableFields.length > 0) {
+        showNotification({
+          title: "Advertencia",
+          message: `La hoja "${sheetToDelete}" contiene ${editableFields.length} campo(s). Se eliminarán al guardar.`,
+          color: "yellow",
+          autoClose: 5000,
+        });
+      }
+    }
+
+    const updatedSheets = workbookSheets.filter((s) => s.name !== sheetToDelete);
+    setWorkbookSheets(updatedSheets);
+    
+    // Si eliminamos la hoja activa, cambiar a la primera disponible
+    if (activeSheet === sheetToDelete) {
+      setActiveSheet(updatedSheets[0]?.name || null);
+    }
+
+    setHasChanges(true);
+    setShowDeleteSheetModal(false);
+    setSheetToDelete(null);
+
+    showNotification({
+      title: "Éxito",
+      message: `Hoja "${sheetToDelete}" eliminada`,
+      color: "teal",
+      autoClose: 3000,
+    });
   };
 
   const handleSave = async () => {
@@ -1245,9 +1344,20 @@ router.back();
       />
       {hasWorkbookSheets && (
         <>
-          <Text size="sm" c="dimmed" mt="md">
-            Hojas de la plantilla:
-          </Text>
+          <Group justify="space-between" align="center" mt="md" mb="xs">
+            <Text size="sm" c="dimmed">
+              Hojas de la plantilla:
+            </Text>
+            <Button
+              size="compact-sm"
+              variant="light"
+              color="blue"
+              leftSection={<IconPlus size={16} />}
+              onClick={() => setShowNewSheetModal(true)}
+            >
+              Nueva Hoja
+            </Button>
+          </Group>
           <Tabs
             value={activeSheet}
             onChange={(value) => {
@@ -1258,9 +1368,22 @@ router.back();
           >
             <Tabs.List>
               {workbookSheets.map((sheet) => (
-                <Tabs.Tab key={sheet.name} value={sheet.name}>
-                  {sheet.name}
-                </Tabs.Tab>
+                <Group key={sheet.name} gap={0} wrap="nowrap">
+                  <Tabs.Tab value={sheet.name}>
+                    {sheet.name}
+                  </Tabs.Tab>
+                  {workbookSheets.length > 1 && (
+                    <ActionIcon
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => handleDeleteSheet(sheet.name)}
+                      style={{ marginRight: 4 }}
+                    >
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  )}
+                </Group>
               ))}
             </Tabs.List>
           </Tabs>
@@ -1572,6 +1695,80 @@ router.back();
           Cancelar
         </Button>
       </Group>
+
+      <Modal
+        opened={showNewSheetModal}
+        onClose={() => {
+          setShowNewSheetModal(false);
+          setNewSheetName("");
+        }}
+        title="Crear Nueva Hoja"
+        centered
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Nombre de la hoja"
+            placeholder="Ej: Datos Docentes, Información Adicional"
+            value={newSheetName}
+            onChange={(e) => setNewSheetName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleCreateNewSheet();
+              }
+            }}
+            autoFocus
+          />
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNewSheetModal(false);
+                setNewSheetName("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateNewSheet} color="blue">
+              Crear Hoja
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={showDeleteSheetModal}
+        onClose={() => {
+          setShowDeleteSheetModal(false);
+          setSheetToDelete(null);
+        }}
+        title="Eliminar Hoja"
+        centered
+      >
+        <Stack gap="md">
+          <div>
+            <Text fw={500} mb="xs">
+              ¿Estás seguro de que deseas eliminar la hoja &quot;{sheetToDelete}&quot;?
+            </Text>
+            <Text size="sm" c="dimmed">
+              Esta acción es irreversible. Se eliminarán todos los campos de esta hoja, pero los datos ya cargados por los productores se conservarán.
+            </Text>
+          </div>
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteSheetModal(false);
+                setSheetToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmDeleteSheet} color="red">
+              Eliminar Hoja
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

@@ -7,7 +7,7 @@ import Image from "next/image";
 import {
   ActionIcon, Badge, Box, Button, Center, Container, Divider,
   Group, Loader, NumberInput, Paper, Select, Stack,
-  Table, Tabs, Text, TextInput, ThemeIcon, Title,
+  Table, Text, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -247,7 +247,7 @@ export default function PublicFormPage() {
 
   return (
     <Box style={{ minHeight: "100vh", background: "#f0f4ff" }}>
-      {/* Header */}
+      {/* Header con logo */}
       <Box style={{ background: "#ffffff", padding: "12px 32px", borderBottom: "1px solid #dee2e6", boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
         <Group gap={10} align="center">
           <Image
@@ -268,29 +268,37 @@ export default function PublicFormPage() {
       </Box>
 
       <Container size="lg" py="xl">
-        {/* Ficha */}
-        <Paper withBorder radius="xl" p="xl" shadow="sm" mb="lg"
-          style={{ borderLeft: "4px solid #1c7ed6" }}>
-          <Group gap={12} align="flex-start" mb="md">
-            <ThemeIcon size={44} radius="xl" color="blue" variant="light">
+        {/* Tarjeta de información principal */}
+        <Paper withBorder radius="lg" p="lg" shadow="sm" mb="lg"
+          style={{ borderLeft: "5px solid #1c7ed6", background: "#ffffff" }}>
+          <Group gap={12} align="flex-start" mb="lg">
+            <ThemeIcon size={44} radius="lg" color="blue" variant="light">
               <IconForms size={22} />
             </ThemeIcon>
-            <div>
-              <Title order={3} lh={1.2}>{formData?.name}</Title>
-              <Text size="sm" c="dimmed" mt={2}>Formulario de reporte de información</Text>
+            <div style={{ flex: 1 }}>
+              <Title order={2} lh={1.2} mb="xs">{formData?.name}</Title>
+              <Text size="sm" c="dimmed">Formulario de reporte de información</Text>
             </div>
           </Group>
-          <Divider mb="md" />
+          
+          <Divider my="md" />
+          
+          {/* Información de contexto */}
           <Group gap="xl" wrap="wrap">
             <Group gap={6}>
-              <IconBuilding size={15} color="#868e96" />
-              <Text size="sm" c="dimmed">Dependencia:</Text>
-              <Badge variant="light" color="blue" size="sm">{formData?.dependency}</Badge>
+              <IconBuilding size={16} color="#1c7ed6" />
+              <Text size="sm" fw={500} c="dimmed">Dependencia:</Text>
+              <Badge variant="light" color="blue" size="md" radius="md">
+                {formData?.dependency}
+              </Badge>
             </Group>
             <Group gap={6}>
-              <IconCalendar size={15} color="#868e96" />
-              <Text size="sm" c="dimmed">Fecha límite:</Text>
-              <Badge variant="light" size="sm"
+              <IconCalendar size={16} color="#1c7ed6" />
+              <Text size="sm" fw={500} c="dimmed">Fecha límite:</Text>
+              <Badge 
+                variant="light" 
+                size="md" 
+                radius="md"
                 color={formData?.deadline && new Date(formData.deadline) < new Date() ? "red" : "teal"}>
                 {formData?.deadline
                   ? new Date(formData.deadline).toLocaleDateString("es-CO", { day: "numeric", month: "long", year: "numeric" })
@@ -300,15 +308,14 @@ export default function PublicFormPage() {
           </Group>
         </Paper>
 
-        {/* Hojas como pestañas */}
-        <Paper withBorder radius="xl" shadow="sm" style={{ overflow: "hidden" }}>
-          <Box p="xl" pb="md">
-            <Title order={5}>
-              <Group gap={8}>
-                <IconForms size={18} color="#1c7ed6" />
-                Datos a reportar
-              </Group>
-            </Title>
+        {/* Contenedor principal de datos */}
+        <Paper withBorder radius="lg" shadow="sm" style={{ overflow: "hidden", background: "#ffffff" }}>
+          {/* Encabezado de hojas */}
+          <Box p="lg" pb="md" style={{ background: "#f9fafc", borderBottom: "1px solid #e9ecef" }}>
+            <Group gap={8}>
+              <IconForms size={20} color="#1c7ed6" />
+              <Title order={4}>Datos a reportar</Title>
+            </Group>
           </Box>
 
           {sheets.length === 0 ? (
@@ -316,91 +323,121 @@ export default function PublicFormPage() {
               <Text c="dimmed" ta="center" size="sm">Este formulario no tiene campos configurados.</Text>
             </Box>
           ) : (
-            <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
-              <Tabs.List px="xl" style={{ borderBottom: "1px solid #e9ecef" }}>
-                {sheets.map(sheet => (
-                  <Tabs.Tab key={sheet.name} value={sheet.name} fw={600}>
-                    {sheet.name}
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
+            <>
+              {/* Pestañas */}
+              <Box style={{ borderBottom: "1px solid #e9ecef" }}>
+                <Group gap={0} px="lg" wrap="nowrap" style={{ overflowX: "auto" }}>
+                  {sheets.map(sheet => (
+                    <Group
+                      key={sheet.name}
+                      gap="xs"
+                      p="md"
+                      style={{
+                        borderBottom: activeTab === sheet.name ? "3px solid #1c7ed6" : "none",
+                        cursor: "pointer",
+                        color: activeTab === sheet.name ? "#1c7ed6" : "#868e96",
+                        fontWeight: activeTab === sheet.name ? 600 : 400,
+                        transition: "all 0.2s ease",
+                        whiteSpace: "nowrap",
+                      }}
+                      onClick={() => setActiveTab(sheet.name)}
+                    >
+                      <Text size="sm">{sheet.name}</Text>
+                    </Group>
+                  ))}
+                </Group>
+              </Box>
 
-              {sheets.map(sheet => {
+              {/* Contenido de pestañas */}
+              {sheets.map((sheet: Sheet) => {
+                if (activeTab !== sheet.name) return null;
+
                 const rows = sheetRows[sheet.name] || [{}];
-                const isMultiple = sheet.fields.some(f => f.multiple);
+                // Detectar si tiene campos con multiple=true para mostrar tabla
+                // IMPORTANTE: Solo mostrar tabla si hay al menos un campo con multiple=true
+                // De lo contrario, mostrar como formulario limpio (vertical)
+                const isMultiple = sheet.fields.some(f => f.multiple === true);
 
                 return (
-                  <Tabs.Panel key={sheet.name} value={sheet.name} p="xl">
+                  <Box key={sheet.name} p="xl">
                     {sheet.fields.length === 0 ? (
-                      <Text c="dimmed" size="sm" ta="center" py="md">Esta hoja no tiene campos configurados.</Text>
+                      <Text c="dimmed" size="sm" ta="center" py="lg">
+                        Esta hoja no tiene campos configurados.
+                      </Text>
                     ) : isMultiple ? (
                       <>
-                        <Box style={{ overflowX: "auto" }} mb="md">
-                          <Table withTableBorder withColumnBorders style={{ fontSize: 13, minWidth: 500 }}>
-                            <Table.Thead style={{ background: "#f0f4ff" }}>
-                              <Table.Tr>
-                                <Table.Th style={{ width: 36, textAlign: "center" }}>#</Table.Th>
-                                {sheet.fields.map(f => (
-                                  <Table.Th key={f.name} style={{ whiteSpace: "nowrap" }}>
-                                    {f.name}{getEffectiveRequired(f) && <Text span c="red" ml={3}>*</Text>}
-                                  </Table.Th>
-                                ))}
-                                <Table.Th style={{ width: 36 }} />
-                              </Table.Tr>
-                            </Table.Thead>
-                            <Table.Tbody>
-                              {rows.map((row, rowIdx) => (
-                                <Table.Tr key={rowIdx}>
-                                  <Table.Td style={{ textAlign: "center", color: "#adb5bd", fontSize: 12 }}>
-                                    {rowIdx + 1}
-                                  </Table.Td>
-                                  {sheet.fields.map(field => (
-                                    <Table.Td key={field.name} style={{ minWidth: 160 }}>
-                                      {renderCell(field, row[field.name], v => updateCell(sheet.name, rowIdx, field.name, v))}
-                                    </Table.Td>
-                                  ))}
-                                  <Table.Td>
-                                    {rows.length > 1 && (
-                                      <ActionIcon color="red" variant="subtle" size="sm"
-                                        onClick={() => removeRow(sheet.name, rowIdx)}>
-                                        <IconTrash size={14} />
-                                      </ActionIcon>
-                                    )}
-                                  </Table.Td>
-                                </Table.Tr>
+                        {/* Filas múltiples - Sin contenedor, campos directos */}
+                        {rows.map((row, rowIdx) => (
+                          <div key={rowIdx}>
+                            {/* Encabezado de la fila solo si hay más de 1 fila */}
+                            {rows.length > 1 && (
+                              <Group justify="space-between" align="center" mb="md" mt={rowIdx > 0 ? "lg" : 0}>
+                                <Badge variant="light" color="blue" size="lg">
+                                  Fila {rowIdx + 1}
+                                </Badge>
+                                <ActionIcon 
+                                  color="red" 
+                                  variant="subtle" 
+                                  size="md"
+                                  onClick={() => removeRow(sheet.name, rowIdx)}
+                                  title="Eliminar fila"
+                                >
+                                  <IconTrash size={18} />
+                                </ActionIcon>
+                              </Group>
+                            )}
+                            
+                            {/* Campos de la fila en layout vertical */}
+                            <Stack gap="md" mb="lg">
+                              {sheet.fields.map(field => (
+                                <div key={field.name}>
+                                  {renderCell(field, row[field.name], v => updateCell(sheet.name, rowIdx, field.name, v), true)}
+                                  {field.comment && (
+                                    <Text size="xs" c="dimmed" mt={6} style={{ fontStyle: "italic" }}>
+                                      {field.comment}
+                                    </Text>
+                                  )}
+                                </div>
                               ))}
-                            </Table.Tbody>
-                          </Table>
-                        </Box>
-                        <Button leftSection={<IconPlus size={14} />} variant="light" color="blue" size="sm"
-                          onClick={() => addRow(sheet.name)}>
-                          Agregar fila
-                        </Button>
+                            </Stack>
+                          </div>
+                        ))}
                       </>
                     ) : (
-                      <Stack gap="md">
+                      /* Formulario para campos simples */
+                      <Stack gap="lg">
                         {sheet.fields.map(field => (
                           <div key={field.name}>
                             {renderCell(field, rows[0]?.[field.name], v => updateCell(sheet.name, 0, field.name, v), true)}
-                            {field.comment && <Text size="xs" c="dimmed" mt={4}>{field.comment}</Text>}
+                            {field.comment && (
+                              <Text size="xs" c="dimmed" mt={6} style={{ fontStyle: "italic" }}>
+                                {field.comment}
+                              </Text>
+                            )}
                           </div>
                         ))}
                       </Stack>
                     )}
-                  </Tabs.Panel>
+                  </Box>
                 );
               })}
-            </Tabs>
+            </>
           )}
 
+          {/* Footer con botón de envío */}
           <Divider />
-          <Box p="xl">
-            <Group justify="flex-end">
-              <Button color="blue" size="md" radius="xl" loading={submitting}
-                leftSection={<IconSend size={16} />} onClick={handleSubmit}>
-                Enviar información
-              </Button>
-            </Group>
+          <Box p="xl" style={{ background: "#f9fafc", display: "flex", justifyContent: "flex-end" }}>
+            <Button 
+              color="blue" 
+              size="lg" 
+              radius="lg" 
+              loading={submitting}
+              leftSection={<IconSend size={18} />} 
+              onClick={handleSubmit}
+              fw={500}
+            >
+              Enviar información
+            </Button>
           </Box>
         </Paper>
       </Container>
