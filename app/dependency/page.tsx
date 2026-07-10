@@ -114,37 +114,74 @@ const DependencyPage = () => {
         .filter((member) => !member.isProducer)
         .map((member) => member.email);
 
-      await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/updateProducer`,
-        [
-          ...producers.map((email) => ({
-            email,
-            roles: ["Productor"],
-          })),
-          ...nonProducers.map((email) => ({
-            email,
-            roles: [],
-          })),
-        ]
-      );
+      
+      const updatePayload = {
+        dep_code: dependency.dep_code,
+        name: dependency.name,
+        responsible: dependency.responsible,
+        dep_father: dependency.dep_father,
+        producers: producers,
+        adminEmail: session?.user?.email,
+      };
 
-      if (dependency.visualizers && Array.isArray(dependency.visualizers)) {
+      try {
         await axios.put(
-          `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${dependency._id}/visualizers`,
-          { visualizers: dependency.visualizers }
+          `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${dependency._id}`,
+          updatePayload,
+          {
+            headers: {
+              'user-email': session?.user?.email,
+            }
+          }
         );
+      } catch (step1Error: any) {
+        console.error('❌ STEP 1 FAILED:', step1Error.response?.data || step1Error.message);
+        throw step1Error;
       }
 
+      try {
+        await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/users/updateProducer`,
+          [
+            ...producers.map((email) => ({
+              email,
+              roles: ["Productor"],
+            })),
+            ...nonProducers.map((email) => ({
+              email,
+              roles: [],
+            })),
+          ]
+        );
+      } catch (step2Error: any) {
+        console.error('❌ STEP 2 FAILED:', step2Error.response?.data || step2Error.message);
+        throw step2Error;
+      }
+
+      console.log('🟢 STEP 3: Updating visualizers');
+      if (dependency.visualizers && Array.isArray(dependency.visualizers)) {
+        try {
+          await axios.put(
+            `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${dependency._id}/visualizers`,
+            { visualizers: dependency.visualizers }
+          );
+        } catch (step3Error: any) {
+          console.error('❌ STEP 3 FAILED:', step3Error.response?.data || step3Error.message);
+          throw step3Error;
+        }
+      }
+
+      console.log('✅✅✅ ALL STEPS COMPLETED');
       showNotification({
         title: "Actualizado",
         message: "Dependencia actualizada exitosamente",
         color: "teal",
       });
-    } catch (error) {
-      console.error("Error updating dependency:", error);
+    } catch (error: any) {
+      console.error('❌❌❌ SAVE FAILED:', error.message);
       showNotification({
         title: "Error",
-        message: "Hubo un error al actualizar la dependencia",
+        message: error.response?.data?.message || error.message || "Error al actualizar",
         color: "red",
       });
     }
