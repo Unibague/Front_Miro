@@ -51,12 +51,14 @@ import {
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
+  ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
   getExcelCellAddress,
   injectWorkbookSheetHeaderComments,
   loadWorkbookFromBase64,
   patchNoteSize,
+  reorderWorkbookSheets,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import dayjs from "dayjs";
@@ -544,6 +546,9 @@ const ProducerTemplatesPage = () => {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
 
+      // Crear en el workbook cualquier hoja nueva que no venga del xlsx original
+      ensureMissingWorkbookSheets(workbook, workbookSheets);
+
       // Eliminar notas de celdas de datos (filas > 1) cargadas desde el xlsx original
       workbook.worksheets.forEach((ws) => {
         ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -623,6 +628,9 @@ const ProducerTemplatesPage = () => {
           if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
         }
       }
+
+      // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
+      reorderWorkbookSheets(workbook, workbookSheets.map((sheet) => sheet.name));
 
       let buffer = await workbook.xlsx.writeBuffer();
       // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
@@ -707,11 +715,10 @@ const ProducerTemplatesPage = () => {
         }
 
         const worksheet = workbook.addWorksheet(worksheetName);
-        const hasBaseFields = sheet.fields.some((f) => f.locked !== false);
         const headerRow = worksheet.addRow(sheet.fields.map((field) => field.name));
         headerRow.eachCell((cell, colNumber) => {
           const field = sheet.fields[colNumber - 1];
-          const isAdded = hasBaseFields && field?.locked === false;
+          const isAdded = field?.locked !== true;
           cell.font = { bold: true, color: { argb: "FFFFFF" } };
           cell.fill = {
             type: "pattern",

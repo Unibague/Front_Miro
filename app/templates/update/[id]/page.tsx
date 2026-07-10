@@ -7,6 +7,7 @@ import { DateInput } from "@mantine/dates";
 import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft, IconPlus, IconTrash } from "@tabler/icons-react";
@@ -19,12 +20,14 @@ import {
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
+  ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   getExcelCellAddress,
   injectWorkbookSheetHeaderComments,
   loadWorkbookFromBase64,
   patchNoteBackgroundColor,
   patchNoteSize,
+  reorderWorkbookSheets,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import { paramId } from "@/app/utils/routeParams";
@@ -119,6 +122,7 @@ const UpdateTemplatePage = () => {
   const [skipCommentValidation, setSkipCommentValidation] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
+  const [originalSheetNames, setOriginalSheetNames] = useState<Set<string>>(new Set());
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   const [newField, setNewField] = useState<Field>({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
   const [loading, setLoading] = useState(true);
@@ -320,7 +324,19 @@ const UpdateTemplatePage = () => {
             ) || normalizedSheets[0];
 
             setWorkbookSheets(normalizedSheets);
-            setOriginalWorkbookBase64(response.data.original_workbook_base64 || "");
+            const originalBase64 = response.data.original_workbook_base64 || "";
+            setOriginalWorkbookBase64(originalBase64);
+            if (originalBase64) {
+              try {
+                const originalWorkbook = await loadWorkbookFromBase64(originalBase64);
+                setOriginalSheetNames(new Set(originalWorkbook.worksheets.map((ws) => ws.name)));
+              } catch (error) {
+                console.error("Error leyendo hojas del workbook original:", error);
+                setOriginalSheetNames(new Set());
+              }
+            } else {
+              setOriginalSheetNames(new Set());
+            }
             setActiveSheet(firstEditableSheet?.name || null);
             setFields(nextFields);
             setActive(response.data.active);
@@ -558,8 +574,23 @@ const UpdateTemplatePage = () => {
     });
   };
 
+  // Una hoja se puede eliminar si su nombre no existe en el Excel original
+  // subido: es decir, si fue creada dentro del editor (en esta sesión o en
+  // una anterior ya guardada), y no si vino incluida en el archivo cargado.
+  const isDeletableSheet = (sheetName: string) => !originalSheetNames.has(sheetName);
+
   const handleDeleteSheet = (sheetName: string) => {
-    // Validación 1: No permitir eliminar la única hoja
+    // Validación 1: Solo se pueden eliminar hojas creadas por el usuario, no las originales del Excel
+    if (!isDeletableSheet(sheetName)) {
+      showNotification({
+        title: "Acción no permitida",
+        message: "Solo puedes eliminar hojas que hayas creado tú. Las hojas originales de la plantilla no se pueden eliminar.",
+        color: "red",
+      });
+      return;
+    }
+
+    // Validación 2: No permitir eliminar la única hoja
     if (workbookSheets.length === 1) {
       showNotification({
         title: "Error",
@@ -572,6 +603,20 @@ const UpdateTemplatePage = () => {
     // Abrir modal de confirmación
     setSheetToDelete(sheetName);
     setShowDeleteSheetModal(true);
+  };
+
+  const onDragEndSheets = (result: DropResult) => {
+    const { destination, source } = result;
+    if (!destination) return;
+    if (destination.index === source.index) return;
+
+    setWorkbookSheets((currentSheets) => {
+      const reordered = Array.from(currentSheets);
+      const [removed] = reordered.splice(source.index, 1);
+      reordered.splice(destination.index, 0, removed);
+      return reordered;
+    });
+    setHasChanges(true);
   };
 
   const confirmDeleteSheet = () => {
@@ -913,11 +958,10 @@ router.back();
     worksheet: ExcelJS.Worksheet,
     sheetFields: Field[]
   ) => {
-    const hasBaseFields = sheetFields.some((f) => f.locked !== false);
     const headerRow = worksheet.addRow(sheetFields.map((f) => f.name));
     headerRow.eachCell((cell, colNumber) => {
       const field = sheetFields[colNumber - 1];
-      const isAdded = hasBaseFields && field?.locked === false;
+      const isAdded = field?.locked !== true;
       cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "FF166534" : "FF0f1f39" } };
       cell.border = {
@@ -1030,6 +1074,8 @@ router.back();
     if (originalWorkbookBase64) {
       const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
+      // Crear en el workbook cualquier hoja nueva que no venga del xlsx original
+      ensureMissingWorkbookSheets(workbook, workbookSheets);
       applyWorkbookSheetDropdowns({
         workbook,
         workbookSheets,
@@ -1055,6 +1101,8 @@ router.back();
           if (!colObj.width || colObj.width < 20) colObj.width = 20;
         });
       });
+      // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
+      reorderWorkbookSheets(workbook, workbookSheets.map((sheet) => sheet.name));
       let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
       // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
       const augmentedForInjection = workbookSheets.map((sheet) => {
@@ -1210,7 +1258,19 @@ router.back();
                 size="compact-xs"
                 variant="light"
                 color="blue"
-                onClick={() => setSelectedDependencies(dependencies.map((d) => d._id))}
+                onClick={() =>
+                  modals.openConfirmModal({
+                    title: "Confirmar selección",
+                    children: (
+                      <Text size="sm">
+                        ¿Deseas seleccionar todos los productores ({dependencies.length})?
+                      </Text>
+                    ),
+                    labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
+                    confirmProps: { color: "blue" },
+                    onConfirm: () => setSelectedDependencies(dependencies.map((d) => d._id)),
+                  })
+                }
                 disabled={selectedDependencies.length === dependencies.length}
               >
                 Seleccionar todos
@@ -1220,7 +1280,19 @@ router.back();
                   size="compact-xs"
                   variant="subtle"
                   color="red"
-                  onClick={() => setSelectedDependencies([])}
+                  onClick={() =>
+                    modals.openConfirmModal({
+                      title: "Confirmar limpieza",
+                      children: (
+                        <Text size="sm">
+                          ¿Deseas quitar todos los productores seleccionados ({selectedDependencies.length})?
+                        </Text>
+                      ),
+                      labels: { confirm: "Limpiar", cancel: "Cancelar" },
+                      confirmProps: { color: "red" },
+                      onConfirm: () => setSelectedDependencies([]),
+                    })
+                  }
                 >
                   Limpiar
                 </Button>
@@ -1366,26 +1438,46 @@ router.back();
             mt="xs"
             mb="sm"
           >
-            <Tabs.List>
-              {workbookSheets.map((sheet) => (
-                <Group key={sheet.name} gap={0} wrap="nowrap">
-                  <Tabs.Tab value={sheet.name}>
-                    {sheet.name}
-                  </Tabs.Tab>
-                  {workbookSheets.length > 1 && (
-                    <ActionIcon
-                      size="xs"
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDeleteSheet(sheet.name)}
-                      style={{ marginRight: 4 }}
-                    >
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  )}
-                </Group>
-              ))}
-            </Tabs.List>
+            <DragDropContext onDragEnd={onDragEndSheets}>
+              <Droppable droppableId="sheets" direction="horizontal">
+                {(provided) => (
+                  <Tabs.List ref={provided.innerRef} {...provided.droppableProps} style={{ flexWrap: "nowrap" }}>
+                    {workbookSheets.map((sheet, index) => (
+                      <Draggable key={sheet.name} draggableId={`sheet-${sheet.name}`} index={index}>
+                        {(dragProvided) => (
+                          <Group
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            gap={0}
+                            wrap="nowrap"
+                            align="center"
+                          >
+                            <Center {...dragProvided.dragHandleProps} style={{ cursor: "grab" }}>
+                              <IconGripVertical size={14} color="var(--mantine-color-gray-5)" />
+                            </Center>
+                            <Tabs.Tab value={sheet.name}>
+                              {sheet.name}
+                            </Tabs.Tab>
+                            {isDeletableSheet(sheet.name) && (
+                              <ActionIcon
+                                size="xs"
+                                variant="subtle"
+                                color="red"
+                                onClick={() => handleDeleteSheet(sheet.name)}
+                                style={{ marginRight: 4 }}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            )}
+                          </Group>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </Tabs.List>
+                )}
+              </Droppable>
+            </DragDropContext>
           </Tabs>
           {activeSheet && (
             <>
@@ -1396,13 +1488,25 @@ router.back();
                     size="compact-xs"
                     variant="light"
                     color="blue"
-                    onClick={() => {
-                      const allIds = dependencies.map((d) => d._id);
-                      setWorkbookSheets(prev => prev.map(s =>
-                        s.name === activeSheet ? { ...s, producers: allIds } : s
-                      ));
-                      setHasChanges(true);
-                    }}
+                    onClick={() =>
+                      modals.openConfirmModal({
+                        title: "Confirmar selección",
+                        children: (
+                          <Text size="sm">
+                            ¿Deseas seleccionar todos los productores ({dependencies.length}) para la hoja &quot;{activeSheet}&quot;?
+                          </Text>
+                        ),
+                        labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
+                        confirmProps: { color: "blue" },
+                        onConfirm: () => {
+                          const allIds = dependencies.map((d) => d._id);
+                          setWorkbookSheets(prev => prev.map(s =>
+                            s.name === activeSheet ? { ...s, producers: allIds } : s
+                          ));
+                          setHasChanges(true);
+                        },
+                      })
+                    }
                     disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
                   >
                     Seleccionar todos
@@ -1412,12 +1516,24 @@ router.back();
                       size="compact-xs"
                       variant="subtle"
                       color="red"
-                      onClick={() => {
-                        setWorkbookSheets(prev => prev.map(s =>
-                          s.name === activeSheet ? { ...s, producers: [] } : s
-                        ));
-                        setHasChanges(true);
-                      }}
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar limpieza",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas quitar todos los productores asignados a la hoja &quot;{activeSheet}&quot;?
+                            </Text>
+                          ),
+                          labels: { confirm: "Limpiar", cancel: "Cancelar" },
+                          confirmProps: { color: "red" },
+                          onConfirm: () => {
+                            setWorkbookSheets(prev => prev.map(s =>
+                              s.name === activeSheet ? { ...s, producers: [] } : s
+                            ));
+                            setHasChanges(true);
+                          },
+                        })
+                      }
                     >
                       Limpiar
                     </Button>

@@ -1359,6 +1359,160 @@ export const applyFieldCommentNote = (
   cell.note = options.preserveText ? cleanComment : wrapTextByLength(cleanComment, 68);
 };
 
+interface DownloadableField extends FieldWithValidator {
+  datatype?: string;
+  locked?: boolean;
+}
+
+interface DownloadableWorksheet {
+  name: string;
+  fields?: DownloadableField[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  columnWidths?: number[];
+  cellNotes?: { row: number; col: number; note: string }[];
+}
+
+export const applyDatatypeValidation = (cell: ExcelJS.Cell, field: DownloadableField): void => {
+  switch (field.datatype) {
+    case "Entero":
+      cell.dataValidation = { type: "whole", operator: "between", formulae: [1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
+      break;
+    case "Decimal":
+      cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal." };
+      break;
+    case "Porcentaje":
+      cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, 100.0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal entre 0.0 y 100.0." };
+      break;
+    case "Texto Corto":
+      cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [60], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 60 caracteres." };
+      break;
+    case "Texto Largo":
+      cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [500], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 500 caracteres." };
+      break;
+    case "True/False":
+      cell.dataValidation = { type: "list", allowBlank: true, formulae: ['"Si,No"'], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, selecciona Si o No." };
+      break;
+    case "Fecha":
+    case "Fecha Inicial / Fecha Final":
+      cell.dataValidation = { type: "date", operator: "between", formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce una fecha válida en el formato DD/MM/AAAA." };
+      cell.numFmt = "DD/MM/YYYY";
+      break;
+    case "Link":
+      cell.dataValidation = { type: "textLength", operator: "greaterThan", formulae: [0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un enlace válido." };
+      break;
+    default:
+      break;
+  }
+
+  if (field.comment && cell.dataValidation) {
+    const normalizedComment = String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    const promptBase = normalizedComment.slice(0, 220);
+    cell.dataValidation = {
+      ...cell.dataValidation,
+      showInputMessage: true,
+      promptTitle: field.name.slice(0, 32),
+      prompt: normalizedComment.length > 220 ? `${promptBase}...` : promptBase,
+    };
+  }
+};
+
+// Crea desde cero una hoja para un sheet que aun no existe en el workbook
+// cargado (p. ej. una hoja nueva creada en el editor que no viene del xlsx
+// original subido). Encabezados + validaciones por tipo de dato.
+export const createFieldsWorksheet = (
+  workbook: ExcelJS.Workbook,
+  worksheetName: string,
+  fields: DownloadableField[],
+  maxRows = 1000
+): ExcelJS.Worksheet => {
+  const worksheet = workbook.addWorksheet(worksheetName);
+
+  const headerRow = worksheet.addRow(fields.map((f) => f.name));
+  headerRow.eachCell((cell, colNumber) => {
+    const field = fields[colNumber - 1];
+    // Una hoja completamente nueva no tiene "campos base": todos sus campos
+    // son contenido añadido por el usuario, asi que se resaltan en verde
+    // igual que los campos añadidos en las hojas originales.
+    const isAdded = field?.locked !== true;
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "FF166534" : "FF0f1f39" } };
+    cell.border = {
+      top: { style: "thin" }, left: { style: "thin" },
+      bottom: { style: "thin" }, right: { style: "thin" },
+    };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    applyFieldCommentNote(cell, field?.comment);
+  });
+
+  worksheet.columns.forEach((col) => { col.width = 20; });
+
+  fields.forEach((field, index) => {
+    const colNumber = index + 1;
+    for (let rowNumber = 2; rowNumber <= maxRows; rowNumber++) {
+      applyDatatypeValidation(worksheet.getRow(rowNumber).getCell(colNumber), field);
+    }
+  });
+
+  return worksheet;
+};
+
+// Crea en el workbook cualquier hoja de workbookSheets que aun no exista
+// (hojas nuevas creadas en el editor que no vienen del xlsx original). Debe
+// llamarse ANTES de applyWorkbookSheetDropdowns para que esa funcion tambien
+// aplique los dropdowns de validacion sobre las hojas recien creadas.
+export const ensureMissingWorkbookSheets = (
+  workbook: ExcelJS.Workbook,
+  workbookSheets: DownloadableWorksheet[]
+): void => {
+  workbookSheets.forEach((sheet) => {
+    if (!sheet?.name || workbook.getWorksheet(sheet.name)) return;
+
+    if (sheet.preserveOriginalContent) {
+      const worksheet = workbook.addWorksheet(sheet.name);
+      (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+      (sheet.columnWidths || []).forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width || 20;
+      });
+      (sheet.cellNotes || []).forEach((note) => {
+        if (!note?.row || !note?.col || !note?.note) return;
+        applyFieldCommentNote(worksheet.getCell(note.row, note.col), note.note, { preserveText: true });
+      });
+      return;
+    }
+
+    if (Array.isArray(sheet.fields) && sheet.fields.length > 0) {
+      createFieldsWorksheet(workbook, sheet.name, sheet.fields);
+    }
+  });
+};
+
+// Reordena las pestanas del workbook segun el orden actual de workbookSheets
+// (que puede haber sido cambiado por drag-and-drop en el editor). Las hojas
+// no rastreadas (p. ej. _Listas u otras hojas de soporte del xlsx original)
+// se dejan al final, preservando su orden relativo original.
+export const reorderWorkbookSheets = (
+  workbook: ExcelJS.Workbook,
+  orderedNames: string[]
+): void => {
+  const originalOrder = workbook.worksheets;
+  const seen = new Set<string>();
+  let orderNo = 1;
+
+  orderedNames.forEach((name) => {
+    const ws = workbook.getWorksheet(name);
+    if (!ws || seen.has(name)) return;
+    (ws as any).orderNo = orderNo++;
+    seen.add(name);
+  });
+
+  originalOrder
+    .filter((ws) => !seen.has(ws.name))
+    .forEach((ws) => {
+      (ws as any).orderNo = orderNo++;
+    });
+};
+
 const NOTE_WIDTH_PT = 360;
 const NOTE_LINE_HEIGHT_PT = 14;
 const NOTE_VERTICAL_PAD_PT = 20;

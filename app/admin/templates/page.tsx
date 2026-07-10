@@ -19,11 +19,13 @@ import {
   applyWorkbookSheetDropdowns,
   appendMissingFieldComments,
   arrayBufferToBase64,
+  ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
   getExcelCellAddress,
   loadWorkbookFromBase64,
   patchNoteSize,
+  reorderWorkbookSheets,
   sanitizeSheetName,
 } from "@/app/utils/templateUtils";
 import { usePeriod } from "@/app/context/PeriodContext";
@@ -1284,11 +1286,10 @@ const AdminTemplatesPage = () => {
   ) => {
     const worksheet = workbook.addWorksheet(worksheetName);
 
-    const hasBaseFields = fields.some((f) => f.locked !== false);
     const headerRow = worksheet.addRow(fields.map(field => field.name));
     headerRow.eachCell((cell, colNumber) => {
       const field = fields[colNumber - 1];
-      const isAdded = hasBaseFields && field?.locked === false;
+      const isAdded = field?.locked !== true;
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
       cell.fill = {
         type: 'pattern',
@@ -1556,6 +1557,9 @@ const AdminTemplatesPage = () => {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
 
+      // Crear en el workbook cualquier hoja nueva que no venga del xlsx original
+      ensureMissingWorkbookSheets(workbook, worksheets);
+
       // Eliminar notas de celdas de datos (filas > 1) cargadas desde el xlsx original
       workbook.worksheets.forEach((ws) => {
         ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -1616,6 +1620,9 @@ const AdminTemplatesPage = () => {
           if (!colObj.width || colObj.width < 20) colObj.width = 20;
         });
       });
+
+      // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
+      reorderWorkbookSheets(workbook, worksheets.map((sheet) => sheet.name));
 
       let buffer = await workbook.xlsx.writeBuffer() as ArrayBuffer;
       const fieldCommentByName = new Map(
