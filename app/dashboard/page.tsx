@@ -60,12 +60,20 @@ const DashboardPage = () => {
   const hasViewPermission = (key: string) =>
     Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
 
-  // Si tiene perfil: el perfil manda, el rol no agrega nada
-  // Si no tiene perfil: el rol decide todo normalmente
+  // Solo para el mensaje de "sin módulos asignados" (no se usa para decidir
+  // qué módulos mostrar; eso ahora es por módulo, ver canSee).
   const hasProfile = userAccessProfiles.length > 0;
 
+  // La decisión es por módulo, no global: si el perfil del usuario tiene
+  // ALGO configurado para esta vista puntual (así sea de otro módulo), esa
+  // configuración manda. Pero si ningún perfil ha tocado todavía esta vista
+  // en particular, no la ocultamos solo porque el usuario tenga perfil en
+  // otros módulos: se usa el rol (Administrador/Productor/Responsable) como
+  // antes, para no bloquear módulos que aún no se han configurado.
   const canSee = (key: string, roles: string[]) => {
-    if (hasProfile) return hasViewPermission(key);
+    if (Object.prototype.hasOwnProperty.call(viewPermissions, key)) {
+      return hasViewPermission(key);
+    }
     return roles.includes(userRole);
   };
 
