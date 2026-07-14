@@ -899,45 +899,46 @@ const DashboardPage = () => {
     return (
       <>
         {canSee("dateReview", ["Administrador"]) && (
-          <>
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconCalendarMonth size={80} /></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
-                </Text>
-                <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
-                  Ir a gestión de procesos MEN
-                </Button>
-              </Card>
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-              <Card shadow="sm" padding="lg" radius="md" withBorder>
-                <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
-                <Group mt="md" mb="xs">
-                  <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
-                </Group>
-                <Text ta={"center"} size="sm" color="dimmed">
-                  Gestión ante el MEN.
-                </Text>
-                <Button
-                  variant="light"
-                  fullWidth
-                  mt="md"
-                  radius="md"
-                  onClick={() => router.push(processesMenRoutes.comunicaciones)}
-                >
-                  Ir a comunicaciones MEN
-                </Button>
-              </Card>
-            </Grid.Col>
-          </>
+          <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconCalendarMonth size={80} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
+              </Text>
+              <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
+                Ir a gestión de procesos MEN
+              </Button>
+            </Card>
+          </Grid.Col>
         )}
 
-        {["Responsable", "Productor"].includes(userRole) && (
+        {canSee("dateReviewComunicaciones", ["Administrador"]) && (
+          <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Center><IconMessageCircle size={80} stroke={1.2} /></Center>
+              <Group mt="md" mb="xs">
+                <Text ta={"center"} w={500}>Comunicaciones MEN</Text>
+              </Group>
+              <Text ta={"center"} size="sm" color="dimmed">
+                Gestión ante el MEN.
+              </Text>
+              <Button
+                variant="light"
+                fullWidth
+                mt="md"
+                radius="md"
+                onClick={() => router.push(processesMenRoutes.comunicaciones)}
+              >
+                Ir a comunicaciones MEN
+              </Button>
+            </Card>
+          </Grid.Col>
+        )}
+
+        {canSee("dateReviewResponsible", ["Responsable", "Productor"]) && (
           <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconCalendarMonth size={80} /></Center>
@@ -1035,7 +1036,7 @@ const DashboardPage = () => {
             </Grid.Col>
             )}
 
-            {userRole === "Administrador" && (
+            {canSee("supportTemplates", ["Administrador"]) && (
               <>
                 {showSupportTemplatesModule && (
                   <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
@@ -1078,7 +1079,7 @@ const DashboardPage = () => {
               </>
             )}
 
-            {(canSee("dateReview", ["Administrador", "Responsable", "Productor"]) || ["Responsable", "Productor"].includes(userRole)) && (
+            {(canSee("dateReview", ["Administrador"]) || canSee("dateReviewComunicaciones", ["Administrador"]) || canSee("dateReviewResponsible", ["Responsable", "Productor"])) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1256,8 +1257,10 @@ const DashboardPage = () => {
 
             {/* Fallback: usuario sin roles ni permisos */}
             {!canSeeAny(GESTION_REPORTES_KEYS, ["Administrador", "Responsable", "Productor"]) &&
-             !canSee("dateReview", ["Administrador", "Responsable", "Productor"]) &&
-             !["Responsable", "Productor"].includes(userRole) &&
+             !canSee("supportTemplates", ["Administrador"]) &&
+             !canSee("dateReview", ["Administrador"]) &&
+             !canSee("dateReviewComunicaciones", ["Administrador"]) &&
+             !canSee("dateReviewResponsible", ["Responsable", "Productor"]) &&
              !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) &&
              !canSeeAny(RESPONSIBLE_ADMIN_KEYS, ["Administrador", "Responsable"]) &&
              !canSeeAny(CONFIGURATION_KEYS, ["Administrador"]) && (

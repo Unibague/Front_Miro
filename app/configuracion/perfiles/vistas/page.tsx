@@ -53,6 +53,10 @@ interface ViewOption {
   path: string;
   module?: string;
   group: string;
+  // Roles que tienen esta vista por defecto HOY en el sistema (fallback de
+  // canSee en app/dashboard/page.tsx) cuando no hay perfil configurado. Es
+  // solo informativo aqui: no cambia lo que se guarda al marcar Ver/Gestionar.
+  roles?: string[];
 }
 
 interface PositionUser {
@@ -97,6 +101,8 @@ interface AccessProfile {
 
 const DEFAULT_PROFILES = ["Ver", "Gestionar"];
 const MODULE_COLORS = ["blue", "cyan", "green", "red", "violet", "gray", "orange", "teal"];
+const ROLE_ORDER = ["Administrador", "Responsable", "Productor"];
+const ROLE_COLORS: Record<string, string> = { Administrador: "grape", Responsable: "blue", Productor: "teal" };
 
 const countPermissionChecks = (permissions: Record<string, string[]>) =>
   Object.values(permissions || {}).reduce((total, profiles) => total + profiles.length, 0);
@@ -170,18 +176,25 @@ export default function PositionViewsPage() {
   const [removingIdentification, setRemovingIdentification] = useState<number | null>(null);
   const [identification, setIdentification] = useState("");
 
-  // Jerarquia dinamica: modulo grande (tarjetas del dashboard) -> submodulo ->
-  // vistas. Viene declarada en el backend (viewPermissionOptions), asi que una
-  // vista nueva aparece sola en el lugar correcto sin tocar este componente.
-  const groupedViewsByModule = useMemo(() => {
-    return views.reduce<Record<string, Record<string, ViewOption[]>>>((result, view) => {
-      const moduleName = view.module || "General";
-      const group = view.group || "General";
-      const moduleGroups = result[moduleName] || {};
-      moduleGroups[group] = [...(moduleGroups[group] || []), view];
-      result[moduleName] = moduleGroups;
-      return result;
-    }, {});
+  // Jerarquia dinamica: rol (Administrador/Responsable/Productor) -> modulo
+  // grande (tarjetas del dashboard) -> submodulo -> vistas. El rol de cada
+  // vista viene declarado en el backend (viewPermissionOptions.roles) y
+  // documenta quien la tiene por defecto HOY en el sistema cuando no hay
+  // perfil configurado; una vista nueva aparece sola en el lugar correcto sin
+  // tocar este componente.
+  const groupedViewsByRole = useMemo(() => {
+    return ROLE_ORDER.map((role) => {
+      const viewsForRole = views.filter((view) => (view.roles || []).includes(role));
+      const groupedByModule = viewsForRole.reduce<Record<string, Record<string, ViewOption[]>>>((result, view) => {
+        const moduleName = view.module || "General";
+        const group = view.group || "General";
+        const moduleGroups = result[moduleName] || {};
+        moduleGroups[group] = [...(moduleGroups[group] || []), view];
+        result[moduleName] = moduleGroups;
+        return result;
+      }, {});
+      return { role, groupedByModule, totalViews: viewsForRole.length };
+    });
   }, [views]);
 
   const managedPositionNames = useMemo(
@@ -843,97 +856,133 @@ export default function PositionViewsPage() {
                 </Group>
 
                 <Stack gap="xl">
-                  {Object.entries(groupedViewsByModule).map(([moduleName, moduleGroups], moduleIndex) => {
-                    const moduleColor = MODULE_COLORS[moduleIndex % MODULE_COLORS.length];
-                    const moduleViewsFlat = Object.values(moduleGroups).flat();
-                    const moduleChecksTotal = permissionLevels.reduce(
+                  {groupedViewsByRole.map(({ role, groupedByModule, totalViews }) => {
+                    const roleColor = ROLE_COLORS[role] || "gray";
+                    const roleChecksTotal = permissionLevels.reduce(
                       (total, profile) =>
-                        total + moduleViewsFlat.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                        total + views.filter((view) =>
+                          (view.roles || []).includes(role) && selectedPositionPermissions[view.key]?.includes(profile)
+                        ).length,
                       0
                     );
 
                     return (
-                      <Stack key={moduleName} gap="sm">
-                        <Group gap={8} align="center">
-                          <ThemeIcon size="md" radius="md" color={moduleColor} variant="light">
-                            <IconApps size={16} />
-                          </ThemeIcon>
-                          <Title order={4}>{moduleName}</Title>
-                          <Badge size="sm" variant="light" color={moduleColor}>
-                            {moduleChecksTotal} check{moduleChecksTotal === 1 ? "" : "s"}
-                          </Badge>
-                        </Group>
+                      <Card key={role} withBorder radius="lg" p="lg" style={{ borderColor: `var(--mantine-color-${roleColor}-3)` }}>
+                        <Stack gap="md">
+                          <Group gap={8} align="center">
+                            <ThemeIcon size="lg" radius="md" color={roleColor} variant="filled">
+                              <IconUsersGroup size={18} />
+                            </ThemeIcon>
+                            <Title order={3}>{role}</Title>
+                            <Badge size="md" variant="light" color={roleColor}>
+                              {totalViews} vista{totalViews === 1 ? "" : "s"} por defecto
+                            </Badge>
+                            <Badge size="md" variant="filled" color={roleColor}>
+                              {roleChecksTotal} check{roleChecksTotal === 1 ? "" : "s"}
+                            </Badge>
+                          </Group>
 
-                        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-                          {Object.entries(moduleGroups).map(([group, groupViews]) => {
-                            const groupCounts = permissionLevels.map((profile) => ({
-                              profile,
-                              count: groupViews.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
-                            }));
+                          {totalViews === 0 ? (
+                            <Text size="sm" c="dimmed">Este rol no tiene vistas por defecto declaradas todavía.</Text>
+                          ) : (
+                            <Stack gap="xl">
+                              {Object.entries(groupedByModule).map(([moduleName, moduleGroups], moduleIndex) => {
+                                const moduleColor = MODULE_COLORS[moduleIndex % MODULE_COLORS.length];
+                                const moduleViewsFlat = Object.values(moduleGroups).flat();
+                                const moduleChecksTotal = permissionLevels.reduce(
+                                  (total, profile) =>
+                                    total + moduleViewsFlat.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                                  0
+                                );
 
-                            return (
-                              <Card key={group} withBorder radius="md" p="md">
-                                <Stack gap="sm">
-                                  <Group justify="space-between" align="flex-start" wrap="nowrap">
-                                    <Text fw={700}>{group}</Text>
-                                    <Group gap={6}>
-                                      {groupCounts.map(({ profile, count }) => (
-                                        <Badge
-                                          key={profile}
-                                          size="sm"
-                                          variant={count > 0 ? "filled" : "light"}
-                                          color={profile === "Gestionar" ? "orange" : "blue"}
-                                        >
-                                          {count}/{groupViews.length} {profile}
-                                        </Badge>
-                                      ))}
+                                return (
+                                  <Stack key={`${role}-${moduleName}`} gap="sm">
+                                    <Group gap={8} align="center">
+                                      <ThemeIcon size="md" radius="md" color={moduleColor} variant="light">
+                                        <IconApps size={16} />
+                                      </ThemeIcon>
+                                      <Title order={4}>{moduleName}</Title>
+                                      <Badge size="sm" variant="light" color={moduleColor}>
+                                        {moduleChecksTotal} check{moduleChecksTotal === 1 ? "" : "s"}
+                                      </Badge>
                                     </Group>
-                                  </Group>
 
-                                  <Group gap="md">
-                                    {groupCounts.map(({ profile, count }) => {
-                                      const allChecked = groupViews.length > 0 && count === groupViews.length;
-                                      return (
-                                        <Checkbox
-                                          key={`${group}-all-${profile}`}
-                                          size="xs"
-                                          label={`Todo ${profile}`}
-                                          checked={allChecked}
-                                          indeterminate={count > 0 && !allChecked}
-                                          onChange={(event) => setLevelForViews(groupViews, profile, event.currentTarget.checked)}
-                                          disabled={!canManage}
-                                        />
-                                      );
-                                    })}
-                                  </Group>
+                                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+                                      {Object.entries(moduleGroups).map(([group, groupViews]) => {
+                                        const groupCounts = permissionLevels.map((profile) => ({
+                                          profile,
+                                          count: groupViews.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                                        }));
 
-                                  <Divider />
+                                        return (
+                                          <Card key={`${role}-${group}`} withBorder radius="md" p="md">
+                                            <Stack gap="sm">
+                                              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                                                <Text fw={700}>{group}</Text>
+                                                <Group gap={6}>
+                                                  {groupCounts.map(({ profile, count }) => (
+                                                    <Badge
+                                                      key={profile}
+                                                      size="sm"
+                                                      variant={count > 0 ? "filled" : "light"}
+                                                      color={profile === "Gestionar" ? "orange" : "blue"}
+                                                    >
+                                                      {count}/{groupViews.length} {profile}
+                                                    </Badge>
+                                                  ))}
+                                                </Group>
+                                              </Group>
 
-                                  <Stack gap={8}>
-                                    {groupViews.map((view) => (
-                                      <Group key={view.key} justify="space-between" wrap="nowrap" gap="md">
-                                        <Text size="sm" style={{ flex: 1 }}>{view.label}</Text>
-                                        <Group gap="md" wrap="nowrap">
-                                          {permissionLevels.map((profile) => (
-                                            <Checkbox
-                                              key={`${view.key}-${profile}`}
-                                              label={profile}
-                                              size="sm"
-                                              checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
-                                              onChange={() => toggleViewPermission(view.key, profile)}
-                                              disabled={!canManage}
-                                            />
-                                          ))}
-                                        </Group>
-                                      </Group>
-                                    ))}
+                                              <Group gap="md">
+                                                {groupCounts.map(({ profile, count }) => {
+                                                  const allChecked = groupViews.length > 0 && count === groupViews.length;
+                                                  return (
+                                                    <Checkbox
+                                                      key={`${role}-${group}-all-${profile}`}
+                                                      size="xs"
+                                                      label={`Todo ${profile}`}
+                                                      checked={allChecked}
+                                                      indeterminate={count > 0 && !allChecked}
+                                                      onChange={(event) => setLevelForViews(groupViews, profile, event.currentTarget.checked)}
+                                                      disabled={!canManage}
+                                                    />
+                                                  );
+                                                })}
+                                              </Group>
+
+                                              <Divider />
+
+                                              <Stack gap={8}>
+                                                {groupViews.map((view) => (
+                                                  <Group key={`${role}-${view.key}`} justify="space-between" wrap="nowrap" gap="md">
+                                                    <Text size="sm" style={{ flex: 1 }}>{view.label}</Text>
+                                                    <Group gap="md" wrap="nowrap">
+                                                      {permissionLevels.map((profile) => (
+                                                        <Checkbox
+                                                          key={`${role}-${view.key}-${profile}`}
+                                                          label={profile}
+                                                          size="sm"
+                                                          checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
+                                                          onChange={() => toggleViewPermission(view.key, profile)}
+                                                          disabled={!canManage}
+                                                        />
+                                                      ))}
+                                                    </Group>
+                                                  </Group>
+                                                ))}
+                                              </Stack>
+                                            </Stack>
+                                          </Card>
+                                        );
+                                      })}
+                                    </SimpleGrid>
                                   </Stack>
-                                </Stack>
-                              </Card>
-                            );
-                          })}
-                        </SimpleGrid>
-                      </Stack>
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Card>
                     );
                   })}
                 </Stack>
