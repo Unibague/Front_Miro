@@ -335,6 +335,15 @@ export interface ConteoSemaforos {
 export interface DashboardResumen {
   avance_global: number;
   semaforo_global: Semaforo;
+  anio_actual: string;
+  avance_anio_actual: number;
+  semaforo_anio_actual: Semaforo;
+  estructura_anio_actual: {
+    macroproyectos: number;
+    proyectos: number;
+    acciones: number;
+    indicadores: number;
+  };
   avances_por_nivel: {
     macroproyectos: number;
     proyectos: number;

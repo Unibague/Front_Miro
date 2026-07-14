@@ -24,7 +24,9 @@ import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
 import { usePdiConfig } from "../hooks/usePdiConfig";
-import { getWeightedContribution as getWeightedProgress } from "../avance-utils";
+import { getWeightedContribution as getWeightedProgress, formatNumeroEs, getAvanceAnioSimple } from "../avance-utils";
+
+const ANIO_ACTUAL = String(new Date().getFullYear());
 
 interface CorteVigente {
   _id: string;
@@ -86,11 +88,16 @@ function indicadorUsaPorcentaje(ind: Indicador) {
 }
 function getPeriodoActualIndicador(ind: Indicador) {
   const periodosOrdenados = [...(ind.periodos ?? [])].sort((a, b) => b.periodo.localeCompare(a.periodo));
-  const conDato = periodosOrdenados.find((p) => p.avance != null && p.avance !== "");
+  // Un periodo recien agregado guarda avance:0 por defecto aunque nadie lo
+  // haya reportado (estado_reporte queda en "Borrador"): sin este filtro ese
+  // 0 de relleno se confunde con el ultimo dato realmente reportado.
+  const conDato = periodosOrdenados.find((p) =>
+    p.avance != null && p.avance !== "" && p.estado_reporte && p.estado_reporte !== "Borrador"
+  );
   const periodo = conDato ?? periodosOrdenados[0];
   if (!periodo) return { label: "Sin corte", value: "—" };
   const value = periodo.avance != null && periodo.avance !== ""
-    ? (indicadorUsaPorcentaje(ind) ? `${periodo.avance}%` : String(periodo.avance))
+    ? (indicadorUsaPorcentaje(ind) ? `${formatNumeroEs(periodo.avance)}%` : formatNumeroEs(periodo.avance))
     : "—";
   return { label: periodo.periodo, value };
 }
@@ -134,7 +141,7 @@ function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
   return (
     <Group gap={8} align="center">
       <Progress value={clampProgress(avance)} color={SEMAFORO_COLOR[semaforo]} size="sm" radius="xl" style={{ flex: 1 }} />
-      <Text size="xs" fw={700} w={36} ta="right">{avance}%</Text>
+      <Text size="xs" fw={700} w={36} ta="right">{formatNumeroEs(avance)}%</Text>
     </Group>
   );
 }
@@ -225,10 +232,10 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
 
       {/* Avance grande + Meta */}
       <Group justify="space-between" align="flex-end" mb={6}>
-        <Text size="2rem" fw={800} lh={1}>{avanceBarra}%</Text>
+        <Text size="2rem" fw={800} lh={1}>{formatNumeroEs(avanceBarra)}%</Text>
         {ind.meta_final_2029 != null && (
           <div style={{ textAlign: "right" }}>
-            <Text size="lg" fw={700}>{ind.meta_final_2029}</Text>
+            <Text size="lg" fw={700}>{formatNumeroEs(ind.meta_final_2029)}</Text>
             <Text size="xs" c="dimmed">Meta {anioMeta}</Text>
           </div>
         )}
@@ -244,7 +251,7 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       {/* Mini stats */}
       <SimpleGrid cols={2} mb="md">
         {[
-          { label: "Peso", value: `${Number(ind.peso).toFixed(2)}%` },
+          { label: "Peso", value: `${formatNumeroEs(ind.peso, 2, 2)}%` },
           getPeriodoActualIndicador(ind),
         ].map(s => (
           <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
@@ -275,7 +282,7 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
                 return (
                   <Box key={anio} style={{ textAlign: "center", background: "var(--mantine-color-violet-0, #f3f0ff)", borderRadius: 12, padding: "12px 6px" }}>
                     <Text size="xs" c="dimmed" mb={4}>{anio}</Text>
-                    <Text fw={800} size="1.1rem" lh={1} c="violet">{pct}%</Text>
+                    <Text fw={800} size="1.1rem" lh={1} c="violet">{formatNumeroEs(pct)}%</Text>
                   </Box>
                 );
               })}
@@ -438,8 +445,8 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {/* Cajas de stats */}
       <SimpleGrid cols={{ base: 2, sm: 6 }} spacing="sm" mb="md">
         {[
-          { label: "Avance",     value: `${avanceAccion}%`,                                                                    color: undefined },
-          { label: "Peso",       value: `${Number(accion.peso).toFixed(2)}%`,                                                  color: undefined },
+          { label: "Avance",     value: `${formatNumeroEs(avanceAccion)}%`,                                                    color: undefined },
+          { label: "Peso",       value: `${formatNumeroEs(accion.peso, 2, 2)}%`,                                               color: undefined },
           { label: "Indicadores",value: loaded ? indicadores.length : (indicadoresCount ?? "—"),                               color: undefined },
           { label: "Gasto",      value: Number(accion.gasto) > 0 ? formatCOP(Number(accion.gasto)) : "$ 0",                   color: "#2563eb" },
           { label: "Inversión",  value: Number(accion.inversion) > 0 ? formatCOP(Number(accion.inversion)) : "$ 0",           color: "#7c3aed" },
@@ -652,6 +659,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
   const [accionesCount, setAccionesCount] = useState<number | null>(null);
   const [pendientesProyecto, setPendientesProyecto] = useState<ReturnType<typeof getEvaluacionesPendientesAccion>>([]);
+  const [indicadoresProyecto, setIndicadoresProyecto] = useState<Indicador[]>([]);
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
 
@@ -676,6 +684,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
         setAccionesCount(accionesBase.length);
         const indicadoresProyecto = await fetchIndicadoresProyecto(accionesBase);
         setPendientesProyecto(getEvaluacionesPendientesAccion(indicadoresProyecto));
+        setIndicadoresProyecto(indicadoresProyecto);
       })
       .catch(() => {});
   }, [fetchIndicadoresProyecto, proyectoInicial._id]);
@@ -703,6 +712,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
     );
 
     setPendientesProyecto(getEvaluacionesPendientesAccion(indicadoresProyecto));
+    setIndicadoresProyecto(indicadoresProyecto);
     return accionesConIndicadores;
   };
 
@@ -769,12 +779,19 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const avanceProyecto = acciones.length
     ? getWeightedProgress(acciones, (accion) => Number(accion.avance) || 0)
     : proyecto.avance;
+  const avanceProyectoAnio = getAvanceAnioSimple(indicadoresProyecto, ANIO_ACTUAL);
+  const semaforoProyectoAnio = getSemaforoByAvance(avanceProyectoAnio);
   const presupuestoProyecto = Number(proyecto.presupuesto || 0);
   const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado || 0);
   const semaforoProyecto = getSemaforoByAvance(avanceProyecto);
   const estadoProyectoColorReal = semaforoProyecto === "verde"
     ? "green"
     : semaforoProyecto === "amarillo"
+    ? "yellow"
+    : "red";
+  const estadoProyectoAnioColorReal = semaforoProyectoAnio === "verde"
+    ? "green"
+    : semaforoProyectoAnio === "amarillo"
     ? "yellow"
     : "red";
   const pendientesLiderProyecto = pendientesProyecto.filter((item) => item.tipo === "lider");
@@ -851,8 +868,8 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
       {/* Cajas de stats */}
       <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm" mb="md">
         {[
-          { label: "Avance", value: `${avanceProyecto}%` },
-          { label: "Peso", value: `${Number(proyecto.peso).toFixed(2)}%` },
+          { label: "Avance", value: `${formatNumeroEs(avanceProyecto)}%` },
+          { label: "Peso", value: `${formatNumeroEs(proyecto.peso, 2, 2)}%` },
           { label: "Acciones", value: loaded ? acciones.length : (accionesCount ?? "—") },
           { label: "Presupuesto", value: formatCOP(presupuestoProyecto) },
           { label: "Ejecutado", value: presupuestoEjecutadoProyecto > 0 ? formatCOP(presupuestoEjecutadoProyecto) : "$ 0" },
@@ -864,13 +881,22 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
         ))}
       </SimpleGrid>
 
-      {/* Barra de avance */}
-      <Box mb="md">
+      {/* Barra de avance — hacia la Meta final 2029 */}
+      <Box mb="sm">
         <Group justify="space-between" mb={6}>
-          <Text size="xs" c="dimmed">Avance del proyecto</Text>
+          <Text size="xs" c="dimmed">Avance del proyecto 2029</Text>
           <Text size="xs" fw={700}>{avanceProyecto}%</Text>
         </Group>
         <Progress value={Math.min(Math.max(avanceProyecto, 0), 100)} color={estadoProyectoColorReal} size="md" radius="xl" />
+      </Box>
+
+      {/* Barra de avance — frente a la meta del año en curso */}
+      <Box mb="md">
+        <Group justify="space-between" mb={6}>
+          <Text size="xs" c="dimmed">Avance año {ANIO_ACTUAL}</Text>
+          <Text size="xs" fw={700}>{formatNumeroEs(avanceProyectoAnio, 2, 2)}%</Text>
+        </Group>
+        <Progress value={Math.min(Math.max(avanceProyectoAnio, 0), 100)} color={estadoProyectoAnioColorReal} size="md" radius="xl" />
       </Box>
 
       {open && (
@@ -1057,7 +1083,7 @@ export default function MacroproyectoDetallePage() {
                   </Group>
                   <Group gap={12} mt={4} wrap="wrap">
                     <Text size="sm" c="dimmed">Código: <b>{macro.codigo}</b></Text>
-                    <Text size="sm" c="dimmed">Peso: <b>{macro.peso}%</b></Text>
+                    <Text size="sm" c="dimmed">Peso: <b>{formatNumeroEs(macro.peso)}%</b></Text>
                     {macro.lideres && macro.lideres.length > 0 ? (
                       <Text size="sm" c="dimmed">
                         Líderes: <b>{macro.lideres.map((l: any) => l.nombre || l).join(', ')}</b>

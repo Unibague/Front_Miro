@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import { usePdiConfig } from "../hooks/usePdiConfig";
+import { formatNumeroEs } from "../avance-utils";
 
 const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
 const SEMAFORO_LABEL: Record<string, string> = {
@@ -37,7 +38,7 @@ function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
   return (
     <Group gap={6} align="center">
       <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="xs" style={{ flex: 1 }} />
-      <Text size="xs" fw={700} w={32} ta="right">{avance}%</Text>
+      <Text size="xs" fw={700} w={32} ta="right">{formatNumeroEs(avance)}%</Text>
     </Group>
   );
 }
@@ -63,19 +64,19 @@ function IndicadorCard({ ind }: { ind: IndicadorResumen }) {
         <Group gap={12}>
           <Box>
             <Text size="xs" c="dimmed">Meta</Text>
-            <Text size="sm" fw={700}>{ind.meta_corte ?? "—"}</Text>
+            <Text size="sm" fw={700}>{formatNumeroEs(ind.meta_corte) || "—"}</Text>
           </Box>
           <Box>
             <Text size="xs" c="dimmed">Avance</Text>
-            <Text size="sm" fw={700}>{ind.avance_corte ?? "—"}</Text>
+            <Text size="sm" fw={700}>{formatNumeroEs(ind.avance_corte) || "—"}</Text>
           </Box>
         </Group>
       </Paper>
 
       <AvanceBar avance={ind.avance} semaforo={ind.semaforo} />
       <Group gap={8} mt={6} wrap="wrap">
-        <Text size="xs" c="dimmed">Peso: <b>{ind.peso}%</b></Text>
-        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {config.anio_fin}: <b>{ind.meta_final_2029}</b></Text>}
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(ind.peso)}%</b></Text>
+        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {config.anio_fin}: <b>{formatNumeroEs(ind.meta_final_2029)}</b></Text>}
       </Group>
       {ind.responsable && <Text size="xs" c="dimmed" mt={2}>Resp: <b>{ind.responsable}</b></Text>}
       {ind.observaciones && <Text size="xs" c="dimmed" mt={2} lineClamp={2}>Obs: {ind.observaciones}</Text>}
@@ -100,7 +101,7 @@ function AccionSeccion({ accion }: { accion: AccionResumen }) {
           <Badge color={SEMAFORO_COLOR[accion.semaforo]} variant="light" size="xs" radius="xl">
             {SEMAFORO_LABEL[accion.semaforo]}
           </Badge>
-          <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
+          <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(accion.peso)}%</b></Text>
         </Group>
       </Group>
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
@@ -154,8 +155,8 @@ function ProyectoSeccion({ proyecto }: { proyecto: ProyectoResumen }) {
           </Group>
           <Group gap={10} align="center">
             <div style={{ textAlign: "right" }}>
-              <Text size="1.6rem" fw={800} lh={1}>{proyecto.avance}%</Text>
-              <Text size="xs" c="dimmed">Peso: {proyecto.peso}%</Text>
+              <Text size="1.6rem" fw={800} lh={1}>{formatNumeroEs(proyecto.avance)}%</Text>
+              <Text size="xs" c="dimmed">Peso: {formatNumeroEs(proyecto.peso)}%</Text>
             </div>
             <Box style={{ width: 70, height: 6, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
               <Box style={{ height: "100%", width: `${proyecto.avance}%`, background: barColor, borderRadius: 99 }} />
@@ -203,12 +204,12 @@ function MacroSeccion({ macro }: { macro: MacroResumen }) {
                 {SEMAFORO_LABEL[macro.semaforo]}
               </Badge>
             </Group>
-            <Text size="xs" c="dimmed" mt={2}>Código: <b>{macro.codigo}</b> · Peso: <b>{macro.peso}%</b></Text>
+            <Text size="xs" c="dimmed" mt={2}>Código: <b>{macro.codigo}</b> · Peso: <b>{formatNumeroEs(macro.peso)}%</b></Text>
           </div>
         </Group>
         <Group gap={10} align="center">
           <div style={{ textAlign: "right" }}>
-            <Text size="2rem" fw={800} lh={1}>{macro.avance}%</Text>
+            <Text size="2rem" fw={800} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
             <Text size="xs" c="dimmed">Avance consolidado</Text>
           </div>
           <Box style={{ width: 90, height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>

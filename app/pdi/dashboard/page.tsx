@@ -10,6 +10,7 @@ import { showNotification } from "@mantine/notifications";
 import {
   IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
   IconListCheck, IconBulb, IconChartDonut3, IconNetwork, IconFileSpreadsheet,
+  IconCalculator,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -19,7 +20,7 @@ import PdiSidebar from "../components/PdiSidebar";
 import PdiGraficas from "../components/PdiGraficas";
 import type { DashboardResumen, Macroproyecto, Semaforo } from "../types";
 import { usePdiConfig } from "../hooks/usePdiConfig";
-import { getWeightedAverage } from "../avance-utils";
+import { getWeightedAverage, formatNumeroEs } from "../avance-utils";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [exportandoIndicadores, setExportandoIndicadores] = useState(false);
+  const [recalculando, setRecalculando] = useState(false);
 
   const cargarDatos = async () => {
     setLoading(true);
@@ -92,7 +94,7 @@ export default function DashboardPage() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `pdi_memoria_calculo_avance_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      link.setAttribute("download", `Memoria técnica del cálculo del avance del PDI ${new Date().toISOString().slice(0, 10)}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -133,6 +135,28 @@ export default function DashboardPage() {
     }
   };
 
+  const handleRecalcular = async () => {
+    setRecalculando(true);
+    try {
+      const response = await axios.post(PDI_ROUTES.recalcularTodos());
+      await cargarDatos();
+      showNotification({
+        title: "Recalculado",
+        message: response.data?.message || "El avance del PDI fue recalculado correctamente.",
+        color: "teal",
+      });
+    } catch (e) {
+      console.error(e);
+      showNotification({
+        title: "Error",
+        message: "No se pudo recalcular el avance del PDI",
+        color: "red",
+      });
+    } finally {
+      setRecalculando(false);
+    }
+  };
+
   const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
   const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
@@ -168,7 +192,7 @@ export default function DashboardPage() {
                   onClick={handleExportarAvance}
                   loading={exportando}
                 >
-                  Descargar memoria de cálculo (Excel)
+                  Descargar memoria técnica del cálculo del avance del PDI
                 </Button>
               )}
               {isAdmin && (
@@ -192,6 +216,18 @@ export default function DashboardPage() {
               >
                 Red de nodos
               </Button>
+              {isAdmin && (
+                <Button
+                  variant="light"
+                  color="orange"
+                  radius="xl"
+                  leftSection={<IconCalculator size={17} />}
+                  onClick={handleRecalcular}
+                  loading={recalculando}
+                >
+                  Recalcular avances
+                </Button>
+              )}
               <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
                 <IconRefresh size={18} />
               </ActionIcon>
@@ -224,18 +260,17 @@ export default function DashboardPage() {
                     sections={[{ value: avancePonderado, color: SEMAFORO_HEX[semaforo] }]}
                     label={
                       <Center>
-                        <Stack gap={0} align="center">
-                          <Text fw={800} size="xl" lh={1}>{avancePonderado.toFixed(2)}%</Text>
-                          <Text size="10px" c="dimmed" tt="uppercase">avance</Text>
-                        </Stack>
+                        <Text fw={800} size="xl" lh={1}>{formatNumeroEs(avancePonderado, 2, 2)}%</Text>
                       </Center>
                     }
                   />
 
                   <div>
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Avance global PDI</Text>
+                    <Text size="xs" c="dimmed" fw={600} mb={4}>
+                      Avance global PDI {formatAnioRange(config.anio_inicio, config.anio_fin)}
+                    </Text>
                     <Title order={1} c={SEMAFORO_HEX[semaforo]} lh={1}>
-                      {avancePonderado.toFixed(2)}%
+                      {formatNumeroEs(avancePonderado, 2, 2)}%
                     </Title>
                     <Badge color={SEMAFORO_COLOR[semaforo]} variant="light" radius="xl" mt={6} size="md">
                       {SEMAFORO_LABEL[semaforo]}
@@ -251,6 +286,43 @@ export default function DashboardPage() {
                     <EstructuraCol label="Indicadores"           total={resumen.estructura.indicadores}    icon={<IconTarget size={16} />} />
                   </SimpleGrid>
 
+                </Group>
+              </Paper>
+
+              {/* Avance del año en curso — promedio simple del % de cumplimiento de los indicadores con meta en ese año, frente a la meta de ESE año (no la Meta final 2029) */}
+              <Paper withBorder radius="xl" p="lg" shadow="xs">
+                <Group gap={32} align="center" wrap="wrap">
+                  <Group gap={20} align="center">
+                    <RingProgress
+                      size={90}
+                      thickness={10}
+                      roundCaps
+                      sections={[{ value: resumen.avance_anio_actual, color: SEMAFORO_HEX[resumen.semaforo_anio_actual] }]}
+                      label={
+                        <Center>
+                          <Text fw={800} size="sm" lh={1}>{formatNumeroEs(resumen.avance_anio_actual, 2, 2)}%</Text>
+                        </Center>
+                      }
+                    />
+                    <div>
+                      <Text size="xs" c="dimmed" fw={600} mb={4}>Avance del año {resumen.anio_actual}</Text>
+                      <Title order={3} c={SEMAFORO_HEX[resumen.semaforo_anio_actual]} lh={1}>
+                        {formatNumeroEs(resumen.avance_anio_actual, 2, 2)}%
+                      </Title>
+                      <Badge color={SEMAFORO_COLOR[resumen.semaforo_anio_actual]} variant="light" radius="xl" mt={6} size="sm">
+                        {SEMAFORO_LABEL[resumen.semaforo_anio_actual]}
+                      </Badge>
+                    </div>
+                  </Group>
+
+                  <Divider orientation="vertical" style={{ height: 70 }} />
+
+                  <SimpleGrid cols={4} spacing="xl" style={{ flex: 1 }}>
+                    <EstructuraCol label="Macroproyectos"        total={resumen.estructura_anio_actual.macroproyectos} icon={<IconChartDonut3 size={16} />} />
+                    <EstructuraCol label="Proyectos"             total={resumen.estructura_anio_actual.proyectos}      icon={<IconListCheck size={16} />} />
+                    <EstructuraCol label="Acciones Estratégicas" total={resumen.estructura_anio_actual.acciones}       icon={<IconBulb size={16} />} />
+                    <EstructuraCol label="Indicadores"           total={resumen.estructura_anio_actual.indicadores}    icon={<IconTarget size={16} />} />
+                  </SimpleGrid>
                 </Group>
               </Paper>
 

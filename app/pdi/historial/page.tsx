@@ -16,6 +16,7 @@ import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
+import { formatNumeroEs } from "../avance-utils";
 
 // ── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -64,6 +65,13 @@ const nombreEditor = (e: EntradaHistorial) =>
 function fmt(v: any): string {
   if (v === null || v === undefined || v === "") return "—";
   return String(v);
+}
+
+// Igual que fmt, pero para campos numericos (Avance/Meta): siempre con coma
+// decimal, sin importar si se guardo/reporto como 0.8 o 0,8.
+function fmtNum(v: any): string {
+  if (v === null || v === undefined || v === "") return "—";
+  return formatNumeroEs(v);
 }
 
 function esObjectId(v: any) {
@@ -115,9 +123,9 @@ function periodosDiff(antes: any[], despues: any[], tipo: string, corteActivo = 
   const buildDiffs = (dp: any, ap: any, incluirEstado: boolean) => {
     const diffs: { campo: string; av: string; dv: string }[] = [];
     if (!(sinDato(dp.avance) && sinDato(ap.avance)) && fmt(dp.avance) !== fmt(ap.avance))
-      diffs.push({ campo: "Avance", av: fmt(ap.avance), dv: fmt(dp.avance) });
+      diffs.push({ campo: "Avance", av: fmtNum(ap.avance), dv: fmtNum(dp.avance) });
     if (fmt(dp.meta) !== fmt(ap.meta))
-      diffs.push({ campo: "Meta", av: fmt(ap.meta), dv: fmt(dp.meta) });
+      diffs.push({ campo: "Meta", av: fmtNum(ap.meta), dv: fmtNum(dp.meta) });
     for (const [label, key] of EXTRAS) {
       if (fmt(dp[key]) !== fmt(ap[key]))
         diffs.push({ campo: label, av: fmt(ap[key]), dv: fmt(dp[key]) });

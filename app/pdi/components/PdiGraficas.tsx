@@ -81,6 +81,13 @@ function _periodosSorted(ind: Indicador) {
   );
 }
 
+// Un periodo recien agregado guarda avance:0 por defecto aunque nadie lo haya
+// reportado (estado_reporte queda en "Borrador"). Para "ultimo_valor" hay que
+// ignorar ese relleno, o el ultimo periodo sin reportar se confunde con el
+// ultimo valor real.
+function _fueReportado(p: { estado_reporte?: string | null }) {
+  return Boolean(p.estado_reporte) && p.estado_reporte !== "Borrador";
+}
 
 function absAvanceHastaAnio(ind: Indicador, anio: string): number | null {
   // Valor absoluto del avance en ESE año — capado por la meta de cada periodo
@@ -89,10 +96,11 @@ function absAvanceHastaAnio(ind: Indicador, anio: string): number | null {
   );
   if (!delAnio.length) return null;
   if (ind.tipo_calculo === "ultimo_valor") {
-    const last = delAnio[delAnio.length - 1];
-    const av = toNumberValue(last.avance) ?? 0;
-    const meta = toNumberValue(last.meta);
-    return meta != null && meta > 0 ? Math.min(av, meta) : av;
+    // El ultimo valor reportado es una medicion evolucionando hacia la Meta
+    // 2029, no una cuota anual: se muestra crudo, sin capar contra la meta del periodo.
+    const reportados = delAnio.filter(_fueReportado);
+    if (!reportados.length) return null;
+    return toNumberValue(reportados[reportados.length - 1].avance) ?? 0;
   }
   if (ind.tipo_calculo === "promedio") {
     const valores = delAnio
@@ -145,7 +153,7 @@ function fmtValue(value: number | string | null | undefined) {
 
 function cumplimientoPct(avance: number | null, meta: number | null) {
   if (avance === null || meta === null || meta <= 0) return null;
-  return Math.min(Math.round((avance / meta) * 100), 100);
+  return Math.min(Math.round((avance / meta) * 100 * 100) / 100, 100);
 }
 
 const PDI_WEIGHTED_PERCENT_MAX = 100;
@@ -299,10 +307,17 @@ function resolvePeriodoActual(inds: Indicador[]) {
   return ordenados[ordenados.length - 1] ?? currentYear;
 }
 
+// Para "ultimo_valor" el % de cumplimiento (y su semaforo/estado) siempre se
+// mide contra la Meta 2029, igual que el avance global del indicador: es la
+// misma medicion evolucionando hacia una unica meta, no una cuota por corte/anio.
+function metaReferenciaCumplimiento(ind: Indicador, metaDelPeriodo: number | null) {
+  return ind.tipo_calculo === "ultimo_valor" ? toNumberValue(ind.meta_final_2029) : metaDelPeriodo;
+}
+
 function metricasPeriodo(ind: Indicador, periodo: string) {
   const metaPeriodo = absMetaEnCorte(ind, periodo);
   const avancePeriodo = absAvanceHastaCorte(ind, periodo);
-  const pctPeriodo = cumplimientoPct(avancePeriodo, metaPeriodo) ?? 0;
+  const pctPeriodo = cumplimientoPct(avancePeriodo, metaReferenciaCumplimiento(ind, metaPeriodo)) ?? 0;
 
   return {
     metaPeriodo,
@@ -315,7 +330,7 @@ function metricasPeriodo(ind: Indicador, periodo: string) {
 function metricasAnio(ind: Indicador, anio: string) {
   const metaAnio = absMetaEnAnio(ind, anio);
   const avanceAnio = absAvanceHastaAnio(ind, anio);
-  const pctAnio = cumplimientoPct(avanceAnio, metaAnio) ?? 0;
+  const pctAnio = cumplimientoPct(avanceAnio, metaReferenciaCumplimiento(ind, metaAnio)) ?? 0;
 
   return {
     metaPeriodo: metaAnio,
@@ -338,8 +353,11 @@ const VISTA_GENERAL = "GENERAL";
 
 function isReportadoEnPeriodo(ind: Indicador, periodo: string) {
   const periodoData = periodoByName(ind, periodo);
+  // Solo estado_reporte es autoritativo. fecha_envio puede quedar de un envío
+  // previo que luego volvió a "Borrador" (reabierto/rechazado y no reenviado
+  // aún); usarla como señal de "reportado" genera falsos positivos.
   const estado = periodoData?.estado_reporte ?? "Borrador";
-  return Boolean(periodoData?.fecha_envio) || estado !== "Borrador";
+  return estado !== "Borrador";
 }
 
 function StatCard({ title, value, sub, color = "blue", icon, onAction }: {
@@ -377,7 +395,7 @@ function PctBar({ pct, semaforo }: { pct: number; semaforo: string }) {
       <Box style={{ flex: 1, height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
         <Box style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 4 }} />
       </Box>
-      <Text size="sm" fw={700} style={{ minWidth: 48, textAlign: "right" }}>{value}%</Text>
+      <Text size="sm" fw={700} style={{ minWidth: 56, textAlign: "right" }}>{fmtValue(value)}%</Text>
     </Group>
   );
 }
@@ -1112,6 +1130,15 @@ export default function PdiGraficas() {
         (typeof ind.meta_final_2029 === "string" && ind.meta_final_2029.includes("%")) ||
         (ind.periodos ?? []).some((p) => typeof p.meta === "string" && p.meta.includes("%"));
 
+      // Un periodo recien agregado guarda avance:0 por defecto aunque nadie lo
+      // haya reportado (estado_reporte queda en "Borrador"): sin esta bandera
+      // ese 0 de relleno se ve igual que un reporte real de 0%.
+      const reportado = esVistaGeneralTabla
+        ? (ind.periodos ?? []).some((p) =>
+            String(p.periodo ?? "").slice(0, 4) === anioBaseTabla && isReportadoEnPeriodo(ind, p.periodo)
+          )
+        : isReportadoEnPeriodo(ind, periodoTabla);
+
       return {
         id: ind._id,
         codigo: ind.codigo,
@@ -1122,6 +1149,7 @@ export default function PdiGraficas() {
         pctPeriodo,
         semaforoPeriodo,
         usaPorcentaje,
+        reportado,
       };
     })
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
@@ -2060,18 +2088,30 @@ export default function PdiGraficas() {
                             </Group>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                            <Group gap={4} justify="flex-end" wrap="nowrap">
-                              <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
-                              {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
-                            </Group>
+                            {row.reportado ? (
+                              <Group gap={4} justify="flex-end" wrap="nowrap">
+                                <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                                {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                              </Group>
+                            ) : (
+                              <Text size="sm" c="dimmed">—</Text>
+                            )}
                           </td>
                           <td style={{ ...tdStyle, minWidth: 140 }}>
-                            <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
+                            {row.reportado ? (
+                              <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
+                            ) : (
+                              <Text size="xs" c="dimmed" fs="italic">Sin reportar</Text>
+                            )}
                           </td>
                           <td style={{ ...tdStyle, textAlign: "center" }}>
-                            <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
-                              {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
-                            </Badge>
+                            {row.reportado ? (
+                              <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                                {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
+                              </Badge>
+                            ) : (
+                              <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -2291,18 +2331,30 @@ export default function PdiGraficas() {
                               </Group>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
-                              <Group gap={4} justify="flex-end" wrap="nowrap">
-                                <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
-                                {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
-                              </Group>
+                              {row.reportado ? (
+                                <Group gap={4} justify="flex-end" wrap="nowrap">
+                                  <Text size="sm" fw={600}>{fmtValue(row.avancePeriodo)}</Text>
+                                  {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                                </Group>
+                              ) : (
+                                <Text size="sm" c="dimmed">—</Text>
+                              )}
                             </td>
                             <td style={{ ...tdStyle, minWidth: 140 }}>
-                              <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
+                              {row.reportado ? (
+                                <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
+                              ) : (
+                                <Text size="xs" c="dimmed" fs="italic">Sin reportar</Text>
+                              )}
                             </td>
                             <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
-                                {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
-                              </Badge>
+                              {row.reportado ? (
+                                <Badge color={SEMAFORO_BADGE[row.semaforoPeriodo] ?? "gray"} variant="filled" size="md">
+                                  {SEMAFORO_LABEL[row.semaforoPeriodo] ?? row.semaforoPeriodo}
+                                </Badge>
+                              ) : (
+                                <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
+                              )}
                             </td>
                           </tr>
                         ))

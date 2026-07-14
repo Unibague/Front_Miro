@@ -25,7 +25,7 @@ import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
-import { getWeightedContribution as getWeightedProgress } from "../avance-utils";
+import { getWeightedContribution as getWeightedProgress, formatNumeroEs } from "../avance-utils";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -241,18 +241,23 @@ function indicadorUsaPorcentaje(ind: Indicador) {
 
 function getPeriodoActualIndicador(ind: Indicador) {
   const periodosOrdenados = [...(ind.periodos ?? [])].sort((a, b) => b.periodo.localeCompare(a.periodo));
-  const conDato = periodosOrdenados.find((p) => p.avance != null && p.avance !== "");
+  // Un periodo recien agregado guarda avance:0 por defecto aunque nadie lo
+  // haya reportado (estado_reporte queda en "Borrador"): sin este filtro ese
+  // 0 de relleno se confunde con el ultimo dato realmente reportado.
+  const conDato = periodosOrdenados.find((p) =>
+    p.avance != null && p.avance !== "" && p.estado_reporte && p.estado_reporte !== "Borrador"
+  );
   const periodo = conDato ?? periodosOrdenados[0];
   if (!periodo) return { label: "Sin corte", value: "—" };
   const value = periodo.avance != null && periodo.avance !== ""
-    ? (indicadorUsaPorcentaje(ind) ? `${periodo.avance}%` : String(periodo.avance))
+    ? (indicadorUsaPorcentaje(ind) ? `${formatNumeroEs(periodo.avance)}%` : formatNumeroEs(periodo.avance))
     : "—";
   return { label: periodo.periodo, value };
 }
 
 function formatPeriodoAvance(ind: Indicador, avance: Periodo["avance"]) {
   if (avance == null) return "—";
-  return indicadorUsaPorcentaje(ind) ? `${avance}%` : String(avance);
+  return indicadorUsaPorcentaje(ind) ? `${formatNumeroEs(avance)}%` : formatNumeroEs(avance);
 }
 
 function getProgressColor(avance: number) {
@@ -721,7 +726,7 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
             {[
               { label: `Meta ${anioMeta}`, value: String(indicador.meta_final_2029 ?? "—") },
               { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
-              { label: indicador.avance_total_real != null ? "Avance total real" : "Avance actual", value: `${avanceActual}%` },
+              { label: indicador.avance_total_real != null ? "Avance total real" : "Avance actual", value: `${formatNumeroEs(avanceActual)}%` },
             ].map((s, i, arr) => (
               <div key={s.label} style={{
                 flex: 1,
@@ -953,11 +958,11 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
       {/* Avance */}
       <Group justify="space-between" align="flex-end" mb={6}>
         <div>
-          <Text size="2rem" fw={800} lh={1}>{avanceVisible}%</Text>
+          <Text size="2rem" fw={800} lh={1}>{formatNumeroEs(avanceVisible)}%</Text>
         </div>
         {ind.meta_final_2029 != null && (
           <div style={{ textAlign: "right" }}>
-            <Text size="lg" fw={700}>{ind.meta_final_2029}</Text>
+            <Text size="lg" fw={700}>{formatNumeroEs(ind.meta_final_2029)}</Text>
             <Text size="xs" c="dimmed">Meta {anioMeta}</Text>
           </div>
         )}
@@ -996,7 +1001,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
                 >
                   <Text size="10px" c="dimmed" fw={700}>{anio}</Text>
                   <Text size="xs" fw={800} c={tieneData ? "violet" : "dimmed"}>
-                    {tieneData ? `${Number(val).toFixed(1)}%` : "0.0%"}
+                    {tieneData ? `${formatNumeroEs(Number(val), 1, 1)}%` : "0,0%"}
                   </Text>
                 </Box>
               );
@@ -2013,7 +2018,7 @@ function FilaProyectoInforme({ proyecto, corte }: { proyecto: ProyectoInforme; c
           <Box style={{ flex: 1, minWidth: 0 }}>
             <Group gap={8} mb={4}>
               <Text size="xs" c="dimmed" fw={600}>{proyecto.codigo}</Text>
-              <Badge size="xs" color={semaforoColorInforme(proyecto.avance)} variant="light">{proyecto.avance}%</Badge>
+              <Badge size="xs" color={semaforoColorInforme(proyecto.avance)} variant="light">{formatNumeroEs(proyecto.avance)}%</Badge>
               <Badge size="xs" variant="dot" color="blue">{proyecto.acciones.length} acción{proyecto.acciones.length !== 1 ? "es" : ""}</Badge>
             </Group>
             <Text fw={600} size="sm" truncate="end">{proyecto.nombre}</Text>
@@ -2049,7 +2054,7 @@ function FilaProyectoInforme({ proyecto, corte }: { proyecto: ProyectoInforme; c
                   <Box style={{ flex: 1, minWidth: 0 }}>
                     <Group gap={6} mb={2}>
                       <Text size="xs" c="dimmed" fw={700}>{a.codigo}</Text>
-                      <Badge size="xs" color={semaforoColorInforme(a.avance)} variant="light">{a.avance}%</Badge>
+                      <Badge size="xs" color={semaforoColorInforme(a.avance)} variant="light">{formatNumeroEs(a.avance)}%</Badge>
                     </Group>
                     <Text size="sm" fw={600} truncate="end">{a.nombre}</Text>
                     {a.responsable && <Text size="xs" c="dimmed">{a.responsable}</Text>}
@@ -2095,7 +2100,7 @@ function FilaMacroInforme({ macro, corte }: { macro: MacroInforme; corte: string
           <Box style={{ flex: 1, minWidth: 0 }}>
             <Group gap={8} mb={4}>
               <Text size="sm" c="violet" fw={800}>{macro.codigo}</Text>
-              <Badge size="sm" color={semaforoColorInforme(macro.avance)} variant="light">{macro.avance}%</Badge>
+              <Badge size="sm" color={semaforoColorInforme(macro.avance)} variant="light">{formatNumeroEs(macro.avance)}%</Badge>
               <Badge size="xs" variant="dot" color="violet">{macro.proyectos.length} proyecto{macro.proyectos.length !== 1 ? "s" : ""}</Badge>
             </Group>
             <Text fw={700} size="md" truncate="end">{macro.nombre}</Text>

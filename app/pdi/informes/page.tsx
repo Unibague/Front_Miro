@@ -16,6 +16,7 @@ import { useSession } from "next-auth/react";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import { useRole } from "@/app/context/RoleContext";
+import { formatNumeroEs } from "../avance-utils";
 
 interface ProyectoResumen {
   _id: string;
@@ -106,7 +107,7 @@ function FilaIndicador({ indicador, corteGlobal }: { indicador: IndicadorResumen
           <Group gap={8} mb={2}>
             <Text size="xs" c="dimmed" fw={600}>{indicador.codigo}</Text>
             <Badge size="xs" color={semaforoColor(indicador.avance)} variant="light">
-              {indicador.avance ?? 0}%
+              {formatNumeroEs(indicador.avance ?? 0)}%
             </Badge>
           </Group>
           <Text fw={600} size="sm" truncate="end">{indicador.nombre}</Text>
@@ -160,7 +161,7 @@ function FilaAccion({ accion, corteGlobal }: { accion: AccionResumen; corteGloba
           <Box style={{ flex: 1, minWidth: 0 }}>
             <Group gap={8} mb={2}>
               <Text size="xs" c="dimmed" fw={700}>{accion.codigo}</Text>
-              <Badge size="xs" color={semaforoColor(accion.avance)} variant="light">{accion.avance ?? 0}%</Badge>
+              <Badge size="xs" color={semaforoColor(accion.avance)} variant="light">{formatNumeroEs(accion.avance ?? 0)}%</Badge>
               <Badge size="xs" variant="dot" color="indigo">
                 {accion.indicadores.length} indicador{accion.indicadores.length !== 1 ? "es" : ""}
               </Badge>
@@ -232,7 +233,7 @@ function FilaProyecto({ proyecto, corteGlobal }: { proyecto: ProyectoResumen; co
             <Group gap={8} mb={4}>
               <Text size="xs" c="dimmed" fw={600}>{proyecto.codigo}</Text>
               <Badge size="xs" color={semaforoColor(proyecto.avance)} variant="light">
-                {proyecto.avance}%
+                {formatNumeroEs(proyecto.avance)}%
               </Badge>
               <Badge size="xs" variant="dot" color="blue">
                 {proyecto.acciones.length} accion{proyecto.acciones.length !== 1 ? "es" : ""}
@@ -329,7 +330,7 @@ function FilaMacro({ macro, corteGlobal }: { macro: MacroResumen; corteGlobal: s
           <Box style={{ flex: 1, minWidth: 0 }}>
             <Group gap={8} mb={2}>
               <Text size="xs" c="dimmed" fw={700}>{macro.codigo}</Text>
-              <Badge size="sm" color={semaforoColor(macro.avance)} variant="light">{macro.avance}%</Badge>
+              <Badge size="sm" color={semaforoColor(macro.avance)} variant="light">{formatNumeroEs(macro.avance)}%</Badge>
               <Badge size="xs" variant="dot" color="violet">
                 {macro.proyectos.length} proyecto{macro.proyectos.length !== 1 ? "s" : ""}
               </Badge>

@@ -25,7 +25,7 @@ import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 import PermissionGate from "@/app/components/PermissionGate";
-import { getWeightedAverage } from "./avance-utils";
+import { getWeightedAverage, formatNumeroEs } from "./avance-utils";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -59,7 +59,7 @@ function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
   return (
     <Group gap={6} align="center">
       <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="sm" style={{ flex: 1, minWidth: 80 }} />
-      <Text size="xs" fw={600} w={36} ta="right">{avance}%</Text>
+      <Text size="xs" fw={600} w={36} ta="right">{formatNumeroEs(avance)}%</Text>
     </Group>
   );
 }
@@ -221,14 +221,14 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
       })()}
       <AvanceBar avance={avanceMostrado} semaforo={ind.semaforo} />
       <Group gap={12} mt={4} wrap="wrap">
-        <Text size="xs" c="dimmed">Avance total: <b>{avanceMostrado}%</b></Text>
-        {ind.avance_total_real != null && <Text size="xs" c="dimmed">Avance total real: <b>{ind.avance_total_real}%</b></Text>}
+        <Text size="xs" c="dimmed">Avance total: <b>{formatNumeroEs(avanceMostrado)}%</b></Text>
+        {ind.avance_total_real != null && <Text size="xs" c="dimmed">Avance total real: <b>{formatNumeroEs(ind.avance_total_real)}%</b></Text>}
       </Group>
       <Group gap={8} mt={6} wrap="wrap">
-        <Text size="xs" c="dimmed">Peso: <b>{ind.peso}%</b></Text>
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(ind.peso)}%</b></Text>
         {ind.responsable && <Text size="xs" c="dimmed">Resp: <b>{ind.responsable}</b></Text>}
         {ind.tipo_seguimiento && <Text size="xs" c="dimmed">Seguimiento: <b>{ind.tipo_seguimiento}</b></Text>}
-        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {anioMeta ?? "final"}: <b>{ind.meta_final_2029}</b></Text>}
+        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {anioMeta ?? "final"}: <b>{formatNumeroEs(ind.meta_final_2029)}</b></Text>}
       </Group>
       {ind.periodos.length > 0 && <>
         <Button variant="subtle" size="xs" mt={6} p={0} onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}>
@@ -250,9 +250,9 @@ function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
                   return (
                     <tr key={p.periodo} style={{ borderBottom: "1px solid #f1f3f5" }}>
                       <td style={{ padding: "4px 8px" }}>{p.periodo}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.meta ?? "—"}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.avance ?? "—"}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{avAnio != null ? `${avAnio}%` : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.meta != null ? formatNumeroEs(p.meta) : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.avance != null ? formatNumeroEs(p.avance) : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{avAnio != null ? `${formatNumeroEs(avAnio)}%` : "—"}</td>
                     </tr>
                   );
                 })}
@@ -358,7 +358,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {accion.responsable && <Text size="xs" c="dimmed" mb={6}>Resp: <b>{accion.responsable}</b></Text>}
       <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
       <Group gap={8} mt={4}>
-        <Text size="xs" c="dimmed">Peso: <b>{accion.peso}%</b></Text>
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(accion.peso)}%</b></Text>
         {presupuestoAccion > 0 && (
           <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoAccion)}</b></Text>
         )}
@@ -492,7 +492,7 @@ function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDe
       </Group>
       <AvanceBar avance={proyecto.avance} semaforo={proyecto.semaforo} />
       <Group gap={12} mt={6}>
-        <Text size="xs" c="dimmed">Peso: <b>{proyecto.peso}%</b></Text>
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(proyecto.peso)}%</b></Text>
         <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
         <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
         {presupuestoEjecutadoProyecto > 0 && (
@@ -624,6 +624,9 @@ type PresupuestoDashboardRow = {
   causado?: number;
   causadoGasto?: number;
   causadoInversion?: number;
+  ejecutado?: number;
+  ejecutadoGasto?: number;
+  ejecutadoInversion?: number;
   gasto?: number;
   inversion?: number;
   detalles?: PresupuestoDetalleResumen[];
@@ -638,6 +641,9 @@ type PresupuestoDashboardResponse = {
     causado?: number;
     causadoGasto?: number;
     causadoInversion?: number;
+    ejecutado?: number;
+    ejecutadoGasto?: number;
+    ejecutadoInversion?: number;
   };
 };
 
@@ -743,6 +749,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     causado: number;
     causadoGasto: number;
     causadoInversion: number;
+    ejecutado: number;
+    ejecutadoGasto: number;
+    ejecutadoInversion: number;
   } | null>(null);
   const [modalPendientes, setModalPendientes] = useState(false);
   const [modalPendientesLider, setModalPendientesLider] = useState(false);
@@ -808,6 +817,18 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
         const causadoGasto = splitFromTotals.gasto || splitFromRows.gasto;
         const causadoInversion = splitFromTotals.inversion || splitFromRows.inversion;
+
+        // "Ejecutado" (pagado) es una etapa distinta de "causado" (obligación
+        // reconocida) en la ejecución presupuestal. El avance financiero del
+        // año debe compararse contra lo EJECUTADO, no lo causado.
+        const ejecutadoGasto = toBudgetNumber(data.totals?.ejecutadoGasto)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutadoGasto), 0);
+        const ejecutadoInversion = toBudgetNumber(data.totals?.ejecutadoInversion)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutadoInversion), 0);
+        const ejecutado = toBudgetNumber(data.totals?.ejecutado)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutado), 0)
+          || (ejecutadoGasto + ejecutadoInversion);
+
         setPresupuestoAnio({
           total,
           presupuestoGasto,
@@ -815,6 +836,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           causado,
           causadoGasto,
           causadoInversion,
+          ejecutado,
+          ejecutadoGasto,
+          ejecutadoInversion,
         });
       })
       .catch(() => {});
@@ -840,14 +864,21 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     : 0;
   const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
   const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
+  const anioActualLabel = resumen?.anio_actual ?? String(new Date().getFullYear());
+  const avanceAnioActual = resumen?.avance_anio_actual ?? 0;
+  const avanceAnioActualColor = avanceAnioActual >= 70 ? "green" : avanceAnioActual >= 40 ? "blue" : avanceAnioActual >= 20 ? "orange" : "red";
+  const avanceAnioActualBadge = avanceAnioActual >= 70 ? "Buen ritmo" : avanceAnioActual >= 40 ? "En progreso" : avanceAnioActual >= 20 ? "Atención" : "Crítico";
   const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
   const presupuestoAnioGasto = presupuestoAnio?.presupuestoGasto ?? 0;
   const presupuestoAnioInversion = presupuestoAnio?.presupuestoInversion ?? 0;
-  const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
-  const presupuestoAnioCausadoGasto = presupuestoAnio?.causadoGasto ?? 0;
-  const presupuestoAnioCausadoInversion = presupuestoAnio?.causadoInversion ?? 0;
+  // "Ejecutado" (pagado), no "causado" (obligación reconocida): son etapas
+  // distintas de la ejecución presupuestal, y el avance financiero del año
+  // debe medir lo realmente ejecutado frente al presupuesto de ese año.
+  const presupuestoAnioEjecutado = presupuestoAnio?.ejecutado ?? 0;
+  const presupuestoAnioEjecutadoGasto = presupuestoAnio?.ejecutadoGasto ?? 0;
+  const presupuestoAnioEjecutadoInversion = presupuestoAnio?.ejecutadoInversion ?? 0;
   const presupuestoAnioSinDesagregar = Math.max(
-    presupuestoAnioCausado - presupuestoAnioCausadoGasto - presupuestoAnioCausadoInversion,
+    presupuestoAnioEjecutado - presupuestoAnioEjecutadoGasto - presupuestoAnioEjecutadoInversion,
     0
   );
   const presupuestoAnioPlaneadoSinDesagregar = Math.max(
@@ -855,7 +886,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     0
   );
   const avanceFinancieroAnio = presupuestoAnioTotal > 0
-    ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
+    ? Math.min(Math.round((presupuestoAnioEjecutado / presupuestoAnioTotal) * 100), 100)
     : 0;
   const finColorAnio = avanceFinancieroAnio >= 70 ? "teal" : avanceFinancieroAnio >= 40 ? "blue" : "orange";
   const estructuraResumen = [
@@ -919,10 +950,22 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               <div>
                 <Text size="xs" c="dimmed">Avance ponderado</Text>
                 <Group gap="sm" align="flex-end">
-                  <Text size="2.8rem" fw={900} lh={1}>{avancePonderado.toFixed(2)}%</Text>
+                  <Text size="2.8rem" fw={900} lh={1}>{formatNumeroEs(avancePonderado, 2, 2)}%</Text>
                   <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
                 </Group>
                 <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
+                {resumen && (
+                  <Box mt={10}>
+                    <Group gap={6} align="center" justify="space-between">
+                      <Text size="xs" c="dimmed">Avance {anioActualLabel} (meta {anioActualLabel}: 100%)</Text>
+                      <Group gap={6} align="center">
+                        <Text size="sm" fw={700}>{formatNumeroEs(avanceAnioActual, 2, 2)}%</Text>
+                        <Badge size="xs" color={avanceAnioActualColor} variant="light" radius="xl">{avanceAnioActualBadge}</Badge>
+                      </Group>
+                    </Group>
+                    <Progress value={avanceAnioActual} color={avanceAnioActualColor} size="sm" radius="xl" mt={4} />
+                  </Box>
+                )}
               </div>
               <div>
                 <Text size="xs" c="dimmed">Avance financiero</Text>
@@ -935,6 +978,20 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   <Text size="xs" c="dimmed" mt={2}>
                     {formatCOP(presupuestoEjecutado)} / {formatCOP(presupuestoTotal)}
                   </Text>
+                )}
+                {presupuestoAnioTotal > 0 && (
+                  <Box mt={10}>
+                    <Group gap={6} align="center" justify="space-between">
+                      <Text size="xs" c="dimmed">Avance financiero {anioActualLabel} (meta {anioActualLabel}: 100%)</Text>
+                      <Group gap={6} align="center">
+                        <Text size="sm" fw={700}>{avanceFinancieroAnio}%</Text>
+                        <Badge size="xs" color={finColorAnio} variant="light" radius="xl">
+                          {avanceFinancieroAnio >= 70 ? "Buen ritmo" : avanceFinancieroAnio >= 40 ? "En progreso" : "Atención"}
+                        </Badge>
+                      </Group>
+                    </Group>
+                    <Progress value={avanceFinancieroAnio} color={finColorAnio} size="sm" radius="xl" mt={4} />
+                  </Box>
                 )}
               </div>
             </Stack>
@@ -1101,7 +1158,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 {presupuestoAnioTotal > 0 ? (
                   <Stack gap={4}>
                     <Text size="xs" c="dimmed">
-                      {formatCOP(presupuestoAnioCausado)} ejecutado de {formatCOP(presupuestoAnioTotal)}
+                      {formatCOP(presupuestoAnioEjecutado)} ejecutado de {formatCOP(presupuestoAnioTotal)}
                     </Text>
                     <SimpleGrid cols={2} spacing={6}>
                       <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
@@ -1109,7 +1166,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                           <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
                           <Text size="10px" fw={700} c="blue.6">Gasto</Text>
                         </Group>
-                        <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoGasto)}</Text>
+                        <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioEjecutadoGasto)}</Text>
                         <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioGasto)}</Text>
                       </Box>
                       <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
@@ -1117,7 +1174,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                           <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
                           <Text size="10px" fw={700} c="violet.6">Inversión</Text>
                         </Group>
-                        <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioCausadoInversion)}</Text>
+                        <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioEjecutadoInversion)}</Text>
                         <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioInversion)}</Text>
                       </Box>
                     </SimpleGrid>
@@ -1439,12 +1496,12 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
         </Group>
       </Group>
 
-      <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {macro.peso}%</Text>
+      <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {formatNumeroEs(macro.peso)}%</Text>
 
       <SimpleGrid cols={2} spacing="md" mb={6}>
         <div>
           <Text size="xs" c="dimmed" fw={600} mb={2}>Avance ponderado</Text>
-          <Text size="2rem" fw={900} lh={1}>{macro.avance}%</Text>
+          <Text size="2rem" fw={900} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
           <Box mt={8} style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
             <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
           </Box>

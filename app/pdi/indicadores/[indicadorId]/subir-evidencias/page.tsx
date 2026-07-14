@@ -19,6 +19,7 @@ import type { Indicador, Periodo } from "@/app/pdi/types";
 import PdiSidebar from "@/app/pdi/components/PdiSidebar";
 import { usePdiConfig } from "@/app/pdi/hooks/usePdiConfig";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { formatNumeroEs, normalizeDecimalComma } from "@/app/pdi/avance-utils";
 
 // ── Tipos locales ────────────────────────────────────────────────────────────
 
@@ -381,7 +382,7 @@ export default function SubirEvidenciasPage() {
         setIndicador(r.data);
         const strs: Record<string, string> = {};
         (r.data.periodos ?? []).forEach((p: Periodo) => {
-          strs[p.periodo] = p.avance != null ? String(p.avance) : "";
+          strs[p.periodo] = p.avance != null ? normalizeDecimalComma(String(p.avance)) : "";
         });
         setAvancesStr(strs);
       })
@@ -1174,7 +1175,7 @@ export default function SubirEvidenciasPage() {
                 overflow: "hidden", border: "1px solid #ede9fe", background: "#faf8ff",
               }}>
                 {[
-                  { label: `Meta ${config.anio_fin}`, value: String(indicador.meta_final_2029 ?? "—") },
+                  { label: `Meta ${config.anio_fin}`, value: indicador.meta_final_2029 != null ? formatNumeroEs(indicador.meta_final_2029) : "—" },
                   { label: "Seguimiento", value: indicador.tipo_seguimiento || "Semestral" },
                   { label: "Avance actual", value: (() => {
                     const metaN = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
@@ -1292,19 +1293,30 @@ export default function SubirEvidenciasPage() {
                                 </Badge>
                               )}
                             </Group>
-                            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta ?? "—"}</b></Text>
+                            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta != null ? formatNumeroEs(p.meta) : "—"}</b></Text>
                             {reportadoEnCero && (
                               <Text size="xs" c="dimmed" mt={2}>La dependencia reportó sin ejecución este período.</Text>
                             )}
                           </div>
                           <TextInput
                             label="Avance reportado"
+                            description="Usa coma (,) para decimales"
                             placeholder={editable ? "Ej: 1" : ""}
                             value={avancesStr[p.periodo] ?? ""}
                             onChange={(e) => {
                               const nextValue = e?.currentTarget?.value ?? "";
                               if (bloqueado || !editable) return;
-                              if (/[^0-9.,%\s]/.test(nextValue)) return;
+                              if (/\./.test(nextValue)) {
+                                showNotification({
+                                  id: "avance-decimal-punto",
+                                  title: "Formato de número",
+                                  message: "Los decimales deben ir con coma (,), no con punto (.).",
+                                  color: "yellow",
+                                  autoClose: 3000,
+                                });
+                                return;
+                              }
+                              if (/[^0-9,%\s]/.test(nextValue)) return;
                               setAvancesStr((prev) => ({ ...prev, [p.periodo]: nextValue }));
                             }}
                             style={{ width: 150 }}
@@ -1381,7 +1393,7 @@ export default function SubirEvidenciasPage() {
                             Abierto
                           </Badge>
                         </Group>
-                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodoActivo.meta ?? "—"}</b></Text>
+                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodoActivo.meta != null ? formatNumeroEs(periodoActivo.meta) : "—"}</b></Text>
                       </div>
                       <TextInput
                         label="Avance reportado"
@@ -1390,7 +1402,17 @@ export default function SubirEvidenciasPage() {
                         onChange={(e) => {
                           const nextValue = e?.currentTarget?.value ?? "";
                           if (bloqueado) return;
-                          if (/[^0-9.,%\s]/.test(nextValue)) return;
+                          if (/\./.test(nextValue)) {
+                            showNotification({
+                              id: "avance-decimal-punto",
+                              title: "Formato de número",
+                              message: "Los decimales deben ir con coma (,), no con punto (.).",
+                              color: "yellow",
+                              autoClose: 3000,
+                            });
+                            return;
+                          }
+                          if (/[^0-9,%\s]/.test(nextValue)) return;
                           setAvancesStr((prev) => ({ ...prev, [periodoActivo.periodo]: nextValue }));
                         }}
                         disabled={bloqueado}

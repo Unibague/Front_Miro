@@ -31,6 +31,7 @@ import {
   getIndicatorPrefix,
   normalizePdiCode,
 } from "../code-validation";
+import { hasDecimalDot, normalizeDecimalComma } from "../avance-utils";
 
 interface Props {
   opened: boolean;
@@ -84,6 +85,18 @@ function SortablePeriodoItem({ id, p, idx, periodoOptions, onUpdatePeriodo, onRe
           placeholder="Meta"
           value={p.meta}
           onChange={(e) => onUpdatePeriodo(idx, "meta", e.currentTarget.value)}
+          onBlur={(e) => {
+            const normalizado = normalizeDecimalComma(e.currentTarget.value);
+            if (normalizado !== e.currentTarget.value) {
+              onUpdatePeriodo(idx, "meta", normalizado);
+              showNotification({
+                title: "Formato de número",
+                message: "Los decimales deben ir con coma (,), se corrigió automáticamente.",
+                color: "yellow",
+              });
+            }
+          }}
+          error={hasDecimalDot(p.meta) ? "Usa coma (,) en vez de punto" : undefined}
           style={{ width: 120 }}
         />
         <ActionIcon color="red" variant="light" onClick={() => onRemovePeriodo(idx)}>
@@ -116,6 +129,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [proyectoPadre, setProyectoPadre] = useState<Proyecto | null>(null);
   const [indicadoresPdi, setIndicadoresPdi] = useState<Indicador[]>([]);
   const [indicadoresLoaded, setIndicadoresLoaded] = useState(false);
+  const [jerarquiaLoaded, setJerarquiaLoaded] = useState(false);
 
   useEffect(() => {
     axios.get(PDI_ROUTES.cortesActivos())
@@ -150,13 +164,13 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
           : []
       );
       setTipoCalculo(selected.tipo_calculo ?? "promedio");
-      setMetaFinal(selected.meta_final_2029 != null ? String(selected.meta_final_2029) : "");
+      setMetaFinal(selected.meta_final_2029 != null ? normalizeDecimalComma(String(selected.meta_final_2029)) : "");
       setPresupuesto(selected.presupuesto ?? "");
       setFechaInicio(selected.fecha_inicio ? new Date(selected.fecha_inicio) : null);
       setFechaFin(selected.fecha_fin ? new Date(selected.fecha_fin) : null);
       setPeriodos((selected.periodos ?? []).map((p) => ({
         periodo: p.periodo,
-        meta: p.meta != null ? String(p.meta) : "",
+        meta: p.meta != null ? normalizeDecimalComma(String(p.meta)) : "",
         avanceInicial: p.avance ?? 0,
         fechaInicio: (p as any).fecha_inicio ? new Date((p as any).fecha_inicio) : null,
         fechaFin: (p as any).fecha_fin ? new Date((p as any).fecha_fin) : null,
@@ -246,11 +260,16 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       setProyectoPadre(null);
       setIndicadoresPdi([]);
       setIndicadoresLoaded(false);
+      setJerarquiaLoaded(false);
       return;
     }
 
     if (!selected) setCodigo("");
     setIndicadoresLoaded(false);
+    // Mientras la accion/proyecto padre aun no cargan, expectedIndicatorPrefix
+    // queda vacio y codigoError mostraria un falso "jerarquia invalida" en rojo
+    // por una fraccion de segundo. jerarquiaLoaded evita ese parpadeo.
+    setJerarquiaLoaded(false);
     axios.get(PDI_ROUTES.accion(defaultAccionId))
       .then((res) => {
         const accion = res.data as Accion;
@@ -260,14 +279,15 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
           setProyectoPadre(null);
           return;
         }
-        axios.get(PDI_ROUTES.proyecto(proyectoId))
+        return axios.get(PDI_ROUTES.proyecto(proyectoId))
           .then((proyectoRes) => setProyectoPadre(proyectoRes.data))
           .catch(() => setProyectoPadre(null));
       })
       .catch(() => {
         setAccionPadre(null);
         setProyectoPadre(null);
-      });
+      })
+      .finally(() => setJerarquiaLoaded(true));
 
     axios.get(PDI_ROUTES.indicadores())
       .then((res) => setIndicadoresPdi(Array.isArray(res.data) ? res.data : []))
@@ -283,6 +303,10 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const codigoNormalizado = normalizePdiCode(codigo);
   const codigoError = useMemo(() => {
     if (!codigo.trim()) return null;
+    // Mientras la accion/proyecto padre siguen cargando (petición en curso al
+    // abrir el modal), expectedIndicatorPrefix aún está vacío: no mostrar el
+    // error de "jerarquía inválida" hasta saber si realmente lo es.
+    if (!jerarquiaLoaded) return null;
     if (!expectedIndicatorPrefix) return "No se pudo validar el indicador porque la jerarquia seleccionada no tiene codigos M/P/A validos.";
     if (!/^M[1-9]\d*-P[1-9]\d*-A[1-9]\d*-I[1-9]\d*$/.test(codigoNormalizado)) {
       return "El codigo del indicador debe tener formato M#-P#-A#-I# (por ejemplo, M2-P3-A1-I1).";
@@ -328,7 +352,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     }
 
     return null;
-  }, [accionPadre?.codigo, codigo, codigoNormalizado, defaultAccionId, expectedIndicatorPrefix, indicadoresPdi, selected]);
+  }, [accionPadre?.codigo, codigo, codigoNormalizado, defaultAccionId, expectedIndicatorPrefix, indicadoresPdi, jerarquiaLoaded, selected]);
 
   useEffect(() => {
     if (!opened || selected || !expectedIndicatorPrefix || !indicadoresLoaded || codigo.trim()) return;
@@ -359,6 +383,15 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       return;
     }
 
+    if (hasDecimalDot(metaFinal) || periodos.some((p) => hasDecimalDot(p.meta))) {
+      showNotification({
+        title: "Formato de número inválido",
+        message: "Los decimales deben escribirse con coma (,), no con punto (.). Corrige la meta antes de guardar.",
+        color: "red",
+      });
+      return;
+    }
+
     const nombresPeriodos = periodos.map((p) => p.periodo.trim()).filter(Boolean);
     const periodosDuplicados = nombresPeriodos.filter((periodo, idx) => nombresPeriodos.indexOf(periodo) !== idx);
 
@@ -370,6 +403,58 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     if (periodosDuplicados.length > 0) {
       showNotification({ title: "Error", message: "No repitas cortes en las metas de periodo", color: "red" });
       return;
+    }
+
+    // Para "Acumulado" el avance se calcula como Σ avances de los periodos ÷
+    // Meta final 2029, así que la suma de las metas por periodo debe coincidir
+    // con la meta final: de lo contrario el % de cumplimiento nunca podría
+    // llegar realmente a 100% (o se saturaría antes de tiempo).
+    if (tipoCalculo === "acumulado") {
+      const metaFinalNum = toNum(metaFinal);
+      const metasPeriodos = periodos.map((p) => (p.meta.trim() !== "" ? toNum(p.meta) : null));
+      const todasNumericas = metasPeriodos.length > 0 && metasPeriodos.every((v) => v !== null);
+
+      if (metaFinalNum !== null && todasNumericas) {
+        const sumaMetas = metasPeriodos.reduce((acc: number, v) => acc + (v ?? 0), 0);
+        const diferencia = Math.round((sumaMetas - metaFinalNum) * 100) / 100;
+        if (Math.abs(diferencia) > 0.01) {
+          showNotification({
+            title: "Metas por periodo no cuadran con la Meta final 2029",
+            message: `La suma de las metas por periodo es ${sumaMetas} pero la Meta final 2029 es ${metaFinalNum} (diferencia: ${diferencia > 0 ? "+" : ""}${diferencia}). Para indicadores "Acumulado" ambas deben coincidir.`,
+            color: "red",
+            autoClose: 8000,
+          });
+          return;
+        }
+      }
+    }
+
+    // Para "Último valor" el avance se calcula contra la Meta final 2029, así
+    // que la meta del último corte con meta definida (no necesariamente el
+    // último corte de la lista, sino el último que efectivamente tenga meta
+    // cargada) debe coincidir con esa meta final.
+    if (tipoCalculo === "ultimo_valor") {
+      const metaFinalNum = toNum(metaFinal);
+      const periodosConMeta = [...periodos]
+        .filter((p) => p.periodo.trim() !== "" && p.meta.trim() !== "")
+        .sort((a, b) => a.periodo.localeCompare(b.periodo));
+
+      if (metaFinalNum !== null && periodosConMeta.length > 0) {
+        const ultimoPeriodo = periodosConMeta[periodosConMeta.length - 1];
+        const metaUltimoPeriodo = toNum(ultimoPeriodo.meta);
+        if (metaUltimoPeriodo !== null) {
+          const diferencia = Math.round((metaUltimoPeriodo - metaFinalNum) * 100) / 100;
+          if (Math.abs(diferencia) > 0.01) {
+            showNotification({
+              title: "La meta del último corte no coincide con la Meta final 2029",
+              message: `El corte ${ultimoPeriodo.periodo} (el último con meta cargada) tiene meta ${metaUltimoPeriodo}, pero la Meta final 2029 es ${metaFinalNum} (diferencia: ${diferencia > 0 ? "+" : ""}${diferencia}). Para indicadores "Último valor" ambas deben coincidir.`,
+              color: "red",
+              autoClose: 8000,
+            });
+            return;
+          }
+        }
+      }
     }
 
     setLoading(true);
@@ -519,6 +604,18 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               placeholder="Ej: 100 o 'Implementado'"
               value={metaFinal}
               onChange={(e) => { setMetaFinal(e.currentTarget.value); setHasChanges(true); }}
+              onBlur={(e) => {
+                const normalizado = normalizeDecimalComma(e.currentTarget.value);
+                if (normalizado !== e.currentTarget.value) {
+                  setMetaFinal(normalizado);
+                  showNotification({
+                    title: "Formato de número",
+                    message: "Los decimales deben ir con coma (,), se corrigió automáticamente.",
+                    color: "yellow",
+                  });
+                }
+              }}
+              error={hasDecimalDot(metaFinal) ? "Usa coma (,) en vez de punto" : undefined}
             />
           </Stack>
         </Tabs.Panel>
