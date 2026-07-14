@@ -8,7 +8,7 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
-  IconArrowLeft, IconLayoutDashboard, IconRefresh, IconTarget,
+  IconArrowLeft, IconLayoutDashboard, IconTarget,
   IconListCheck, IconBulb, IconChartDonut3, IconNetwork, IconFileSpreadsheet,
   IconCalculator,
 } from "@tabler/icons-react";
@@ -182,7 +182,7 @@ export default function DashboardPage() {
                 </Text>
               </div>
             </Group>
-            <Group gap="xs">
+            <Group gap="xs" justify="flex-end" style={{ flex: 1 }}>
               {isAdmin && (
                 <Button
                   variant="light"
@@ -192,7 +192,7 @@ export default function DashboardPage() {
                   onClick={handleExportarAvance}
                   loading={exportando}
                 >
-                  Descargar memoria técnica del cálculo del avance del PDI
+                  Memoria técnica del cálculo del avance PDI
                 </Button>
               )}
               {isAdmin && (
@@ -204,7 +204,7 @@ export default function DashboardPage() {
                   onClick={handleExportarIndicadoresMetas}
                   loading={exportandoIndicadores}
                 >
-                  Descargar indicadores y metas
+                  Indicadores y metas
                 </Button>
               )}
               <Button
@@ -216,7 +216,8 @@ export default function DashboardPage() {
               >
                 Red de nodos
               </Button>
-              {isAdmin && (
+              {/* Oculto de nuevo a pedido de Planeación; handleRecalcular sigue disponible si se necesita reactivar. */}
+              {false && isAdmin && (
                 <Button
                   variant="light"
                   color="orange"
@@ -228,9 +229,6 @@ export default function DashboardPage() {
                   Recalcular avances
                 </Button>
               )}
-              <ActionIcon variant="light" color="violet" size="lg" onClick={cargarDatos} title="Actualizar">
-                <IconRefresh size={18} />
-              </ActionIcon>
             </Group>
           </Group>
 
