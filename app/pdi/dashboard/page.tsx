@@ -20,7 +20,7 @@ import PdiSidebar from "../components/PdiSidebar";
 import PdiGraficas from "../components/PdiGraficas";
 import type { DashboardResumen, Macroproyecto, Semaforo } from "../types";
 import { usePdiConfig } from "../hooks/usePdiConfig";
-import { getWeightedAverage, formatNumeroEs } from "../avance-utils";
+import { formatNumeroEs } from "../avance-utils";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportando, setExportando] = useState(false);
+  const [exportandoAnio, setExportandoAnio] = useState(false);
   const [exportandoIndicadores, setExportandoIndicadores] = useState(false);
   const [recalculando, setRecalculando] = useState(false);
 
@@ -108,6 +109,31 @@ export default function DashboardPage() {
       });
     } finally {
       setExportando(false);
+    }
+  };
+
+  const handleExportarAvanceAnio = async () => {
+    const anio = resumen?.anio_actual ?? String(new Date().getFullYear());
+    setExportandoAnio(true);
+    try {
+      const response = await axios.get(PDI_ROUTES.dashboardExportarAvanceAnio(anio), { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Memoria técnica del cálculo del avance del PDI ${anio} ${new Date().toISOString().slice(0, 10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      showNotification({
+        title: "Error",
+        message: `No se pudo generar el Excel de avance ${anio}`,
+        color: "red",
+      });
+    } finally {
+      setExportandoAnio(false);
     }
   };
 
@@ -157,7 +183,10 @@ export default function DashboardPage() {
     }
   };
 
-  const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
+  // Se usa el valor del backend (resumen.avance_global) en vez de recalcularlo
+  // aquí, para que MIRÓ siempre muestre exactamente el mismo número que ya
+  // calculó el servidor (y que replica la Memoria técnica en Excel).
+  const avancePonderado = resumen?.avance_global ?? 0;
   const semaforo: Semaforo = getSemaforoByAvance(avancePonderado);
 
   return (
@@ -198,6 +227,18 @@ export default function DashboardPage() {
               {isAdmin && (
                 <Button
                   variant="light"
+                  color="teal"
+                  radius="xl"
+                  leftSection={<IconFileSpreadsheet size={17} />}
+                  onClick={handleExportarAvanceAnio}
+                  loading={exportandoAnio}
+                >
+                  Memoria técnica del avance {resumen?.anio_actual ?? new Date().getFullYear()}
+                </Button>
+              )}
+              {isAdmin && (
+                <Button
+                  variant="light"
                   color="blue"
                   radius="xl"
                   leftSection={<IconFileSpreadsheet size={17} />}
@@ -216,8 +257,7 @@ export default function DashboardPage() {
               >
                 Red de nodos
               </Button>
-              {/* Oculto de nuevo a pedido de Planeación; handleRecalcular sigue disponible si se necesita reactivar. */}
-              {false && isAdmin && (
+              {isAdmin && (
                 <Button
                   variant="light"
                   color="orange"

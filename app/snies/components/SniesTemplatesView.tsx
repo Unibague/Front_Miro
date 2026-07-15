@@ -55,6 +55,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { useRole } from "@/app/context/RoleContext";
 
 type FieldEquivalenceMap = Record<
   string,
@@ -529,6 +530,7 @@ const buildMiroTemplateFieldRows = (templateData: any) => {
 export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemplatesViewProps) {
   const router = useRouter();
   const { data: session } = useSession();
+  const { userRole } = useRole();
   const { selectedPeriodId } = usePeriod();
   const [opened, { open, close }] = useDisclosure(false);
   const [deleteModalOpened, { open: openDeleteModal, close: closeDeleteModal }] = useDisclosure(false);
@@ -621,9 +623,20 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     if (!session?.user?.email) return;
     setLoadingPTemplates(true);
     try {
+      // Un Productor solo debe ver, en el módulo SNIES, las plantillas SNIES
+      // en las que su dependencia es la "productora encargada" del envío
+      // final (no cualquier plantilla en la que solo colabora).
+      const esProductor = module === "snies" && userRole === "Productor";
       const [ptRes, sniesRes] = await Promise.all([
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
-          params: { email: session.user.email, page: 1, limit: 200, periodId: selectedPeriodId, summary: true },
+          params: {
+            email: session.user.email,
+            page: 1,
+            limit: 200,
+            periodId: selectedPeriodId,
+            summary: true,
+            ...(esProductor ? { filterByUserScope: "true", userRole: "Productor", sniesResponsableOnly: "true" } : {}),
+          },
         }),
         // Sin filtro de periodo para encontrar todas las plantillas SNIES sin importar el periodo
         axios.get(apiBasePath, {
@@ -648,7 +661,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
 
   useEffect(() => {
     fetchPublishedTemplates();
-  }, [session?.user?.email, selectedPeriodId]);
+  }, [session?.user?.email, selectedPeriodId, userRole]);
 
   const resetForm = () => {
     setEditingTemplate(null);

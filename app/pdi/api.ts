@@ -60,6 +60,7 @@ export const PDI_ROUTES = {
   dashboardMacroproyecto: (id: string) => `${BASE()}/pdi/dashboard/macroproyecto/${id}`,
   dashboardCorte: (periodo: string)    => `${BASE()}/pdi/dashboard/corte/${encodeURIComponent(periodo)}`,
   dashboardExportarAvance:            () => `${BASE()}/pdi/dashboard/exportar-avance`,
+  dashboardExportarAvanceAnio:        (anio?: string) => `${BASE()}/pdi/dashboard/exportar-avance-anio${anio ? `?anio=${encodeURIComponent(anio)}` : ""}`,
   dashboardExportarIndicadoresMetas:   () => `${BASE()}/pdi/dashboard/exportar-indicadores-metas`,
   dashboardRedNodos:                  () => `${BASE()}/pdi/dashboard/red-nodos`,
   dashboardRedNodosReiniciar:         () => `${BASE()}/pdi/dashboard/red-nodos/reiniciar`,

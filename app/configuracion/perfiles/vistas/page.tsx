@@ -182,9 +182,22 @@ export default function PositionViewsPage() {
   // documenta quien la tiene por defecto HOY en el sistema cuando no hay
   // perfil configurado; una vista nueva aparece sola en el lugar correcto sin
   // tocar este componente.
+  //
+  // Cada vista se muestra UNA sola vez (bajo su rol principal, el primero en
+  // ROLE_ORDER que la tenga), no una copia por cada rol al que pertenece: el
+  // checkbox Ver/Gestionar es el mismo dato sin importar en que seccion se
+  // vea (el permiso es por vista, no por vista+rol), asi que repetirlo en
+  // varias secciones solo generaba la sensacion de que marcar uno marcaba
+  // "otro" cuando en realidad era la misma casilla dibujada dos veces.
   const groupedViewsByRole = useMemo(() => {
+    const asignados = new Set<string>();
     return ROLE_ORDER.map((role) => {
-      const viewsForRole = views.filter((view) => (view.roles || []).includes(role));
+      const viewsForRole = views.filter((view) => {
+        if (!(view.roles || []).includes(role)) return false;
+        if (asignados.has(view.key)) return false;
+        asignados.add(view.key);
+        return true;
+      });
       const groupedByModule = viewsForRole.reduce<Record<string, Record<string, ViewOption[]>>>((result, view) => {
         const moduleName = view.module || "General";
         const group = view.group || "General";
@@ -953,9 +966,18 @@ export default function PositionViewsPage() {
                                               <Divider />
 
                                               <Stack gap={8}>
-                                                {groupViews.map((view) => (
+                                                {groupViews.map((view) => {
+                                                  const otrosRoles = (view.roles || []).filter((r) => r !== role);
+                                                  return (
                                                   <Group key={`${role}-${view.key}`} justify="space-between" wrap="nowrap" gap="md">
-                                                    <Text size="sm" style={{ flex: 1 }}>{view.label}</Text>
+                                                    <div style={{ flex: 1 }}>
+                                                      <Text size="sm">{view.label}</Text>
+                                                      {otrosRoles.length > 0 && (
+                                                        <Text size="xs" c="dimmed">
+                                                          También por defecto: {otrosRoles.join(", ")}
+                                                        </Text>
+                                                      )}
+                                                    </div>
                                                     <Group gap="md" wrap="nowrap">
                                                       {permissionLevels.map((profile) => (
                                                         <Checkbox
@@ -969,7 +991,8 @@ export default function PositionViewsPage() {
                                                       ))}
                                                     </Group>
                                                   </Group>
-                                                ))}
+                                                  );
+                                                })}
                                               </Stack>
                                             </Stack>
                                           </Card>

@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { PDI_ROUTES } from "../api";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { useRole } from "@/app/context/RoleContext";
 
 interface Corte {
   _id: string;
@@ -177,7 +178,10 @@ function CorteModal({ opened, onClose, selected, onSaved }: {
 
 export default function CortesPage() {
   const router = useRouter();
-  const { canManage } = useViewPermission("pdi");
+  const { userRole } = useRole();
+  // "pdi" es la llave de Administrador; Responsable tiene su propia llave
+  // separada ("pdiResponsable") aunque comparta la misma página.
+  const { canManage } = useViewPermission(userRole === "Responsable" ? "pdiResponsable" : "pdi");
   const [cortes, setCortes]   = useState<Corte[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal]     = useState(false);

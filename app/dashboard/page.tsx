@@ -20,14 +20,25 @@ import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 // Se usan para decidir si la tarjeta de ENTRADA a ese modulo debe verse:
 // basta con tener acceso a cualquiera de sus vistas hijas, no a una llave fija.
 const GESTION_REPORTES_KEYS = [
-  "adminTemplates", "publishedTemplates", "producerTemplates", "templatesWithFilters",
-  "adminReports", "publishedReports", "producerReportsConfig", "producerReportsManagement",
+  "adminTemplates", "publishedTemplates", "publishedTemplatesResponsable", "producerTemplates",
+  "templatesWithFilters", "templatesWithFiltersProductor",
+  "adminReports", "publishedReports", "producerReportsConfig", "producerReportsManagement", "producerReportsManagementResponsable",
   "producerReports", "responsibleReports", "ambitosReportsConfig", "ambitosReportsManagement",
   "templatesLogs", "reminders", "audit", "templatesManagement", "dependenciesHierarchy",
-  "traceability", "validationsView", "historicoDocentes", "snies", "cna",
+  "traceability", "traceabilityProductor", "validationsView",
+  "historicoDocentes", "historicoDocentesResponsable", "historicoDocentesProductor",
+  "snies", "sniesProductor", "cna",
 ];
-const PDI_KEYS = ["pdi", "pdiMine", "pdiDashboard", "pdiForms", "pdiCharts"];
-const RESPONSIBLE_ADMIN_KEYS = ["responsibleReports", "dependency", "childDependenciesTemplates", "childDependenciesReports"];
+const PDI_KEYS = [
+  "pdi", "pdiResponsable", "pdiMine", "pdiMineResponsable",
+  "pdiDashboard", "pdiDashboardResponsable", "pdiForms", "pdiFormsResponsable",
+  "pdiCharts", "pdiChartsResponsable",
+];
+const RESPONSIBLE_ADMIN_KEYS = [
+  "responsibleReports", "dependency", "dependencyAdmin",
+  "childDependenciesTemplates", "childDependenciesTemplatesAdmin",
+  "childDependenciesReports", "childDependenciesReportsAdmin",
+];
 const CONFIGURATION_KEYS = ["configuration", "users", "profiles", "homeSettings"];
 
 const DashboardPage = () => {
@@ -49,6 +60,9 @@ const DashboardPage = () => {
   const [pendingReports, setPendingReports] = useState<number>(0);
   const [pendingTemplates, setPendingTemplates] = useState<number>(0);
   const [encargadoTemplatesCount, setEncargadoTemplatesCount] = useState<number>(0);
+  // Un Productor solo debe ver el módulo SNIES si su dependencia es la
+  // "productora encargada" del envío final en al menos una plantilla SNIES.
+  const [tieneSniesEncargado, setTieneSniesEncargado] = useState<boolean>(false);
   const [nextReportDeadline, setNextReportDeadline] = useState<string | null>(null);
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const [nextEncargadoDeadline, setNextEncargadoDeadline] = useState<string | null>(null);
@@ -60,21 +74,28 @@ const DashboardPage = () => {
   const hasViewPermission = (key: string) =>
     Array.isArray(viewPermissions[key]) && viewPermissions[key].length > 0;
 
-  // Solo para el mensaje de "sin módulos asignados" (no se usa para decidir
-  // qué módulos mostrar; eso ahora es por módulo, ver canSee).
+  // El rol es el limite: si el rol de la persona no esta en "roles", no ve el
+  // modulo sin importar lo que diga su perfil (el perfil no puede dar MAS
+  // acceso del que el rol permite, solo filtrar DENTRO de lo que el rol ya
+  // permitiria).
+  // Dentro de eso, si la persona tiene un perfil asignado, el perfil filtra
+  // cuales de esos modulos ve exactamente (lo que marco en "Gestionar
+  // vistas"). Si no tiene perfil, ve todo lo que su rol permite, como antes
+  // de que existiera el sistema de perfiles.
   const hasProfile = userAccessProfiles.length > 0;
 
-  // La decisión es por módulo, no global: si el perfil del usuario tiene
-  // ALGO configurado para esta vista puntual (así sea de otro módulo), esa
-  // configuración manda. Pero si ningún perfil ha tocado todavía esta vista
-  // en particular, no la ocultamos solo porque el usuario tenga perfil en
-  // otros módulos: se usa el rol (Administrador/Productor/Responsable) como
-  // antes, para no bloquear módulos que aún no se han configurado.
+  // Unico resguardo: un Administrador siempre puede llegar a "Gestionar
+  // perfiles" (y a la tarjeta "Configuración" que la contiene), sin importar
+  // como este configurado su propio perfil. Sin esto, un perfil mal armado
+  // podria dejar a un Administrador sin ninguna forma de corregirlo desde la
+  // interfaz.
+  const ADMIN_RECOVERY_KEYS = ["configuration", "profiles"];
+
   const canSee = (key: string, roles: string[]) => {
-    if (Object.prototype.hasOwnProperty.call(viewPermissions, key)) {
-      return hasViewPermission(key);
-    }
-    return roles.includes(userRole);
+    if (!roles.includes(userRole)) return false;
+    if (userRole === "Administrador" && ADMIN_RECOVERY_KEYS.includes(key)) return true;
+    if (hasProfile) return hasViewPermission(key);
+    return true;
   };
 
   // Para tarjetas "entrada de modulo": deben verse si el usuario puede ver
@@ -278,6 +299,26 @@ const DashboardPage = () => {
       fetchPendingItems(userRole);
     }
   }, [session, status, userRole, selectedPeriodId]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || userRole !== "Productor" || !session?.user?.email) {
+      setTieneSniesEncargado(false);
+      return;
+    }
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
+      params: {
+        email: session.user.email,
+        page: 1,
+        limit: 1,
+        summary: true,
+        filterByUserScope: "true",
+        userRole: "Productor",
+        sniesResponsableOnly: "true",
+      },
+    })
+      .then((res) => setTieneSniesEncargado((res.data?.total ?? 0) > 0))
+      .catch(() => setTieneSniesEncargado(false));
+  }, [session, status, userRole]);
 
   useEffect(() => {
     if (userRole) {
@@ -753,10 +794,10 @@ const DashboardPage = () => {
             <IconFileUpload size={80} />
           </Center>
           <Group mt="md" mb="xs">
-            <Text ta={"center"} w={500}>Configurar plantilla SNIES</Text>
+            <Text ta={"center"} w={500}>Plantillas SNIES</Text>
           </Group>
           <Text ta={"center"} size="sm" color="dimmed">
-            Carga y administra las plantillas SNIES.
+            Consulta el estado de envío de las plantillas a SNIES.
           </Text>
           <Button
             variant="light"
@@ -765,7 +806,7 @@ const DashboardPage = () => {
             radius="md"
             onClick={() => router.push("/snies/templates")}
           >
-            Ir a plantilla SNIES
+            Ver plantillas SNIES
           </Button>
         </Card>
       </Grid.Col>
@@ -938,7 +979,7 @@ const DashboardPage = () => {
           </Grid.Col>
         )}
 
-        {canSee("dateReviewResponsible", ["Responsable", "Productor"]) && (
+        {(canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"])) && (
           <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Center><IconCalendarMonth size={80} /></Center>
@@ -1079,7 +1120,7 @@ const DashboardPage = () => {
               </>
             )}
 
-            {(canSee("dateReview", ["Administrador"]) || canSee("dateReviewComunicaciones", ["Administrador"]) || canSee("dateReviewResponsible", ["Responsable", "Productor"])) && (
+            {(canSee("dateReview", ["Administrador"]) || canSee("dateReviewComunicaciones", ["Administrador"]) || (canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"]))) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1260,7 +1301,7 @@ const DashboardPage = () => {
              !canSee("supportTemplates", ["Administrador"]) &&
              !canSee("dateReview", ["Administrador"]) &&
              !canSee("dateReviewComunicaciones", ["Administrador"]) &&
-             !canSee("dateReviewResponsible", ["Responsable", "Productor"]) &&
+             !(canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"])) &&
              !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) &&
              !canSeeAny(RESPONSIBLE_ADMIN_KEYS, ["Administrador", "Responsable"]) &&
              !canSeeAny(CONFIGURATION_KEYS, ["Administrador"]) && (
@@ -1325,7 +1366,7 @@ const DashboardPage = () => {
                     </Card>
                   </Grid.Col>
 
-                  {canSee("snies", ["Administrador"]) && (
+                  {(canSee("snies", ["Administrador"]) || (canSee("sniesProductor", ["Productor"]) && tieneSniesEncargado)) && (
                     <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                         <Card
                           radius="xl"
@@ -1403,7 +1444,7 @@ const DashboardPage = () => {
                       </Grid.Col>
                   )}
 
-                  {canSee("historicoDocentes", ["Administrador", "Responsable", "Productor"]) && (
+                  {(canSee("historicoDocentes", ["Administrador"]) || canSee("historicoDocentesResponsable", ["Responsable"]) || canSee("historicoDocentesProductor", ["Productor"])) && (
                     <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                       <Card
                         radius="xl"

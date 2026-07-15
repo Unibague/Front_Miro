@@ -987,6 +987,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
             {(aniosPdi.length ? aniosPdi.map(String) : Object.keys(ind.avances_por_anio ?? {}).sort()).map((anio) => {
               const val = ind.avances_por_anio?.[anio];
               const tieneData = val != null;
+              const valFinal = ind.avances_por_anio_vs_meta_final?.[anio];
               return (
                 <Box
                   key={anio}
@@ -1003,6 +1004,9 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
                   <Text size="xs" fw={800} c={tieneData ? "violet" : "dimmed"}>
                     {tieneData ? `${formatNumeroEs(Number(val), 1, 1)}%` : "0,0%"}
                   </Text>
+                  {valFinal != null && (
+                    <Text size="9px" c="dimmed">vs meta: {formatNumeroEs(Number(valFinal), 1, 1)}%</Text>
+                  )}
                 </Box>
               );
             })}
@@ -2139,7 +2143,9 @@ export default function MisIndicadoresPage() {
   const { data: session, status } = useSession();
   const { userRole } = useRole();
   const { config } = usePdiConfig();
-  const { canManage: canManagePdi } = useViewPermission("pdi");
+  // "pdi" es la llave de Administrador; Responsable tiene su propia llave
+  // separada ("pdiResponsable") aunque comparta la misma página.
+  const { canManage: canManagePdi } = useViewPermission(userRole === "Responsable" ? "pdiResponsable" : "pdi");
   const [proyectosVista, setProyectosVista] = useState<ProyectoResponsableView[]>([]);
   const [loading, setLoading] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);

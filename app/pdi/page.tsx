@@ -25,7 +25,7 @@ import IndicadorModal from "./components/IndicadorModal";
 import PdiSidebar from "./components/PdiSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 import PermissionGate from "@/app/components/PermissionGate";
-import { getWeightedAverage, formatNumeroEs } from "./avance-utils";
+import { getAvanceAnioSimple, formatNumeroEs, getSemaforoByAvance } from "./avance-utils";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -50,6 +50,18 @@ const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
 
 function getIndicadorAvanceMostrado(ind: Indicador) {
   return ind.avance_total_real ?? ind.avance;
+}
+
+// El desglose de ejecutado por año (presupuesto_ejecutado_por_anio) no se está
+// poblando desde la importación presupuestal — solo queda el total plano. Para
+// no mostrar $0 en el año en curso mientras eso no se corrija en el origen,
+// se usa el mismo cálculo que la pantalla "Presupuesto PDI" (gasto + inversión,
+// o el total si no vienen desagregados), que hoy corresponde íntegramente al
+// año en curso: el único año del plan que ya transcurrió.
+function ejecutadoAnioDeAccion(accion: Accion, anio: string) {
+  const porAnio = Number(accion.presupuesto_ejecutado_por_anio?.[anio]) || 0;
+  if (porAnio > 0) return porAnio;
+  return (Number(accion.gasto) || 0) + (Number(accion.inversion) || 0) || (Number(accion.presupuesto_ejecutado) || 0);
 }
 
 function SemaforoBadge({ semaforo }: { semaforo: string }) {
@@ -847,7 +859,11 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
   const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
-  const avancePonderado = getWeightedAverage(macros, (macro) => macro.avance);
+  // Se usa el valor del backend (resumen.avance_global) en vez de recalcularlo
+  // aquí: así MIRÓ siempre muestra exactamente el mismo número que ya calculó
+  // el servidor (y que replica la Memoria técnica en Excel), sin una segunda
+  // implementación del promedio ponderado que se pueda desincronizar.
+  const avancePonderado = resumen?.avance_global ?? 0;
   const criticos = macros.filter((m) => m.semaforo === "rojo").length;
   const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
   const verdes = macros.filter((m) => m.semaforo === "verde").length;
@@ -957,7 +973,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 {resumen && (
                   <Box mt={10}>
                     <Group gap={6} align="center" justify="space-between">
-                      <Text size="xs" c="dimmed">Avance {anioActualLabel} (meta {anioActualLabel}: 100%)</Text>
+                      <Text size="xs" c="dimmed">Avance {anioActualLabel}</Text>
                       <Group gap={6} align="center">
                         <Text size="sm" fw={700}>{formatNumeroEs(avanceAnioActual, 2, 2)}%</Text>
                         <Badge size="xs" color={avanceAnioActualColor} variant="light" radius="xl">{avanceAnioActualBadge}</Badge>
@@ -982,7 +998,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 {presupuestoAnioTotal > 0 && (
                   <Box mt={10}>
                     <Group gap={6} align="center" justify="space-between">
-                      <Text size="xs" c="dimmed">Avance financiero {anioActualLabel} (meta {anioActualLabel}: 100%)</Text>
+                      <Text size="xs" c="dimmed">Avance financiero {anioActualLabel}</Text>
                       <Group gap={6} align="center">
                         <Text size="sm" fw={700}>{avanceFinancieroAnio}%</Text>
                         <Badge size="xs" color={finColorAnio} variant="light" radius="xl">
@@ -991,6 +1007,9 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                       </Group>
                     </Group>
                     <Progress value={avanceFinancieroAnio} color={finColorAnio} size="sm" radius="xl" mt={4} />
+                    <Text size="xs" c="dimmed" mt={2}>
+                      {formatCOP(presupuestoAnioEjecutado)} / {formatCOP(presupuestoAnioTotal)}
+                    </Text>
                   </Box>
                 )}
               </div>
@@ -1458,11 +1477,20 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 }
 
 // MacroproyectoPortfolioCard ─────────────────────────────────────────────
-function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicadoresCount, admin, onEdit, onDelete }: {
+type MacroAnnualStats = {
+  avance: number;
+  presupuesto: number;
+  presupuestoEjecutado: number;
+};
+
+function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicadoresCount, anioActual, anioFin, annualStats, admin, onEdit, onDelete }: {
   macro: Macroproyecto;
   proyectos: Proyecto[];
   accionesCount: number;
   indicadoresCount: number;
+  anioActual: string;
+  anioFin: number;
+  annualStats: MacroAnnualStats;
   admin: boolean;
   onEdit: (m: Macroproyecto) => void;
   onDelete: (id: string) => void;
@@ -1472,11 +1500,20 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
     : macro.semaforo === "amarillo" ? "En riesgo" : "Crítico";
   const statusColor = macro.semaforo === "verde" ? "green"
     : macro.semaforo === "amarillo" ? "yellow" : "red";
-  const barColor = macro.avance >= 50 ? "#22c55e" : macro.avance >= 25 ? "#f59e0b" : "#ef4444";
+
   const presupuesto = Number(macro.presupuesto) || 0;
   const presupuestoEjecutado = Number(macro.presupuesto_ejecutado) || 0;
   const avanceFinanciero = presupuesto > 0 ? Math.round((presupuestoEjecutado / presupuesto) * 100) : 0;
-  const finBarColor = avanceFinanciero >= 50 ? "#22c55e" : avanceFinanciero >= 25 ? "#f59e0b" : "#ef4444";
+  const avanceFinancieroAnio = annualStats.presupuesto > 0
+    ? Math.min(Math.round((annualStats.presupuestoEjecutado / annualStats.presupuesto) * 100), 100)
+    : 0;
+
+  // Mismos umbrales de semáforo (verde ≥90, amarillo ≥60, rojo <60) que el
+  // resto de la app, en vez de un umbral distinto por barra.
+  const colorForValue = (value: number) => {
+    const s = getSemaforoByAvance(value);
+    return s === "verde" ? "#40c057" : s === "amarillo" ? "#fab005" : "#fa5252";
+  };
 
   return (
     <Paper
@@ -1498,25 +1535,74 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
 
       <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {formatNumeroEs(macro.peso)}%</Text>
 
-      <SimpleGrid cols={2} spacing="md" mb={6}>
-        <div>
-          <Text size="xs" c="dimmed" fw={600} mb={2}>Avance ponderado</Text>
-          <Text size="2rem" fw={900} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
-          <Box mt={8} style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
-            <Box style={{ height: "100%", width: `${macro.avance}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
-          </Box>
-        </div>
-        <div>
-          <Text size="xs" c="dimmed" fw={600} mb={2}>Avance financiero</Text>
-          <Text size="2rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
-          <Box mt={8} style={{ height: 10, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
-            <Box style={{ height: "100%", width: `${avanceFinanciero}%`, background: finBarColor, borderRadius: 99, transition: "width .4s" }} />
-          </Box>
-          {presupuesto > 0 && (
-            <Text size="xs" c="dimmed" mt={4}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
-          )}
-        </div>
-      </SimpleGrid>
+      {/* Meta final del plan (horizonte completo) y año en curso, con el
+          mismo peso visual cada uno — antes el año en curso quedaba como una
+          línea diminuta debajo de la meta final y parecía no tener datos. */}
+      <Stack gap={8} mb="md">
+        <Box
+          style={{
+            background: "var(--mantine-color-violet-light)",
+            border: "1px solid var(--mantine-color-violet-3)",
+            borderRadius: 14,
+            padding: "12px 14px",
+          }}
+        >
+          <Text size="xs" fw={700} c="violet" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
+            Meta final {anioFin}
+          </Text>
+          <SimpleGrid cols={2} spacing="md">
+            <div>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance ponderado</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(macro.avance, 100)}%`, background: colorForValue(macro.avance), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(avanceFinanciero, 100)}%`, background: colorForValue(avanceFinanciero), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+              {presupuesto > 0 && (
+                <Text size="xs" c="dimmed" mt={4}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
+              )}
+            </div>
+          </SimpleGrid>
+        </Box>
+
+        <Box
+          style={{
+            background: "var(--mantine-color-blue-light)",
+            border: "1px solid var(--mantine-color-blue-3)",
+            borderRadius: 14,
+            padding: "12px 14px",
+          }}
+        >
+          <Text size="xs" fw={700} c="blue" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
+            Año en curso {anioActual}
+          </Text>
+          <SimpleGrid cols={2} spacing="md">
+            <div>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance ponderado</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(annualStats.avance)}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(annualStats.avance, 100)}%`, background: colorForValue(annualStats.avance), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+            </div>
+            <div>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{avanceFinancieroAnio}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(avanceFinancieroAnio, 100)}%`, background: colorForValue(avanceFinancieroAnio), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+              {annualStats.presupuesto > 0 && (
+                <Text size="xs" c="dimmed" mt={4}>{formatCOP(annualStats.presupuestoEjecutado)} / {formatCOP(annualStats.presupuesto)}</Text>
+              )}
+            </div>
+          </SimpleGrid>
+        </Box>
+      </Stack>
 
       <SimpleGrid cols={3} mb="md" mt="md">
         {[
@@ -1556,6 +1642,7 @@ export default function PdiPage() {
   const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
   const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
+  const [annualStatsPorMacro, setAnnualStatsPorMacro] = useState<Record<string, MacroAnnualStats>>({});
   const [pendientesLider, setPendientesLider] = useState<PendienteAprobacion[]>([]);
   const [pendientesAprobacion, setPendientesAprobacion] = useState<PendienteAprobacion[]>([]);
   const [loadingMacros, setLoadingMacros] = useState(true);
@@ -1621,6 +1708,28 @@ export default function PdiPage() {
         return acc;
       }, {});
 
+      const anioActual = String(resumenRes.data?.anio_actual ?? new Date().getFullYear());
+      const annualStatsMap = macrosData.reduce<Record<string, MacroAnnualStats>>((acc, macro) => {
+        const accionesMacro = accionesData.filter((accion) => accionToMacroMap[accion._id] === macro._id);
+        const indicadoresMacro = indicadoresData.filter((indicador) => {
+          const accionId = indicador.accion_id?._id;
+          return Boolean(accionId && accionToMacroMap[accionId] === macro._id);
+        });
+
+        acc[macro._id] = {
+          avance: getAvanceAnioSimple(indicadoresMacro, anioActual),
+          presupuesto: accionesMacro.reduce(
+            (total, accion) => total + (Number(accion.presupuesto_por_anio?.[anioActual]) || 0),
+            0,
+          ),
+          presupuestoEjecutado: accionesMacro.reduce(
+            (total, accion) => total + ejecutadoAnioDeAccion(accion, anioActual),
+            0,
+          ),
+        };
+        return acc;
+      }, {});
+
       const pendientesLiderMapeados = (pendientesLiderRes.data ?? [])
         .map((item) => mapPendienteRevision(item, "lider"))
         .filter((item): item is PendienteAprobacion => Boolean(item));
@@ -1636,6 +1745,7 @@ export default function PdiPage() {
       setProyectosPorMacro(proyectosMap);
       setAccionesPorMacro(accionesCountMap);
       setIndicadoresPorMacro(indicadoresCountMap);
+      setAnnualStatsPorMacro(annualStatsMap);
     } catch (e) {
       console.error(e);
     } finally {
@@ -1752,6 +1862,9 @@ export default function PdiPage() {
               proyectos={proyectosPorMacro[macro._id] ?? []}
               accionesCount={accionesPorMacro[macro._id] ?? 0}
               indicadoresCount={indicadoresPorMacro[macro._id] ?? 0}
+              anioActual={resumen?.anio_actual ?? String(new Date().getFullYear())}
+              anioFin={config.anio_fin}
+              annualStats={annualStatsPorMacro[macro._id] ?? { avance: 0, presupuesto: 0, presupuestoEjecutado: 0 }}
               admin={admin}
               onEdit={(m) => { setSelectedMacro(m); setMacroModal(true); }}
               onDelete={handleDeleteMacro}

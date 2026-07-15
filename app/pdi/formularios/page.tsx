@@ -42,6 +42,7 @@ import { PDI_ROUTES } from "../api";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { useRole } from "@/app/context/RoleContext";
 
 type TipoCampo = "texto_largo" | "texto_corto" | "archivo_pdf" | "select" | "select_con_otro" | "select_multiple" | "select_multiple_con_otro" | "checkbox";
 
@@ -503,7 +504,10 @@ interface RazonRechazo {
 
 export default function FormulariosPage() {
   const router = useRouter();
-  const { canManage } = useViewPermission("pdiForms");
+  const { userRole } = useRole();
+  // "pdiForms" es la llave de Administrador; Responsable tiene su propia
+  // llave separada ("pdiFormsResponsable") aunque comparta la misma página.
+  const { canManage } = useViewPermission(userRole === "Responsable" ? "pdiFormsResponsable" : "pdiForms");
   const { confirmNavigation } = useUnsavedChanges();
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);

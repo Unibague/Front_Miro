@@ -307,36 +307,42 @@ function resolvePeriodoActual(inds: Indicador[]) {
   return ordenados[ordenados.length - 1] ?? currentYear;
 }
 
-// Para "ultimo_valor" el % de cumplimiento (y su semaforo/estado) siempre se
-// mide contra la Meta 2029, igual que el avance global del indicador: es la
-// misma medicion evolucionando hacia una unica meta, no una cuota por corte/anio.
-function metaReferenciaCumplimiento(ind: Indicador, metaDelPeriodo: number | null) {
-  return ind.tipo_calculo === "ultimo_valor" ? toNumberValue(ind.meta_final_2029) : metaDelPeriodo;
-}
-
+// El % de cumplimiento del periodo/año (y su semáforo/estado) se mide SIEMPRE
+// contra la meta de ESE periodo/año — "¿se cumplió lo prometido para esta
+// fecha?" — sin importar el tipo de cálculo. Es una pregunta DISTINTA de
+// "¿cuánto llevamos del objetivo final del PDI 2029?" (pctFinal más abajo),
+// que sí se mide contra la Meta final 2029 y se muestra aparte.
 function metricasPeriodo(ind: Indicador, periodo: string) {
   const metaPeriodo = absMetaEnCorte(ind, periodo);
   const avancePeriodo = absAvanceHastaCorte(ind, periodo);
-  const pctPeriodo = cumplimientoPct(avancePeriodo, metaReferenciaCumplimiento(ind, metaPeriodo)) ?? 0;
+  const pctPeriodo = cumplimientoPct(avancePeriodo, metaPeriodo) ?? 0;
+  const metaFinal = toNumberValue(ind.meta_final_2029);
+  const pctFinal = cumplimientoPct(avancePeriodo, metaFinal) ?? 0;
 
   return {
     metaPeriodo,
     avancePeriodo,
     pctPeriodo,
     semaforoPeriodo: semaforoFromPct(pctPeriodo),
+    pctFinal,
+    semaforoFinal: semaforoFromPct(pctFinal),
   };
 }
 
 function metricasAnio(ind: Indicador, anio: string) {
   const metaAnio = absMetaEnAnio(ind, anio);
   const avanceAnio = absAvanceHastaAnio(ind, anio);
-  const pctAnio = cumplimientoPct(avanceAnio, metaReferenciaCumplimiento(ind, metaAnio)) ?? 0;
+  const pctAnio = cumplimientoPct(avanceAnio, metaAnio) ?? 0;
+  const metaFinal = toNumberValue(ind.meta_final_2029);
+  const pctFinal = cumplimientoPct(avanceAnio, metaFinal) ?? 0;
 
   return {
     metaPeriodo: metaAnio,
     avancePeriodo: avanceAnio,
     pctPeriodo: pctAnio,
     semaforoPeriodo: semaforoFromPct(pctAnio),
+    pctFinal,
+    semaforoFinal: semaforoFromPct(pctFinal),
   };
 }
 
@@ -347,6 +353,14 @@ function periodoByName(ind: Indicador, periodo: string) {
 function hasMetaEnPeriodo(ind: Indicador, periodo: string) {
   const meta = periodoByName(ind, periodo)?.meta;
   return meta !== null && meta !== undefined && String(meta).trim() !== "";
+}
+
+function hasMetaEnAnio(ind: Indicador, anio: string) {
+  return (ind.periodos ?? []).some((p) => {
+    if (String(p.periodo ?? "").slice(0, 4) !== anio) return false;
+    const meta = p.meta;
+    return meta !== null && meta !== undefined && String(meta).trim() !== "";
+  });
 }
 
 const VISTA_GENERAL = "GENERAL";
@@ -1096,34 +1110,52 @@ export default function PdiGraficas() {
   );
   const reportesPendientes = indicadoresSinReporte.length;
 
-  // Periodos (A/B/etc.) disponibles dentro del año de periodoActual, para el
-  // selector de la tabla "Indicadores del período" (periodo puntual o general/año).
-  const anioBaseTabla = periodoActual.slice(0, 4);
-  const periodosDelAnioBase = useMemo(() => {
-    const set = new Set<string>();
+  // Periodos (A/B/etc.) disponibles en TODOS los años presentes en los datos,
+  // agrupados por año, para el selector de la tabla "Indicadores del período"
+  // (periodo puntual o general/año). Cada año termina en su propia opción
+  // "General (año X)".
+  const periodosPorAnio = useMemo(() => {
+    const map = new Map<string, Set<string>>();
     for (const ind of indsFiltradas) {
       for (const p of ind.periodos ?? []) {
-        if (p.periodo && String(p.periodo).slice(0, 4) === anioBaseTabla) set.add(String(p.periodo));
+        const periodo = String(p.periodo ?? "").trim();
+        if (!periodo) continue;
+        const anio = periodo.slice(0, 4);
+        if (!map.has(anio)) map.set(anio, new Set());
+        map.get(anio)!.add(periodo);
       }
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
-  }, [indsFiltradas, anioBaseTabla]);
+    return map;
+  }, [indsFiltradas]);
+
+  const aniosConPeriodos = useMemo(
+    () => Array.from(periodosPorAnio.keys()).sort((a, b) => a.localeCompare(b, "es", { numeric: true })),
+    [periodosPorAnio]
+  );
 
   const [vistaTablaIndicadores, setVistaTablaIndicadores] = useState<string | null>(null);
   const periodoTabla = vistaTablaIndicadores ?? periodoActual;
-  const esVistaGeneralTabla = periodoTabla === VISTA_GENERAL;
-  const etiquetaVistaTabla = esVistaGeneralTabla ? `General ${anioBaseTabla}` : periodoTabla;
+  const esVistaGeneralTabla = periodoTabla.startsWith(`${VISTA_GENERAL}_`);
+  const anioVistaTabla = esVistaGeneralTabla ? periodoTabla.slice(VISTA_GENERAL.length + 1) : periodoTabla.slice(0, 4);
+  const etiquetaVistaTabla = esVistaGeneralTabla ? `General ${anioVistaTabla}` : periodoTabla;
 
-  const opcionesVistaTabla = useMemo(() => ([
-    ...periodosDelAnioBase.map((p) => ({ value: p, label: p })),
-    { value: VISTA_GENERAL, label: `General (año ${anioBaseTabla})` },
-  ]), [periodosDelAnioBase, anioBaseTabla]);
+  const opcionesVistaTabla = useMemo(() => (
+    aniosConPeriodos.map((anio) => ({
+      group: anio,
+      items: [
+        ...Array.from(periodosPorAnio.get(anio) ?? [])
+          .sort((a, b) => a.localeCompare(b, "es", { numeric: true }))
+          .map((p) => ({ value: p, label: p })),
+        { value: `${VISTA_GENERAL}_${anio}`, label: `General (año ${anio})` },
+      ],
+    }))
+  ), [aniosConPeriodos, periodosPorAnio]);
 
   const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
-    .filter((ind) => esVistaGeneralTabla ? true : hasMetaEnPeriodo(ind, periodoTabla))
+    .filter((ind) => esVistaGeneralTabla ? hasMetaEnAnio(ind, anioVistaTabla) : hasMetaEnPeriodo(ind, periodoTabla))
     .map((ind) => {
-      const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo } = esVistaGeneralTabla
-        ? metricasAnio(ind, anioBaseTabla)
+      const { metaPeriodo, avancePeriodo, pctPeriodo, semaforoPeriodo, pctFinal, semaforoFinal } = esVistaGeneralTabla
+        ? metricasAnio(ind, anioVistaTabla)
         : metricasPeriodo(ind, periodoTabla);
 
       const usaPorcentaje =
@@ -1135,7 +1167,7 @@ export default function PdiGraficas() {
       // ese 0 de relleno se ve igual que un reporte real de 0%.
       const reportado = esVistaGeneralTabla
         ? (ind.periodos ?? []).some((p) =>
-            String(p.periodo ?? "").slice(0, 4) === anioBaseTabla && isReportadoEnPeriodo(ind, p.periodo)
+            String(p.periodo ?? "").slice(0, 4) === anioVistaTabla && isReportadoEnPeriodo(ind, p.periodo)
           )
         : isReportadoEnPeriodo(ind, periodoTabla);
 
@@ -1148,12 +1180,14 @@ export default function PdiGraficas() {
         avancePeriodo,
         pctPeriodo,
         semaforoPeriodo,
+        pctFinal,
+        semaforoFinal,
         usaPorcentaje,
         reportado,
       };
     })
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
-  , [indsFiltradas, periodoTabla, esVistaGeneralTabla, anioBaseTabla]);
+  , [indsFiltradas, periodoTabla, esVistaGeneralTabla, anioVistaTabla]);
 
   const indicadoresCriticosTop = indicadoresCriticosPeriodo;
 
@@ -2056,12 +2090,14 @@ export default function PdiGraficas() {
                       <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {etiquetaVistaTabla}</th>
                       <th style={{ ...thStyle, width: 150 }}>% cumpl. {etiquetaVistaTabla}</th>
                       <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {etiquetaVistaTabla}</th>
+                      <th style={{ ...thStyle, width: 150 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
+                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {indicadoresCriticosTop.length === 0 ? (
                       <tr>
-                        <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                        <td colSpan={8} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                           Sin indicadores críticos para mostrar
                         </td>
                       </tr>
@@ -2113,6 +2149,22 @@ export default function PdiGraficas() {
                               <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
                             )}
                           </td>
+                          <td style={{ ...tdStyle, minWidth: 140 }}>
+                            {row.reportado ? (
+                              <PctBar pct={row.pctFinal} semaforo={row.semaforoFinal} />
+                            ) : (
+                              <Text size="xs" c="dimmed" fs="italic">Sin reportar</Text>
+                            )}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: "center" }}>
+                            {row.reportado ? (
+                              <Badge color={SEMAFORO_BADGE[row.semaforoFinal] ?? "gray"} variant="filled" size="md">
+                                {SEMAFORO_LABEL[row.semaforoFinal] ?? row.semaforoFinal}
+                              </Badge>
+                            ) : (
+                              <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -2140,7 +2192,7 @@ export default function PdiGraficas() {
               </Stack>
               <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                 <Text size="sm" c="dimmed" lh={1.5}>
-                  La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance de: {etiquetaVistaTabla}.
+                  <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
                 </Text>
               </Box>
             </Paper>
@@ -2299,12 +2351,14 @@ export default function PdiGraficas() {
                         <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {etiquetaVistaTabla}</th>
                         <th style={{ ...thStyle, width: 150 }}>% cumpl. {etiquetaVistaTabla}</th>
                         <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {etiquetaVistaTabla}</th>
+                        <th style={{ ...thStyle, width: 150 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {indicadoresCriticosTop.length === 0 ? (
                         <tr>
-                          <td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                          <td colSpan={8} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                             Sin indicadores críticos para mostrar
                           </td>
                         </tr>
@@ -2356,6 +2410,22 @@ export default function PdiGraficas() {
                                 <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
                               )}
                             </td>
+                            <td style={{ ...tdStyle, minWidth: 140 }}>
+                              {row.reportado ? (
+                                <PctBar pct={row.pctFinal} semaforo={row.semaforoFinal} />
+                              ) : (
+                                <Text size="xs" c="dimmed" fs="italic">Sin reportar</Text>
+                              )}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "center" }}>
+                              {row.reportado ? (
+                                <Badge color={SEMAFORO_BADGE[row.semaforoFinal] ?? "gray"} variant="filled" size="md">
+                                  {SEMAFORO_LABEL[row.semaforoFinal] ?? row.semaforoFinal}
+                                </Badge>
+                              ) : (
+                                <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -2383,7 +2453,7 @@ export default function PdiGraficas() {
                 </Stack>
                 <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
                   <Text size="xs" c="dimmed" lh={1.5}>
-                    La <b>Meta {FINAL_TARGET_YEAR}</b> se mantiene como referencia final. El cumplimiento y el estado se calculan con la meta y avance de: {etiquetaVistaTabla}.
+                    <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
                   </Text>
                 </Box>
               </Paper>

@@ -271,7 +271,9 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
       </Text>
 
 
-      {/* Avance real por año */}
+      {/* Avance real por año: % contra la meta de ESE año (¿se cumplió lo
+          prometido para esta fecha?) y, debajo, % contra la Meta final 2029
+          (¿cuánto llevamos del objetivo final del PDI?). */}
       {ind.avances_por_anio && Object.keys(ind.avances_por_anio).length > 0 && (
         <Box mt="sm">
           <SimpleGrid cols={Object.keys(ind.avances_por_anio).length} spacing="xs" mb={8}>
@@ -279,10 +281,15 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
               .sort(([a], [b]) => Number(a) - Number(b))
               .map(([anio, avanceAnio]) => {
                 const pct = Math.min(Math.max(Number(avanceAnio), 0), 100);
+                const pctFinalRaw = ind.avances_por_anio_vs_meta_final?.[anio];
+                const pctFinal = pctFinalRaw != null ? Math.min(Math.max(Number(pctFinalRaw), 0), 100) : null;
                 return (
                   <Box key={anio} style={{ textAlign: "center", background: "var(--mantine-color-violet-0, #f3f0ff)", borderRadius: 12, padding: "12px 6px" }}>
                     <Text size="xs" c="dimmed" mb={4}>{anio}</Text>
                     <Text fw={800} size="1.1rem" lh={1} c="violet">{formatNumeroEs(pct)}%</Text>
+                    {pctFinal != null && (
+                      <Text size="0.65rem" c="dimmed" mt={2}>vs {anioMeta}: {formatNumeroEs(pctFinal)}%</Text>
+                    )}
                   </Box>
                 );
               })}

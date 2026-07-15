@@ -7,24 +7,16 @@ export function clampAvance(value: number | string | null | undefined) {
   return Math.min(Math.max(Number(value) || 0, 0), 100);
 }
 
+// Recomputo de solo lectura para tarjetas de detalle (proyecto/acción): no se
+// persiste ni alimenta ningún otro cálculo, así que redondear aquí es solo
+// para mostrar un número legible, no genera arrastre de error como redondear
+// a nivel de Acción/Proyecto en el backend.
 export function getWeightedContribution<T extends { peso: number | string | null | undefined }>(
   items: T[],
   getValue: (item: T) => number | string | null | undefined,
 ) {
   return Math.round(
     items.reduce((acc, item) => acc + clampAvance(getValue(item)) * normalizePeso(item.peso), 0) / 100,
-  );
-}
-
-export function getWeightedAverage<T extends { peso: number | string | null | undefined }>(
-  items: T[],
-  getValue: (item: T) => number | string | null | undefined,
-) {
-  const totalPeso = items.reduce((acc, item) => acc + normalizePeso(item.peso), 0);
-  if (totalPeso <= 0) return 0;
-
-  return Math.round(
-    items.reduce((acc, item) => acc + clampAvance(getValue(item)) * normalizePeso(item.peso), 0) / totalPeso,
   );
 }
 

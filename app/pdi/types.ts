@@ -289,6 +289,7 @@ export interface Indicador {
   observaciones: string;
   periodos: Periodo[];
   avances_por_anio: Record<string, number>;
+  avances_por_anio_vs_meta_final?: Record<string, number>;
   avance_total_real: number | null;
   accion_id: { _id: string; codigo: string; nombre: string };
   evidencias: Evidencia[];
@@ -402,6 +403,7 @@ export interface DashboardMacroproyecto {
     indicadores: ConteoSemaforos;
   };
   avances_por_anio: Record<string, number>;
+  avances_por_anio_vs_meta_final?: Record<string, number>;
   presupuesto: {
     total: number;
     ejecutado: number;

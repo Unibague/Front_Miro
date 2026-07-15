@@ -40,6 +40,23 @@ const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
   { key: "dateReview",                 pattern: /^\/processes-MEN/ },
 ];
 
+// Algunas llaves de permiso están separadas por rol aunque compartan la misma
+// ruta (p. ej. "pdi" para Administrador y "pdiResponsable" para Responsable):
+// este mapa resuelve, para cada llave "base" de VIEW_PERMISSION_ROUTES, cuál
+// es la llave real que le corresponde revisar a cada rol distinto del dueño
+// original de la llave.
+const ROLE_KEY_VARIANTS: Record<string, Partial<Record<string, string>>> = {
+  publishedTemplates:        { Responsable: "publishedTemplatesResponsable" },
+  templatesWithFilters:      { Productor: "templatesWithFiltersProductor" },
+  producerReportsManagement: { Responsable: "producerReportsManagementResponsable" },
+  snies:                     { Productor: "sniesProductor" },
+  pdi:                       { Responsable: "pdiResponsable" },
+  pdiMine:                   { Responsable: "pdiMineResponsable" },
+  pdiDashboard:              { Responsable: "pdiDashboardResponsable" },
+  pdiForms:                  { Responsable: "pdiFormsResponsable" },
+  pdiCharts:                 { Responsable: "pdiChartsResponsable" },
+};
+
 const FREE_ROUTES = /^\/(|dashboard|logs|traceability|operations|historico-docentes)(\/|$)/;
 
 /** Rutas accesibles por rol sin necesitar permiso de cargo explícito */
@@ -82,9 +99,29 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const matched = VIEW_PERMISSION_ROUTES.find(({ pattern }) => pattern.test(pathname));
 
     if (matched) {
-      // Sistema de perfiles desactivado — todos pasan
-      setIsVerifying(false);
-      return;
+      // Administrador pasa en todas las rutas sin excepción
+      if (role === "Administrador") {
+        setIsVerifying(false);
+        return;
+      }
+
+      // Sin perfil asignado → acceso completo basado en el rol
+      if (Object.keys(viewPermissions).length === 0) {
+        setIsVerifying(false);
+        return;
+      }
+
+      const levels: string[] = Array.isArray(viewPermissions[matched.key])
+        ? viewPermissions[matched.key]
+        : [];
+      const altKey = ROLE_KEY_VARIANTS[matched.key]?.[role];
+      const altLevels: string[] = altKey && Array.isArray(viewPermissions[altKey])
+        ? viewPermissions[altKey]
+        : [];
+      if (levels.length > 0 || altLevels.length > 0) {
+        setIsVerifying(false);
+        return;
+      }
     } else {
       // Ruta no mapeada: Administrador siempre pasa, otros también (rutas internas)
       if (role === "Administrador") {
