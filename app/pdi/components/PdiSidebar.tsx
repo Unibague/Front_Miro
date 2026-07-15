@@ -97,8 +97,13 @@ export default function PdiSidebar() {
   const { userRole } = useRole();
   const [isMacroLeader, setIsMacroLeader] = useState(false);
 
-  const isImpersonating = !!(session?.user as any)?.originalUserEmail;
-  const isAdmin = userRole === "Administrador" && !isImpersonating;
+  // El menú debe reflejar el rol ACTIVO de la cuenta que se está viendo (la
+  // impersonada, si aplica) — igual que el resto de las páginas de PDI y la
+  // insignia de rol del navbar. Antes se forzaba a "no admin" durante
+  // cualquier impersonación, lo que rompía el menú para cuentas que sí
+  // tienen rol Administrador (p. ej. alguien con doble rol Administrador +
+  // Responsable, cada uno con su propio perfil).
+  const isAdmin = userRole === "Administrador";
 
   useEffect(() => {
     if (isAdmin) {

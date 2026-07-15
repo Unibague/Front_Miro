@@ -30,7 +30,7 @@ const GESTION_REPORTES_KEYS = [
   "snies", "sniesProductor", "cna",
 ];
 const PDI_KEYS = [
-  "pdi", "pdiResponsable", "pdiMine", "pdiMineResponsable",
+  "pdi", "pdiResponsable", "pdiMineResponsable",
   "pdiDashboard", "pdiDashboardResponsable", "pdiForms", "pdiFormsResponsable",
   "pdiCharts", "pdiChartsResponsable",
 ];
@@ -506,6 +506,11 @@ const DashboardPage = () => {
 
   const renderActionCard = (opts: {
     permissionKey: string;
+    // Algunas vistas quedaron separadas por rol aunque compartan tarjeta
+    // (p. ej. "dependency" para Responsable, "dependencyAdmin" para
+    // Administrador): este mapa resuelve la llave real según el rol actual,
+    // sin tener que duplicar la tarjeta entera por cada rol.
+    roleKeyMap?: Partial<Record<string, string>>;
     roles: string[];
     icon: React.ReactNode;
     title: string;
@@ -513,7 +518,8 @@ const DashboardPage = () => {
     route: string;
     buttonLabel: string;
   }) => {
-    if (!canSee(opts.permissionKey, opts.roles)) return null;
+    const effectiveKey = opts.roleKeyMap?.[userRole] ?? opts.permissionKey;
+    if (!canSee(effectiveKey, opts.roles)) return null;
 
     return (
       <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key={opts.permissionKey}>
@@ -550,6 +556,7 @@ const DashboardPage = () => {
       },
       {
         permissionKey: "publishedTemplates",
+        roleKeyMap: { Responsable: "publishedTemplatesResponsable" },
         roles: ["Administrador", "Responsable"],
         icon: <IconChecklist size={80} />,
         title: "Gestionar Plantillas",
@@ -568,6 +575,7 @@ const DashboardPage = () => {
       },
       {
         permissionKey: "producerReportsManagement",
+        roleKeyMap: { Responsable: "producerReportsManagementResponsable" },
         roles: ["Administrador", "Responsable"],
         icon: <IconReportSearch size={80} />,
         title: "Gestionar Informes Productores",
@@ -726,6 +734,7 @@ const DashboardPage = () => {
       },
       {
         permissionKey: "templatesWithFilters",
+        roleKeyMap: { Productor: "templatesWithFiltersProductor" },
         roles: ["Responsable", "Productor"],
         icon: <IconFilter size={80} />,
         title: "Gestión de Plantillas con Filtros",
@@ -744,6 +753,7 @@ const DashboardPage = () => {
       },
       {
         permissionKey: "traceability",
+        roleKeyMap: { Productor: "traceabilityProductor" },
         roles: ["Responsable", "Productor"],
         icon: <IconChartHistogram size={80} />,
         title: "Historial de Cambios",
@@ -879,8 +889,10 @@ const DashboardPage = () => {
   const renderResponsiblePdiCards = () => {
     const cards = [
       renderActionCard({
-        permissionKey: "pdiMine",
-        roles: ["Responsable", "Administrador"],
+        // "Mis indicadores" es exclusivo de Responsable: un administrador no
+        // tiene proyectos PDI propios asignados.
+        permissionKey: "pdiMineResponsable",
+        roles: ["Responsable"],
         icon: <IconTarget size={80} />,
         title: "Proyectos PDI",
         description: "Consulta y actualiza el avance de los proyectos PDI asignados a ti.",
@@ -896,6 +908,7 @@ const DashboardPage = () => {
     const cards = [
       renderActionCard({
         permissionKey: "dependency",
+        roleKeyMap: { Administrador: "dependencyAdmin" },
         roles: ["Responsable", "Administrador"],
         icon: <IconUserStar size={80} />,
         title: "Ver Mi Dependencia",
@@ -905,6 +918,7 @@ const DashboardPage = () => {
       }),
       renderActionCard({
         permissionKey: "childDependenciesTemplates",
+        roleKeyMap: { Administrador: "childDependenciesTemplatesAdmin" },
         roles: ["Responsable", "Administrador"],
         icon: <IconHierarchy2 size={80} />,
         title: "Visualizar plantillas de dependencias hijo",
@@ -914,6 +928,7 @@ const DashboardPage = () => {
       }),
       renderActionCard({
         permissionKey: "childDependenciesReports",
+        roleKeyMap: { Administrador: "childDependenciesReportsAdmin" },
         roles: ["Responsable", "Administrador"],
         icon: <IconClipboardData size={80} />,
         title: "Visualizar reportes de dependencias hijo",
