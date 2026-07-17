@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
-  Container, Text, Paper, Group, Badge,
+  ActionIcon, Container, Text, Paper, Group, Badge, ThemeIcon, Title,
 } from "@mantine/core";
+import { IconArrowLeft, IconCurrencyDollar } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
@@ -14,6 +16,7 @@ import PdiPresupuesto from "../components/PdiPresupuesto";
 const isAdmin = (role: string) => role === "Administrador";
 
 export default function PresupuestoPage() {
+  const router = useRouter();
   const { userRole } = useRole();
   const admin = isAdmin(userRole);
   const { data: session } = useSession();
@@ -30,11 +33,22 @@ export default function PresupuestoPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
       <div style={{ flex: 1, overflow: "auto" }}>
-        <Container size="xl" py="xl">
+        <Container fluid px="xl" py="xl">
 
-          <Group gap={10} mb="xl" align="center">
-            <Text fw={900} size="2rem" lh={1}>Presupuesto PDI</Text>
-            <Badge color="violet" variant="filled" radius="sm" size="xl" style={{ fontSize: 18, padding: "4px 14px" }}>
+          <Group justify="space-between" mb="lg">
+            <Group gap={10}>
+              <ActionIcon variant="subtle" onClick={() => router.push("/pdi")}>
+                <IconArrowLeft size={18} />
+              </ActionIcon>
+              <ThemeIcon size={42} radius="xl" color="violet" variant="light">
+                <IconCurrencyDollar size={22} />
+              </ThemeIcon>
+              <div>
+                <Title order={3}>Presupuesto PDI</Title>
+                <Text size="sm" c="dimmed">Ejecución presupuestal del Plan de Desarrollo Institucional</Text>
+              </div>
+            </Group>
+            <Badge color="violet" variant="filled" radius="sm" size="lg">
               {new Date().getFullYear()}
             </Badge>
           </Group>

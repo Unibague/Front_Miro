@@ -2232,6 +2232,12 @@ export default function IndicadorEvidenciasPage() {
                     <Text size="sm" fw={600}>{indicador.entregable}</Text>
                   </Paper>
                 )}
+                {indicador.formula && (
+                  <Paper withBorder radius="md" p="md" mt="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                    <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4}>Fórmula</Text>
+                    <Text size="sm" fw={600}>{indicador.formula}</Text>
+                  </Paper>
+                )}
               </Paper>
 
               {mostrarVistaLider ? (

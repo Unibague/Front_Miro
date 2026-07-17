@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Modal, TextInput, Button, Group, Stack, NumberInput,
-  Divider, Text, SimpleGrid, MultiSelect,
+  Divider, Text, SimpleGrid, MultiSelect, ActionIcon, Box,
 } from "@mantine/core";
+import { IconPlus, IconX } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import "dayjs/locale/es";
@@ -34,6 +35,12 @@ function buildAniosMap(anios: number[], source?: Record<string, number>): Record
   return result;
 }
 
+function buildNotasMap(anios: number[], source?: Record<string, string[]>): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  anios.forEach(a => { result[String(a)] = [...(source?.[String(a)] ?? [])]; });
+  return result;
+}
+
 export default function AccionModal({ opened, onClose, selected, defaultProyectoId, onSaved }: Props) {
   const { config } = usePdiConfig();
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
@@ -43,6 +50,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
   const [presupuesto, setPresupuesto] = useState<number | string>(0);
   const [presupuestoAnios, setPresupuestoAnios] = useState<Record<string, number | string>>({});
   const [ejecutadoAnios, setEjecutadoAnios] = useState<Record<string, number | string>>({});
+  const [notasAnios, setNotasAnios] = useState<Record<string, string[]>>({});
   const [responsablesSeleccionados, setResponsablesSeleccionados] = useState<string[]>([]);
   const [usuarios, setUsuarios] = useState<string[]>([]);
   const [usuariosData, setUsuariosData] = useState<{ label: string; email: string }[]>([]);
@@ -76,6 +84,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
       setPresupuesto(selected.presupuesto ?? 0);
       setPresupuestoAnios(buildAniosMap(config.anios, selected.presupuesto_por_anio));
       setEjecutadoAnios(buildAniosMap(config.anios, selected.presupuesto_ejecutado_por_anio));
+      setNotasAnios(buildNotasMap(config.anios, selected.notas_presupuesto_por_anio));
       if (Array.isArray(selected.responsables) && selected.responsables.length > 0) {
         setResponsablesSeleccionados(selected.responsables.map((r) => r.nombre));
       } else if (selected.responsable) {
@@ -91,6 +100,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     setPresupuesto(0);
     setPresupuestoAnios(buildAniosMap(config.anios));
     setEjecutadoAnios(buildAniosMap(config.anios));
+    setNotasAnios(buildNotasMap(config.anios));
     setResponsablesSeleccionados([]);
   }, [opened, selected, config.anios, setHasChanges]);
 
@@ -122,6 +132,29 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
 
   const toNumberMap = (m: Record<string, number | string>) =>
     Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Number(v) || 0]));
+
+  const agregarNota = (anio: string) => {
+    setNotasAnios(prev => ({ ...prev, [anio]: [...(prev[anio] ?? []), ""] }));
+    setHasChanges(true);
+  };
+  const editarNota = (anio: string, index: number, valor: string) => {
+    setNotasAnios(prev => ({
+      ...prev,
+      [anio]: (prev[anio] ?? []).map((n, i) => (i === index ? valor : n)),
+    }));
+    setHasChanges(true);
+  };
+  const quitarNota = (anio: string, index: number) => {
+    setNotasAnios(prev => ({
+      ...prev,
+      [anio]: (prev[anio] ?? []).filter((_, i) => i !== index),
+    }));
+    setHasChanges(true);
+  };
+  const toNotasMapLimpio = (m: Record<string, string[]>) =>
+    Object.fromEntries(
+      Object.entries(m).map(([anio, notas]) => [anio, notas.map(n => n.trim()).filter(Boolean)])
+    );
 
   const expectedActionPrefix = useMemo(
     () => getActionPrefix(proyectoPadre?.codigo),
@@ -204,6 +237,7 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
         presupuesto: Number(presupuesto) || 0,
         presupuesto_por_anio: toNumberMap(presupuestoAnios),
         presupuesto_ejecutado_por_anio: toNumberMap(ejecutadoAnios),
+        notas_presupuesto_por_anio: toNotasMapLimpio(notasAnios),
         proyecto_id: defaultProyectoId,
         responsables,
         fecha_inicio: selected?.fecha_inicio ?? null,
@@ -271,18 +305,50 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
             <Divider mt="xs" />
             <Text size="sm" fw={500} mt="xs">Presupuesto asignado por año</Text>
             <SimpleGrid cols={cols} spacing="sm" mt={6}>
-              {config.anios.map(anio => (
-                <NumberInput
-                  key={anio}
-                  label={String(anio)}
-                  value={presupuestoAnios[String(anio)] ?? 0}
-                  onChange={v => { setPresupuestoAnios(prev => ({ ...prev, [String(anio)]: v })); setHasChanges(true); }}
-                  min={0}
-                  thousandSeparator="."
-                  decimalSeparator=","
-                  prefix="$ "
-                />
-              ))}
+              {config.anios.map(anio => {
+                const anioStr = String(anio);
+                const notas = notasAnios[anioStr] ?? [];
+                return (
+                  <Box key={anio}>
+                    <NumberInput
+                      label={anioStr}
+                      value={presupuestoAnios[anioStr] ?? 0}
+                      onChange={v => { setPresupuestoAnios(prev => ({ ...prev, [anioStr]: v })); setHasChanges(true); }}
+                      min={0}
+                      thousandSeparator="."
+                      decimalSeparator=","
+                      prefix="$ "
+                    />
+                    <Stack gap={4} mt={6}>
+                      <Text size="xs" c="dimmed">¿A dónde va dirigido? (actividades)</Text>
+                      {notas.map((nota, index) => (
+                        <Group key={index} gap={4} wrap="nowrap">
+                          <TextInput
+                            size="xs"
+                            placeholder="Ej: Compra de equipos"
+                            value={nota}
+                            onChange={(e) => editarNota(anioStr, index, e.currentTarget.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <ActionIcon size="sm" color="red" variant="subtle" onClick={() => quitarNota(anioStr, index)}>
+                            <IconX size={14} />
+                          </ActionIcon>
+                        </Group>
+                      ))}
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="violet"
+                        leftSection={<IconPlus size={12} />}
+                        onClick={() => agregarNota(anioStr)}
+                        style={{ alignSelf: "flex-start" }}
+                      >
+                        Agregar actividad
+                      </Button>
+                    </Stack>
+                  </Box>
+                );
+              })}
             </SimpleGrid>
             {totalPresupuesto > 0 && (
               <Text size="xs" c={totalPresupuesto > (Number(presupuesto) || 0) ? "red" : "dimmed"} ta="right" mt={6}>

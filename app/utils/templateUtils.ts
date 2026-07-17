@@ -200,6 +200,21 @@ interface FilledFieldValues {
   values?: any[];
 }
 
+// El backend guarda las filas combinadas (mergedData) con las claves normalizadas
+// a MAYUSCULAS_CON_GUIONES (ver normalizeFieldName en publishedTemplates.js), pero
+// el nombre de campo configurado en la plantilla puede tener otra mayúscula/minúscula,
+// espacios o tildes distintas. Sin esta normalización, cualquier campo cuyo nombre no
+// coincida caracter a caracter queda vacío aunque el dato sí llegó del backend.
+const normalizeFieldKey = (value: string): string =>
+  normalizeToken(String(value ?? "")).replace(/[^A-Z0-9]/g, "");
+
+const findRowValueByFieldName = (row: Record<string, any>, fieldName: string): any => {
+  if (Object.prototype.hasOwnProperty.call(row, fieldName)) return row[fieldName];
+  const target = normalizeFieldKey(fieldName);
+  const matchedKey = Object.keys(row).find((key) => normalizeFieldKey(key) === target);
+  return matchedKey ? row[matchedKey] : undefined;
+};
+
 // Rellena la hoja de la plantilla ORIGINAL (tal cual fue subida) con el
 // filled_data crudo (por campo, con su arreglo de valores), preservando el
 // estilo/validacion de cada celda base pero SIN volver a aplicar dropdowns:
@@ -236,13 +251,63 @@ export const populateWorksheetWithFilledData = (
     const dataRow = startRow + i;
     fields.forEach((field, colIdx) => {
       const { col: fieldCol } = getConfiguredFieldPosition(field, colIdx);
-      const fd = relevant.find((entry) => entry.field_name === field.name);
+      const fd = relevant.find((entry) => normalizeFieldKey(entry.field_name) === normalizeFieldKey(field.name));
       const val = fd?.values?.[i] ?? null;
       const targetCell = worksheet.getCell(dataRow, fieldCol);
       copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
       targetCell.value = toExcelCellValue(val);
     });
   }
+};
+
+// Rellena la hoja de la plantilla ORIGINAL con datos YA CONSOLIDADOS por
+// fila (un objeto {nombre_campo: valor} por fila, ej. la respuesta de
+// /pTemplates/dimension/mergedData que ya junta el envío de TODAS las
+// dependencias en una tabla), a diferencia de populateWorksheetWithFilledData
+// que espera el formato "por campo con arreglo de valores". Se usa para las
+// descargas administrativas que muestran una fila por envío, preservando la
+// estructura/colores/hojas del archivo original y agregando columnas extra
+// (ej. "Dependencia") que no forman parte de los campos propios de la plantilla.
+export const populateWorksheetWithMergedRows = (
+  worksheet: ExcelJS.Worksheet,
+  fields: FieldWithValidator[],
+  rows: Record<string, any>[],
+  extraColumns: string[] = []
+) => {
+  if (!fields.length || !rows.length) return;
+
+  const startRow = getSheetDataStartRow(fields);
+  const headerRow = Math.max(1, startRow - 1);
+  const templateRow = worksheet.getRow(startRow);
+
+  if (rows.length > 1) {
+    worksheet.insertRows(startRow + 1, Array.from({ length: rows.length - 1 }, () => []));
+  }
+
+  const usedCols = fields.map((field, index) => getConfiguredFieldPosition(field, index).col);
+  const maxCol = usedCols.length ? Math.max(...usedCols) : 0;
+
+  rows.forEach((row, i) => {
+    const dataRow = startRow + i;
+    fields.forEach((field, colIdx) => {
+      const { col } = getConfiguredFieldPosition(field, colIdx);
+      const cell = worksheet.getCell(dataRow, col);
+      copyCellPresentation(cell, templateRow.getCell(col));
+      cell.value = toExcelCellValue(findRowValueByFieldName(row, field.name));
+    });
+    extraColumns.forEach((key, extraIdx) => {
+      const col = maxCol + 1 + extraIdx;
+      const cell = worksheet.getCell(dataRow, col);
+      copyCellPresentation(cell, templateRow.getCell(col));
+      cell.value = toExcelCellValue(findRowValueByFieldName(row, key));
+    });
+  });
+
+  extraColumns.forEach((key, extraIdx) => {
+    const col = maxCol + 1 + extraIdx;
+    const headerCell = worksheet.getCell(headerRow, col);
+    if (headerCell.value == null || headerCell.value === "") headerCell.value = key;
+  });
 };
 
 const toColumnLetter = (index: number): string => {

@@ -19,7 +19,7 @@ import type { Indicador, Periodo } from "@/app/pdi/types";
 import PdiSidebar from "@/app/pdi/components/PdiSidebar";
 import { usePdiConfig } from "@/app/pdi/hooks/usePdiConfig";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
-import { formatNumeroEs, normalizeDecimalComma } from "@/app/pdi/avance-utils";
+import { formatNumeroEs, normalizeDecimalComma, absMetaAnio, absAvanceAnio } from "@/app/pdi/avance-utils";
 
 // ── Tipos locales ────────────────────────────────────────────────────────────
 
@@ -125,6 +125,63 @@ function parseAvance(val: string): number | null {
   if (val === "") return null;
   const n = Number(val.replace("%", "").replace(",", ".").trim());
   return isNaN(n) ? null : n;
+}
+
+// Resumen del AÑO completo (Meta y Avance combinados según tipo_calculo:
+// acumulado = suma, promedio = promedio, último valor = el más reciente) para
+// mostrarlo junto a la meta/avance propios del periodo puntual que se está
+// reportando (A, B, ...). Esto NO cambia lo que se guarda: cada periodo sigue
+// guardando únicamente su propio aporte (igual que hoy); es solo una vista
+// previa de "así queda el año" si se guarda lo que se está escribiendo ahora.
+// Si el indicador solo tiene un corte por año (Anual), no aplica: la meta y
+// el avance del periodo YA son los del año.
+function getResumenAnio(indicador: Indicador, periodoEditado: string, avancesStr: Record<string, string>) {
+  const anio = periodoEditado.slice(0, 4);
+  const periodosDelAnio = (indicador.periodos ?? []).filter((p: Periodo) => p.periodo.slice(0, 4) === anio);
+  if (periodosDelAnio.length < 2) return null;
+
+  const periodosConPreview = (indicador.periodos ?? []).map((p: Periodo) => {
+    if (p.periodo !== periodoEditado) return p;
+    const valor = parseAvance(avancesStr[p.periodo] ?? "");
+    return { ...p, avance: valor, estado_reporte: valor !== null ? "Enviado" : p.estado_reporte };
+  });
+
+  const metaAnio = absMetaAnio(indicador, anio);
+  const avanceAnio = absAvanceAnio({ tipo_calculo: indicador.tipo_calculo, periodos: periodosConPreview }, anio);
+  const pct = metaAnio != null && metaAnio > 0 && avanceAnio != null
+    ? Math.min((avanceAnio / metaAnio) * 100, 100)
+    : null;
+  return { anio, metaAnio, avanceAnio, pct };
+}
+
+// Un indicador se considera "medido en %" si su Meta final o alguno de sus
+// periodos (meta o avance) se guardó con el "%" literal (ver IndicadorModal).
+// Se usa para mostrar el símbolo junto a números que, al guardarse como
+// number puro (ej. el avance de un periodo ya reportado), pierden la marca
+// de porcentaje aunque la meta del mismo indicador sí la conserve como texto.
+function indicadorUsaPorcentaje(ind: Indicador): boolean {
+  const esPorcentual = (v: unknown) => typeof v === "string" && v.includes("%");
+  if (esPorcentual(ind.meta_final_2029)) return true;
+  return (ind.periodos ?? []).some((p: Periodo) => esPorcentual(p.meta) || esPorcentual(p.avance));
+}
+
+// Agrega "%" a un valor ya formateado si el indicador se mide en % y ese
+// valor no lo trae ya incluido (para no duplicarlo, ej. "2%" -> "2%").
+function conPorcentajeSiAplica(valorFormateado: string, ind: Indicador): string {
+  if (!valorFormateado || valorFormateado.includes("%")) return valorFormateado;
+  return indicadorUsaPorcentaje(ind) ? `${valorFormateado}%` : valorFormateado;
+}
+
+// Estado visual para un periodo que se muestra en modo solo lectura (no es el
+// corte vigente que se está editando ahora mismo).
+function getEstadoBadge(estadoPeriodo: string | null | undefined): { color: string; label: string } {
+  switch (estadoPeriodo) {
+    case "Validado": return { color: "green", label: "Validado" };
+    case "Aprobado": return { color: "teal", label: "Aprobado" };
+    case "Enviado": return { color: "yellow", label: "En revisión" };
+    case "Rechazado": return { color: "red", label: "Rechazado" };
+    default: return { color: "gray", label: "Sin reportar" };
+  }
 }
 
 function getAvanceMostrado(ind: Indicador): number {
@@ -322,14 +379,37 @@ export default function SubirEvidenciasPage() {
   const periodoActivoTieneMeta = periodoActivo?.meta != null && periodoActivo?.meta !== "";
   const avanceCorteNum = periodoActivo ? parseAvance(avancesStr[corteActivo] ?? "") : null;
   const metaCorteNum = periodoActivo?.meta != null ? parseAvance(String(periodoActivo.meta)) : null;
-  const estadoCumplimientoMeta =
-    avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
-      ? avanceCorteNum > metaCorteNum
-        ? "supero"
-        : avanceCorteNum < metaCorteNum
-          ? "no_supero"
-          : "cumplio"
-      : null;
+
+  // El formulario condicional (justificación de "no superó"/"superó" la meta)
+  // se ancla al CONSOLIDADO DEL AÑO solo cuando se reporta el ÚLTIMO periodo
+  // del año (ej. B en un indicador Semestral): ahí ya se conoce el resultado
+  // real del año completo. Para los demás periodos (ej. A) sigue comparando
+  // normal contra su propia meta, igual que siempre.
+  const otrosPeriodosMismoAnio = corteActivo
+    ? (indicador?.periodos ?? []).filter((p: Periodo) => p.periodo !== corteActivo && p.periodo.slice(0, 4) === corteActivo.slice(0, 4))
+    : [];
+  const esUltimoPeriodoDelAnio = corteActivo
+    ? otrosPeriodosMismoAnio.every((p: Periodo) => p.periodo < corteActivo)
+    : false;
+  const resumenAnioParaCumplimiento = indicador && corteActivo && esUltimoPeriodoDelAnio
+    ? getResumenAnio(indicador, corteActivo, avancesStr)
+    : null;
+
+  const estadoCumplimientoMeta = resumenAnioParaCumplimiento
+    ? (resumenAnioParaCumplimiento.avanceAnio != null && resumenAnioParaCumplimiento.metaAnio != null && resumenAnioParaCumplimiento.metaAnio > 0
+        ? resumenAnioParaCumplimiento.avanceAnio > resumenAnioParaCumplimiento.metaAnio
+          ? "supero"
+          : resumenAnioParaCumplimiento.avanceAnio < resumenAnioParaCumplimiento.metaAnio
+            ? "no_supero"
+            : "cumplio"
+        : null)
+    : (avanceCorteNum != null && metaCorteNum != null && metaCorteNum > 0
+        ? avanceCorteNum > metaCorteNum
+          ? "supero"
+          : avanceCorteNum < metaCorteNum
+            ? "no_supero"
+            : "cumplio"
+        : null);
 
   const shouldShowCampo = (campo: CampoFormulario): boolean => {
     if (!campo.condicional_valor) return true;
@@ -1193,6 +1273,11 @@ export default function SubirEvidenciasPage() {
                   </div>
                 ))}
               </div>
+              {indicador.formula && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Fórmula: <b>{indicador.formula}</b>
+                </Text>
+              )}
             </Paper>
 
             {/* Banner enviado */}
@@ -1293,7 +1378,7 @@ export default function SubirEvidenciasPage() {
                                 </Badge>
                               )}
                             </Group>
-                            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta != null ? formatNumeroEs(p.meta) : "—"}</b></Text>
+                            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta != null ? conPorcentajeSiAplica(formatNumeroEs(p.meta), indicador) : "—"}</b></Text>
                             {reportadoEnCero && (
                               <Text size="xs" c="dimmed" mt={2}>La dependencia reportó sin ejecución este período.</Text>
                             )}
@@ -1393,7 +1478,7 @@ export default function SubirEvidenciasPage() {
                             Abierto
                           </Badge>
                         </Group>
-                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodoActivo.meta != null ? formatNumeroEs(periodoActivo.meta) : "—"}</b></Text>
+                        <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{periodoActivo.meta != null ? conPorcentajeSiAplica(formatNumeroEs(periodoActivo.meta), indicador) : "—"}</b></Text>
                       </div>
                       <TextInput
                         label="Avance reportado"
@@ -1446,6 +1531,87 @@ export default function SubirEvidenciasPage() {
               )}
             </div>
             )}
+
+            {/* Otros periodos del MISMO año que el corte vigente (ej. 2026A
+                cuando el vigente es 2026B), ya reportados: se muestran en
+                solo lectura, con el mismo diseño de tarjeta, para dar
+                contexto de lo que ya se reportó ese año. */}
+            {corteActivo && (() => {
+              const anioActivo = corteActivo.slice(0, 4);
+              const otrosPeriodos = (indicador.periodos ?? [])
+                .filter((p: Periodo) => p.periodo !== corteActivo && p.periodo.slice(0, 4) === anioActivo)
+                .sort((a: Periodo, b: Periodo) => a.periodo.localeCompare(b.periodo));
+              if (!otrosPeriodos.length) return null;
+
+              return (
+                <Stack gap="sm" mb="lg">
+                  {otrosPeriodos.map((p: Periodo) => {
+                    const metaNumerica = p.meta != null ? parseAvance(String(p.meta)) : null;
+                    const avanceNumerico = p.avance != null ? parseAvance(String(p.avance)) : null;
+                    const pct = metaNumerica && metaNumerica > 0 && avanceNumerico != null
+                      ? Math.min((avanceNumerico / metaNumerica) * 100, 100)
+                      : null;
+                    const { color: badgeColor, label: badgeLabel } = getEstadoBadge(p.estado_reporte);
+                    return (
+                      <Paper key={p.periodo} withBorder radius="xl" p="md" style={{
+                        borderLeft: "4px solid #cbd5e1",
+                        background: "rgba(248,250,252,0.96)",
+                      }}>
+                        <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                          <div>
+                            <Group gap={8}>
+                              <Text size="lg" fw={800}>{p.periodo}</Text>
+                              <Badge size="sm" radius="xl" color={badgeColor} variant="light">{badgeLabel}</Badge>
+                            </Group>
+                            <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta != null ? conPorcentajeSiAplica(formatNumeroEs(p.meta), indicador) : "—"}</b></Text>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <Text size="xs" c="dimmed">Avance reportado</Text>
+                            <Text size="lg" fw={800}>{p.avance != null ? conPorcentajeSiAplica(formatNumeroEs(p.avance), indicador) : "—"}</Text>
+                          </div>
+                        </Group>
+                        {pct != null && (
+                          <>
+                            <Group justify="space-between" mb={4}>
+                              <Text size="xs" c="dimmed">Progreso del periodo</Text>
+                              <Text size="xs" fw={700}>{Math.round(pct)}%</Text>
+                            </Group>
+                            <Progress value={pct} color="gray" size="sm" radius="xl" />
+                          </>
+                        )}
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              );
+            })()}
+
+            {/* Total del año: combina todos los periodos del año (A + B, ...)
+                según el tipo de cálculo del indicador (acumulado = suma,
+                promedio = promedio, último valor = el más reciente). Se
+                actualiza en vivo con lo que se esté escribiendo en el corte
+                vigente, sin cambiar lo que se guarda por periodo. */}
+            {corteActivo && periodoActivo && (() => {
+              const resumenAnio = getResumenAnio(indicador, periodoActivo.periodo, avancesStr);
+              if (!resumenAnio) return null;
+              return (
+                <Paper withBorder radius="xl" p="md" mb="lg" style={{
+                  borderLeft: "4px solid #7c3aed",
+                  background: "rgba(124,58,237,0.06)",
+                }}>
+                  <Text size="sm" fw={700} c="violet">Total año {resumenAnio.anio}</Text>
+                  <Group justify="space-between" align="flex-end" mt={4}>
+                    <Text size="sm" c="dimmed">
+                      Meta <b>{resumenAnio.metaAnio != null ? conPorcentajeSiAplica(formatNumeroEs(resumenAnio.metaAnio), indicador) : "—"}</b>
+                      {" · "}Avance <b>{resumenAnio.avanceAnio != null ? conPorcentajeSiAplica(formatNumeroEs(resumenAnio.avanceAnio), indicador) : "—"}</b>
+                    </Text>
+                    {resumenAnio.pct != null && (
+                      <Text size="xl" fw={900} c="violet">{Math.round(resumenAnio.pct)}%</Text>
+                    )}
+                  </Group>
+                </Paper>
+              );
+            })()}
 
             <Divider />
 

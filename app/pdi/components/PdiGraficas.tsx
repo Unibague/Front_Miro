@@ -151,6 +151,13 @@ function fmtValue(value: number | string | null | undefined) {
   return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
+// Parte de un periodo que va después del año, p.ej. "2026A" con año "2026" da
+// "A" (el semestre). Si el periodo es igual al año (sin sufijo), se muestra
+// completo para no dejar la columna sin etiqueta.
+function sufijoPeriodo(periodo: string, anio: string) {
+  return periodo.length > anio.length ? periodo.slice(anio.length) : periodo;
+}
+
 function cumplimientoPct(avance: number | null, meta: number | null) {
   if (avance === null || meta === null || meta <= 0) return null;
   return Math.min(Math.round((avance / meta) * 100 * 100) / 100, 100);
@@ -1151,6 +1158,15 @@ export default function PdiGraficas() {
     }))
   ), [aniosConPeriodos, periodosPorAnio]);
 
+  // Sub-periodos (semestres A/B, etc.) del año mostrado en la tabla, solo
+  // relevantes en la vista "General (año X)": son las columnas que se agregan
+  // para mostrar cómo se compone el avance del año a partir de cada semestre.
+  const subPeriodosVistaTabla = useMemo(() => (
+    esVistaGeneralTabla
+      ? Array.from(periodosPorAnio.get(anioVistaTabla) ?? []).sort((a, b) => a.localeCompare(b, "es", { numeric: true }))
+      : []
+  ), [esVistaGeneralTabla, periodosPorAnio, anioVistaTabla]);
+
   const indicadoresCriticosPeriodo = useMemo(() => [...indsFiltradas]
     .filter((ind) => esVistaGeneralTabla ? hasMetaEnAnio(ind, anioVistaTabla) : hasMetaEnPeriodo(ind, periodoTabla))
     .map((ind) => {
@@ -1171,6 +1187,15 @@ export default function PdiGraficas() {
           )
         : isReportadoEnPeriodo(ind, periodoTabla);
 
+      // Avance de cada sub-periodo (semestre) del año, solo en vista General:
+      // permite ver cómo se compone el "Avance {General}" mostrado arriba.
+      const subPeriodosAvance = subPeriodosVistaTabla.map((periodo) => ({
+        periodo,
+        sufijo: sufijoPeriodo(periodo, anioVistaTabla),
+        avance: absAvanceHastaCorte(ind, periodo),
+        reportado: isReportadoEnPeriodo(ind, periodo),
+      }));
+
       return {
         id: ind._id,
         codigo: ind.codigo,
@@ -1184,10 +1209,11 @@ export default function PdiGraficas() {
         semaforoFinal,
         usaPorcentaje,
         reportado,
+        subPeriodosAvance,
       };
     })
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
-  , [indsFiltradas, periodoTabla, esVistaGeneralTabla, anioVistaTabla]);
+  , [indsFiltradas, periodoTabla, esVistaGeneralTabla, anioVistaTabla, subPeriodosVistaTabla]);
 
   const indicadoresCriticosTop = indicadoresCriticosPeriodo;
 
@@ -2052,52 +2078,82 @@ export default function PdiGraficas() {
         </Stack>
       )}
 
-      {/* ── Top indicadores críticos + Semaforización (macro / global) ─── */}
+      {/* ── Semaforización (horizontal, arriba de la tabla) + Top indicadores críticos ─── */}
       {!proyectoActual && (
-        <Grid gutter="sm">
-          <Grid.Col span={{ base: 12, md: 9 }}>
-            <Paper withBorder radius="xl" p="md" h="100%">
-              <Group justify="space-between" mb="sm" align="flex-start">
-                <Box>
-                  <Text size="md" fw={700}>Indicadores del período</Text>
-                  <Text size="xs" c="dimmed" fw={600}>
-                    {esVistaGeneralTabla
-                      ? `${indicadoresCriticosPeriodo.length} indicadores en total`
-                      : `${indicadoresCriticosPeriodo.length} indicadores con meta en ${etiquetaVistaTabla}`}
-                  </Text>
+        <Stack gap="sm">
+          <Paper withBorder radius="xl" p="md">
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm" mb="xs">
+              <Box>
+                <Text size="md" fw={700}>Semaforización</Text>
+                <Text size="xs" c="dimmed">Rangos de cumplimiento</Text>
+              </Box>
+            </Group>
+            <Group gap="sm" grow wrap="wrap">
+              {[
+                { color: "#fa5252", badge: "red",    label: "Crítico",         rango: "< 60%" },
+                { color: "#fab005", badge: "yellow", label: "En riesgo",       rango: "60% a < 90%" },
+                { color: "#40c057", badge: "green",  label: "En cumplimiento", rango: "≥ 90%" },
+              ].map(({ color, badge, label, rango }) => (
+                <Box key={label} style={{ borderLeft: `4px solid ${color}`, paddingLeft: 10, paddingTop: 6, paddingBottom: 6, borderRadius: "0 6px 6px 0", background: `${color}11`, minWidth: 160 }}>
+                  <Badge color={badge} variant="filled" size="sm" mb={4}>{label}</Badge>
+                  <Text size="sm" fw={700} style={{ color }}>Rango: {rango}</Text>
                 </Box>
-                <Group gap="sm" align="center">
-                  <Select
-                    size="xs"
-                    w={170}
-                    data={opcionesVistaTabla}
-                    value={periodoTabla}
-                    onChange={(v) => setVistaTablaIndicadores(v)}
-                    allowDeselect={false}
-                  />
-                  <Text size="xs" c="dimmed">{indicadoresCriticosPeriodo.length} indicadores totales</Text>
-                </Group>
+              ))}
+            </Group>
+            <Box mt="sm" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
+              <Text size="sm" c="dimmed" lh={1.5}>
+                <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
+              </Text>
+            </Box>
+          </Paper>
+
+          <Paper withBorder radius="xl" p="md">
+            <Group justify="space-between" mb="sm" align="flex-start">
+              <Box>
+                <Text size="md" fw={700}>Indicadores del período</Text>
+                <Text size="xs" c="dimmed" fw={600}>
+                  {esVistaGeneralTabla
+                    ? `${indicadoresCriticosPeriodo.length} indicadores en total`
+                    : `${indicadoresCriticosPeriodo.length} indicadores con meta en ${etiquetaVistaTabla}`}
+                </Text>
+              </Box>
+              <Group gap="sm" align="center">
+                <Select
+                  size="xs"
+                  w={170}
+                  data={opcionesVistaTabla}
+                  value={periodoTabla}
+                  onChange={(v) => setVistaTablaIndicadores(v)}
+                  allowDeselect={false}
+                />
+                <Text size="xs" c="dimmed">{indicadoresCriticosPeriodo.length} indicadores totales</Text>
               </Group>
-              <Box style={tableScrollStyle}>
+            </Group>
+            <Box style={tableScrollStyle}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
                       <th style={thStyle}>Indicador</th>
-                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
+                      <th style={{ ...thStyle, textAlign: "right", width: 68 }}>
                         Meta {FINAL_TARGET_YEAR}
                       </th>
-                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {etiquetaVistaTabla}</th>
-                      <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {etiquetaVistaTabla}</th>
-                      <th style={{ ...thStyle, width: 150 }}>% cumpl. {etiquetaVistaTabla}</th>
-                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {etiquetaVistaTabla}</th>
-                      <th style={{ ...thStyle, width: 150 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
-                      <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
+                      <th style={{ ...thStyle, textAlign: "right", width: 68 }}>Meta {etiquetaVistaTabla}</th>
+                      {subPeriodosVistaTabla.map((periodo) => (
+                        <th key={periodo} style={{ ...thStyle, textAlign: "right", width: 68 }}>
+                          Avance sem. {sufijoPeriodo(periodo, anioVistaTabla)}
+                        </th>
+                      ))}
+                      <th style={{ ...thStyle, textAlign: "right", width: 68 }}>Avance {etiquetaVistaTabla}</th>
+                      <th style={{ ...thStyle, width: 122 }}>% cumpl. {etiquetaVistaTabla}</th>
+                      <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Estado {etiquetaVistaTabla}</th>
+                      <th style={{ ...thStyle, width: 122 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
+                      <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {indicadoresCriticosTop.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                        <td colSpan={8 + subPeriodosVistaTabla.length} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                           Sin indicadores críticos para mostrar
                         </td>
                       </tr>
@@ -2105,11 +2161,12 @@ export default function PdiGraficas() {
                       indicadoresCriticosTop.map((row, i) => (
                         <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
                           <td
-                            style={{ ...tdStyle, maxWidth: 420, cursor: "pointer" }}
+                            style={{ ...tdStyle, maxWidth: 260, cursor: "pointer" }}
                             onClick={() => router.push(`/pdi/indicadores/${row.id}`)}
+                            title={row.nombre}
                           >
                             <Text size="sm" fw={700} c="blue" style={{ textDecoration: "underline" }}>{row.codigo}</Text>
-                            <Text size="sm" c="dimmed">{row.nombre}</Text>
+                            <Text size="sm" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                           </td>
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
                             <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -2123,6 +2180,18 @@ export default function PdiGraficas() {
                               {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
                             </Group>
                           </td>
+                          {row.subPeriodosAvance.map((sp) => (
+                            <td key={sp.periodo} style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                              {sp.reportado && sp.avance !== null ? (
+                                <Group gap={4} justify="flex-end" wrap="nowrap">
+                                  <Text size="sm" fw={600}>{fmtValue(sp.avance)}</Text>
+                                  {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                                </Group>
+                              ) : (
+                                <Text size="sm" c="dimmed">—</Text>
+                              )}
+                            </td>
+                          ))}
                           <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
                             {row.reportado ? (
                               <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -2133,7 +2202,7 @@ export default function PdiGraficas() {
                               <Text size="sm" c="dimmed">—</Text>
                             )}
                           </td>
-                          <td style={{ ...tdStyle, minWidth: 140 }}>
+                          <td style={{ ...tdStyle, minWidth: 116 }}>
                             {row.reportado ? (
                               <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                             ) : (
@@ -2149,7 +2218,7 @@ export default function PdiGraficas() {
                               <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
                             )}
                           </td>
-                          <td style={{ ...tdStyle, minWidth: 140 }}>
+                          <td style={{ ...tdStyle, minWidth: 116 }}>
                             {row.reportado ? (
                               <PctBar pct={row.pctFinal} semaforo={row.semaforoFinal} />
                             ) : (
@@ -2171,33 +2240,8 @@ export default function PdiGraficas() {
                   </tbody>
                 </table>
               </Box>
-            </Paper>
-          </Grid.Col>
-
-          <Grid.Col span={{ base: 12, md: 3 }}>
-            <Paper withBorder radius="xl" p="md" h="100%">
-              <Text size="md" fw={700} mb={4}>Semaforización</Text>
-              <Text size="sm" c="dimmed" mb="sm">Rangos de cumplimiento</Text>
-              <Stack gap="sm">
-                {[
-                  { color: "#fa5252", badge: "red",    label: "Crítico",         rango: "< 60%" },
-                  { color: "#fab005", badge: "yellow", label: "En riesgo",       rango: "60% a < 90%" },
-                  { color: "#40c057", badge: "green",  label: "En cumplimiento", rango: "≥ 90%" },
-                ].map(({ color, badge, label, rango }) => (
-                  <Box key={label} style={{ borderLeft: `4px solid ${color}`, paddingLeft: 10, paddingTop: 6, paddingBottom: 6, borderRadius: "0 6px 6px 0", background: `${color}11` }}>
-                    <Badge color={badge} variant="filled" size="sm" mb={4}>{label}</Badge>
-                    <Text size="sm" fw={700} style={{ color }}>Rango: {rango}</Text>
-                  </Box>
-                ))}
-              </Stack>
-              <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
-                <Text size="sm" c="dimmed" lh={1.5}>
-                  <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
-                </Text>
-              </Box>
-            </Paper>
-          </Grid.Col>
-        </Grid>
+          </Paper>
+        </Stack>
       )}
 
       {/* ── Vista detallada del proyecto seleccionado ──────────────────── */}
@@ -2316,10 +2360,33 @@ export default function PdiGraficas() {
             ))}
           </Stack>
 
-          {/* 6. Indicadores del período del proyecto + Semaforización */}
-          <Grid gutter="sm">
-            <Grid.Col span={{ base: 12, md: 9 }}>
-              <Paper withBorder radius="xl" p="md" h="100%">
+          {/* 6. Semaforización (horizontal, arriba) + Indicadores del período del proyecto */}
+          <Stack gap="sm">
+            <Paper withBorder radius="xl" p="md">
+              <Box mb="xs">
+                <Text size="sm" fw={700}>Semaforización</Text>
+                <Text size="xs" c="dimmed">Rangos de cumplimiento</Text>
+              </Box>
+              <Group gap="sm" grow wrap="wrap">
+                {[
+                  { color: "#fa5252", badge: "red",    label: "Crítico",         rango: "< 60%" },
+                  { color: "#fab005", badge: "yellow", label: "En riesgo",       rango: "60% a < 90%" },
+                  { color: "#40c057", badge: "green",  label: "En cumplimiento", rango: "≥ 90%" },
+                ].map(({ color, badge, label, rango }) => (
+                  <Box key={label} style={{ borderLeft: `4px solid ${color}`, paddingLeft: 10, paddingTop: 6, paddingBottom: 6, borderRadius: "0 6px 6px 0", background: `${color}11`, minWidth: 160 }}>
+                    <Badge color={badge} variant="filled" size="xs" mb={4}>{label}</Badge>
+                    <Text size="xs" fw={700} style={{ color }}>Rango: {rango}</Text>
+                  </Box>
+                ))}
+              </Group>
+              <Box mt="sm" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
+                <Text size="xs" c="dimmed" lh={1.5}>
+                  <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
+                </Text>
+              </Box>
+            </Paper>
+
+            <Paper withBorder radius="xl" p="md">
                 <Group justify="space-between" mb="sm" align="flex-start">
                   <Box>
                     <Text size="md" fw={700}>Indicadores del período</Text>
@@ -2344,21 +2411,26 @@ export default function PdiGraficas() {
                     <thead>
                       <tr>
                         <th style={thStyle}>Indicador</th>
-                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>
+                        <th style={{ ...thStyle, textAlign: "right", width: 68 }}>
                           Meta {FINAL_TARGET_YEAR}
                         </th>
-                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Meta {etiquetaVistaTabla}</th>
-                        <th style={{ ...thStyle, textAlign: "right", width: 88 }}>Avance {etiquetaVistaTabla}</th>
-                        <th style={{ ...thStyle, width: 150 }}>% cumpl. {etiquetaVistaTabla}</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado {etiquetaVistaTabla}</th>
-                        <th style={{ ...thStyle, width: 150 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 96 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 68 }}>Meta {etiquetaVistaTabla}</th>
+                        {subPeriodosVistaTabla.map((periodo) => (
+                          <th key={periodo} style={{ ...thStyle, textAlign: "right", width: 68 }}>
+                            Avance sem. {sufijoPeriodo(periodo, anioVistaTabla)}
+                          </th>
+                        ))}
+                        <th style={{ ...thStyle, textAlign: "right", width: 68 }}>Avance {etiquetaVistaTabla}</th>
+                        <th style={{ ...thStyle, width: 122 }}>% cumpl. {etiquetaVistaTabla}</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Estado {etiquetaVistaTabla}</th>
+                        <th style={{ ...thStyle, width: 122 }}>% cumpl. Meta {FINAL_TARGET_YEAR}</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Estado Meta {FINAL_TARGET_YEAR}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {indicadoresCriticosTop.length === 0 ? (
                         <tr>
-                          <td colSpan={8} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
+                          <td colSpan={8 + subPeriodosVistaTabla.length} style={{ padding: 20, textAlign: "center", color: "#868e96", fontSize: 12 }}>
                             Sin indicadores críticos para mostrar
                           </td>
                         </tr>
@@ -2366,11 +2438,12 @@ export default function PdiGraficas() {
                         indicadoresCriticosTop.map((row, i) => (
                           <tr key={row.id} style={{ background: i % 2 === 0 ? "#fff" : "#f8f9ff" }}>
                             <td
-                              style={{ ...tdStyle, maxWidth: 420, cursor: "pointer" }}
+                              style={{ ...tdStyle, maxWidth: 260, cursor: "pointer" }}
                               onClick={() => router.push(`/pdi/indicadores/${row.id}`)}
+                              title={row.nombre}
                             >
                               <Text size="xs" fw={700} c="blue" style={{ textDecoration: "underline" }}>{row.codigo}</Text>
-                              <Text size="xs" c="dimmed">{row.nombre}</Text>
+                              <Text size="xs" c="dimmed" lineClamp={2}>{row.nombre}</Text>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
                               <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -2384,6 +2457,18 @@ export default function PdiGraficas() {
                                 {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
                               </Group>
                             </td>
+                            {row.subPeriodosAvance.map((sp) => (
+                              <td key={sp.periodo} style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                                {sp.reportado && sp.avance !== null ? (
+                                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                                    <Text size="sm" fw={600}>{fmtValue(sp.avance)}</Text>
+                                    {row.usaPorcentaje && <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", verticalAlign: "middle" }}>%</span>}
+                                  </Group>
+                                ) : (
+                                  <Text size="sm" c="dimmed">—</Text>
+                                )}
+                              </td>
+                            ))}
                             <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
                               {row.reportado ? (
                                 <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -2394,7 +2479,7 @@ export default function PdiGraficas() {
                                 <Text size="sm" c="dimmed">—</Text>
                               )}
                             </td>
-                            <td style={{ ...tdStyle, minWidth: 140 }}>
+                            <td style={{ ...tdStyle, minWidth: 116 }}>
                               {row.reportado ? (
                                 <PctBar pct={row.pctPeriodo} semaforo={row.semaforoPeriodo} />
                               ) : (
@@ -2410,7 +2495,7 @@ export default function PdiGraficas() {
                                 <Badge color="gray" variant="light" size="md">Sin reportar</Badge>
                               )}
                             </td>
-                            <td style={{ ...tdStyle, minWidth: 140 }}>
+                            <td style={{ ...tdStyle, minWidth: 116 }}>
                               {row.reportado ? (
                                 <PctBar pct={row.pctFinal} semaforo={row.semaforoFinal} />
                               ) : (
@@ -2432,33 +2517,8 @@ export default function PdiGraficas() {
                     </tbody>
                   </table>
                 </Box>
-              </Paper>
-            </Grid.Col>
-
-            <Grid.Col span={{ base: 12, md: 3 }}>
-              <Paper withBorder radius="xl" p="md" h="100%">
-                <Text size="sm" fw={700} mb={4}>Semaforización</Text>
-                <Text size="xs" c="dimmed" mb="sm">Rangos de cumplimiento</Text>
-                <Stack gap="sm">
-                  {[
-                    { color: "#fa5252", badge: "red",    label: "Crítico",         rango: "< 60%" },
-                    { color: "#fab005", badge: "yellow", label: "En riesgo",       rango: "60% a < 90%" },
-                    { color: "#40c057", badge: "green",  label: "En cumplimiento", rango: "≥ 90%" },
-                  ].map(({ color, badge, label, rango }) => (
-                    <Box key={label} style={{ borderLeft: `4px solid ${color}`, paddingLeft: 10, paddingTop: 6, paddingBottom: 6, borderRadius: "0 6px 6px 0", background: `${color}11` }}>
-                      <Badge color={badge} variant="filled" size="xs" mb={4}>{label}</Badge>
-                      <Text size="xs" fw={700} style={{ color }}>Rango: {rango}</Text>
-                    </Box>
-                  ))}
-                </Stack>
-                <Box mt="md" style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 10px" }}>
-                  <Text size="xs" c="dimmed" lh={1.5}>
-                    <b>Estado {etiquetaVistaTabla}</b>: se cumplió lo prometido para esta fecha (meta y avance de {etiquetaVistaTabla}). <b>% cumpl. Meta {FINAL_TARGET_YEAR}</b>: cuánto llevamos del objetivo final del PDI.
-                  </Text>
-                </Box>
-              </Paper>
-            </Grid.Col>
-          </Grid>
+            </Paper>
+          </Stack>
         </>
       )}
 
@@ -2640,11 +2700,13 @@ export default function PdiGraficas() {
 }
 
 const thStyle: React.CSSProperties = {
-  padding: "10px 12px",
+  padding: "8px 6px",
   textAlign: "left",
+  verticalAlign: "bottom",
+  lineHeight: 1.3,
   borderBottom: "2px solid #e9ecef",
   fontWeight: 700,
-  fontSize: 13,
+  fontSize: 12,
   color: "#495057",
   background: "#f8f9fa",
   position: "sticky",
@@ -2653,7 +2715,7 @@ const thStyle: React.CSSProperties = {
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "10px 12px",
+  padding: "8px 6px",
   borderBottom: "1px solid #f1f3f5",
   verticalAlign: "middle",
   fontSize: 13,

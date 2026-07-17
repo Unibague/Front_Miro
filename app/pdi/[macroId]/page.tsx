@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
-  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid,
+  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, HoverCard,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget, IconBulb,
   IconEdit, IconTrash, IconPlus, IconChevronRight,
   IconChartBarPopular, IconFolderOpen,
-  IconCheck, IconAlertTriangle, IconX, IconFlag, IconCheckbox,
+  IconCheck, IconAlertTriangle, IconX, IconFlag, IconCheckbox, IconNotes,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -248,18 +248,24 @@ function IndicadorCard({ ind, admin, anioMeta, onEdit, onDelete }: {
         </Box>
       </Box>
 
-      {/* Mini stats */}
-      <SimpleGrid cols={2} mb="md">
-        {[
+      {/* Mini stats: Peso | % actual (periodo vigente) | Fórmula */}
+      {(() => {
+        const stats = [
           { label: "Peso", value: `${formatNumeroEs(ind.peso, 2, 2)}%` },
           getPeriodoActualIndicador(ind),
-        ].map(s => (
-          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
-            <Text fw={700} size="sm" lh={1}>{s.value}</Text>
-            <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
-          </Box>
-        ))}
-      </SimpleGrid>
+          ...(ind.formula ? [{ label: "Fórmula", value: ind.formula }] : []),
+        ];
+        return (
+          <SimpleGrid cols={stats.length} mb="md">
+            {stats.map(s => (
+              <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 6px" }}>
+                <Text fw={700} size={s.label === "Fórmula" ? "xs" : "sm"} lh={1.2} style={{ wordBreak: "break-word" }}>{s.value}</Text>
+                <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
+              </Box>
+            ))}
+          </SimpleGrid>
+        );
+      })()}
 
       {(ind.fecha_inicio || ind.fecha_fin) && (
         <Text size="xs" c="dimmed" mb="sm">
@@ -469,6 +475,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {/* Distribución presupuestal por año */}
       {(() => {
         const ppa  = accion.presupuesto_por_anio ?? {};
+        const notasPorAnio = accion.notas_presupuesto_por_anio ?? {};
         const anios = Object.keys(ppa).sort();
         if (!anios.length) return null;
 
@@ -484,9 +491,13 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                 const asignado      = Number(ppa[anio] ?? 0);
                 const gastoAnio     = Math.round(asignado * gastoRatio);
                 const inversionAnio = Math.round(asignado * inversionRatio);
-                return (
-                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px" }}>
-                    <Text size="sm" fw={800} mb={6}>{anio}</Text>
+                const notas = (notasPorAnio[anio] ?? []).filter(Boolean);
+                const contenido = (
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined }}>
+                    <Group gap={4} mb={6} wrap="nowrap">
+                      <Text size="sm" fw={800}>{anio}</Text>
+                      {notas.length > 0 && <IconNotes size={13} color="var(--mantine-color-violet-6)" />}
+                    </Group>
                     <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
                         <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
@@ -502,6 +513,20 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                       </div>
                     </Group>
                   </Box>
+                );
+                if (!notas.length) return contenido;
+                return (
+                  <HoverCard key={anio} width={260} shadow="md" withArrow openDelay={150} closeDelay={100}>
+                    <HoverCard.Target>{contenido}</HoverCard.Target>
+                    <HoverCard.Dropdown>
+                      <Text size="xs" fw={700} mb={4}>¿A dónde va dirigido el presupuesto {anio}?</Text>
+                      <Stack gap={2}>
+                        {notas.map((nota, i) => (
+                          <Text key={i} size="xs" c="dimmed">• {nota}</Text>
+                        ))}
+                      </Stack>
+                    </HoverCard.Dropdown>
+                  </HoverCard>
                 );
               })}
             </SimpleGrid>

@@ -17,6 +17,7 @@ import {
   Box,
   ActionIcon,
   Anchor,
+  Select,
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
 import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow, IconFilter, IconDownload } from "@tabler/icons-react";
@@ -63,6 +64,10 @@ const UploadedTemplatePage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([])
   const [dependencyNames, setDependencyNames] = useState<any[]>([]);
   const searchParams = useSearchParams();
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState(
+    searchParams?.get("sheet") || ""
+  );
   const [resume, setResume] = useState<boolean>(
     searchParams?.get("resume") === "true"
   );
@@ -154,9 +159,24 @@ const UploadedTemplatePage = () => {
                 filterByUserScope: true, // Filtrar por ámbito del usuario
                 userRole: userRole, // Agregar rol del usuario
                 filterByUserDependency: userRole === 'Productor' || userRole === 'Responsable', // Solo filtrar por dependencia si es Productor o Responsable
+                ...(selectedSheet && { sheetName: selectedSheet }),
               },
             }
           );
+
+          const availableSheets = Array.isArray(response.data.sheets)
+            ? response.data.sheets.filter(
+                (name: unknown): name is string =>
+                  typeof name === "string" && name.length > 0
+              )
+            : [];
+          setSheetNames(availableSheets);
+
+          // Abrir una hoja concreta para no mezclar columnas de hojas distintas.
+          if (!selectedSheet && availableSheets.length > 1) {
+            setSelectedSheet(availableSheets[0]);
+            return;
+          }
 
           const data = response.data.data;
 
@@ -180,6 +200,8 @@ const UploadedTemplatePage = () => {
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
+            setTableData([]);
+            setOriginalTableData([]);
             // Solo mostrar notificación cuando el usuario está viendo la pestaña de datos, no el resumen
             if (!resume) {
               showNotification({
@@ -210,13 +232,18 @@ const UploadedTemplatePage = () => {
         }
       }
     }
-  }, [id, session, userRole]);
+  }, [id, session, userRole, selectedSheet]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     params.set("resume", `${resume}`);
-    window.history.pushState(null, "", `?${params.toString()}`);
-  }, [resume]);
+    if (selectedSheet) {
+      params.set("sheet", selectedSheet);
+    } else {
+      params.delete("sheet");
+    }
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  }, [resume, selectedSheet]);
 
 const isValidDateString = (value: string) => {
   return (
@@ -840,7 +867,27 @@ const renderCellContent = (value: any, fieldName?: string) => {
           {resumeRows}
         </Table.Tbody>
       </Table>
-      : tableData.length === 0 ? (
+      : <>
+      {sheetNames.length > 1 && (
+        <Group mb="md" align="end">
+          <Select
+            label="Hoja enviada"
+            description="Selecciona la hoja de la plantilla que deseas consultar"
+            data={sheetNames.map((name) => ({ value: name, label: name }))}
+            value={selectedSheet}
+            onChange={(value) => {
+              setAppliedFilters({});
+              setTableData([]);
+              setOriginalTableData([]);
+              setSelectedSheet(value || sheetNames[0]);
+            }}
+            allowDeselect={false}
+            searchable
+            w={360}
+          />
+        </Group>
+      )}
+      {tableData.length === 0 ? (
         <Text ta={"center"}>No hay datos cargados para esta plantilla.</Text>
       ) : (
         <Box>
@@ -975,6 +1022,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
           </Box>
         </Box>
       )}
+      </>}
         </Container>
       </Box>
     </Box>

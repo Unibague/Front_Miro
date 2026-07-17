@@ -21,7 +21,6 @@ import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 // basta con tener acceso a cualquiera de sus vistas hijas, no a una llave fija.
 const GESTION_REPORTES_KEYS = [
   "adminTemplates", "publishedTemplates", "publishedTemplatesResponsable", "producerTemplates",
-  "templatesWithFilters", "templatesWithFiltersProductor",
   "adminReports", "publishedReports", "producerReportsConfig", "producerReportsManagement", "producerReportsManagementResponsable",
   "producerReports", "responsibleReports", "ambitosReportsConfig", "ambitosReportsManagement",
   "templatesLogs", "reminders", "audit", "templatesManagement", "dependenciesHierarchy",
@@ -559,10 +558,10 @@ const DashboardPage = () => {
         roleKeyMap: { Responsable: "publishedTemplatesResponsable" },
         roles: ["Administrador", "Responsable"],
         icon: <IconChecklist size={80} />,
-        title: "Gestionar Plantillas",
-        description: "Administra las plantillas cargadas por los productores.",
+        title: "Consultar Plantillas ",
+        description: "Consulta las plantillas cargadas por los productores asociados al ámbito.",
         route: "/templates/published",
-        buttonLabel: "Ir a Gestión de Plantillas",
+        buttonLabel: "Ir a Consulta de Plantillas",
       },
       {
         permissionKey: "producerReportsConfig",
@@ -578,10 +577,10 @@ const DashboardPage = () => {
         roleKeyMap: { Responsable: "producerReportsManagementResponsable" },
         roles: ["Administrador", "Responsable"],
         icon: <IconReportSearch size={80} />,
-        title: "Gestionar Informes Productores",
-        description: "Gestiona el proceso de cargue de los informes por parte de los productores.",
+        title: "Consultar Informes de Gestión de Productores",
+        description: "Consulta los informes cargados por parte de los productores asociados al ámbito.",
         route: "/reportproducers",
-        buttonLabel: "Ir a Gestión de Informes",
+        buttonLabel: "Ir a Consulta de Informes",
       },
       {
         permissionKey: "ambitosReportsConfig",
@@ -709,10 +708,10 @@ const DashboardPage = () => {
         permissionKey: "responsibleReports",
         roles: ["Responsable"],
         icon: <IconChartBarPopular size={80} />,
-        title: "Informe de Gestión de Responsables",
-        description: "Revisa los informes que debes entregar, cárgalos y haz los ajustes de acuerdo a las observaciones",
+        title: "Gestionar Informe de Ámbito",
+        description: "Revisa el informe sugerido y complementa para su debida gestión.",
         route: "/responsible/reports",
-        buttonLabel: "Ir a Informes de Gestión de Responsables",
+        buttonLabel: "Ir a Gestión de Informe de Ámbito",
       },
       {
         permissionKey: "producerTemplates",
@@ -728,19 +727,9 @@ const DashboardPage = () => {
         roles: ["Productor"],
         icon: <IconClipboardData size={80} />,
         title: "Informe de gestión de productor",
-        description: "Revisa los informes que debes entregar, carga los informes y haz los ajustes de acuerdo a las observaciones",
+        description: "Consulta los informes que debes diligenciar de acuerdo a las instrucciones establecidas.",
         route: "/producer/reports",
         buttonLabel: "Ir a Informes de Productores",
-      },
-      {
-        permissionKey: "templatesWithFilters",
-        roleKeyMap: { Productor: "templatesWithFiltersProductor" },
-        roles: ["Responsable", "Productor"],
-        icon: <IconFilter size={80} />,
-        title: "Gestión de Plantillas con Filtros",
-        description: "Visualiza plantillas con filtros avanzados. Solo verás información de tu dependencia/ámbito",
-        route: "/templates-with-filters",
-        buttonLabel: "Ir a Plantillas con Filtros",
       },
       {
         permissionKey: "validationsView",
@@ -757,7 +746,7 @@ const DashboardPage = () => {
         roles: ["Responsable", "Productor"],
         icon: <IconChartHistogram size={80} />,
         title: "Historial de Cambios",
-        description: "Consulta los cambios realizados en plantillas e informes de tus dependencias",
+        description: "Consulta los cambios realizados en plantillas e informes.",
         route: "/traceability",
         buttonLabel: "Ir a Historial de Cambios",
       },
@@ -1465,7 +1454,7 @@ const DashboardPage = () => {
                         radius="xl"
                         p="xl"
                         className="module-card"
-                        onClick={() => router.push("/historico-docentes")}
+                        onClick={() => router.push("/historico-docentes/ambitos")}
                         style={{
                           cursor: "pointer",
                           height: 340,

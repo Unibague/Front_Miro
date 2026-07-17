@@ -5,6 +5,7 @@ import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
   Divider, TextInput, Modal, Tabs, Select, MultiSelect, Textarea, FileButton, Collapse, Skeleton,
+  HoverCard,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
@@ -12,7 +13,7 @@ import {
   IconCheck, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf, IconGitPullRequest,
   IconForms, IconUpload, IconTrash, IconExternalLink, IconShieldCheck,
-  IconFileWord, IconBrandGoogleDrive, IconReportAnalytics,
+  IconFileWord, IconBrandGoogleDrive, IconReportAnalytics, IconNotes,
 } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
@@ -1014,17 +1015,23 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
         </>
       )}
 
-      {/* Mini stats */}
-      <SimpleGrid cols={1} mb="md">
-        {[
+      {/* Mini stats: % actual (periodo vigente) | Fórmula */}
+      {(() => {
+        const stats = [
           getPeriodoActualIndicador(ind),
-        ].map(s => (
-          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 4px" }}>
-            <Text fw={700} size="sm" lh={1}>{s.value}</Text>
-            <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
-          </Box>
-        ))}
-      </SimpleGrid>
+          ...(ind.formula ? [{ label: "Fórmula", value: ind.formula }] : []),
+        ];
+        return (
+          <SimpleGrid cols={stats.length} mb="md">
+            {stats.map(s => (
+              <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 12, padding: "8px 6px" }}>
+                <Text fw={700} size={s.label === "Fórmula" ? "xs" : "sm"} lh={1.2} style={{ wordBreak: "break-word" }}>{s.value}</Text>
+                <Text size="xs" c="dimmed" mt={2}>{s.label}</Text>
+              </Box>
+            ))}
+          </SimpleGrid>
+        );
+      })()}
 
       {ind.observaciones && (
         <Text size="xs" c="dimmed" mb="sm">Obs: {ind.observaciones}</Text>
@@ -1570,6 +1577,129 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
         </Box>
 
+        {/* Distribución presupuestal por año */}
+        {(() => {
+          const ppa = accion.presupuesto_por_anio ?? {};
+          const notasPorAnio = accion.notas_presupuesto_por_anio ?? {};
+          const anios = Object.keys(ppa).sort();
+          if (!anios.length) return null;
+
+          const totalPres      = Number(accion.presupuesto) || 1;
+          const gastoRatio     = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
+          const inversionRatio = Math.max(Number(accion.inversion) || 0, 0) / totalPres;
+
+          return (
+            <Box mb="md" onClick={(e) => e.stopPropagation()}>
+              <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
+              <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
+                {anios.map((anio) => {
+                  const asignado      = Number(ppa[anio] ?? 0);
+                  const gastoAnio     = Math.round(asignado * gastoRatio);
+                  const inversionAnio = Math.round(asignado * inversionRatio);
+                  const notas = (notasPorAnio[anio] ?? []).filter(Boolean);
+                  const contenido = (
+                    <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined }}>
+                      <Group gap={4} mb={6} wrap="nowrap">
+                        <Text size="sm" fw={800}>{anio}</Text>
+                        {notas.length > 0 && <IconNotes size={13} color="var(--mantine-color-violet-6)" />}
+                      </Group>
+                      <Group justify="space-between" align="flex-start" gap={2}>
+                        <div>
+                          <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
+                          <Text size="xs" fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
+                          <Text size="xs" fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <Text size="xs" c="dimmed" lh={1}>Total</Text>
+                          <Text size="xs" fw={700} c="dimmed">{formatCOP(asignado)}</Text>
+                        </div>
+                      </Group>
+                    </Box>
+                  );
+                  if (!notas.length) return contenido;
+                  return (
+                    <HoverCard key={anio} width={260} shadow="md" withArrow openDelay={150} closeDelay={100}>
+                      <HoverCard.Target>{contenido}</HoverCard.Target>
+                      <HoverCard.Dropdown onClick={(e) => e.stopPropagation()}>
+                        <Text size="xs" fw={700} mb={4}>¿A dónde va dirigido el presupuesto {anio}?</Text>
+                        <Stack gap={2}>
+                          {notas.map((nota, i) => (
+                            <Text key={i} size="xs" c="dimmed">• {nota}</Text>
+                          ))}
+                        </Stack>
+                      </HoverCard.Dropdown>
+                    </HoverCard>
+                  );
+                })}
+              </SimpleGrid>
+            </Box>
+          );
+        })()}
+
+        {/* Distribución ejecución por año */}
+        {(() => {
+          const ppa = accion.presupuesto_por_anio ?? {};
+          const epaRaw = accion.presupuesto_ejecutado_por_anio ?? {};
+          const totalEjecutado = Number(accion.presupuesto_ejecutado) || 0;
+          // Si todos los valores por año son 0 pero hay ejecutado total, asignarlo al año vigente
+          const epaAllZero = Object.values(epaRaw).every((v) => Number(v) === 0);
+          const epa: Record<string, number> = epaAllZero && totalEjecutado > 0
+            ? { ...epaRaw, [String(new Date().getFullYear())]: totalEjecutado }
+            : epaRaw;
+          // Usar los mismos años que el presupuestal para mostrar consistencia
+          const anios = (Object.keys(ppa).length ? Object.keys(ppa) : Object.keys(epa)).sort();
+          if (!anios.length) return null;
+
+          const gastoEjec      = Math.max(Number(accion.gasto) || 0, 0);
+          const inversionEjec  = Math.max(Number(accion.inversion) || 0, 0);
+          const totalEjecBase  = gastoEjec + inversionEjec || Number(accion.presupuesto_ejecutado) || 1;
+          const gastoRatio     = gastoEjec / totalEjecBase;
+          const inversionRatio = inversionEjec / totalEjecBase;
+
+          return (
+            <Box mb="md" onClick={(e) => e.stopPropagation()}>
+              <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
+              <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
+                {anios.map((anio) => {
+                  const asignado         = Number(ppa[anio] ?? 0);
+                  const ejecutado        = Number(epa[anio] ?? 0);
+                  const gastoCausado     = Math.round(ejecutado * gastoRatio);
+                  const inversionCausado = Math.round(ejecutado * inversionRatio);
+                  const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
+                  const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
+                  return (
+                    <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px" }}>
+                      <Group justify="space-between" align="center" mb={6}>
+                        <Text size="sm" fw={800}>{anio}</Text>
+                        <Text size="lg" fw={900} style={{ color: barColor }} lh={1}>{pct}%</Text>
+                      </Group>
+                      <Box style={{ height: 6, borderRadius: 99, background: "rgba(0,0,0,0.08)", overflow: "hidden", marginBottom: 8 }}>
+                        <Box style={{ height: "100%", width: `${pct}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
+                      </Box>
+                      <Group justify="space-between" align="flex-start" gap={2}>
+                        <div>
+                          <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
+                          <Text size="xs" fw={700} c="teal">{formatCOP(gastoCausado)}</Text>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
+                          <Text size="xs" fw={700} c="teal">{formatCOP(inversionCausado)}</Text>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <Text size="xs" c="dimmed" lh={1}>Total</Text>
+                          <Text size="xs" fw={700} c="dimmed">{formatCOP(ejecutado)}</Text>
+                        </div>
+                      </Group>
+                    </Box>
+                  );
+                })}
+              </SimpleGrid>
+            </Box>
+          );
+        })()}
 
         {indicadores.length === 0 ? (
           <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }} onClick={(e) => e.stopPropagation()}>

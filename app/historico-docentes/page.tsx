@@ -51,6 +51,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useRouter } from "next/navigation";
 import FilterSidebar from "@/app/components/FilterSidebar";
+import ConsultaInfoSidebar from "./components/ConsultaInfoSidebar";
 
 const PAGE_SIZE = 50;
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
@@ -1048,7 +1049,9 @@ export default function ConsultaInformacionPage() {
   );
 
   return (
-    <>
+    <Box style={{ display: "flex", minHeight: "100vh" }}>
+    <ConsultaInfoSidebar />
+    <Box style={{ flex: 1 }}>
     <Modal
       opened={!!xlsxModal}
       onClose={() => setXlsxModal(null)}
@@ -1142,6 +1145,7 @@ export default function ConsultaInformacionPage() {
       {/* Contenido según categoría */}
       {activeCategory === "snies" ? renderSnies() : renderMultiFile()}
     </Container>
-    </>
+    </Box>
+    </Box>
   );
 }

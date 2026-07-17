@@ -35,7 +35,14 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  loadWorkbookFromBase64,
+  extractWorkbookCommentsFromBase64,
+  populateWorksheetWithMergedRows,
+} from "@/app/utils/templateUtils";
 import { modals } from "@mantine/modals";
 
 interface Field {
@@ -56,6 +63,11 @@ interface Dependency {
   name: string;
 }
 
+interface WorkbookSheet {
+  name: string;
+  fields?: Field[];
+}
+
 interface Template {
   _id: string;
   name: string;
@@ -66,6 +78,11 @@ interface Template {
   producers: [Dependency]
   active: boolean;
   validators?: Validator[];
+  workbook_sheets?: WorkbookSheet[];
+  original_workbook_base64?: string;
+  fecha_final_productores?: Date;
+  fecha_final_responsables?: Date;
+  fecha_final?: Date;
 }
 
 interface Validator {
@@ -90,6 +107,7 @@ interface PublishedTemplate {
   fecha_final_productores?: Date;
   fecha_final_responsables?: Date;
   fecha_final?: Date;
+  isEncargado?: boolean;
 }
 
 interface TemplateStatusRow {
@@ -149,6 +167,13 @@ const PublishedTemplatesPage = () => {
             periodId: selectedPeriodId,
             filterByUserScope: true,
             userRole,
+            // Este listado solo necesita nombre, fechas, período y conteos
+            // (progreso "X de Y"): el modo completo trae y transforma todos
+            // los registros cargados (validators, dependencias, etc.), que es
+            // costoso y no se usa aquí; por eso la página tardaba tanto al
+            // cambiar de página. El detalle completo se pide aparte al
+            // abrir/descargar una plantilla puntual.
+            summary: true,
           },
         }
       );
@@ -157,8 +182,8 @@ const PublishedTemplatesPage = () => {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
       }
-    } catch (error) {
-      console.error("Error fetching templates:", error);
+    } catch (error: any) {
+      console.error("Error fetching templates:", error?.response?.data || error?.message || error);
       showNotification({
         title: "Error",
         message: "Hubo un error al obtener las plantillas",
@@ -251,24 +276,54 @@ const PublishedTemplatesPage = () => {
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const [dataResponse, freshTemplateResponse] = await Promise.all([
-        axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-          {
-            params: {
-              pubTem_id: publishedTemplate._id,
-              email: session?.user?.email,
-              filterByUserScope: true, // Filtrar por ámbito del usuario
-            },
-          }
-        ),
-        axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
-        ),
-      ]);
-
-      const data = dataResponse.data.data;
+      const freshTemplateResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+      );
       let template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+
+      // Plantillas con varias hojas (ej. una hoja principal + hojas hijas de
+      // relación 1-a-muchos) suelen repetir nombres de campo entre hojas
+      // (llaves como AÑO/CODIGO_PROYECTO). Pedir todo en una sola consulta sin
+      // filtro de hoja hace que esos campos se pisen entre sí al reconstruir
+      // las filas en el backend. Se pide por hoja, igual que hace la vista
+      // "Información Cargada", para que la descarga refleje lo mismo que se
+      // ve en línea.
+      const workbookSheetsRaw = template.workbook_sheets || [];
+      const sheetsWithFields = workbookSheetsRaw.filter(sheet => sheet.fields?.length);
+      const sheetNamesToQuery: (string | null)[] = sheetsWithFields.length > 0
+        ? sheetsWithFields.map(sheet => sheet.name)
+        : [null];
+
+      const mergedResponses = await Promise.all(
+        sheetNamesToQuery.map(sheetName =>
+          axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+            {
+              params: {
+                pubTem_id: publishedTemplate._id,
+                email: session?.user?.email,
+                filterByUserScope: true, // Filtrar por ámbito del usuario
+                ...(sheetName ? { sheetName } : {}),
+              },
+            }
+          )
+        )
+      );
+
+      const dataBySheet = new Map<string, Record<string, any>[]>();
+      sheetNamesToQuery.forEach((sheetName, index) => {
+        dataBySheet.set(sheetName ?? "__root__", mergedResponses[index].data.data || []);
+      });
+
+      const hasAnyData = Array.from(dataBySheet.values()).some(rows => rows.length > 0);
+      if (!hasAnyData) {
+        showNotification({
+          title: "Sin datos cargados",
+          message: "Aún no hay información enviada para esta plantilla.",
+          color: "yellow",
+        });
+        return;
+      }
 
       const periodId =
         (publishedTemplate as any).period?._id ??
@@ -291,80 +346,136 @@ const PublishedTemplatesPage = () => {
         template?.validators ??
         publishedTemplate.validators;
 
-      // Campos de tipo fecha para formatear correctament
-const dateFields = new Set(
-  template.fields
-    .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
-    .map(f => f.name)
-);
-
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(template.name);
-      // Usar las claves que realmente vienen del backend
-      const dataKeys = Object.keys(data[0]);
-      // Asegurar que Dependencia esté primero
-      const availableFields = dataKeys.sort((a, b) => {
-        if (a === 'Dependencia') return -1;
-        if (b === 'Dependencia') return 1;
-        return 0;
-      });
-      
-      const headerRow = worksheet.addRow(availableFields);
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: "FFFFFF" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "0f1f39" },
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-      });
-
-      worksheet.columns.forEach((column) => {
-        column.width = 20;
-      });
-
-      // Add the data to the worksheet using the same field order
-      data.forEach((row: any) => {
-        const formattedRow = availableFields.map(fieldName => {
-          let value = row[fieldName];
-          
-          if (value && dateFields.has(fieldName)) {
-            if (
-              typeof value === 'string' ||
-              typeof value === 'number' ||
-              value instanceof Date
-            ) {
+      // Campos de tipo fecha para formatear correctamente antes de escribirlos.
+      // El set de campos de fecha depende de la hoja (cada hoja tiene sus
+      // propios campos), por eso se calcula por hoja en vez de una sola vez
+      // con los `fields` de nivel superior.
+      const formatDateFields = (rows: Record<string, any>[], fields: Field[]) => {
+        const dateFields = new Set(
+          fields
+            .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
+            .map(f => f.name)
+        );
+        return rows.map(row => {
+          const out: Record<string, any> = { ...row };
+          Object.keys(out).forEach((key) => {
+            const value = out[key];
+            if (value && dateFields.has(key) &&
+              (typeof value === 'string' || typeof value === 'number' || value instanceof Date)) {
               const date = new Date(value);
-              if (!isNaN(date.getTime())) {
-                return date.toISOString().slice(0, 10); // YYYY-MM-DD
-              }
+              if (!isNaN(date.getTime())) out[key] = date.toISOString().slice(0, 10); // YYYY-MM-DD
             }
+          });
+          return out;
+        });
+      };
+
+      // === RUTA 1: workbook base64 (preserva estructura, colores y hojas originales) ===
+      if (template.original_workbook_base64) {
+        const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
+        const commentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
+        for (const [sheetName, sheetComments] of commentsBySheet.entries()) {
+          const ws = workbook.getWorksheet(sheetName);
+          if (!ws) continue;
+          for (const [cellRef, noteText] of sheetComments.entries()) {
+            if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
           }
-          return value;
+        }
+
+        const workbookSheets = template.workbook_sheets || [];
+        const mainWorksheet = workbook.getWorksheet(template.name) || workbook.worksheets[0];
+        // Si la hoja principal del archivo coincide con una hoja definida en
+        // workbook_sheets, sus campos reales viven ahí (el `fields` de nivel
+        // superior puede estar vacío) — usar esos para no perder columnas ni
+        // dejar la hoja sin datos.
+        const mainSheetDef = workbookSheets.find(sheet => sheet.name === mainWorksheet?.name);
+        if (mainWorksheet) {
+          const mainFields = mainSheetDef?.fields?.length ? mainSheetDef.fields : template.fields;
+          const mainRows = formatDateFields(dataBySheet.get(mainSheetDef?.name ?? "__root__") || [], mainFields);
+          populateWorksheetWithMergedRows(mainWorksheet, mainFields, mainRows, ['Dependencia']);
+        }
+        for (const sheet of workbookSheets) {
+          if (!sheet.fields?.length || sheet === mainSheetDef) continue;
+          const ws = workbook.getWorksheet(sheet.name);
+          if (!ws) continue;
+          const rows = formatDateFields(dataBySheet.get(sheet.name) || [], sheet.fields);
+          populateWorksheetWithMergedRows(ws, sheet.fields, rows);
+        }
+
+        const dropdownSheets = workbookSheets.length > 0
+          ? workbookSheets
+          : (template.fields?.length
+            ? [{ name: mainWorksheet?.name || template.name, fields: template.fields }]
+            : []);
+        applyWorkbookSheetDropdowns({
+          workbook,
+          workbookSheets: dropdownSheets,
+          validators,
+          originalCommentsBySheet: commentsBySheet,
         });
 
-        worksheet.addRow(formattedRow);
-      });
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template.file_name || template.name}.xlsx`);
+        return;
+      }
 
-      applyValidatorDropdowns({
-        workbook,
-        worksheet,
-        fields: template.fields,
-        validators,
-        startRow: 2,
-        endRow: 1000,
+      // === RUTA 2: sin workbook original guardado -> construir un libro nuevo ===
+      // (una hoja por cada hoja configurada, o una sola con los `fields` de
+      // nivel superior si la plantilla no tiene workbook_sheets)
+      const workbook = new ExcelJS.Workbook();
+      const sheetDefsToWrite: { name: string; fields: Field[] }[] = sheetsWithFields.length > 0
+        ? sheetsWithFields.map(sheet => ({ name: sheet.name, fields: sheet.fields || [] }))
+        : [{ name: template.name, fields: template.fields }];
+
+      sheetDefsToWrite.forEach((sheetDef) => {
+        const rows = formatDateFields(
+          dataBySheet.get(sheetsWithFields.length > 0 ? sheetDef.name : "__root__") || [],
+          sheetDef.fields
+        );
+        const worksheet = workbook.addWorksheet(sheetDef.name);
+        const availableFields = sheetDef.fields.length
+          ? sheetDef.fields.map(f => f.name)
+          : (rows[0] ? Object.keys(rows[0]).sort((a, b) => (a === 'Dependencia' ? -1 : b === 'Dependencia' ? 1 : 0)) : []);
+        const allFields = ['Dependencia', ...availableFields.filter(name => name !== 'Dependencia')];
+
+        const headerRow = worksheet.addRow(allFields);
+        headerRow.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: "FFFFFF" } };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "0f1f39" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        });
+
+        worksheet.columns.forEach((column) => {
+          column.width = 20;
+        });
+
+        rows.forEach((row) => {
+          worksheet.addRow(allFields.map(fieldName => row[fieldName]));
+        });
+
+        applyValidatorDropdowns({
+          workbook,
+          worksheet,
+          fields: sheetDef.fields,
+          validators,
+          startRow: 2,
+          endRow: 1000,
+        });
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
-      saveAs(blob, `${template.file_name}.xlsx`);
+      saveAs(blob, `${template.file_name || template.name}.xlsx`);
     } catch (error) {
       console.error("Error downloading merged data:", error);
       showNotification({
@@ -589,7 +700,21 @@ const dateFields = new Set(
         </Table.Td>
         <Table.Td>
           <Center>
-            {dateToGMT(publishedTemplate.fecha_final ?? publishedTemplate.deadline ?? publishedTemplate.period?.producer_end_date)}
+            {dateToGMT(
+              userRole === "Responsable"
+                ? (publishedTemplate.isEncargado
+                    ? (publishedTemplate.fecha_final_responsables
+                        ?? publishedTemplate.template?.fecha_final_responsables
+                        ?? publishedTemplate.deadline
+                        ?? publishedTemplate.period?.producer_end_date)
+                    : (publishedTemplate.fecha_final_productores
+                        ?? publishedTemplate.template?.fecha_final_productores
+                        ?? publishedTemplate.fecha_final
+                        ?? publishedTemplate.template?.fecha_final
+                        ?? publishedTemplate.deadline
+                        ?? publishedTemplate.period?.producer_end_date))
+                : (publishedTemplate.fecha_final ?? publishedTemplate.deadline ?? publishedTemplate.period?.producer_end_date)
+            )}
           </Center>
         </Table.Td>
         <Table.Td>

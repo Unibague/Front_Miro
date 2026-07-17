@@ -26,6 +26,7 @@ import {
   IconChecks,
   IconDownload,
   IconEdit,
+  IconEye,
   IconPencil,
   IconTrash,
 } from "@tabler/icons-react";
@@ -99,6 +100,9 @@ interface Template {
   workbook_sheets?: WorkbookSheet[];
   original_workbook_base64?: string;
   active: boolean;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
 }
 
 interface FilledFieldData {
@@ -144,6 +148,9 @@ interface PublishedTemplate {
   final_submitted?: boolean;
   final_submitted_date?: string;
   isEncargado?: boolean;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
 }
 
 interface ProducerUploadedTemplatesPageProps {
@@ -183,6 +190,24 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
       (p: any) => userDepCodes.has(p.dep_code)
     )?._id;
     return depId ? responsibleIds.includes(depId) : false;
+  };
+
+  // Misma prioridad que en la lista de plantillas pendientes: si el usuario es
+  // el productor ENCARGADO de esta plantilla, se usa la fecha límite de
+  // encargados; si es un productor normal, la fecha límite de productores.
+  const getEffectiveDeadline = (publishedTemplate: PublishedTemplate) => {
+    const isEncargado = isResponsibleForTemplate(publishedTemplate);
+    return isEncargado
+      ? (publishedTemplate.fecha_final_responsables
+          ?? publishedTemplate.template?.fecha_final_responsables
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date)
+      : (publishedTemplate.fecha_final_productores
+          ?? publishedTemplate.template?.fecha_final_productores
+          ?? publishedTemplate.fecha_final
+          ?? publishedTemplate.template?.fecha_final
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date);
   };
 
   const handleConfirmFinalSubmit = async (pubTemId: string) => {
@@ -523,7 +548,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     // permite "Eliminar envío" para deshacerlo si fue un error).
     if (publishedTemplate.final_submitted) return true;
     if (!publishedTemplate.period.is_active) return true;
-    const effectiveDeadline = publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date;
+    const effectiveDeadline = getEffectiveDeadline(publishedTemplate);
     if (!effectiveDeadline) return false;
     return endOfDayGMT5(new Date(effectiveDeadline)) < new Date();
   };
@@ -540,7 +565,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         <Table.Td>{publishedTemplate.template.dimensions.map(dim => dim.name).join(', ')}</Table.Td>
         <Table.Td>{publishedTemplate.name}</Table.Td>
         <Table.Td>
-          {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+          {dateToGMT(getEffectiveDeadline(publishedTemplate))}
         </Table.Td>
     
         <Table.Td>
@@ -602,6 +627,19 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                   disabled={uploadDisable}
                 >
                   <IconPencil size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label="Consultar información enviada (con filtros)"
+                position="top"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="blue"
+                  onClick={() => router.push(`/producer/templates/consult/${publishedTemplate._id}?isEncargado=${isResponsibleForTemplate(publishedTemplate)}`)}
+                >
+                  <IconEye size={16} />
                 </Button>
               </Tooltip>
               {isResponsibleForTemplate(publishedTemplate) && (

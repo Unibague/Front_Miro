@@ -122,6 +122,50 @@ export function cumplimientoIndicadorAnio(ind: IndicadorAvanceAnio, anio: string
   return Math.round(Math.min(sumaAvance / sumaMeta, 1) * 100 * 100) / 100;
 }
 
+// Meta absoluta de un indicador EN un año (no el %): suma/promedia/toma el
+// último valor de la meta de cada periodo de ese año según tipo_calculo.
+// Se usa para mostrar "Meta del año" junto a la meta propia de cada periodo
+// (A, B, ...) en el formulario de reporte, sin alterar lo que se guarda.
+export function absMetaAnio(ind: IndicadorAvanceAnio, anio: string): number | null {
+  const periodosAnio = ordenarPeriodosPorNombre(ind.periodos || [])
+    .filter((p) => String(p.periodo ?? "").slice(0, 4) === anio && toNumeroFlexible(p.meta) !== null);
+  if (!periodosAnio.length) return null;
+
+  const tipo = ind.tipo_calculo || "promedio";
+  if (tipo === "ultimo_valor") {
+    return toNumeroFlexible(periodosAnio[periodosAnio.length - 1].meta);
+  }
+  if (tipo === "promedio") {
+    const metas = periodosAnio.map((p) => toNumeroFlexible(p.meta)).filter((v): v is number => v !== null);
+    return metas.length ? metas.reduce((a, b) => a + b, 0) / metas.length : null;
+  }
+  return periodosAnio.reduce((s, p) => s + (toNumeroFlexible(p.meta) ?? 0), 0);
+}
+
+// Avance absoluto de un indicador EN un año (no el %): misma composición que
+// absMetaAnio pero sobre el avance, respetando "fueReportado" para
+// ultimo_valor (igual que cumplimientoIndicadorAnio). Se usa para previsualizar
+// en vivo "esto es lo que quedaría como avance del año" mientras se reporta un
+// periodo puntual (A, B, ...), sin sumar/guardar nada distinto de lo que ya
+// guarda cada periodo por su cuenta.
+export function absAvanceAnio(ind: IndicadorAvanceAnio, anio: string): number | null {
+  const periodosAnio = ordenarPeriodosPorNombre(ind.periodos || [])
+    .filter((p) => String(p.periodo ?? "").slice(0, 4) === anio && toNumeroFlexible(p.avance) !== null);
+  if (!periodosAnio.length) return null;
+
+  const tipo = ind.tipo_calculo || "promedio";
+  if (tipo === "ultimo_valor") {
+    const conAvance = periodosAnio.filter((p) => fueReportado(p));
+    if (!conAvance.length) return null;
+    return toNumeroFlexible(conAvance[conAvance.length - 1].avance);
+  }
+  if (tipo === "promedio") {
+    const avances = periodosAnio.map((p) => toNumeroFlexible(p.avance)).filter((v): v is number => v !== null);
+    return avances.length ? avances.reduce((a, b) => a + b, 0) / avances.length : null;
+  }
+  return periodosAnio.reduce((s, p) => s + (toNumeroFlexible(p.avance) ?? 0), 0);
+}
+
 // Avance real de un año para un conjunto de indicadores (proyecto, acción,
 // macroproyecto, etc.): promedio simple del % de cumplimiento individual de
 // los indicadores que tienen meta en ese año. Misma metodología que el

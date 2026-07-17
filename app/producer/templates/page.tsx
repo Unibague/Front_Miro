@@ -28,6 +28,7 @@ import {
   IconArrowLeft,
   IconChecks,
   IconDownload,
+  IconEye,
   IconPencil,
   IconUpload,
   IconQrcode,
@@ -1453,6 +1454,22 @@ if (field.multiple) {
                   disabled={uploadDisable}
                 >
                   <IconPencil size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label="Consultar información enviada (con filtros)"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="blue"
+                  onClick={() =>
+                    router.push(
+                      `/producer/templates/consult/${publishedTemplate._id}?isEncargado=${isResponsibleForTemplate(publishedTemplate)}`
+                    )
+                  }
+                >
+                  <IconEye size={16} />
                 </Button>
               </Tooltip>
               <Tooltip

@@ -114,6 +114,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
   const [codigo, setCodigo] = useState("");
   const [nombre, setNombre] = useState("");
   const [entregable, setEntregable] = useState("");
+  const [formula, setFormula] = useState("");
   const [tipoSeguimiento, setTipoSeguimiento] = useState("");
   const [cortesSegimiento, setCortesSegimiento] = useState<string[]>([]);
   const [tipoCalculo, setTipoCalculo] = useState("promedio");
@@ -157,6 +158,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
       setCodigo(selected.codigo);
       setNombre(selected.nombre);
       setEntregable(selected.entregable ?? "");
+      setFormula(selected.formula ?? "");
       setTipoSeguimiento(selected.tipo_seguimiento ?? "");
       setCortesSegimiento(
         selected.fecha_seguimiento
@@ -181,6 +183,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
     setCodigo("");
     setNombre("");
     setEntregable("");
+    setFormula("");
     setTipoSeguimiento("");
     setCortesSegimiento([]);
     setTipoCalculo("promedio");
@@ -475,6 +478,7 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
         responsable: "",
         responsable_email: "",
         entregable: entregable.trim(),
+        formula: formula.trim(),
         presupuesto: presupuesto !== "" ? Number(presupuesto) : 0,
         fecha_inicio: fechaInicio ? fechaInicio.toISOString() : null,
         fecha_fin: fechaFin ? fechaFin.toISOString() : null,
@@ -546,6 +550,13 @@ export default function IndicadorModal({ opened, onClose, selected, defaultAccio
               label="Entregable / Evidencia verificable"
               value={entregable}
               onChange={(e) => { setEntregable(e.currentTarget.value); setHasChanges(true); }}
+              rows={2}
+            />
+            <Textarea
+              label="Fórmula"
+              placeholder="Describe cómo se calcula el indicador"
+              value={formula}
+              onChange={(e) => { setFormula(e.currentTarget.value); setHasChanges(true); }}
               rows={2}
             />
             <Group grow>

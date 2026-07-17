@@ -257,7 +257,8 @@ export default function DashboardPage() {
               >
                 Red de nodos
               </Button>
-              {isAdmin && (
+              {/* Botón "Recalcular avances" oculto temporalmente: no es necesario por ahora. */}
+              {false && isAdmin && (
                 <Button
                   variant="light"
                   color="orange"

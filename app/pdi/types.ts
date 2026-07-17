@@ -234,6 +234,7 @@ export interface Accion {
   inversion: number;
   presupuesto_por_anio?: Record<string, number>;
   presupuesto_ejecutado_por_anio?: Record<string, number>;
+  notas_presupuesto_por_anio?: Record<string, string[]>;
   proyecto_id: { _id: string; codigo: string; nombre: string };
 }
 
@@ -280,6 +281,7 @@ export interface Indicador {
   tipo_calculo: string;
   meta_final_2029: number | string | null;
   entregable: string;
+  formula: string;
   presupuesto: number;
   presupuesto_ejecutado: number;
   responsable: string;

@@ -35,7 +35,14 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  loadWorkbookFromBase64,
+  extractWorkbookCommentsFromBase64,
+  populateWorksheetWithMergedRows,
+} from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import { logPublishedTemplateAction, logFilterConfigChange, logMultiTemplateDownload } from "@/app/utils/auditUtils";
 
@@ -57,6 +64,11 @@ interface Dependency {
   name: string;
 }
 
+interface WorkbookSheet {
+  name: string;
+  fields?: Field[];
+}
+
 interface Template {
   _id: string;
   name: string;
@@ -67,6 +79,8 @@ interface Template {
   producers: [Dependency]
   active: boolean;
   validators?: Validator[];
+  workbook_sheets?: WorkbookSheet[];
+  original_workbook_base64?: string;
 }
 
 interface Validator {
@@ -414,103 +428,214 @@ const TemplatesWithFiltersPage = () => {
 
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
+      const mergedDataUrl = `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`;
+
       const [dataResponse, freshTemplateResponse] = await Promise.all([
-        axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-          {
-            params: {
-              pubTem_id: publishedTemplate._id,
-              email: session?.user?.email,
-              filterByUserScope: true, // Filtrar por ámbito del usuario
-            },
-          }
-        ),
+        axios.get(mergedDataUrl, {
+          params: {
+            pubTem_id: publishedTemplate._id,
+            email: session?.user?.email,
+            filterByUserScope: true, // Filtrar por ámbito del usuario
+          },
+        }),
         axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
         ),
       ]);
 
-      const data = dataResponse.data.data;
       const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
       const validators =
         template?.validators ??
         publishedTemplate.validators;
+      const workbookSheets: WorkbookSheet[] = template.workbook_sheets || [];
 
-      // Campos de tipo fecha para formatear correctamente
+      // Campos de tipo fecha para formatear correctamente (incluye campos definidos
+      // dentro de las hojas del workbook, no solo los campos de nivel superior)
+      const allFields: Field[] = [
+        ...(template.fields || []),
+        ...workbookSheets.flatMap((sheet) => sheet.fields || []),
+      ];
       const dateFields = new Set(
-        template.fields
+        allFields
           .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
           .map(f => f.name)
       );
-
-      console.log("Template: ", template);
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(template.name);
-      const headerRow = worksheet.addRow(Object.keys(data[0]));
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: "FFFFFF" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "0f1f39" },
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.alignment = { vertical: "middle", horizontal: "center" };
-      });
-
-      worksheet.columns.forEach((column) => {
-        column.width = 20;
-      });
-
-      // Add the data to the worksheet starting from the second row
-      data.forEach((row: any) => {
-        const formattedRow = Object.entries(row).map(([key, value]) => {
-          if (value && dateFields.has(key)) {
-            if (
-              typeof value === 'string' ||
-              typeof value === 'number' ||
-              value instanceof Date
-            ) {
-              const date = new Date(value);
-              if (!isNaN(date.getTime())) {
-                return date.toISOString().slice(0, 10); // YYYY-MM-DD
-              }
-            }
+      const formatDateFields = (row: Record<string, any>) => {
+        const out: Record<string, any> = { ...row };
+        Object.keys(out).forEach((key) => {
+          const value = out[key];
+          if (value && dateFields.has(key) &&
+            (typeof value === 'string' || typeof value === 'number' || value instanceof Date)) {
+            const date = new Date(value);
+            if (!isNaN(date.getTime())) out[key] = date.toISOString().slice(0, 10); // YYYY-MM-DD
           }
-          return value;
         });
+        return out;
+      };
 
-        worksheet.addRow(formattedRow);
-      });
+      const availableSheets: string[] = Array.isArray(dataResponse.data.sheets)
+        ? dataResponse.data.sheets.filter(
+            (name: unknown): name is string => typeof name === "string" && name.length > 0
+          )
+        : [];
 
-      applyValidatorDropdowns({
-        workbook,
-        worksheet,
-        fields: template.fields,
-        validators,
-        startRow: 2,
-        endRow: 1000,
-      });
+      // Se piden los datos hoja por hoja: la plantilla puede tener varias hojas con
+      // estructuras de campos distintas, y mezclarlas en una sola consulta desalinea
+      // las columnas (cada fila terminaba con los valores de otra hoja).
+      const rowsBySheet = new Map<string, any[]>();
+      if (availableSheets.length > 1) {
+        for (const sheetName of availableSheets) {
+          const sheetResponse = await axios.get(mergedDataUrl, {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+              filterByUserScope: true,
+              sheetName,
+            },
+          });
+          rowsBySheet.set(sheetName, (sheetResponse.data.data || []).map(formatDateFields));
+        }
+      } else {
+        rowsBySheet.set(template.name, (dataResponse.data.data || []).map(formatDateFields));
+      }
+
+      const totalRows = Array.from(rowsBySheet.values()).reduce((sum, rows) => sum + rows.length, 0);
+
+      if (totalRows === 0) {
+        showNotification({
+          title: "Sin datos",
+          message: "No hay información cargada para descargar en esta plantilla.",
+          color: "orange",
+        });
+        return;
+      }
+
+      let workbook: ExcelJS.Workbook;
+
+      if (template.original_workbook_base64) {
+        // === Usa el archivo original de la plantilla: conserva estructura, colores y hojas ===
+        workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
+        const commentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
+        for (const [sheetName, sheetComments] of commentsBySheet.entries()) {
+          const ws = workbook.getWorksheet(sheetName);
+          if (!ws) continue;
+          for (const [cellRef, noteText] of sheetComments.entries()) {
+            if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
+          }
+        }
+
+        // Las hojas listadas en workbook_sheets SIEMPRE se llenan con sus propios
+        // campos (son la fuente de verdad de esa hoja). La hoja "principal" (la de
+        // template.fields) solo se usa como alternativa cuando su nombre NO
+        // coincide con ninguna hoja ya cubierta por workbook_sheets: si coincidiera,
+        // aplicarle el listado de campos de nivel superior le desalinea las columnas
+        // porque esos campos no son los que realmente definen esa hoja.
+        const workbookSheetNames = new Set(workbookSheets.map((sheet) => sheet.name));
+        const candidateMainWorksheet = workbook.getWorksheet(template.name)
+          || (workbookSheets.length === 0 ? workbook.worksheets[0] : undefined);
+        const mainWorksheet = candidateMainWorksheet && !workbookSheetNames.has(candidateMainWorksheet.name)
+          ? candidateMainWorksheet
+          : undefined;
+        if (mainWorksheet && template.fields?.length) {
+          const mainRows = rowsBySheet.get(mainWorksheet.name) ??
+            (availableSheets.length <= 1 ? Array.from(rowsBySheet.values())[0] : []) ?? [];
+          if (mainRows.length) {
+            populateWorksheetWithMergedRows(mainWorksheet, template.fields, mainRows, ['Dependencia']);
+          }
+        }
+        for (const sheet of workbookSheets) {
+          if (!sheet.fields?.length) continue;
+          const ws = workbook.getWorksheet(sheet.name);
+          if (!ws) continue;
+          const rows = rowsBySheet.get(sheet.name) || [];
+          if (rows.length) populateWorksheetWithMergedRows(ws, sheet.fields, rows);
+        }
+
+        const dropdownSheets = workbookSheets.length > 0
+          ? workbookSheets
+          : (template.fields?.length
+            ? [{ name: mainWorksheet?.name || template.name, fields: template.fields }]
+            : []);
+        applyWorkbookSheetDropdowns({
+          workbook,
+          workbookSheets: dropdownSheets,
+          validators,
+          originalCommentsBySheet: commentsBySheet,
+        });
+      } else {
+        // === Sin workbook original guardado: construir un libro nuevo, una hoja por cada hoja de datos ===
+        workbook = new ExcelJS.Workbook();
+
+        const sanitizeSheetTitle = (title: string) =>
+          title.replace(/[\\/?*[\]:]/g, "_").slice(0, 31) || "Hoja";
+
+        for (const [sheetName, rows] of rowsBySheet.entries()) {
+          if (!rows.length) continue;
+
+          const worksheet = workbook.addWorksheet(sanitizeSheetTitle(sheetName));
+
+          // Encabezado a partir de la union de columnas presentes en todas las filas
+          // de esta hoja, para no desalinear datos cuando alguna fila tiene menos
+          // campos que otra.
+          const headerKeys = Array.from(
+            rows.reduce((keys: Set<string>, row) => {
+              Object.keys(row).forEach((key) => keys.add(key));
+              return keys;
+            }, new Set<string>())
+          );
+
+          const headerRow = worksheet.addRow(headerKeys);
+          headerRow.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: "FFFFFF" } };
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "0f1f39" },
+            };
+            cell.border = {
+              top: { style: "thin" },
+              left: { style: "thin" },
+              bottom: { style: "thin" },
+              right: { style: "thin" },
+            };
+            cell.alignment = { vertical: "middle", horizontal: "center" };
+          });
+
+          worksheet.columns.forEach((column) => {
+            column.width = 20;
+          });
+
+          rows.forEach((row: any) => {
+            worksheet.addRow(headerKeys.map((key) => row[key] ?? ""));
+          });
+
+          const sheetFields = workbookSheets.find((sheet) => sheet.name === sheetName)?.fields
+            || template.fields;
+          applyValidatorDropdowns({
+            workbook,
+            worksheet,
+            fields: sheetFields,
+            validators,
+            startRow: 2,
+            endRow: 1000,
+          });
+        }
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
-      saveAs(blob, `${template.file_name}.xlsx`);
-      
+      saveAs(blob, `${template.file_name || template.name}.xlsx`);
+
       // Log audit
       if (session?.user?.email) {
         await logPublishedTemplateAction(
           'download',
           publishedTemplate.name,
           session.user.email,
-          { 
+          {
             templateId: publishedTemplate._id,
             fileName: template.file_name,
-            dataRows: data.length,
+            dataRows: totalRows,
             period: publishedTemplate.period.name
           }
         );
