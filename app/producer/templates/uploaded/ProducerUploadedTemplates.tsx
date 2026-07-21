@@ -502,8 +502,11 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template.file_name}.xlsx`);
   };
 
-  const handleEditClick = (publishedTemplateId: string) => {
-    setSelectedTemplateId(publishedTemplateId);
+  const handleEditClick = (publishedTemplate: PublishedTemplate) => {
+    setSelectedTemplateId(publishedTemplate._id);
+    const effectiveDeadline = getEffectiveDeadline(publishedTemplate);
+    const dateObj = effectiveDeadline ? new Date(effectiveDeadline) : undefined;
+    setProducerEndDate(dateObj && !isNaN(dateObj.getTime()) ? dateObj : undefined);
     openUploadModal();
   };
 
@@ -603,7 +606,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                 <Button
                   variant="outline"
                   color="teal"
-                  onClick={() => handleEditClick(publishedTemplate._id)}
+                  onClick={() => handleEditClick(publishedTemplate)}
                   disabled={uploadDisable}
                 >
                   <IconEdit size={16} />
