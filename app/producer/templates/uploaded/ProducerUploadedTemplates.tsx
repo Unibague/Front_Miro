@@ -616,12 +616,24 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     return endOfDayGMT5(new Date(effectiveDeadline)) < new Date();
   };
 
+  // El envio final al SNIES no debe bloquear "Eliminar envío": esa es
+  // justamente la via para deshacerlo si fue un error. Solo el periodo
+  // realmente cerrado (fecha vencida o periodo inactivo) bloquea el borrado.
+  const handleDisableDelete = (publishedTemplate: PublishedTemplate) => {
+    if (isAdmin || (session?.user as any)?.role === "Administrador") return false;
+    if (!publishedTemplate.period.is_active) return true;
+    const effectiveDeadline = getEffectiveDeadline(publishedTemplate);
+    if (!effectiveDeadline) return false;
+    return endOfDayGMT5(new Date(effectiveDeadline)) < new Date();
+  };
+
   const truncateString = (str: string, maxLength: number = 20): string => {
     return str.length > maxLength ? str.slice(0, maxLength) + "..." : str;
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
     const uploadDisable = handleDisableUpload(publishedTemplate);
+    const deleteDisable = handleDisableDelete(publishedTemplate);
     return (
       <Table.Tr key={publishedTemplate._id}>
         <Table.Td>{publishedTemplate.period.name}</Table.Td>
@@ -732,10 +744,10 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           <Center>
             <Tooltip
                 label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : publishedTemplate.final_submitted
-                      ? "Eliminar envío (también reseteará el estado SNIES)"
+                  publishedTemplate.final_submitted
+                    ? "Eliminar envío (también reseteará el estado SNIES)"
+                    : deleteDisable
+                      ? "El periodo ya se encuentra cerrado"
                       : "Eliminar envío"
                 }
               position="top"
@@ -763,7 +775,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                     onConfirm: () => handleDeleteClick(publishedTemplate._id),
                   })
                 }
-                disabled={uploadDisable}
+                disabled={deleteDisable}
               >
                 <IconTrash size={16} />
               </Button>
