@@ -790,12 +790,21 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     legacyCursor += sheet.fields.length;
                   }
 
-                  // Solo cargar filas de hojas accesibles; las hojas read-only usan shared_sheets_data
+                  // Solo cargar filas de hojas accesibles; las hojas read-only usan shared_sheets_data.
+                  // Un borrador sin valores reales (todos los campos en blanco, p.ej.
+                  // un QR escaneado sin llenar nada, o una fila borrada antes de
+                  // guardar) NO debe mostrarse como fila: obliga al usuario a darle
+                  // "Agregar Fila" el mismo, en vez de ver una fila vacia ya puesta.
                   if (isAccessible && sheetFilled.length) {
                     const built = buildRowsAndSourcesFromDraft(draft, sheetFilled);
-                    draftSheetRows[sheet.name] = [...(draftSheetRows[sheet.name] || []), ...built.rows];
-                    draftSheetSources[sheet.name] = [...(draftSheetSources[sheet.name] || []), ...built.sources];
-                    if (!firstDraftSheetName) firstDraftSheetName = sheet.name;
+                    const hasRealValue = built.rows.some((row) =>
+                      Object.values(row).some((v) => !isBlankQrValue(v))
+                    );
+                    if (hasRealValue) {
+                      draftSheetRows[sheet.name] = [...(draftSheetRows[sheet.name] || []), ...built.rows];
+                      draftSheetSources[sheet.name] = [...(draftSheetSources[sheet.name] || []), ...built.sources];
+                      if (!firstDraftSheetName) firstDraftSheetName = sheet.name;
+                    }
                   }
                 });
               });
@@ -1279,16 +1288,13 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
   const removeSheetRow = (sheetName: string, idx: number) => {
     const currentRows = sheetRows[sheetName] || [];
-    // No dejar una hoja en cero filas: al borrar la unica fila, se reemplaza
-    // por una fila vacia en vez de desaparecer. Sin esto, un "Borrar" sobre
-    // la ultima fila guardaba (y luego enviaba) la hoja sin ningun dato, sin
-    // ningun aviso, porque esta plantilla no exige campos obligatorios.
+    // Borrar la ultima fila deja la hoja en cero filas (igual que removeRow
+    // para plantillas de una sola hoja): al enviar, handleSubmit valida los
+    // campos obligatorios contra "sheetRows[sheet.name] || [{}]", asi que una
+    // hoja vacia sigue quedando marcada con error en vez de enviarse en silencio.
     const filtered = currentRows.filter((_, i) => i !== idx);
-    const nextRows = filtered.length > 0 ? filtered : [{}];
-    const nextSources = filtered.length > 0
-      ? (sheetRowSources[sheetName] || []).filter((_, i) => i !== idx)
-      : [null];
-    const updated = { ...sheetRows, [sheetName]: nextRows };
+    const nextSources = (sheetRowSources[sheetName] || []).filter((_, i) => i !== idx);
+    const updated = { ...sheetRows, [sheetName]: filtered };
     setSheetRows(updated);
     setSheetRowSources(prev => ({ ...prev, [sheetName]: nextSources }));
     saveDraftRows(undefined, updated);
@@ -1874,7 +1880,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     overrideOnRemoveRow?: (rowIndex: number) => void
   ) => {
     const isSheetMode = !!sheetName;
-    const currentRows = overrideRows ?? (isSheetMode ? (sheetRows[sheetName] || [{}]) : rows);
+    // Sin filas por defecto: el usuario debe darle "Agregar Fila" el mismo
+    // para empezar a llenar un registro, en vez de ver una fila ya puesta.
+    const currentRows = overrideRows ?? (isSheetMode ? (sheetRows[sheetName] || []) : rows);
     const onInputChange = overrideOnInputChange ?? (isSheetMode
       ? (rowIndex: number, fieldName: string, value: any) => updateSheetCell(sheetName, rowIndex, fieldName, value)
       : handleInputChange);
