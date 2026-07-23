@@ -2723,6 +2723,8 @@ const tdStyle: React.CSSProperties = {
 
 const tableScrollStyle: React.CSSProperties = {
   overflowX: "auto",
+  overflowY: "auto",
+  maxHeight: 600,
   border: "1px solid #f1f3f5",
   borderRadius: 8,
 };

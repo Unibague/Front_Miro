@@ -112,9 +112,37 @@ const UploadedTemplatePage = () => {
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
-        const sentDepedencies = sentData.map((data:any) => ({
-          dependency: data.dependency, send_by: data.send_by
-        }))
+        const onlineDraftData = response.data.qr_draft_data
+          ?? response.data.publishedTemplate?.qr_draft_data
+          ?? []
+        const hasMeaningfulValues = (entry: any) =>
+          (entry?.filled_data || []).some((field: any) =>
+            (field?.values || []).some((value: any) =>
+              value !== null && value !== undefined && String(value).trim() !== ""
+            )
+          )
+
+        // El resumen debe reconocer tambien a los productores que diligenciaron
+        // informacion en linea. Ese flujo guarda primero en qr_draft_data; si
+        // contiene valores reales, ya existe una carga del productor y debe
+        // verse en negro en el resumen. Los envios confirmados tienen prioridad
+        // cuando existen ambas entradas para la misma dependencia.
+        const sentByDependency = new Map<string, ResumeData>()
+        sentData.forEach((data: any) => {
+          if (data?.dependency) {
+            sentByDependency.set(String(data.dependency).trim(), {
+              dependency: String(data.dependency).trim(),
+              send_by: data.send_by,
+            })
+          }
+        })
+        onlineDraftData.filter(hasMeaningfulValues).forEach((data: any) => {
+          const dependency = String(data?.dependency || data?.dependency_code || "").trim()
+          if (dependency && !sentByDependency.has(dependency)) {
+            sentByDependency.set(dependency, { dependency, send_by: data.send_by })
+          }
+        })
+        const sentDepedencies = Array.from(sentByDependency.values())
         setResumeData(sentDepedencies)
 
         // Siempre mostrar TODOS los productores en el resumen, no solo los que enviaron
@@ -756,7 +784,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
   };
 
   const resumeRows = dependencies.map((dep) => {
-    const depCode = dep.dep_code || "";
+    const depCode = String(dep.dep_code || "").trim();
     const depName = dep.name || depCode || "Dependencia desconocida";
     const sentData = resumeData?.find(item => item.dependency === depCode);
     const userName = sentData?.send_by?.full_name || sentData?.send_by?.email || "No definido";

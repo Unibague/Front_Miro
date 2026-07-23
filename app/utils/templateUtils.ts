@@ -170,6 +170,36 @@ export const toExcelCellValue = (value: any): ExcelJS.CellValue => {
   return value as ExcelJS.CellValue;
 };
 
+const padDatePart = (value: number) => String(value).padStart(2, "0");
+
+// Formatea fechas de datos de plantilla sin aplicar la zona horaria local.
+// Excel suele serializar una fecha sin hora como medianoche UTC; convertirla
+// a America/Bogota desplaza el valor al dia anterior. Usar UTC conserva el dia
+// calendario que el productor envio originalmente.
+export const formatTemplateDateValue = (value: any, fieldName = ""): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+
+  const raw = value instanceof Date ? value.toISOString() : String(value).trim();
+  const isDateField = /(^|[^A-Z])(FECHA|DATE)([^A-Z]|$)/i.test(fieldName);
+  const isRecognizableDate =
+    /^\d{2}\/\d{2}\/\d{4}$/.test(raw) ||
+    /^\d{4}[-/]\d{2}[-/]\d{2}(?:T.*)?$/.test(raw) ||
+    /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s/i.test(raw) ||
+    /GMT[+-]\d{4}/i.test(raw);
+
+  if (!isDateField && !isRecognizableDate && !(value instanceof Date)) return null;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+
+  const calendarMatch = raw.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (calendarMatch) {
+    return `${calendarMatch[3]}/${calendarMatch[2]}/${calendarMatch[1]}`;
+  }
+
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${padDatePart(parsed.getUTCDate())}/${padDatePart(parsed.getUTCMonth() + 1)}/${parsed.getUTCFullYear()}`;
+};
+
 // Combina el filled_data de varias dependencias en uno solo, concatenando los
 // valores de cada campo (por nombre de campo + hoja) para reportes que
 // consolidan la informacion de todos los productores en un solo archivo.

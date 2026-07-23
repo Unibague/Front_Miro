@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, ActionIcon, Box, SimpleGrid,
@@ -209,6 +209,57 @@ const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
   anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
 const formatCOP = (value?: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value ?? 0);
+
+const ANIO_ACTUAL = String(new Date().getFullYear());
+
+interface PresupuestoSheetRow {
+  accionEstrategica?: string;
+  presupuestoGasto?: number;
+  presupuestoInversion?: number;
+  presupuesto?: number;
+  ejecutadoGasto?: number;
+  ejecutadoInversion?: number;
+  ejecutado?: number;
+}
+
+// Empareja el codigo de la accion (ej. "M1-P1-A1") con el texto de la
+// columna "Accion estrategica" de la hoja de Google Sheets, que a veces usa
+// la variante "M1-P1-AE1" — misma normalizacion que usa el backend
+// (controllers/pdiPresupuesto.js normalizeActionCode) para poder comparar.
+const normalizeAccionCode = (value?: string) =>
+  String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .trim()
+    .replace(/-AE(\d+)$/i, "-A$1");
+
+// Suma, para una accion puntual, las filas de la hoja "Proyecto 2026" cuya
+// columna "Accion estrategica" corresponde a su codigo. Devuelve null si la
+// accion no aparece en la hoja (para no pisar con ceros los años sin datos).
+function sumPresupuestoRowsForAccion(rows: PresupuestoSheetRow[], codigoAccion?: string) {
+  const target = normalizeAccionCode(codigoAccion);
+  if (!target) return null;
+  const matches = rows.filter((row) => normalizeAccionCode(row.accionEstrategica) === target);
+  if (!matches.length) return null;
+  return matches.reduce<{
+    presupuestoGasto: number;
+    presupuestoInversion: number;
+    presupuesto: number;
+    ejecutadoGasto: number;
+    ejecutadoInversion: number;
+    ejecutado: number;
+  }>(
+    (acc, row) => ({
+      presupuestoGasto: acc.presupuestoGasto + (Number(row.presupuestoGasto) || 0),
+      presupuestoInversion: acc.presupuestoInversion + (Number(row.presupuestoInversion) || 0),
+      presupuesto: acc.presupuesto + (Number(row.presupuesto) || 0),
+      ejecutadoGasto: acc.ejecutadoGasto + (Number(row.ejecutadoGasto) || 0),
+      ejecutadoInversion: acc.ejecutadoInversion + (Number(row.ejecutadoInversion) || 0),
+      ejecutado: acc.ejecutado + (Number(row.ejecutado) || 0),
+    }),
+    { presupuestoGasto: 0, presupuestoInversion: 0, presupuesto: 0, ejecutadoGasto: 0, ejecutadoInversion: 0, ejecutado: 0 }
+  );
+}
 const formatFecha = (value?: string | null) => {
   if (!value) return null;
   const date = new Date(value);
@@ -1455,6 +1506,22 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   canManage?: boolean;
 }) {
   const [openAccion, setOpenAccion] = useState(false);
+  const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSheetRow[]>([]);
+
+  // Presupuesto/ejecucion real del año vigente (hoja "Proyecto 2026" en
+  // Google Sheets, ver controllers/pdiPresupuesto.js). Los demas años del
+  // PDI siguen viniendo de la asignacion manual del formulario.
+  useEffect(() => {
+    axios.get(PDI_ROUTES.presupuestoData())
+      .then((res) => setPresupuestoRows(res.data?.rows ?? []))
+      .catch(() => {});
+  }, []);
+
+  const presupuestoReal = useMemo(
+    () => sumPresupuestoRowsForAccion(presupuestoRows, accion.codigo),
+    [presupuestoRows, accion.codigo]
+  );
+
   const avanceAccion = indicadores.length
     ? getWeightedProgress(indicadores, (indicador) => getIndicadorAvancePonderado(indicador))
     : Number(accion.avance) || 0;
@@ -1593,9 +1660,10 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
               <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
               <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
                 {anios.map((anio) => {
-                  const asignado      = Number(ppa[anio] ?? 0);
-                  const gastoAnio     = Math.round(asignado * gastoRatio);
-                  const inversionAnio = Math.round(asignado * inversionRatio);
+                  const usaReal       = anio === ANIO_ACTUAL && !!presupuestoReal;
+                  const asignado      = usaReal ? presupuestoReal!.presupuesto : Number(ppa[anio] ?? 0);
+                  const gastoAnio     = usaReal ? presupuestoReal!.presupuestoGasto : Math.round(asignado * gastoRatio);
+                  const inversionAnio = usaReal ? presupuestoReal!.presupuestoInversion : Math.round(asignado * inversionRatio);
                   const notas = (notasPorAnio[anio] ?? []).filter(Boolean);
                   const contenido = (
                     <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined }}>
@@ -1664,10 +1732,11 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
               <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
               <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
                 {anios.map((anio) => {
-                  const asignado         = Number(ppa[anio] ?? 0);
-                  const ejecutado        = Number(epa[anio] ?? 0);
-                  const gastoCausado     = Math.round(ejecutado * gastoRatio);
-                  const inversionCausado = Math.round(ejecutado * inversionRatio);
+                  const usaReal          = anio === ANIO_ACTUAL && !!presupuestoReal;
+                  const asignado         = usaReal ? presupuestoReal!.presupuesto : Number(ppa[anio] ?? 0);
+                  const ejecutado        = usaReal ? presupuestoReal!.ejecutado : Number(epa[anio] ?? 0);
+                  const gastoCausado     = usaReal ? presupuestoReal!.ejecutadoGasto : Math.round(ejecutado * gastoRatio);
+                  const inversionCausado = usaReal ? presupuestoReal!.ejecutadoInversion : Math.round(ejecutado * inversionRatio);
                   const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                   const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                   return (

@@ -39,6 +39,7 @@ import {
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../utils/periodUtils";
+import { formatTemplateDateValue } from "../../../../utils/templateUtils";
 
 interface Field {
   name: string;
@@ -228,6 +229,15 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   const [template, setTemplate] = useState<Template | null>(null);
   const [allSheets, setAllSheets] = useState<WorkbookSheet[]>([]);
   const [accessibleSheets, setAccessibleSheets] = useState<WorkbookSheet[]>([]);
+  // Evita que una hoja asignada al productor se muestre como "solo lectura"
+  // mientras aun no se resuelve a que hojas tiene acceso (ver fetchTemplate).
+  const [permissionsReady, setPermissionsReady] = useState(false);
+  // Cuantas filas mostrar por tabla (clave = identificador de la tabla). Con
+  // hojas de miles de filas (p.ej. cargas de Excel de otra dependencia),
+  // renderizar TODO de una vez vuelve la pagina muy lenta y bloquea el scroll;
+  // se muestran de a poco y un boton revela mas.
+  const [tableVisibleRows, setTableVisibleRows] = useState<Record<string, number>>({});
+  const TABLE_ROWS_PAGE_SIZE = 50;
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   // rows por hoja: { sheetName: rows[] }
   const [sheetRows, setSheetRows] = useState<Record<string, Record<string, any>[]>>({});
@@ -266,6 +276,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     Record<string, Record<string, { rows: Record<string, any>[]; sources: (QrRowSource | null)[] }>>
   >({});
   const [otherProducersDepNames, setOtherProducersDepNames] = useState<Record<string, string>>({});
+  const [dirtyOtherProducerDeps, setDirtyOtherProducerDeps] = useState<Set<string>>(new Set());
 
   const getScopedFieldKey = (fieldName: string, sheetName?: string | null) =>
     sheetName ? `${sheetName}::${fieldName}` : fieldName;
@@ -466,6 +477,8 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const fetchTemplate = async () => {
+    setPermissionsReady(false);
+    setDirtyOtherProducerDeps(new Set());
     try {
       const response = await axios.get<PublishedTemplateResponse>(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${id_template}`
@@ -483,6 +496,30 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Cargar datos compartidos de otros productores
       if (response.data.shared_sheets_data) {
         setSharedSheetsData(response.data.shared_sheets_data);
+      }
+
+      // Usuario + catalogo de dependencias: se obtienen UNA sola vez aqui (en
+      // paralelo) y se reutilizan mas abajo, en vez de repetir /users y
+      // /dependencies/all/:email por cada bloque (encargado, borradores, datos
+      // ya enviados, hojas accesibles). Esa duplicacion era la principal causa
+      // de que la carga de la plantilla fuera lenta.
+      let sessionUserData: any = null;
+      let sessionAllDeps: any[] = [];
+      let sessionUserDepCodes: string[] = [];
+      let sessionUserDepIds: string[] = [];
+      if (session?.user?.email) {
+        try {
+          const [userRes, depsRes] = await Promise.all([
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session.user.email } }),
+            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${encodeURIComponent(session.user.email)}`),
+          ]);
+          sessionUserData = userRes.data;
+          sessionAllDeps = depsRes.data || [];
+          sessionUserDepCodes = [sessionUserData?.dep_code, ...(sessionUserData?.additional_dependencies || [])].filter(Boolean);
+          sessionUserDepIds = sessionAllDeps
+            .filter((d: any) => sessionUserDepCodes.includes(d.dep_code))
+            .map((d: any) => String(d._id));
+        } catch { /* si falla, se continua sin datos de usuario/dependencias */ }
       }
 
       // Cargar todas las hojas y determinar cuáles son editables
@@ -503,37 +540,22 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         setAllSheets(wbSheets);
         let editable: WorkbookSheet[] = wbSheets;
         let userSrc: QrRowSource | null = null;
-        try {
-          if (session?.user?.email) {
-            const userRes = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/users`,
-              { params: { email: session.user.email } }
-            );
-            const user = userRes.data;
-            const allDepCodes: string[] = [user.dep_code, ...(user.additional_dependencies || [])].filter(Boolean);
-            const depsRes = await axios.get(
-              `${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${encodeURIComponent(session.user.email)}`
-            );
-            const allDeps: any[] = depsRes.data || [];
-            const userDepIds: string[] = allDeps
-              .filter((d: any) => allDepCodes.includes(d.dep_code))
-              .map((d: any) => d._id?.toString());
-            currentUserDepIds = userDepIds;
-            const primaryDep = allDeps.find((d: any) => d.dep_code === user.dep_code);
-            userSrc = {
-              dependencyCode: user.dep_code || '',
-              dependencyName: primaryDep?.name || user.dep_code || '',
-              senderName: user.name || session?.user?.name || undefined,
-              senderEmail: session?.user?.email || null,
-            };
-            setUserSource(userSrc);
-            editable = wbSheets.filter((sheet: WorkbookSheet) => {
-              if (!sheet.fields?.length) return false;
-              if (!sheet.producers?.length) return true;
-              return sheet.producers.some((p: string) => userDepIds.includes(p.toString()));
-            });
-          }
-        } catch { /* si falla, editable = todas las hojas */ }
+        if (sessionUserData) {
+          currentUserDepIds = sessionUserDepIds;
+          const primaryDep = sessionAllDeps.find((d: any) => d.dep_code === sessionUserData.dep_code);
+          userSrc = {
+            dependencyCode: sessionUserData.dep_code || '',
+            dependencyName: primaryDep?.name || sessionUserData.dep_code || '',
+            senderName: sessionUserData.name || session?.user?.name || undefined,
+            senderEmail: session?.user?.email || null,
+          };
+          setUserSource(userSrc);
+          editable = wbSheets.filter((sheet: WorkbookSheet) => {
+            if (!sheet.fields?.length) return false;
+            if (!sheet.producers?.length) return true;
+            return sheet.producers.some((p: string) => sessionUserDepIds.includes(p.toString()));
+          });
+        }
 
         editableSheetNames = new Set(editable.map((s: WorkbookSheet) => s.name));
         setAccessibleSheets(editable);
@@ -542,47 +564,95 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         const initialRows: Record<string, Record<string, any>[]> = {};
         const initialSources: Record<string, (QrRowSource | null)[]> = {};
         editable.forEach((s: WorkbookSheet) => {
-          const prefilled: Record<string, any> = {};
-          if (s.fields?.some((f: Field) => f.name.toUpperCase() === 'AÑO'))
-            prefilled['AÑO'] = prefilledYear;
-          if (s.fields?.some((f: Field) => f.name.toUpperCase() === 'SEMESTRE'))
-            prefilled['SEMESTRE'] = prefilledSemester;
-          initialRows[s.name] = [prefilled];
-          initialSources[s.name] = [userSrc];
+          // Empieza sin filas: el usuario debe darle "Agregar Fila" para
+          // llenar un registro. Antes se mostraba una fila ya "lista" con
+          // año/semestre precargados, lo que llevaba a enviar sin darse
+          // cuenta de que faltaba llenar el resto de campos.
+          initialRows[s.name] = [];
+          initialSources[s.name] = [];
         });
-        // Hojas no editables siempre muestran los datos ya enviados por otros productores (lectura)
-        {
-          wbSheets
-            .filter((s: WorkbookSheet) => !editable.some((e: WorkbookSheet) => e.name === s.name))
-            .forEach((s: WorkbookSheet) => {
-              const rawRows: any[] = sharedData[s.name] || [];
-              if (rawRows.length) {
-                initialRows[s.name] = rawRows.map(({ __origin__, ...rest }) => rest);
-                initialSources[s.name] = rawRows.map((row) =>
-                  row.__origin__
-                    ? {
-                        dependencyCode: row.__origin__.code,
-                        dependencyName: row.__origin__.depName || row.__origin__.code,
-                        senderName: row.__origin__.senderName,
-                        senderEmail: row.__origin__.senderEmail,
-                        fromQr: row.__origin__.fromQr,
-                        fromExcel: row.__origin__.fromExcel,
-                        fromOnline: row.__origin__.fromOnline,
-                      }
-                    : null
-                );
-              } else {
-                initialRows[s.name] = [{}];
-                initialSources[s.name] = [null];
-              }
+        // Convierte filas ya construidas por el backend (shared_sheets_data,
+        // cada una con __origin__) en {rows, sources} para las tablas. No
+        // vuelve a transponer datos: eso ya lo hizo el backend una sola vez.
+        const rawSharedRowsToRowsAndSources = (rawRows: any[]) => ({
+          rows: rawRows.map(({ __origin__, ...rest }) => rest),
+          sources: rawRows.map((row) =>
+            row.__origin__
+              ? {
+                  dependencyCode: row.__origin__.code,
+                  dependencyName: row.__origin__.depName || row.__origin__.code,
+                  senderName: row.__origin__.senderName,
+                  senderEmail: row.__origin__.senderEmail,
+                  fromQr: row.__origin__.fromQr,
+                  fromExcel: row.__origin__.fromExcel,
+                  fromOnline: row.__origin__.fromOnline,
+                }
+              : null
+          ),
+        });
+        const showSharedData = Boolean(normalizedTemplate.shared);
+
+        // Hojas no editables: si la plantilla tiene "shared" activo, mostrar los
+        // datos ya enviados por otros productores (lectura); si no, quedan vacías.
+        wbSheets
+          .filter((s: WorkbookSheet) => !editable.some((e: WorkbookSheet) => e.name === s.name))
+          .forEach((s: WorkbookSheet) => {
+            const rawRows: any[] = showSharedData ? (sharedData[s.name] || []) : [];
+            if (rawRows.length) {
+              const built = rawSharedRowsToRowsAndSources(rawRows);
+              initialRows[s.name] = built.rows;
+              initialSources[s.name] = built.sources;
+            } else {
+              initialRows[s.name] = [{}];
+              initialSources[s.name] = [null];
+            }
+          });
+
+        // Datos de OTRAS dependencias, agrupados por dependencia (mismo estado
+        // y handlers de guardado que usa el productor encargado). Se permite
+        // editarlos en las hojas donde el usuario SI tiene acceso (ver render
+        // mas abajo), pero se incluyen TODAS las hojas de cada dependencia
+        // ajena — no solo las editables por el usuario actual — para no
+        // perder su informacion al guardar (el guardado reemplaza por hoja,
+        // solo con lo que efectivamente se envia). Construido de forma barata
+        // a partir de shared_sheets_data, que el backend ya transpuso.
+        if (showSharedData) {
+          const byDep: Record<string, Record<string, { rows: Record<string, any>[]; sources: (QrRowSource | null)[] }>> = {};
+          const depNames: Record<string, string> = {};
+          wbSheets.forEach((s: WorkbookSheet) => {
+            const rawRows: any[] = (sharedData[s.name] || []).filter((row: any) => {
+              const code = row?.__origin__?.code;
+              return Boolean(code) && !sessionUserDepCodes.includes(code);
             });
+            rawRows.forEach((row: any) => {
+              const origin = row.__origin__;
+              if (!byDep[origin.code]) byDep[origin.code] = {};
+              if (!depNames[origin.code]) depNames[origin.code] = origin.depName || origin.code;
+              if (!byDep[origin.code][s.name]) byDep[origin.code][s.name] = { rows: [], sources: [] };
+              const { __origin__, ...rest } = row;
+              byDep[origin.code][s.name].rows.push(rest);
+              byDep[origin.code][s.name].sources.push({
+                dependencyCode: origin.code,
+                dependencyName: origin.depName || origin.code,
+                senderName: origin.senderName,
+                senderEmail: origin.senderEmail,
+                fromQr: origin.fromQr,
+                fromExcel: origin.fromExcel,
+                fromOnline: origin.fromOnline,
+              });
+            });
+          });
+          setOtherProducersData(byDep);
+          setOtherProducersDepNames(depNames);
         }
+
         setSheetRows(initialRows);
         setSheetRowSources(initialSources);
       } else {
         setRowSources([]);
         setSheetRowSources({});
       }
+      setPermissionsReady(true);
       const periodId =
         typeof response.data.publishedTemplate?.period === "string"
           ? response.data.publishedTemplate.period
@@ -591,13 +661,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       setTemplatePeriodName(resolvedPeriodName || "");
 
       // Pre-cargar datos ya enviados para que la edicion en linea conserve la informacion cargada.
-      if (session?.user?.email) {
+      if (sessionUserData) {
         try {
-          const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-            params: { email: session.user.email },
-          });
-          const userDepCode: string = userRes.data?.dep_code || '';
-          const allDepCodes: string[] = [userDepCode, ...(userRes.data?.additional_dependencies || [])].filter(Boolean);
+          const allDepCodes: string[] = sessionUserDepCodes;
           const loadedEntries = (response.data.publishedTemplate?.loaded_data || [])
             .filter((entry: ProducerLoadedEntry) =>
               allDepCodes.includes(getEntryDependencyCode(entry)) && entry.filled_data?.length
@@ -644,9 +710,20 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
                   if (isAccessible && sheetFilled.length) {
                     const built = buildRowsAndSourcesFromLoadedEntry(entry, sheetFilled);
-                    loadedSheetRows[sheet.name] = [...(loadedSheetRows[sheet.name] || []), ...built.rows];
-                    loadedSheetSources[sheet.name] = [...(loadedSheetSources[sheet.name] || []), ...built.sources];
-                    if (!firstLoadedSheetName) firstLoadedSheetName = sheet.name;
+                    // Un envio previo sin valores reales (todos los campos en
+                    // blanco, p.ej. por una fila borrada antes de enviar) NO
+                    // debe sobreescribir la fila inicial precargada (con
+                    // año/semestre por defecto) con una fila completamente
+                    // vacia: eso hacia que la hoja se viera "en blanco" en
+                    // cada visita y perpetuaba el envio vacio.
+                    const hasRealValue = built.rows.some((row) =>
+                      Object.values(row).some((v) => !isBlankQrValue(v))
+                    );
+                    if (hasRealValue) {
+                      loadedSheetRows[sheet.name] = [...(loadedSheetRows[sheet.name] || []), ...built.rows];
+                      loadedSheetSources[sheet.name] = [...(loadedSheetSources[sheet.name] || []), ...built.sources];
+                      if (!firstLoadedSheetName) firstLoadedSheetName = sheet.name;
+                    }
                   }
                 });
               });
@@ -678,13 +755,9 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Pre-cargar datos del borrador si existen para la dependencia del usuario.
       // Se carga siempre: tanto borradores guardados manualmente como los originados por QR.
       const qrDrafts = response.data.qr_draft_data || [];
-      if (qrDrafts.length && session?.user?.email) {
+      if (qrDrafts.length && sessionUserData) {
         try {
-          const userRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
-            params: { email: session.user.email },
-          });
-          const userDepCode: string = userRes.data?.dep_code || '';
-          const allDepCodes: string[] = [userDepCode, ...(userRes.data?.additional_dependencies || [])].filter(Boolean);
+          const allDepCodes: string[] = sessionUserDepCodes;
           const matchingDrafts = qrDrafts.filter((draft: QrDraftEntry) =>
             allDepCodes.includes(draft.dependency_code || draft.dependency)
           );
@@ -838,20 +911,11 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // El productor encargado de esta plantilla (misma dependencia asignada
       // en "responsible_producers") ve, ademas de sus propios datos, lo ya
       // enviado por TODAS las demas dependencias — tenga o no activo "shared".
-      if (session?.user?.email) {
+      if (sessionUserData) {
         try {
-          const [userResForEncargado, depsResForEncargado] = await Promise.all([
-            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session.user.email } }),
-            axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all/${encodeURIComponent(session.user.email)}`),
-          ]);
-          const ownDepCodes: string[] = [
-            userResForEncargado.data?.dep_code,
-            ...(userResForEncargado.data?.additional_dependencies || []),
-          ].filter(Boolean);
-          const allDepsForEncargado: any[] = depsResForEncargado.data || [];
-          const ownDepIds = allDepsForEncargado
-            .filter((d: any) => ownDepCodes.includes(d.dep_code))
-            .map((d: any) => String(d._id));
+          const ownDepCodes: string[] = sessionUserDepCodes;
+          const allDepsForEncargado: any[] = sessionAllDeps;
+          const ownDepIds = sessionUserDepIds;
 
           const responsibleIdsForTemplate: string[] = (
             (response.data.publishedTemplate as any)?.responsible_producers || []
@@ -1010,7 +1074,16 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   // ── Edicion de datos de OTRAS dependencias (solo para el productor encargado) ──
+  const markOtherProducerAsDirty = (depCode: string) => {
+    setDirtyOtherProducerDeps((previous) => {
+      const next = new Set(previous);
+      next.add(depCode);
+      return next;
+    });
+  };
+
   const updateOtherProducerCell = (depCode: string, sheetKey: string, rowIdx: number, fieldName: string, value: any) => {
+    markOtherProducerAsDirty(depCode);
     setOtherProducersData(prev => {
       const depData = prev[depCode] || {};
       const sheetData = depData[sheetKey] || { rows: [], sources: [] };
@@ -1021,6 +1094,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const addOtherProducerRow = (depCode: string, sheetKey: string) => {
+    markOtherProducerAsDirty(depCode);
     setOtherProducersData(prev => {
       const depData = prev[depCode] || {};
       const sheetData = depData[sheetKey] || { rows: [], sources: [] };
@@ -1035,6 +1109,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const removeOtherProducerRow = (depCode: string, sheetKey: string, rowIdx: number) => {
+    markOtherProducerAsDirty(depCode);
     setOtherProducersData(prev => {
       const depData = prev[depCode] || {};
       const sheetData = depData[sheetKey] || { rows: [], sources: [] };
@@ -1051,15 +1126,29 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     });
   };
 
-  // Guarda los cambios de UNA dependencia ajena. Se envian TODAS sus hojas
-  // (no solo la que se esta viendo) para no perder informacion de las demas.
-  // Guarda los cambios de UNA dependencia ajena, sin notificar individualmente
-  // (se llama en lote desde los botones generales "Guardar"/"Enviar").
-  const saveOneOtherProducerData = async (depCode: string) => {
+  // Guarda los cambios de UNA dependencia ajena. El encargado envia TODAS sus
+  // hojas (acceso total); un productor normal solo envia las hojas donde EL
+  // tiene permiso de edicion (ver filtro mas abajo) — el backend fusiona por
+  // hoja, asi que las demas hojas de esa dependencia no se pierden aunque no
+  // se incluyan aqui. Sin notificar individualmente (se llama en lote desde
+  // los botones generales "Guardar"/"Enviar").
+  const saveOneOtherProducerData = async (depCode: string, asDraft: boolean) => {
     const depData = otherProducersData[depCode];
     if (!depData) return;
     if (allSheets.length > 0) {
-      const sheetsPayload = Object.entries(depData).map(([sheetKey, sheetData]) => ({
+      // Un productor normal (no encargado) solo puede editar, en nombre de
+      // otra dependencia, las hojas donde SU PROPIA dependencia esta asignada
+      // (el backend valida exactamente esto). otherProducersData incluye
+      // TODAS las hojas de la dependencia ajena para no perder su informacion
+      // al mostrarla, pero aqui solo se envian las que el usuario actual
+      // puede editar — si se enviaran las demas, el backend rechazaria toda
+      // la solicitud. El encargado si conserva acceso a todas las hojas.
+      const accessibleSheetNamesForSave = new Set(accessibleSheets.map((s) => s.name));
+      const sheetEntries = isEncargadoTemplate
+        ? Object.entries(depData)
+        : Object.entries(depData).filter(([sheetKey]) => accessibleSheetNamesForSave.has(sheetKey));
+      if (!sheetEntries.length) return;
+      const sheetsPayload = sheetEntries.map(([sheetKey, sheetData]) => ({
         name: sheetKey,
         data: sheetData.rows,
       }));
@@ -1067,7 +1156,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         email: session?.user?.email,
         pubTem_id: id_template,
         sheetsData: sheetsPayload,
-        asDraft: false,
+        asDraft,
         onBehalfOfDependency: depCode,
         // El encargado es un rol de confianza que corrige datos ya enviados
         // (a veces originados en Excel con validacion flexible); se omite la
@@ -1080,7 +1169,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         email: session?.user?.email,
         pubTem_id: id_template,
         data: depData[OTHER_PRODUCERS_FLAT_KEY]?.rows || [],
-        asDraft: false,
+        asDraft,
         onBehalfOfDependency: depCode,
         bypassValidation: true,
       });
@@ -1090,25 +1179,30 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   // Guarda TODAS las dependencias ajenas con datos cargados. Se invoca desde
   // los botones generales "Guardar" y "Enviar" — no hay un boton separado por
   // dependencia.
-  const saveAllOtherProducersData = async () => {
-    const depCodes = Object.keys(otherProducersData);
-    if (!depCodes.length) return;
-    const failed: string[] = [];
+  const saveAllOtherProducersData = async (asDraft: boolean) => {
+    const depCodes = Array.from(dirtyOtherProducerDeps);
+    if (!depCodes.length) return 0;
+    const saved: string[] = [];
     for (const depCode of depCodes) {
       try {
-        await saveOneOtherProducerData(depCode);
+        await saveOneOtherProducerData(depCode, asDraft);
+        saved.push(depCode);
       } catch (error) {
-        console.error(`[saveAllOtherProducersData] Error guardando ${depCode}:`, error);
-        failed.push(otherProducersDepNames[depCode] || depCode);
+        console.error(`[saveAllOtherProducersData] Error procesando ${depCode}:`, error);
+        setDirtyOtherProducerDeps((previous) => {
+          const next = new Set(previous);
+          saved.forEach((savedDepCode) => next.delete(savedDepCode));
+          return next;
+        });
+        throw error;
       }
     }
-    if (failed.length) {
-      showNotification({
-        title: "Aviso",
-        message: `No se pudo guardar la información de: ${failed.join(', ')}.`,
-        color: "orange",
-      });
-    }
+    setDirtyOtherProducerDeps((previous) => {
+      const next = new Set(previous);
+      saved.forEach((savedDepCode) => next.delete(savedDepCode));
+      return next;
+    });
+    return saved.length;
   };
 
   const saveDraftRows = async (
@@ -1154,6 +1248,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       }
     } catch (err) {
       console.error('[saveDraftRows] Error al guardar borrador:', err);
+      throw err;
     }
   };
 
@@ -1161,7 +1256,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     setSaving(true);
     try {
       await saveDraftRows();
-      if (isEncargadoTemplate) await saveAllOtherProducersData();
+      // No solo el encargado: cualquier productor puede tener ediciones de
+      // otras dependencias cargadas (hojas donde "shared" esta activo y el
+      // tiene permiso de edicion). La funcion no hace nada si no hay datos.
+      await saveAllOtherProducersData(true);
       showNotification({
         title: "Guardado",
         message: "Tu progreso ha sido guardado. Puedes continuar más tarde.",
@@ -1180,12 +1278,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   };
 
   const removeSheetRow = (sheetName: string, idx: number) => {
-    const updated = {
-      ...sheetRows,
-      [sheetName]: (sheetRows[sheetName] || []).filter((_, i) => i !== idx),
-    };
+    const currentRows = sheetRows[sheetName] || [];
+    // No dejar una hoja en cero filas: al borrar la unica fila, se reemplaza
+    // por una fila vacia en vez de desaparecer. Sin esto, un "Borrar" sobre
+    // la ultima fila guardaba (y luego enviaba) la hoja sin ningun dato, sin
+    // ningun aviso, porque esta plantilla no exige campos obligatorios.
+    const filtered = currentRows.filter((_, i) => i !== idx);
+    const nextRows = filtered.length > 0 ? filtered : [{}];
+    const nextSources = filtered.length > 0
+      ? (sheetRowSources[sheetName] || []).filter((_, i) => i !== idx)
+      : [null];
+    const updated = { ...sheetRows, [sheetName]: nextRows };
     setSheetRows(updated);
-    setSheetRowSources(prev => ({ ...prev, [sheetName]: (prev[sheetName] || []).filter((_, i) => i !== idx) }));
+    setSheetRowSources(prev => ({ ...prev, [sheetName]: nextSources }));
     saveDraftRows(undefined, updated);
   };
 
@@ -1375,11 +1480,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       }
 
       const formattedRows = formatRows(resolvedRows, template?.fields || []);
-      const sheetsData = accessibleSheets.map((sheet) => ({
-        name: sheet.name,
-        data: formatRows(resolveDisplayValues(sheetRows[sheet.name] || [{}], sheet.fields || [], sheet.name), sheet.fields || []),
-      }));
+      // Solo se envian las hojas donde el usuario realmente agrego una fila.
+      // Si no agrego ninguna en ninguna hoja, no hay nada propio que enviar
+      // (mas abajo se sigue enviando igual la info de otros productores).
+      const sheetsData = accessibleSheets
+        .filter((sheet) => (sheetRows[sheet.name] || []).length > 0)
+        .map((sheet) => ({
+          name: sheet.name,
+          data: formatRows(resolveDisplayValues(sheetRows[sheet.name] || [{}], sheet.fields || [], sheet.name), sheet.fields || []),
+        }));
+      const hasOwnDataToSend = useSheetSubmission ? sheetsData.length > 0 : formattedRows.length > 0;
 
+      if (hasOwnDataToSend) {
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`, {
         email: session?.user?.email,
         pubTem_id: id_template,
@@ -1397,10 +1509,29 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si viene de ruta /public/form/, marcar como QR (fallback para datos nuevos no desde draft)
         ...(isFromPublicQr && !detectedOrigin.source ? { isFromPublicQr: true } : {}),
       });
-      if (isEncargadoTemplate) await saveAllOtherProducersData();
+      }
+
+      // No solo el encargado: cualquier productor puede tener ediciones de
+      // otras dependencias cargadas (hojas donde "shared" esta activo y el
+      // tiene permiso de edicion). La funcion no hace nada si no hay datos, y
+      // se envia sin importar si el usuario agrego o no su propia fila.
+      const hasEditedOtherProducerData = dirtyOtherProducerDeps.size > 0;
+      await saveAllOtherProducersData(false);
+
+      // Si el formulario solo contiene informacion ya enviada/compartida,
+      // registrar una confirmacion real en el backend. Sin esto la interfaz
+      // mostraba exito, pero la plantilla seguia apareciendo en Pendientes.
+      if (!hasOwnDataToSend && !hasEditedOtherProducerData) {
+        await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmExisting`, {
+          email: session?.user?.email,
+          pubTemId: id_template,
+        });
+      }
       showNotification({
         title: "Información enviada",
-        message: "Los datos se enviaron correctamente.",
+        message: hasOwnDataToSend || hasEditedOtherProducerData
+          ? "Los datos se enviaron correctamente."
+          : "La información existente se confirmó correctamente.",
         color: "teal",
       });
       router.push('/producer/templates');
@@ -1503,6 +1634,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const opts = selectOptions[field.name] || [];
     const multiOptions = multiSelectOptions[field.name] || opts.map(opt => opt.value);
     const hasDropdownOptions = opts.length > 0 || multiOptions.length > 0;
+    const formattedDateDisplay = formatTemplateDateValue(fieldValue, field.name);
 
     if (field.multiple && (field.validate_with || hasDropdownOptions)) {
       return wrapWithTooltip(
@@ -1569,7 +1701,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       case "Texto Largo":
         const textareaDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (fieldValue === null ? "" : fieldValue);
+          : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
           
         return wrapWithTooltip(
           <Textarea
@@ -1590,7 +1722,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const displayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (fieldValue === null ? "" : fieldValue);
+          : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
           
         return wrapWithTooltip(
           <TextInput
@@ -1643,7 +1775,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const defaultDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
-          : (fieldValue === null ? "" : fieldValue);
+          : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
           
         return wrapWithTooltip(
           <TextInput
@@ -1752,7 +1884,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     const currentRowSources = overrideSources ?? (isSheetMode ? (sheetRowSources[sheetName] || []) : rowSources);
     const showQrSourceColumn = currentRowSources.some(Boolean);
 
+    // Paginacion de filas: con datasets grandes (miles de filas cargadas por
+    // Excel de otra dependencia) renderizar todo de una vez vuelve la pagina
+    // muy lenta. Se muestran de a poco; los indices no cambian (se corta
+    // desde el inicio) asi que onInputChange/onRemoveRow siguen apuntando a
+    // la fila correcta del arreglo completo.
+    const tableKey = sheetName || '__legacy__';
+    const visibleCount = tableVisibleRows[tableKey] ?? TABLE_ROWS_PAGE_SIZE;
+    const visibleRows = currentRows.slice(0, visibleCount);
+    const hiddenCount = currentRows.length - visibleRows.length;
+
     return (
+      <>
       <ScrollArea viewportRef={scrollAreaRef}>
         <ScrollArea type="always" offsetScrollbars>
           <Table mb="xs" withTableBorder withColumnBorders withRowBorders>
@@ -1772,7 +1915,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {currentRows.map((row, rowIndex) => (
+              {visibleRows.map((row, rowIndex) => (
                 <Table.Tr key={rowIndex}>
                   {showQrSourceColumn && (
                     <Table.Td style={{ minWidth: '220px' }}>
@@ -1804,17 +1947,33 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           </Table>
         </ScrollArea>
       </ScrollArea>
+      {hiddenCount > 0 && (
+        <Group justify="center" mt="xs" mb="sm">
+          <Button
+            size="xs"
+            variant="light"
+            onClick={() => setTableVisibleRows(prev => ({ ...prev, [tableKey]: visibleCount + TABLE_ROWS_PAGE_SIZE }))}
+          >
+            {`Mostrar ${Math.min(TABLE_ROWS_PAGE_SIZE, hiddenCount)} filas más (quedan ${hiddenCount})`}
+          </Button>
+        </Group>
+      )}
+      </>
     );
   };
 
-  if (!template) {
+  const useSheets = allSheets.length > 0;
+
+  // Mientras no sepamos a que hojas tiene acceso el productor, no renderizar
+  // las pestañas: evita que una hoja SI asignada aparezca un instante como
+  // "solo lectura" (o con datos de otros productores) y luego cambie a editable.
+  if (!template || (useSheets && !permissionsReady)) {
     return <Text ta="center" c="dimmed">Cargando Información...</Text>;
   }
 
-  const useSheets = allSheets.length > 0;
   const accessibleSheetNames = new Set(accessibleSheets.map(s => s.name));
-  // Mostrar ícono de lectura en hojas de otros productores (independiente del flag shared)
-  const templateSharedUI = allSheets.length > 0;
+  // Mostrar ícono/datos de lectura en hojas de otros productores solo si la plantilla tiene "shared" activo
+  const templateSharedUI = Boolean(template?.shared) && allSheets.length > 0;
 
   return (
     <Container size="xl">
@@ -1882,13 +2041,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
                     </Button>
                   </Group>
                 )}
-                {isEncargadoTemplate && canEdit && Object.keys(otherProducersData).some(
+                {canEdit && Object.keys(otherProducersData).some(
                   (depCode) => (otherProducersData[depCode]?.[sheet.name]?.rows?.length ?? 0) > 0
                 ) && (
                   <>
                     <Divider
                       my="md"
-                      label="Información de otras dependencias (puedes editarla por ser productor encargado)"
+                      label={
+                        isEncargadoTemplate
+                          ? "Información de otras dependencias (puedes editarla por ser productor encargado)"
+                          : "Información compartida por otros productores (puedes editarla)"
+                      }
                       labelPosition="center"
                     />
                     {Object.entries(otherProducersData)

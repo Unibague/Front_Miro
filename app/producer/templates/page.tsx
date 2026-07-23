@@ -40,7 +40,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useDisclosure } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
-import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
@@ -1149,27 +1149,57 @@ if (field.multiple) {
     }
   }
 
-  // Boton "Enviar" de la lista: si la dependencia ya tiene un borrador
-  // guardado (p.ej. con "Guardar" en el formulario, o por QR), lo confirma
-  // directamente sin pasar por el formulario. Si no hay borrador, no hay
-  // nada que enviar todavia, asi que lleva al formulario para completarlo.
+  // Boton "Enviar" de la lista: confirma el borrador cuando existe. Si no hay
+  // borrador, confirma directamente la informacion existente/compartida de la
+  // plantilla, sin exigir que el usuario la guarde antes.
   const handleDirectSend = async (publishedTemplate: PublishedTemplate) => {
     setSendingDraftId(publishedTemplate._id);
     try {
+      const ownDepCodes = new Set((userDependencies || []).map((d) => d.value));
+      const matchingDraft = (publishedTemplate.qr_draft_data || []).find(
+        (entry) => ownDepCodes.has(entry.dependency) || ownDepCodes.has(entry.dependency_code || '')
+      );
       await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmDraft`, {
         pubTemId: publishedTemplate._id,
         email: session?.user?.email,
+        // Evita confirmar por accidente el borrador de otra dependencia cuando
+        // el usuario pertenece a varias. Si la lista aun no cargo las
+        // dependencias, el backend resuelve de forma segura la que corresponde.
+        ...(matchingDraft ? { dependency: matchingDraft.dependency_code || matchingDraft.dependency } : {}),
       });
       showNotification({
         title: "Información enviada",
         message: "Se confirmó y envió la información guardada.",
         color: "teal",
       });
-      refreshTemplates();
+      refreshTemplates({ refreshUploaded: true, scrollToUploaded: true });
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        router.push(`/producer/templates/form/${publishedTemplate._id}`);
-        return;
+      if (
+        axios.isAxiosError(error) &&
+        [404, 422].includes(error.response?.status || 0)
+      ) {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmExisting`, {
+            pubTemId: publishedTemplate._id,
+            email: session?.user?.email,
+          });
+          showNotification({
+            title: "Información enviada",
+            message: "La información existente se confirmó y envió correctamente.",
+            color: "teal",
+          });
+          refreshTemplates({ refreshUploaded: true, scrollToUploaded: true });
+          return;
+        } catch (confirmationError) {
+          showNotification({
+            title: "Error",
+            message: axios.isAxiosError(confirmationError)
+              ? (confirmationError.response?.data?.status || "No se pudo enviar la información existente.")
+              : "No se pudo enviar la información existente.",
+            color: "red",
+          });
+          return;
+        }
       }
       showNotification({
         title: "Error",
@@ -1311,9 +1341,7 @@ if (field.multiple) {
           ?? publishedTemplate.template?.fecha_final
           ?? publishedTemplate.deadline
           ?? publishedTemplate.period.producer_end_date);
-    // Deadline: 11:59:59 PM hora Colombia (UTC-5) del día límite
-    const colDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(raw));
-    return new Date(`${colDateStr}T23:59:59.999-05:00`);
+    return endOfDayGMT5(raw);
   };
 
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
@@ -1367,8 +1395,7 @@ if (field.multiple) {
                   ?? publishedTemplate.template?.fecha_final
                   ?? publishedTemplate.deadline
                   ?? publishedTemplate.period.producer_end_date);
-            const colFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' });
-            const isDeadlineToday = colFmt.format(new Date(fecha)) === colFmt.format(new Date());
+            const isDeadlineToday = dateToGMT(fecha, "YYYY-MM-DD") === dateToGMT(new Date(), "YYYY-MM-DD");
             return (
               <Stack gap={2}>
                 <Text size="sm" fw={700} c={isDeadlineToday ? 'red' : 'blue'}>{dateToGMT(fecha)}</Text>

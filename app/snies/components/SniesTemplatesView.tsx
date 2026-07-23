@@ -12,6 +12,7 @@ import {
   extractWorkbookCommentsFromBase64,
   applyFieldCommentNote,
   getExcelCellAddress,
+  formatTemplateDateValue,
 } from "@/app/utils/templateUtils";
 import {
   ActionIcon,
@@ -198,6 +199,51 @@ const normalizeToken = (value: unknown) =>
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toUpperCase();
+
+const isConveniosInternacionalesTemplate = (name: unknown) =>
+  normalizeToken(name).replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "") ===
+  "CONVENIOS_INTERNACIONALES";
+
+const isInternationalConventionOrigin = (value: unknown) => {
+  const normalized = normalizeToken(value);
+  return normalized.includes("INTERNACIONAL") || /^2(?:\D|$)/.test(normalized);
+};
+
+const isConventionOriginField = (fieldName: unknown) => {
+  const normalized = normalizeToken(fieldName).replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+  return ["TIPO_ORIGEN_CONVENIO", "TIPO_ORIGEN", "ORIGEN_CONVENIO"].includes(normalized);
+};
+
+const filterInternationalConventionRows = (templateName: unknown, rows: Record<string, any>[]) => {
+  if (!isConveniosInternacionalesTemplate(templateName)) return rows;
+  return rows.filter((row) => {
+    const originEntry = Object.entries(row || {}).find(([key]) => isConventionOriginField(key));
+    return Boolean(originEntry && isInternationalConventionOrigin(originEntry[1]));
+  });
+};
+
+const filterInternationalConventionFilledData = (templateName: unknown, filledData: any[]) => {
+  if (!isConveniosInternacionalesTemplate(templateName)) return filledData;
+
+  const bySheet = new Map<string, any[]>();
+  filledData.forEach((field) => {
+    const sheet = field?.sheet_name || field?.sheet || field?.sheetName || "__legacy__";
+    if (!bySheet.has(sheet)) bySheet.set(sheet, []);
+    bySheet.get(sheet)!.push(field);
+  });
+
+  return Array.from(bySheet.values()).flatMap((fields) => {
+    const originField = fields.find((field) => isConventionOriginField(field?.field_name));
+    if (!originField) return [];
+    const allowedIndexes = (originField.values || [])
+      .map((value: unknown, index: number) => isInternationalConventionOrigin(value) ? index : -1)
+      .filter((index: number) => index >= 0);
+    return fields.map((field) => ({
+      ...field,
+      values: allowedIndexes.map((index: number) => field?.values?.[index] ?? null),
+    }));
+  });
+};
 
 const getValidateWithText = (value: unknown): string => {
   if (!value) return "";
@@ -559,7 +605,6 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [dataModalRows, setDataModalRows] = useState<Record<string, any>[]>([]);
   const [dataModalColumns, setDataModalColumns] = useState<string[]>([]);
   const [dataModalLoading, setDataModalLoading] = useState(false);
-  const [downloadingModalExcel, setDownloadingModalExcel] = useState(false);
   const [downloadingDirectId, setDownloadingDirectId] = useState<string | null>(null);
   const [equivalenceOpened, { open: openEquivalence, close: closeEquivalence }] = useDisclosure(false);
   const [equivalenceTemplate, setEquivalenceTemplate] = useState<SniesTemplate | null>(null);
@@ -1467,8 +1512,8 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
   // aplicar validaciones/dropdowns de Excel, y con los valores de validador
   // reducidos a su codigo (sin la descripcion). Si la plantilla no tiene el
   // archivo original guardado, cae al Excel genérico reconstruido desde los
-  // datos. La usan tanto el boton "Descargar Excel" del modal como el
-  // "Descargar" de la lista, para que ambos generen el mismo archivo.
+  // datos. La usa el boton "Descargar" de la lista; la vista previa no ofrece
+  // una segunda descarga para evitar dos acciones duplicadas.
   const downloadPublishedTemplateExcel = async (pt: any) => {
     const name = pt?.name || pt?.template?.name || "datos";
     const pubTemId = pt?._id;
@@ -1486,9 +1531,13 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
         // descripcion se aplica a todos los valores; el patron exige un
         // codigo corto y en mayusculas/numeros, lo que evita en la
         // practica truncar texto libre (nombres, descripciones largas).
-        const filledData = mergeFilledDataAcrossDependencies(loadedData).map((fd) => ({
+        let mergedFilledData: any[] = mergeFilledDataAcrossDependencies(loadedData);
+        mergedFilledData = filterInternationalConventionFilledData(name, mergedFilledData);
+        const filledData = mergedFilledData.map((fd) => ({
           ...fd,
-          values: (fd.values || []).map(stripValidatorDescription),
+          values: (fd.values || []).map((value: unknown) =>
+            formatTemplateDateValue(value, fd.field_name) ?? stripValidatorDescription(value)
+          ),
         }));
         const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
         // ExcelJS no lee bien el texto de los comentarios de este formato de
@@ -1553,16 +1602,6 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     }
   };
 
-  const handleDownloadDataModal = async () => {
-    if (!dataModalTemplate) return;
-    setDownloadingModalExcel(true);
-    try {
-      await downloadPublishedTemplateExcel(dataModalTemplate);
-    } finally {
-      setDownloadingModalExcel(false);
-    }
-  };
-
   // Solo aplica cuando NO hay una plantilla SNIES vinculada (handleOpenConnectedData
   // / getConnectedData ya hacen esta transformacion correctamente contra la
   // plantilla SNIES real). Sin un vinculo no existe un esquema SNIES para saber
@@ -1572,12 +1611,15 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
   const stripValidatorDescription = (value: any) => {
     if (typeof value !== "string") return value;
     // Los validadores en Miró usan varios formatos: "CODIGO - Descripción",
-    // "CODIGO (Descripción)", o simplemente "CODIGO Descripción" separados
-    // solo por un espacio (ej. "CC Cédula de ciudadanía"). En todos los casos
-    // se conserva solo el codigo inicial. La variante sin separador exige un
-    // codigo mas corto (1-3) para no confundir texto libre con un codigo.
+    // "CODIGO (Descripción)", "CODIGO. Descripción" (ej. "1. Marco"), o
+    // simplemente "CODIGO Descripción" separados solo por un espacio (ej.
+    // "CC Cédula de ciudadanía"). En todos los casos se conserva solo el
+    // codigo inicial. Las variantes sin separador claro exigen un codigo
+    // mas corto (1-3) para no confundir texto libre con un codigo.
     const withSeparator = value.match(/^([A-Za-z0-9]{1,6})\s*[-(]/);
     if (withSeparator) return withSeparator[1];
+    const withDot = value.match(/^(\d{1,3})\.\s+(?=[A-ZÁÉÍÓÚÑ])/);
+    if (withDot) return withDot[1];
     const withSpaceOnly = value.match(/^([A-Z0-9]{1,3})\s+(?=[A-ZÁÉÍÓÚÑ])/);
     return withSpaceOnly ? withSpaceOnly[1] : value;
   };
@@ -1586,7 +1628,7 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     const { Dependencia, ...rest } = row;
     const cleaned: Record<string, any> = {};
     Object.entries(rest).forEach(([key, value]) => {
-      cleaned[key] = stripValidatorDescription(value);
+      cleaned[key] = formatTemplateDateValue(value, key) ?? stripValidatorDescription(value);
     });
     return cleaned;
   };
@@ -1609,6 +1651,8 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
         getSniesBaseFieldNames(pt._id),
       ]);
       let rows: Record<string, any>[] = (mergedRes.data?.data || []).map(cleanRowForSniesDisplay);
+
+      rows = filterInternationalConventionRows(pt?.name || pt?.template?.name, rows);
 
       // Si se pudo determinar cuales campos son de SNIES (encabezado azul en
       // el archivo original), la tabla solo muestra esas columnas — igual que
@@ -2409,17 +2453,6 @@ const activeMiroTemplateId =
             <Text fw={600}>
               Información enviada: {dataModalTemplate?.name || dataModalTemplate?.template?.name || ''}
             </Text>
-            <Button
-              variant="outline"
-              color="teal"
-              size="xs"
-              leftSection={<IconDownload size={14} />}
-              disabled={dataModalRows.length === 0 || dataModalLoading}
-              loading={downloadingModalExcel}
-              onClick={handleDownloadDataModal}
-            >
-              Descargar Excel
-            </Button>
           </Group>
         }
         size="90%"

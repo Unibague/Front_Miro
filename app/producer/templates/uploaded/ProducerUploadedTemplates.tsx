@@ -53,6 +53,7 @@ import {
   copyCellPresentation,
   toExcelCellValue,
   mergeFilledDataAcrossDependencies,
+  formatTemplateDateValue,
 } from "@/app/utils/templateUtils";
 
 const DropzoneUpdateButton = dynamic(
@@ -328,6 +329,12 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
     ]);
     const depCode: string = userResp.data.dep_code;
+    const currentEmail = session?.user?.email || "";
+    const ownDepCodes = new Set<string>([
+      depCode,
+      ...(userResp.data.additional_dependencies || []),
+      ...(userDependencies || []).map((dependency) => dependency.value),
+    ].filter(Boolean));
     const freshTemplate = freshTemplateResponse.data.template as Template | null | undefined;
     const validators = freshTemplate?.validators ?? publishedTemplate.validators;
     const periodId: string = (publishedTemplate.period as any)?._id ?? String(publishedTemplate.period ?? '');
@@ -352,16 +359,33 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
       }
       allFilledData = mergeFilledDataAcrossDependencies(allEntries);
     } else {
-      const filledData: any = publishedTemplate.loaded_data.find(
-        (entry) => entry.dependency === depCode || (entry as any).dependency_code === depCode
+      // Ademas de sus dependencias, incluir las entradas que este usuario
+      // corrigio/envio en nombre de otro productor. El backend conserva la
+      // dependencia original y registra al editor en send_by.email.
+      const visibleEntries = (publishedTemplate.loaded_data || []).filter(
+        (entry) =>
+          ownDepCodes.has(entry.dependency) ||
+          ownDepCodes.has((entry as any).dependency_code || "") ||
+          entry.send_by?.email === currentEmail ||
+          (entry as any).sender_email === currentEmail
       );
 
-      if (!filledData) {
+      if (!visibleEntries.length) {
         showNotification({ title: "Sin datos cargados", message: "No se encontraron datos cargados para tu dependencia.", color: "yellow" });
         return;
       }
 
-      allFilledData = filledData.filled_data || [];
+      allFilledData = mergeFilledDataAcrossDependencies(visibleEntries);
+    }
+
+    const hasValues = allFilledData.some((field) =>
+      (field.values || []).some((value) =>
+        value !== null && value !== undefined && String(value).trim() !== ""
+      )
+    );
+    if (!hasValues) {
+      showNotification({ title: "Sin datos cargados", message: "No se encontraron valores enviados por este usuario.", color: "yellow" });
+      return;
     }
 
     // Fill the saved data into the configured cells while preserving the base worksheet content.
@@ -396,7 +420,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           const val = fd?.values?.[i] ?? null;
           const targetCell = ws.getCell(dataRow, fieldCol);
           copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
-          targetCell.value = toExcelCellValue(val);
+          targetCell.value = toExcelCellValue(formatTemplateDateValue(val, field.name) ?? val);
         });
       }
     };
@@ -431,6 +455,26 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               fields: freshTemplate.fields,
             }]
           : [];
+      // Encabezados de campos añadidos (no vienen en el archivo original, asi
+      // que sin esto la columna queda con el dato pero sin nombre de encabezado).
+      dropdownSheets.forEach((sheet: any) => {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !Array.isArray(sheet.fields)) return;
+        const hasBase = sheet.fields.some((f: any) => f.locked !== false);
+        if (!hasBase) return;
+        sheet.fields.forEach((field: any, index: number) => {
+          if (field.locked !== false) return;
+          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+          const cell = ws.getCell(hRow, col);
+          cell.value = field.name;
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          const colObj = ws.getColumn(col);
+          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+        });
+      });
       applyWorkbookSheetDropdowns({
         workbook,
         workbookSheets: dropdownSheets,
@@ -461,6 +505,22 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           });
           populateSheet(ws, sheet.fields || [], sheet.name);
           applyValidatorDropdowns({ workbook, worksheet: ws, fields: sheet.fields || [], validators, startRow: 2, endRow: 1000, preloadedValidatorOptions });
+          // Encabezados de campos añadidos por el usuario (color verde)
+          const hasBase = (sheet.fields || []).some((f: any) => f.locked !== false);
+          if (hasBase) {
+            (sheet.fields || []).forEach((field: any, index: number) => {
+              if (field.locked !== false) return;
+              const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+              const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+              const cell = ws.getCell(hRow, col);
+              cell.value = field.name;
+              cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+              cell.alignment = { vertical: "middle", horizontal: "center" };
+              const colObj = ws.getColumn(col);
+              if (!colObj.width || colObj.width < 20) colObj.width = 20;
+            });
+          }
           continue;
         }
         const ws = workbook.addWorksheet(sheet.name);

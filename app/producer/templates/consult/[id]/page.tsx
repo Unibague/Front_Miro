@@ -20,14 +20,13 @@ import {
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
 import { IconCheck, IconX, IconArrowLeft, IconTableRow, IconFilter, IconDownload } from "@tabler/icons-react";
-import dayjs from "dayjs";
-import "dayjs/locale/es";
-import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import DateConfig from "@/app/components/DateConfig";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { showNotification } from "@mantine/notifications";
 import { paramId } from "@/app/utils/routeParams";
+import { formatTemplateDateValue } from "@/app/utils/templateUtils";
 
 interface RowData {
   [key: string]: any;
@@ -225,14 +224,8 @@ const ProducerConsultTemplatePage = () => {
       return value ? <IconCheck color="green" size={20} /> : <IconX color="red" size={20} />;
     }
 
-    if (
-      typeof value === "string" &&
-      isValidDateString(value) &&
-      isNaN(Number(value)) &&
-      dayjs(value).isValid()
-    ) {
-      return dateToGMT(value, "YYYY/MM/DD");
-    }
+    const formattedDate = formatTemplateDateValue(value, fieldName);
+    if (formattedDate) return formattedDate;
 
     if (typeof value === "object" && value !== null) {
       if (Array.isArray(value)) {
@@ -354,6 +347,8 @@ const ProducerConsultTemplatePage = () => {
       const rowValues = columns.map((column) => {
         const value = row[column];
         if (value === null || value === undefined) return "";
+        const formattedDate = formatTemplateDateValue(value, column);
+        if (formattedDate) return formattedDate;
         if (typeof value === "boolean") return value ? "Sí" : "No";
 
         if (typeof value === "object") {
@@ -390,9 +385,6 @@ const ProducerConsultTemplatePage = () => {
           return JSON.stringify(value);
         }
 
-        if (typeof value === "string" && isValidDateString(value) && dayjs(value).isValid()) {
-          return dayjs(value).format("YYYY/MM/DD");
-        }
         return value.toString();
       });
 

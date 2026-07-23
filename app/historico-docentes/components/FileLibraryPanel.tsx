@@ -101,6 +101,27 @@ const displayHeader = (h: string) => {
   return h;
 };
 
+// Algunos archivos cargados antes de esta corrección guardaron las fechas
+// como el toString() completo de un Date de JS (ej. "Tue Jan 06 2026
+// 19:00:00 GMT-0500 (hora estándar de Colombia)") en vez de dd/mm/aaaa.
+// Se reformatea aquí para mostrarlas igual que en el resto de los módulos.
+const MONTH_ABBR_TO_NUM: Record<string, string> = {
+  Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+  Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+};
+const JS_DATE_TOSTRING_RE = /^\w{3} (\w{3}) (\d{2}) (\d{4}) \d{2}:\d{2}:\d{2} GMT[+-]\d{4}/;
+
+const displayCellValue = (value: unknown): string => {
+  if (typeof value !== "string") return value == null ? "" : String(value);
+  const match = value.match(JS_DATE_TOSTRING_RE);
+  if (match) {
+    const [, mon, day, year] = match;
+    const mm = MONTH_ABBR_TO_NUM[mon];
+    if (mm) return `${day}/${mm}/${year}`;
+  }
+  return value;
+};
+
 const ANEXO_ACTION_ICON_SIZE = 14;
 const ANEXO_ACTION_PROPS = { size: "sm" as const, variant: "subtle" as const };
 
@@ -108,6 +129,8 @@ interface FileLibraryPanelProps {
   category: "plantillas" | "informes";
   /** Ámbito al que se restringe esta biblioteca (subida y listado). */
   dimensionId: string;
+  /** Contenido (p. ej. los botones Plantillas/Informes) que se muestra a la izquierda, en la misma fila que el selector de Excel. */
+  tabs?: React.ReactNode;
 }
 
 // Version de la biblioteca de archivos (subir Excel/PDF, ver hojas, adjuntar
@@ -115,7 +138,7 @@ interface FileLibraryPanelProps {
 // misma funcionalidad que existia en la pestaña "Plantillas"/"Informes" de
 // /historico-docentes, solo que aqui cada archivo queda etiquetado con el
 // ámbito (dimensionId) al subirlo, y el listado solo trae los de ese ámbito.
-export default function FileLibraryPanel({ category, dimensionId }: FileLibraryPanelProps) {
+export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLibraryPanelProps) {
   const { data: session } = useSession();
   const { userRole } = useRole();
   const isAdmin = userRole === "Administrador";
@@ -441,7 +464,7 @@ export default function FileLibraryPanel({ category, dimensionId }: FileLibraryP
                               <Table.Tr key={rowIndex}>
                                 <Table.Td><Text size="xs" c="dimmed">{num}</Text></Table.Td>
                                 {data.currentSheet.headers.map((_, colIndex) => (
-                                  <Table.Td key={colIndex} style={{ whiteSpace: "nowrap" }}>{row[colIndex] ?? ""}</Table.Td>
+                                  <Table.Td key={colIndex} style={{ whiteSpace: "nowrap" }}>{displayCellValue(row[colIndex])}</Table.Td>
                                 ))}
                               </Table.Tr>
                             );
@@ -618,20 +641,25 @@ export default function FileLibraryPanel({ category, dimensionId }: FileLibraryP
         )}
       </Modal>
 
-      {isAdmin && (
-        <Group mb="md" gap="xs" justify="flex-end">
-          <FileInput
-            placeholder={category === "informes" ? "Excel (.xlsx) o PDF" : "Seleccionar Excel (.xlsx)"}
-            value={file}
-            onChange={setFile}
-            accept={category === "informes" ? ".xlsx,.xlsm,.pdf" : ".xlsx,.xlsm"}
-            leftSection={<IconUpload size={16} />}
-            style={{ minWidth: 240 }}
-            clearable
-          />
-          <Button onClick={handleUpload} loading={uploading} disabled={!file} color="violet">
-            Cargar en {category === "informes" ? "Informes" : "Plantillas"}
-          </Button>
+      {(tabs || isAdmin) && (
+        <Group mb="md" justify="space-between" align="flex-end" wrap="wrap" gap="xs">
+          {tabs || <div />}
+          {isAdmin && (
+            <Group gap="xs">
+              <FileInput
+                placeholder={category === "informes" ? "Excel (.xlsx) o PDF" : "Seleccionar Excel (.xlsx)"}
+                value={file}
+                onChange={setFile}
+                accept={category === "informes" ? ".xlsx,.xlsm,.pdf" : ".xlsx,.xlsm"}
+                leftSection={<IconUpload size={16} />}
+                style={{ minWidth: 240 }}
+                clearable
+              />
+              <Button onClick={handleUpload} loading={uploading} disabled={!file} color="violet">
+                Cargar en {category === "informes" ? "Informes" : "Plantillas"}
+              </Button>
+            </Group>
+          )}
         </Group>
       )}
 
@@ -690,15 +718,13 @@ export default function FileLibraryPanel({ category, dimensionId }: FileLibraryP
         <Center h={200}><Loader /></Center>
       ) : (
         <Stack gap="sm">
-          {fileList.length > 0 && (
-            <TextInput
-              placeholder="Buscar por nombre..."
-              value={listSearch}
-              onChange={(e) => setListSearch(e.currentTarget.value)}
-              leftSection={<IconSearch size={16} />}
-              style={{ maxWidth: 340 }}
-            />
-          )}
+          <TextInput
+            placeholder="Buscar por nombre..."
+            value={listSearch}
+            onChange={(e) => setListSearch(e.currentTarget.value)}
+            leftSection={<IconSearch size={16} />}
+            style={{ maxWidth: 340 }}
+          />
           {visibleFiles.length === 0 ? (
             <Center h={200}>
               <Stack align="center" gap="sm">
