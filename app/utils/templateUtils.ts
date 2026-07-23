@@ -285,7 +285,7 @@ export const populateWorksheetWithFilledData = (
       const val = fd?.values?.[i] ?? null;
       const targetCell = worksheet.getCell(dataRow, fieldCol);
       copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
-      targetCell.value = toExcelCellValue(val);
+      targetCell.value = toExcelCellValue(formatTemplateDateValue(val, field.name) ?? val);
     });
   }
 };

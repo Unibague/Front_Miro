@@ -33,6 +33,7 @@ import {
   IconUpload,
   IconQrcode,
   IconListDetails,
+  IconUsersGroup,
 } from "@tabler/icons-react";
 import QRCode from "react-qr-code";
 import { useSession } from "next-auth/react";
@@ -55,9 +56,11 @@ import {
   ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
+  formatTemplateDateValue,
   getExcelCellAddress,
   injectWorkbookSheetHeaderComments,
   loadWorkbookFromBase64,
+  mergeFilledDataAcrossDependencies,
   patchNoteSize,
   reorderWorkbookSheets,
   sanitizeSheetName,
@@ -426,7 +429,7 @@ const ProducerTemplatesPage = () => {
   }, [templates, selectedCategory]);
   
 
-  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate, includeAllProducers = false) => {
     const [freshTemplateResponse, userResp] = await Promise.all([
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session?.user?.email } }),
@@ -462,12 +465,15 @@ const ProducerTemplatesPage = () => {
       ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
       : {};
 
-    // Datos ya enviados por el usuario (para pre-poblar el Excel)
+    // Datos para pre-poblar el Excel: por defecto solo lo que este productor ya
+    // envio; con includeAllProducers, se combina lo cargado por TODAS las
+    // dependencias (boton "Descargar con info de otros productores").
     const userDepCode: string = userResp.data.dep_code || '';
-    const userLoadedEntry = (publishedTemplate.loaded_data || []).find(
-      (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
-    );
-    const userFilledData: FilledFieldData[] = userLoadedEntry?.filled_data || [];
+    const userFilledData: FilledFieldData[] = includeAllProducers
+      ? mergeFilledDataAcrossDependencies(publishedTemplate.loaded_data || [])
+      : ((publishedTemplate.loaded_data || []).find(
+          (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
+        )?.filled_data || []);
 
     // Helper: poblar hoja con datos existentes
     const populateSheetWithData = (ws: ExcelJS.Worksheet, fields: Field[], sheetName?: string) => {
@@ -480,7 +486,8 @@ const ProducerTemplatesPage = () => {
       for (let i = 0; i < numRows; i++) {
         const rowValues = fields.map(field => {
           const fd = relevant.find(d => d.field_name === field.name);
-          return fd?.values?.[i] ?? null;
+          const value = fd?.values?.[i] ?? null;
+          return formatTemplateDateValue(value, field.name) ?? value;
         });
         ws.addRow(rowValues);
       }
@@ -611,13 +618,16 @@ const ProducerTemplatesPage = () => {
         });
       }
 
-      // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables
+      // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables.
+      // Con includeAllProducers se pobla toda hoja con datos, sin importar si
+      // este productor puede editarla, y sin prellenar AÑO/SEMESTRE (es una
+      // copia para consultar lo ya cargado, no para diligenciar de nuevo).
       for (const sheet of workbookSheets) {
-        if (!canUserEditSheet(sheet)) continue;
+        if (!includeAllProducers && !canUserEditSheet(sheet)) continue;
         const ws = workbook.getWorksheet(sheet.name);
         if (!ws || !sheet.fields?.length) continue;
         populateSheetWithData(ws, sheet.fields, sheet.name);
-        applyPeriodPrefill(ws, sheet.fields);
+        if (!includeAllProducers) applyPeriodPrefill(ws, sheet.fields);
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos
@@ -653,7 +663,7 @@ const ProducerTemplatesPage = () => {
       buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
       buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: "application/octet-stream" });
-      saveAs(blob, `${template.file_name}.xlsx`);
+      saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
       return;
     }
 
@@ -750,9 +760,9 @@ const ProducerTemplatesPage = () => {
           preloadedValidatorOptions,
         });
 
-        if (canUserEditSheet(sheet)) {
+        if (includeAllProducers || canUserEditSheet(sheet)) {
           populateSheetWithData(worksheet, sheet.fields, sheet.name);
-          applyPeriodPrefill(worksheet, sheet.fields);
+          if (!includeAllProducers) applyPeriodPrefill(worksheet, sheet.fields);
         }
       }
 
@@ -777,7 +787,7 @@ const ProducerTemplatesPage = () => {
       );
       buffer = await patchNoteSize(buffer);
       const blob = new Blob([buffer], { type: "application/octet-stream" });
-      saveAs(blob, `${template.file_name}.xlsx`);
+      saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
       return;
     }
 
@@ -947,7 +957,7 @@ if (field.multiple) {
     ]);
     buffer = await patchNoteSize(buffer);
     const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${template.file_name}.xlsx`);
+    saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
   };
 
   const categoryColors = [
@@ -1418,6 +1428,18 @@ if (field.multiple) {
                   onClick={() => handleDownload(publishedTemplate)}
                 >
                   <IconDownload size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label="Descargar con información ya cargada por otros productores"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="teal"
+                  onClick={() => handleDownload(publishedTemplate, true)}
+                >
+                  <IconUsersGroup size={16} />
                 </Button>
               </Tooltip>
               {canGenerateQrForTemplate(publishedTemplate) && (
