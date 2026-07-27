@@ -45,6 +45,7 @@ interface Field {
   name: string;
   datatype: string;
   required: boolean;
+  required_override?: boolean;
   validate_with?: { id: string, name: string } | string;
   comment?: string;
   multiple?: boolean;
@@ -144,6 +145,8 @@ const extractValidatorDisplayValues = (validator: any): string[] => {
 
 const fieldIsRequired = (field: Field, skipComment = false): boolean => {
   if (skipComment) return false;
+  // Override manual del admin: gana siempre, aunque el comentario diga "obligatorio".
+  if (field.required_override) return false;
   if (field.required) return true;
   const c = field.comment?.toLowerCase() ?? "";
   for (const w of ["obligatorio", "obligatario"]) {

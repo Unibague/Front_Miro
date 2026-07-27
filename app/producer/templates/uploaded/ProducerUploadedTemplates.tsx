@@ -590,12 +590,16 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         fetchTemplates(page, search, selectedCategory, pageSize);
         fetchTemp();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting template:", error);
+      const backendMessage = error?.response?.data?.status || error?.response?.data?.details;
       showNotification({
         title: "Error",
-        message: "Ocurrió un error al eliminar la información",
+        message: backendMessage
+          ? `Ocurrió un error al eliminar la información: ${backendMessage}`
+          : "Ocurrió un error al eliminar la información",
         color: "red",
+        autoClose: 8000,
       });
     }
   };

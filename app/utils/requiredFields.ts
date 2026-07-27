@@ -1,6 +1,7 @@
 type FieldRequirementSource = {
   required?: boolean;
   comment?: string | null;
+  required_override?: boolean;
 };
 
 const normalizeRequirementText = (value: unknown): string => {
@@ -37,6 +38,9 @@ export const isRequiredComment = (comment: unknown): boolean => {
 };
 
 export const getEffectiveRequired = (field?: FieldRequirementSource | null): boolean => {
+  // Override manual del admin: gana siempre, sin importar `required` ni la
+  // palabra "obligatorio" en el comentario.
+  if (Boolean(field?.required_override)) return false;
   if (Boolean(field?.required)) return true;
   const comment = field?.comment;
   if (typeof comment !== "string" || !comment.trim()) return false;

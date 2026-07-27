@@ -14,6 +14,8 @@ import { isBlankRequiredValue } from '../../utils/requiredFields';
 
 const isRequiredField = (field: any, skipComment = false): boolean => {
   if (skipComment) return false;
+  // Override manual del admin: gana siempre, aunque el comentario diga "obligatorio".
+  if (field?.required_override) return false;
   if (field?.required) return true;
   const c = String(field?.comment ?? '').toLowerCase();
   for (const w of ['obligatorio', 'obligatario']) {

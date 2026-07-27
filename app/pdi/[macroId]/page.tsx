@@ -30,7 +30,7 @@ const ANIO_ACTUAL = String(new Date().getFullYear());
 // Ancho fijo de cada tarjeta de año en las secciones de distribución
 // presupuestal/ejecución, para que al filtrar a un solo año la tarjeta
 // no se estire a lo ancho de toda la fila.
-const YEAR_BOX_WIDTH = 220;
+const YEAR_BOX_WIDTH = 360;
 
 interface CorteVigente {
   _id: string;
@@ -616,23 +616,23 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                 const inversionAnio = usaReal ? presupuestoReal!.presupuestoInversion : anioSheet ? anioSheet.inversion : Math.round(asignado * inversionRatio);
                 const notas = (notasPorAnio[anio] ?? []).filter(Boolean);
                 const contenido = (
-                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined, ...boxStyleFiltrado }}>
-                    <Group gap={4} mb={6} wrap="nowrap">
-                      <Text size="sm" fw={800}>{anio}</Text>
-                      {notas.length > 0 && <IconNotes size={13} color="var(--mantine-color-violet-6)" />}
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: mostrandoTodos ? "12px 10px" : "22px 20px", cursor: notas.length ? "help" : undefined, ...boxStyleFiltrado }}>
+                    <Group gap={4} mb={mostrandoTodos ? 6 : 12} wrap="nowrap">
+                      <Text size={mostrandoTodos ? "sm" : "xl"} fw={800}>{anio}</Text>
+                      {notas.length > 0 && <IconNotes size={mostrandoTodos ? 13 : 18} color="var(--mantine-color-violet-6)" />}
                     </Group>
                     <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
-                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
-                        <Text size="xs" fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Gasto</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} style={{ color: "#2563eb" }}>{formatCOP(gastoAnio)}</Text>
                       </div>
                       <div style={{ textAlign: "center" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
-                        <Text size="xs" fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Inversión</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} style={{ color: "#7c3aed" }}>{formatCOP(inversionAnio)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Total</Text>
-                        <Text size="xs" fw={700} c="dimmed">{formatCOP(asignado)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Total</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} c="dimmed">{formatCOP(asignado)}</Text>
                       </div>
                     </Group>
                   </Box>
@@ -699,26 +699,26 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                 const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                 const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                 return (
-                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", ...boxStyleFiltrado }}>
-                    <Group justify="space-between" align="center" mb={6}>
-                      <Text size="sm" fw={800}>{anio}</Text>
-                      <Text size="lg" fw={900} style={{ color: barColor }} lh={1}>{pct}%</Text>
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: mostrandoTodos ? "12px 10px" : "22px 20px", ...boxStyleFiltrado }}>
+                    <Group justify="space-between" align="center" mb={mostrandoTodos ? 6 : 12}>
+                      <Text size={mostrandoTodos ? "sm" : "xl"} fw={800}>{anio}</Text>
+                      <Text size={mostrandoTodos ? "lg" : "1.75rem"} fw={900} style={{ color: barColor }} lh={1}>{pct}%</Text>
                     </Group>
-                    <Box style={{ height: 6, borderRadius: 99, background: "rgba(0,0,0,0.08)", overflow: "hidden", marginBottom: 8 }}>
+                    <Box style={{ height: mostrandoTodos ? 6 : 10, borderRadius: 99, background: "rgba(0,0,0,0.08)", overflow: "hidden", marginBottom: mostrandoTodos ? 8 : 14 }}>
                       <Box style={{ height: "100%", width: `${pct}%`, background: barColor, borderRadius: 99, transition: "width .4s" }} />
                     </Box>
                     <Group justify="space-between" align="flex-start" gap={2}>
                       <div>
-                        <Text size="xs" c="dimmed" lh={1}>Gasto</Text>
-                        <Text size="xs" fw={700} c="teal">{formatCOP(gastoCausado)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Gasto</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} c="teal">{formatCOP(gastoCausado)}</Text>
                       </div>
                       <div style={{ textAlign: "center" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Inversión</Text>
-                        <Text size="xs" fw={700} c="teal">{formatCOP(inversionCausado)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Inversión</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} c="teal">{formatCOP(inversionCausado)}</Text>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <Text size="xs" c="dimmed" lh={1}>Total</Text>
-                        <Text size="xs" fw={700} c="dimmed">{formatCOP(ejecutado)}</Text>
+                        <Text size={mostrandoTodos ? "xs" : "sm"} c="dimmed" lh={1}>Total</Text>
+                        <Text size={mostrandoTodos ? "xs" : "md"} fw={700} c="dimmed">{formatCOP(ejecutado)}</Text>
                       </div>
                     </Group>
                   </Box>

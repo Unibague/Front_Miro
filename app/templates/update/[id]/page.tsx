@@ -33,11 +33,13 @@ import {
 import { paramId } from "@/app/utils/routeParams";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { getEffectiveRequired } from "@/app/utils/requiredFields";
 
 interface Field {
   name: string;
   datatype: string;
   required: boolean;
+  required_override?: boolean;
   multiple: boolean;
   validate_with?: string;
   comment?: string;
@@ -214,6 +216,7 @@ const UpdateTemplatePage = () => {
     name: field.name || "",
     datatype: field.datatype || "",
     required: field.required ?? true,
+    required_override: field.required_override ?? false,
     validate_with: validateWithToText(field.validate_with),
     comment: field.comment || "",
     multiple: field.multiple ?? false,
@@ -284,6 +287,38 @@ const UpdateTemplatePage = () => {
   const toggleBaseFieldRequired = (fieldName: string, required: boolean) => {
     const updater = (currentFields: Field[]) =>
       currentFields.map((f) => (f.name === fieldName ? { ...f, required } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
+  // Permite al admin desmarcar un campo base como obligatorio aunque su
+  // comentario diga "obligatorio" (o marcarlo de nuevo), para que el
+  // productor pueda subir la plantilla sin ese campo diligenciado.
+  const toggleBaseFieldRequiredOverride = (fieldName: string, overridden: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => (f.name === fieldName ? { ...f, required_override: overridden } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
+  // Aplica el override a todos los campos base que actualmente serian
+  // obligatorios (por flag o comentario) de la hoja activa. `overridden`
+  // true = "Desmarcar todos" (ninguno queda obligatorio), false = "Marcar
+  // todos como obligatorios" (se restaura el comportamiento por defecto).
+  const setAllBaseFieldsRequiredOverride = (overridden: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => {
+        if (!isBaseField(f)) return f;
+        const requiredBySource = getEffectiveRequired({ required: f.required, comment: f.comment });
+        if (!requiredBySource) return f;
+        return { ...f, required_override: overridden };
+      });
     if (hasWorkbookSheets) {
       setFieldsForActiveSheet(updater);
     } else {
@@ -1561,16 +1596,70 @@ router.back();
       {baseFields.length > 0 && (
         <Box mt="sm" mb="sm" style={{ borderRadius: "var(--mantine-radius-md)", border: "1px solid var(--mantine-color-gray-3)", overflow: "hidden" }}>
           {/* Encabezado */}
-          <Group
-            justify="space-between"
-            px="sm"
-            py={8}
-            style={{ background: "var(--mantine-color-gray-1)", borderBottom: "1px solid var(--mantine-color-gray-3)" }}
-          >
-            <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
-              Campos base
-            </Text>
-          </Group>
+          {(() => {
+            const requiredBaseFields = baseFields.filter((f) =>
+              getEffectiveRequired({ required: f.required, comment: f.comment })
+            );
+            const overriddenCount = requiredBaseFields.filter((f) => f.required_override).length;
+            return (
+              <Group
+                justify="space-between"
+                px="sm"
+                py={8}
+                style={{ background: "var(--mantine-color-gray-1)", borderBottom: "1px solid var(--mantine-color-gray-3)" }}
+              >
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+                  Campos base
+                </Text>
+                {requiredBaseFields.length > 0 && (
+                  <Group gap="xs">
+                    <Button
+                      size="compact-xs"
+                      variant="light"
+                      color="blue"
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar selección",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas marcar como obligatorios todos los campos base ({requiredBaseFields.length}) de esta hoja?
+                            </Text>
+                          ),
+                          labels: { confirm: "Marcar todos", cancel: "Cancelar" },
+                          confirmProps: { color: "blue" },
+                          onConfirm: () => setAllBaseFieldsRequiredOverride(false),
+                        })
+                      }
+                      disabled={overriddenCount === 0}
+                    >
+                      Marcar todos
+                    </Button>
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar limpieza",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas quitar la obligatoriedad de todos los campos base ({requiredBaseFields.length}) de esta hoja? El productor podra subir la plantilla aunque estos campos queden vacios.
+                            </Text>
+                          ),
+                          labels: { confirm: "Quitar todos", cancel: "Cancelar" },
+                          confirmProps: { color: "red" },
+                          onConfirm: () => setAllBaseFieldsRequiredOverride(true),
+                        })
+                      }
+                      disabled={overriddenCount === requiredBaseFields.length}
+                    >
+                      Quitar todos
+                    </Button>
+                  </Group>
+                )}
+              </Group>
+            );
+          })()}
           {/* Filas */}
           {baseFields.map((field, i) => (
             <Group
@@ -1605,6 +1694,35 @@ router.back();
                   {field.name}
                 </Text>
               </Group>
+              {(() => {
+                // Lo que el campo pediria por si solo (flag `required` o la
+                // palabra "obligatorio" en el comentario), sin el override.
+                const requiredBySource = getEffectiveRequired({ required: field.required, comment: field.comment });
+                const overridden = Boolean(field.required_override);
+                const effectiveRequired = requiredBySource && !overridden;
+                return (
+                  <Group gap="xs" align="center">
+                    <Badge size="xs" variant="light" color={effectiveRequired ? "red" : "gray"}>
+                      {effectiveRequired ? "Obligatorio" : "No obligatorio"}
+                    </Badge>
+                    {requiredBySource && (
+                      <Tooltip
+                        label={overridden
+                          ? "El productor puede subir la plantilla aunque este campo quede vacio."
+                          : "Desmarca para permitir subir la plantilla aunque el comentario diga \"obligatorio\"."}
+                        withArrow
+                      >
+                        <Checkbox
+                          size="xs"
+                          label="Obligatorio"
+                          checked={!overridden}
+                          onChange={(e) => toggleBaseFieldRequiredOverride(field.name, !e.currentTarget.checked)}
+                        />
+                      </Tooltip>
+                    )}
+                  </Group>
+                );
+              })()}
             </Group>
           ))}
         </Box>
