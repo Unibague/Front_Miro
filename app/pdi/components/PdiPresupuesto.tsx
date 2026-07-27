@@ -119,6 +119,12 @@ function pct(value: number, total: number) {
   return Math.min(Math.round((value / total) * 100), 100);
 }
 
+/** Igual que pct(), pero sin redondear: para el texto de "% ejecutado" con 2 decimales. */
+function pctDecimal(value: number, total: number) {
+  if (!total) return "0.00";
+  return Math.min((value / total) * 100, 100).toFixed(2);
+}
+
 /** Presupuesto disponible: Ppto. - Comprometido. Negativo = comprometido por encima del presupuesto. */
 function diffColor(diff: number) {
   return diff < 0 ? "#e03131" : "#2f9e44";
@@ -447,13 +453,17 @@ function KpiCard({ title, value, sub, color, icon }: {
   icon: React.ReactNode;
 }) {
   return (
-    <Paper withBorder radius="md" p="md">
-      <ThemeIcon size={38} radius="xl" color={color} variant="light" mb={8}>
-        {icon}
-      </ThemeIcon>
-      <Text size="xs" c="dimmed" fw={700} mb={2}>{title}</Text>
-      <Text fw={800} size="1.25rem" lh={1.1}>{value}</Text>
-      {sub && <Text size="sm" c="dimmed" mt={4}>{sub}</Text>}
+    <Paper withBorder radius="md" p="xs">
+      <Group gap={8} wrap="nowrap" align="center">
+        <ThemeIcon size={26} radius="xl" color={color} variant="light">
+          {icon}
+        </ThemeIcon>
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Text size="xs" c="dimmed" fw={700} lh={1.1} truncate>{title}</Text>
+          <Text fw={800} size="sm" lh={1.25} truncate>{value}</Text>
+        </Box>
+      </Group>
+      {sub && <Text size="xs" c="dimmed" mt={4} truncate>{sub}</Text>}
     </Paper>
   );
 }
@@ -518,7 +528,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
     const headers = [
       "Macroproyecto", "Código", "Proyecto",
       "Presupuesto", "Presupuesto gasto", "Presupuesto inversión",
-      "Comprometido gasto", "Comprometido inversión", "Diferencia gasto", "Diferencia inversión", "Total comprometido",
+      "Comprometido gasto", "Comprometido inversión", "Saldo gasto", "Saldo inversión", "Total comprometido",
       "Total causado", "Causado gasto", "Causado inversión",
       "Ejecutado gasto", "Ejecutado inversión", "Total ejecutado", "% ejecutado", "Fechas ejecutado",
     ];
@@ -653,9 +663,32 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
 
   return (
     <Box>
-      <Group justify="space-between" mb="md" gap={8} align="center">
-        <Text size="sm" c="dimmed">
-        </Text>
+      <Group justify="space-between" mb="md" gap={8} align="end" wrap="wrap">
+        <Group gap={8} align="end" wrap="wrap">
+          <Select
+            label="Filtrar macroproyecto"
+            size="xs"
+            value={selectedMacro}
+            onChange={(value) => setSelectedMacro(value || "todos")}
+            data={macroOptions}
+            searchable
+            clearable={false}
+            style={{ minWidth: 240 }}
+          />
+          <Select
+            label="Presupuesto"
+            size="xs"
+            value={filtroPresupuesto}
+            onChange={(value) => setFiltroPresupuesto((value as "todos" | "con" | "sin") || "todos")}
+            data={[
+              { value: "todos", label: "Todos" },
+              { value: "con", label: "Con presupuesto" },
+              { value: "sin", label: "Sin presupuesto" },
+            ]}
+            clearable={false}
+            style={{ minWidth: 160 }}
+          />
+        </Group>
         <Group gap={8} align="center">
           {updatedLabel && <Text size="xs" c="dimmed">Actualizado: {updatedLabel}</Text>}
           <Tooltip label="Forzar actualizacion" withArrow>
@@ -666,7 +699,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md" mb="xl">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm" mb="lg">
         <KpiCard
           title="Total presupuesto"
           value={fmtCOP(visibleTotals.presupuesto)}
@@ -757,29 +790,6 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
               </Text>
             </Box>
             <Group gap={8} align="end">
-              <Select
-                label="Filtrar macroproyecto"
-                size="xs"
-                value={selectedMacro}
-                onChange={(value) => setSelectedMacro(value || "todos")}
-                data={macroOptions}
-                searchable
-                clearable={false}
-                style={{ minWidth: 260 }}
-              />
-              <Select
-                label="Presupuesto"
-                size="xs"
-                value={filtroPresupuesto}
-                onChange={(value) => setFiltroPresupuesto((value as "todos" | "con" | "sin") || "todos")}
-                data={[
-                  { value: "todos", label: "Todos" },
-                  { value: "con", label: "Con presupuesto" },
-                  { value: "sin", label: "Sin presupuesto" },
-                ]}
-                clearable={false}
-                style={{ minWidth: 170 }}
-              />
               <Tooltip label="Descargar Excel" withArrow>
                 <Button
                   size="xs"
@@ -806,14 +816,13 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#f8f9fa" }}>
-                  <th style={thStyle}>Macroproyecto</th>
                   <th style={thStyle}>Acción</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Ppto. gasto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Ppto. inversión</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprom. gasto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Comprom. inversión</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Dif. gasto</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Dif. inversión</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Saldo gasto</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Saldo inversión</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Total comprom.</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Total causado</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Ejec. gasto</th>
@@ -834,7 +843,6 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                           <Text size="xs" fw={800}>{group.name}</Text>
                         </Group>
                       </td>
-                      <td style={tdStyle} />
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
                         <Text component="span" size="xs" fw={800} style={{ color: "#2f9e44" }}>{fmtCOP(group.presupuestoGasto)}</Text>
                       </td>
@@ -872,12 +880,12 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                       <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2b8a3e", fontWeight: 800 }}>
                         <BudgetDetailHover value={fmtCOP(group.ejecutado)} details={groupDetails} metric="ejecutado" color="#2b8a3e" fw={800} />
                       </td>
-                      <td style={{ ...tdStyle, minWidth: 72 }}>
-                        <Group gap={4} wrap="nowrap">
-                          <Box style={{ flex: 1, height: 6, background: "#dee2e6", borderRadius: 3, overflow: "hidden" }}>
+                      <td style={{ ...tdStyle, minWidth: 130 }}>
+                        <Group gap={6} wrap="nowrap">
+                          <Box style={{ flex: 1, minWidth: 36, height: 6, background: "#dee2e6", borderRadius: 3, overflow: "hidden" }}>
                             <Box style={{ width: `${macroPcEjecutado}%`, height: "100%", background: macroPcEjecutado >= 80 ? "#20c997" : "#fd7e14" }} />
                           </Box>
-                          <Text size="xs" fw={800} style={{ minWidth: 28, textAlign: "right" }}>{macroPcEjecutado}%</Text>
+                          <Text size="xs" fw={800} style={{ minWidth: 50, textAlign: "right" }}>{pctDecimal(group.ejecutado, group.presupuesto)}%</Text>
                         </Group>
                       </td>
                     </tr>
@@ -897,9 +905,6 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                       : rowDetails;
                     return (
                       <tr key={`${group.macro}-${row.codificacion || row.proyecto}-${rowIndex}`} style={{ background }}>
-                        <td style={tdStyle}>
-                          <Text size="xs" c="dimmed">{group.code}</Text>
-                        </td>
                         <td style={{ ...tdStyle, minWidth: 140 }}>
                           {(() => {
                             const raw = accion || row.codificacion || "";
@@ -952,12 +957,12 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                         <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2b8a3e" }}>
                           <BudgetDetailHover value={fmtCOP(row.ejecutado || 0)} details={filteredDetails} metric="ejecutado" color="#2b8a3e" />
                         </td>
-                        <td style={{ ...tdStyle, minWidth: 72 }}>
-                          <Group gap={4} wrap="nowrap">
-                            <Box style={{ flex: 1, height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
+                        <td style={{ ...tdStyle, minWidth: 130 }}>
+                          <Group gap={6} wrap="nowrap">
+                            <Box style={{ flex: 1, minWidth: 36, height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
                               <Box style={{ width: `${pcEjecutado}%`, height: "100%", background: pcEjecutado >= 80 ? "#20c997" : "#fd7e14" }} />
                             </Box>
-                            <Text size="xs" fw={700} style={{ minWidth: 28, textAlign: "right" }}>{pcEjecutado}%</Text>
+                            <Text size="xs" fw={700} style={{ minWidth: 50, textAlign: "right" }}>{pctDecimal(row.ejecutado || 0, row.presupuesto || 0)}%</Text>
                           </Group>
                         </td>
                       </tr>
@@ -969,7 +974,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
               </tbody>
               <tfoot>
                 <tr style={{ background: "#f1f3f5", fontWeight: 800 }}>
-                  <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={2}>
+                  <td style={{ ...tdStyle, fontWeight: 800 }}>
                     {selectedMacro === "todos" ? "Total" : "Total macro filtrada"}
                   </td>
                   <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
@@ -1009,12 +1014,12 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                   <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", color: "#2b8a3e", fontWeight: 800 }}>
                     <BudgetDetailHover value={fmtCOP(visibleTotals.ejecutado)} details={visibleDetails} metric="ejecutado" color="#2b8a3e" fw={800} />
                   </td>
-                  <td style={{ ...tdStyle, minWidth: 72 }}>
-                    <Group gap={4} wrap="nowrap">
-                      <Box style={{ flex: 1, height: 6, background: "#dee2e6", borderRadius: 3, overflow: "hidden" }}>
+                  <td style={{ ...tdStyle, minWidth: 130 }}>
+                    <Group gap={6} wrap="nowrap">
+                      <Box style={{ flex: 1, minWidth: 36, height: 6, background: "#dee2e6", borderRadius: 3, overflow: "hidden" }}>
                         <Box style={{ width: `${pct(visibleTotals.ejecutado, visibleTotals.presupuesto)}%`, height: "100%", background: pct(visibleTotals.ejecutado, visibleTotals.presupuesto) >= 80 ? "#20c997" : "#fd7e14" }} />
                       </Box>
-                      <Text size="xs" fw={800} style={{ minWidth: 28, textAlign: "right" }}>{pct(visibleTotals.ejecutado, visibleTotals.presupuesto)}%</Text>
+                      <Text size="xs" fw={800} style={{ minWidth: 50, textAlign: "right" }}>{pctDecimal(visibleTotals.ejecutado, visibleTotals.presupuesto)}%</Text>
                     </Group>
                   </td>
                 </tr>

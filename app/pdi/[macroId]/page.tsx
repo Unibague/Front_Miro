@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
-  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, HoverCard,
+  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, HoverCard, Select,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget, IconBulb,
@@ -27,6 +27,10 @@ import { usePdiConfig } from "../hooks/usePdiConfig";
 import { getWeightedContribution as getWeightedProgress, formatNumeroEs, getAvanceAnioSimple } from "../avance-utils";
 
 const ANIO_ACTUAL = String(new Date().getFullYear());
+// Ancho fijo de cada tarjeta de año en las secciones de distribución
+// presupuestal/ejecución, para que al filtrar a un solo año la tarjeta
+// no se estire a lo ancho de toda la fila.
+const YEAR_BOX_WIDTH = 220;
 
 interface CorteVigente {
   _id: string;
@@ -69,6 +73,12 @@ function formatIndicadoresPendientes(items: Array<{ indicadorCodigo: string }>) 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
+interface PresupuestoAnioSheet {
+  gasto: number;
+  inversion: number;
+  total: number;
+}
+
 interface PresupuestoSheetRow {
   accionEstrategica?: string;
   presupuestoGasto?: number;
@@ -77,6 +87,7 @@ interface PresupuestoSheetRow {
   ejecutadoGasto?: number;
   ejecutadoInversion?: number;
   ejecutado?: number;
+  presupuestoPorAnio?: Record<string, PresupuestoAnioSheet>;
 }
 
 // Empareja el codigo de la accion (ej. "M1-P1-A1") con el texto de la
@@ -93,6 +104,22 @@ const normalizeAccionCode = (value?: string) =>
 // Suma, para una accion puntual, las filas de la hoja "Proyecto 2026" cuya
 // columna "Accion estrategica" corresponde a su codigo. Devuelve null si la
 // accion no aparece en la hoja (para no pisar con ceros los años sin datos).
+function mergePresupuestoPorAnio(
+  acc: Record<string, PresupuestoAnioSheet>,
+  incoming?: Record<string, PresupuestoAnioSheet>
+) {
+  if (!incoming) return acc;
+  for (const [anio, valores] of Object.entries(incoming)) {
+    const previo = acc[anio] ?? { gasto: 0, inversion: 0, total: 0 };
+    acc[anio] = {
+      gasto: previo.gasto + (Number(valores.gasto) || 0),
+      inversion: previo.inversion + (Number(valores.inversion) || 0),
+      total: previo.total + (Number(valores.total) || 0),
+    };
+  }
+  return acc;
+}
+
 function sumPresupuestoRowsForAccion(rows: PresupuestoSheetRow[], codigoAccion?: string) {
   const target = normalizeAccionCode(codigoAccion);
   if (!target) return null;
@@ -105,6 +132,7 @@ function sumPresupuestoRowsForAccion(rows: PresupuestoSheetRow[], codigoAccion?:
     ejecutadoGasto: number;
     ejecutadoInversion: number;
     ejecutado: number;
+    presupuestoPorAnio: Record<string, PresupuestoAnioSheet>;
   }>(
     (acc, row) => ({
       presupuestoGasto: acc.presupuestoGasto + (Number(row.presupuestoGasto) || 0),
@@ -113,8 +141,9 @@ function sumPresupuestoRowsForAccion(rows: PresupuestoSheetRow[], codigoAccion?:
       ejecutadoGasto: acc.ejecutadoGasto + (Number(row.ejecutadoGasto) || 0),
       ejecutadoInversion: acc.ejecutadoInversion + (Number(row.ejecutadoInversion) || 0),
       ejecutado: acc.ejecutado + (Number(row.ejecutado) || 0),
+      presupuestoPorAnio: mergePresupuestoPorAnio(acc.presupuestoPorAnio, row.presupuestoPorAnio),
     }),
-    { presupuestoGasto: 0, presupuestoInversion: 0, presupuesto: 0, ejecutadoGasto: 0, ejecutadoInversion: 0, ejecutado: 0 }
+    { presupuestoGasto: 0, presupuestoInversion: 0, presupuesto: 0, ejecutadoGasto: 0, ejecutadoInversion: 0, ejecutado: 0, presupuestoPorAnio: {} }
   );
 }
 
@@ -373,6 +402,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const [indicadoresCount, setIndicadoresCount] = useState<number | null>(null);
   const [indicadoresPrevio, setIndicadoresPrevio] = useState<Indicador[]>([]);
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSheetRow[]>([]);
+  const [anioFiltro, setAnioFiltro] = useState<string>("todos");
 
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
@@ -385,9 +415,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       .catch(() => {});
   }, [accionInicial._id]);
 
-  // Presupuesto/ejecucion real del año vigente (hoja "Proyecto 2026" en
-  // Google Sheets, ver controllers/pdiPresupuesto.js). Los demas años del
-  // PDI (2027-2029) siguen viniendo de la asignacion manual del formulario.
+  // Presupuesto/ejecucion real del año vigente y presupuesto (gasto/inversion/
+  // total) de 2027-2029, ambos leidos de la hoja "Proyecto 2026" en Google
+  // Sheets (ver controllers/pdiPresupuesto.js). La ejecucion de 2027-2029
+  // sigue viniendo de la asignacion manual del formulario hasta que se
+  // agregue esa lectura a la hoja.
   useEffect(() => {
     axios.get(PDI_ROUTES.presupuestoData())
       .then((res) => setPresupuestoRows(res.data?.rows ?? []))
@@ -397,6 +429,12 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const presupuestoReal = useMemo(
     () => sumPresupuestoRowsForAccion(presupuestoRows, accion.codigo),
     [presupuestoRows, accion.codigo]
+  );
+
+  // Años configurados para la acción (para el selector de filtro).
+  const aniosDisponibles = useMemo(
+    () => Object.keys(accion.presupuesto_por_anio ?? {}).sort(),
+    [accion.presupuesto_por_anio]
   );
 
   const pendientesBadges = getEvaluacionesPendientesAccion(
@@ -536,29 +574,49 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         ))}
       </SimpleGrid>
 
+      {aniosDisponibles.length > 0 && (
+        <Group justify="flex-end" mb="xs">
+          <Select
+            label="Año"
+            size="xs"
+            value={anioFiltro}
+            onChange={(value) => setAnioFiltro(value || "todos")}
+            data={[
+              { value: "todos", label: "Todos los años" },
+              ...aniosDisponibles.map((anio) => ({ value: anio, label: anio })),
+            ]}
+            clearable={false}
+            style={{ minWidth: 160 }}
+          />
+        </Group>
+      )}
+
       {/* Distribución presupuestal por año */}
       {(() => {
         const ppa  = accion.presupuesto_por_anio ?? {};
         const notasPorAnio = accion.notas_presupuesto_por_anio ?? {};
-        const anios = Object.keys(ppa).sort();
+        const anios = Object.keys(ppa).sort().filter((anio) => anioFiltro === "todos" || anio === anioFiltro);
         if (!anios.length) return null;
 
         const totalPres      = Number(accion.presupuesto) || 1;
         const gastoRatio     = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
         const inversionRatio = Math.max(Number(accion.inversion) || 0, 0) / totalPres;
 
-        return (
-          <Box mb="sm">
-            <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
-            <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
-              {anios.map(anio => {
-                const usaReal       = anio === ANIO_ACTUAL && !!presupuestoReal;
-                const asignado      = usaReal ? presupuestoReal!.presupuesto : Number(ppa[anio] ?? 0);
-                const gastoAnio     = usaReal ? presupuestoReal!.presupuestoGasto : Math.round(asignado * gastoRatio);
-                const inversionAnio = usaReal ? presupuestoReal!.presupuestoInversion : Math.round(asignado * inversionRatio);
+        const mostrandoTodos = anioFiltro === "todos";
+        const boxStyleFiltrado = mostrandoTodos ? {} : { flex: `0 1 ${YEAR_BOX_WIDTH}px`, minWidth: 180, maxWidth: YEAR_BOX_WIDTH };
+
+        const items = anios.map(anio => {
+                const usaReal      = anio === ANIO_ACTUAL && !!presupuestoReal;
+                // Años futuros (2027-2029): la hoja "Proyecto 2026" ya trae
+                // columnas propias de Presupuesto Gasto/Inversion/Total por
+                // año — se usan tal cual en vez de estimar con un ratio.
+                const anioSheet    = !usaReal ? presupuestoReal?.presupuestoPorAnio?.[anio] : undefined;
+                const asignado      = usaReal ? presupuestoReal!.presupuesto : anioSheet ? anioSheet.total : Number(ppa[anio] ?? 0);
+                const gastoAnio     = usaReal ? presupuestoReal!.presupuestoGasto : anioSheet ? anioSheet.gasto : Math.round(asignado * gastoRatio);
+                const inversionAnio = usaReal ? presupuestoReal!.presupuestoInversion : anioSheet ? anioSheet.inversion : Math.round(asignado * inversionRatio);
                 const notas = (notasPorAnio[anio] ?? []).filter(Boolean);
                 const contenido = (
-                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined }}>
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", cursor: notas.length ? "help" : undefined, ...boxStyleFiltrado }}>
                     <Group gap={4} mb={6} wrap="nowrap">
                       <Text size="sm" fw={800}>{anio}</Text>
                       {notas.length > 0 && <IconNotes size={13} color="var(--mantine-color-violet-6)" />}
@@ -593,8 +651,16 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                     </HoverCard.Dropdown>
                   </HoverCard>
                 );
-              })}
-            </SimpleGrid>
+        });
+
+        return (
+          <Box mb="sm">
+            <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
+            {mostrandoTodos ? (
+              <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">{items}</SimpleGrid>
+            ) : (
+              <Group justify="center" gap="sm">{items}</Group>
+            )}
           </Box>
         );
       })()}
@@ -610,7 +676,9 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           ? { ...epaRaw, [String(new Date().getFullYear())]: totalEjecutado }
           : epaRaw;
         // Usar los mismos años que el presupuestal para mostrar consistencia
-        const anios = (Object.keys(ppa).length ? Object.keys(ppa) : Object.keys(epa)).sort();
+        const anios = (Object.keys(ppa).length ? Object.keys(ppa) : Object.keys(epa))
+          .sort()
+          .filter((anio) => anioFiltro === "todos" || anio === anioFiltro);
         if (!anios.length) return null;
 
         const gastoEjec      = Math.max(Number(accion.gasto) || 0, 0);
@@ -619,11 +687,10 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         const gastoRatio     = gastoEjec / totalEjecBase;
         const inversionRatio = inversionEjec / totalEjecBase;
 
-        return (
-          <Box mb="sm">
-            <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
-            <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
-              {anios.map(anio => {
+        const mostrandoTodos = anioFiltro === "todos";
+        const boxStyleFiltrado = mostrandoTodos ? {} : { flex: `0 1 ${YEAR_BOX_WIDTH}px`, minWidth: 180, maxWidth: YEAR_BOX_WIDTH };
+
+        const items = anios.map(anio => {
                 const usaReal          = anio === ANIO_ACTUAL && !!presupuestoReal;
                 const asignado         = usaReal ? presupuestoReal!.presupuesto : Number(ppa[anio] ?? 0);
                 const ejecutado        = usaReal ? presupuestoReal!.ejecutado : Number(epa[anio] ?? 0);
@@ -632,7 +699,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                 const pct = asignado > 0 ? Math.min(Math.round((ejecutado / asignado) * 100), 100) : 0;
                 const barColor = pct >= 90 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6";
                 return (
-                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px" }}>
+                  <Box key={anio} style={{ background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "12px 10px", ...boxStyleFiltrado }}>
                     <Group justify="space-between" align="center" mb={6}>
                       <Text size="sm" fw={800}>{anio}</Text>
                       <Text size="lg" fw={900} style={{ color: barColor }} lh={1}>{pct}%</Text>
@@ -656,8 +723,16 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
                     </Group>
                   </Box>
                 );
-              })}
-            </SimpleGrid>
+        });
+
+        return (
+          <Box mb="sm">
+            <Text size="xs" fw={700} mb={8}>Distribución ejecución por año</Text>
+            {mostrandoTodos ? (
+              <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">{items}</SimpleGrid>
+            ) : (
+              <Group justify="center" gap="sm">{items}</Group>
+            )}
           </Box>
         );
       })()}

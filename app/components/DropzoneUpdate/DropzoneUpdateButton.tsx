@@ -73,7 +73,7 @@ const buildRequiredErrorDetails = (
 
 const showRequiredUploadErrors = (details: any[]) => {
   localStorage.setItem('errorDetails', JSON.stringify(details));
-  if (typeof window !== 'undefined') window.open('/logs', '_blank');
+  if (typeof window !== 'undefined') window.location.href = '/logs';
 
   showNotification({
     title: 'Campos obligatorios sin completar',
@@ -264,7 +264,7 @@ const handleFileDrop = async (files: File[]) => {
             }));
             
             localStorage.setItem("errorDetails", JSON.stringify(errorDetails));
-            if (typeof window !== "undefined") window.open("/logs", "_blank");
+            if (typeof window !== "undefined") window.location.href = "/logs";
             hasInvalidColumns = true;
             return;
           }
@@ -448,7 +448,7 @@ const handleFileDrop = async (files: File[]) => {
         const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
         if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
           localStorage.setItem("errorDetails", JSON.stringify(normalizedErrors));
-          if (typeof window !== "undefined") window.open("/logs", "_blank");
+          if (typeof window !== "undefined") window.location.href = "/logs";
         } else {
           showNotification({
             title: "Error de validación",
