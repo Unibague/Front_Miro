@@ -752,7 +752,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                     ? "Eliminar envío (también reseteará el estado SNIES)"
                     : deleteDisable
                       ? "El periodo ya se encuentra cerrado"
-                      : "Eliminar envío"
+                      : "Quitar envío (vuelve a Pendientes, sin perder la información)"
                 }
               position="top"
               transitionProps={{ transition: "fade-up", duration: 200 }}
@@ -765,16 +765,16 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                     title: "Eliminar información",
                     children: (
                       <Text size="sm">
-                        ¿Estás seguro de que deseas eliminar la información de esta plantilla?
+                        ¿Estás seguro de que deseas quitar el envío de esta plantilla? Volverá a aparecer en Pendientes.
                         {publishedTemplate.final_submitted && (
                           <Text size="sm" c="orange" fw={600} mt={4}>
-                            Esta plantilla ya fue enviada al SNIES. Eliminarla también reseteará ese estado.
+                            Esta plantilla ya fue enviada al SNIES. Quitarla también reseteará ese estado.
                           </Text>
                         )}
-                        <Text size="sm" c="dimmed" mt={4}>Esta acción no se puede deshacer.</Text>
+                        <Text size="sm" c="dimmed" mt={4}>Los datos ya diligenciados no se pierden: quedan guardados como borrador para que puedas seguir editándolos.</Text>
                       </Text>
                     ),
-                    labels: { confirm: "Sí, eliminar", cancel: "Cancelar" },
+                    labels: { confirm: "Sí, quitar", cancel: "Cancelar" },
                     confirmProps: { color: "red" },
                     onConfirm: () => handleDeleteClick(publishedTemplate._id),
                   })
