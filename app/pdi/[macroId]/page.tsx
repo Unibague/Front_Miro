@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Text, Paper, Group, Badge, Button, Stack, Loader, Center,
-  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, HoverCard, Select,
+  ThemeIcon, ActionIcon, Box, Title, Progress, SimpleGrid, HoverCard, Menu, Checkbox,
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget, IconBulb,
-  IconEdit, IconTrash, IconPlus, IconChevronRight,
+  IconEdit, IconTrash, IconPlus, IconChevronRight, IconChevronDown,
   IconChartBarPopular, IconFolderOpen,
   IconCheck, IconAlertTriangle, IconX, IconFlag, IconCheckbox, IconNotes,
 } from "@tabler/icons-react";
@@ -402,7 +402,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const [indicadoresCount, setIndicadoresCount] = useState<number | null>(null);
   const [indicadoresPrevio, setIndicadoresPrevio] = useState<Indicador[]>([]);
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSheetRow[]>([]);
-  const [anioFiltro, setAnioFiltro] = useState<string>("todos");
+  const [aniosFiltro, setAniosFiltro] = useState<string[]>(["todos"]);
 
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
@@ -436,6 +436,30 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
     () => Object.keys(accion.presupuesto_por_anio ?? {}).sort(),
     [accion.presupuesto_por_anio]
   );
+  const mostrandoTodosLosAnios = aniosFiltro.includes("todos");
+  const toggleAnioFiltro = (anio: string) => {
+    if (anio === "todos") {
+      setAniosFiltro(["todos"]);
+      return;
+    }
+
+    if (mostrandoTodosLosAnios) {
+      setAniosFiltro([anio]);
+      return;
+    }
+
+    if (aniosFiltro.includes(anio)) {
+      const restantes = aniosFiltro.filter((value) => value !== anio);
+      setAniosFiltro(restantes.length > 0 ? restantes : ["todos"]);
+      return;
+    }
+
+    const nuevosAnios = [...aniosFiltro, anio].sort();
+    setAniosFiltro(nuevosAnios.length > 3 ? ["todos"] : nuevosAnios);
+  };
+  const aniosFiltroLabel = mostrandoTodosLosAnios
+    ? "Todos los años"
+    : aniosFiltro.join(", ");
 
   const pendientesBadges = getEvaluacionesPendientesAccion(
     loaded ? indicadores : indicadoresPrevio
@@ -574,20 +598,57 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         ))}
       </SimpleGrid>
 
+      {/* Barra de avance */}
+      <Box mb="sm">
+        <Group justify="space-between" mb={6}>
+          <Text size="xs" c="dimmed">Avance de la acción a 2029</Text>
+          <Text size="xs" fw={700}>{avanceAccion}%</Text>
+        </Group>
+        <Progress value={Math.min(Math.max(avanceAccion, 0), 100)} color={semaforoAccion === "verde" ? "green" : semaforoAccion === "amarillo" ? "yellow" : "red"} size="md" radius="xl" />
+      </Box>
+
       {aniosDisponibles.length > 0 && (
         <Group justify="flex-end" mb="xs">
-          <Select
-            label="Año"
-            size="xs"
-            value={anioFiltro}
-            onChange={(value) => setAnioFiltro(value || "todos")}
-            data={[
-              { value: "todos", label: "Todos los años" },
-              ...aniosDisponibles.map((anio) => ({ value: anio, label: anio })),
-            ]}
-            clearable={false}
-            style={{ minWidth: 160 }}
-          />
+          <Stack gap={3} style={{ width: 280 }}>
+            <Text size="xs" fw={500}>Años</Text>
+            <Menu closeOnItemClick={false} width={280} position="bottom-end">
+              <Menu.Target>
+                <Button
+                  size="xs"
+                  variant="default"
+                  rightSection={<IconChevronDown size={14} />}
+                  justify="space-between"
+                  fullWidth
+                >
+                  {aniosFiltroLabel}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  onClick={() => toggleAnioFiltro("todos")}
+                  leftSection={<Checkbox checked={mostrandoTodosLosAnios} readOnly size="xs" />}
+                >
+                  Todos los años
+                </Menu.Item>
+                <Menu.Divider />
+                {aniosDisponibles.map((anio) => (
+                  <Menu.Item
+                    key={anio}
+                    onClick={() => toggleAnioFiltro(anio)}
+                    leftSection={(
+                      <Checkbox
+                        checked={!mostrandoTodosLosAnios && aniosFiltro.includes(anio)}
+                        readOnly
+                        size="xs"
+                      />
+                    )}
+                  >
+                    {anio}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          </Stack>
         </Group>
       )}
 
@@ -595,14 +656,16 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
       {(() => {
         const ppa  = accion.presupuesto_por_anio ?? {};
         const notasPorAnio = accion.notas_presupuesto_por_anio ?? {};
-        const anios = Object.keys(ppa).sort().filter((anio) => anioFiltro === "todos" || anio === anioFiltro);
+        const anios = Object.keys(ppa).sort().filter((anio) =>
+          mostrandoTodosLosAnios || aniosFiltro.includes(anio)
+        );
         if (!anios.length) return null;
 
         const totalPres      = Number(accion.presupuesto) || 1;
         const gastoRatio     = Math.max(Number(accion.gasto) || 0, 0) / totalPres;
         const inversionRatio = Math.max(Number(accion.inversion) || 0, 0) / totalPres;
 
-        const mostrandoTodos = anioFiltro === "todos";
+        const mostrandoTodos = mostrandoTodosLosAnios;
         const boxStyleFiltrado = mostrandoTodos ? {} : { flex: `0 1 ${YEAR_BOX_WIDTH}px`, minWidth: 180, maxWidth: YEAR_BOX_WIDTH };
 
         const items = anios.map(anio => {
@@ -678,7 +741,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         // Usar los mismos años que el presupuestal para mostrar consistencia
         const anios = (Object.keys(ppa).length ? Object.keys(ppa) : Object.keys(epa))
           .sort()
-          .filter((anio) => anioFiltro === "todos" || anio === anioFiltro);
+          .filter((anio) => mostrandoTodosLosAnios || aniosFiltro.includes(anio));
         if (!anios.length) return null;
 
         const gastoEjec      = Math.max(Number(accion.gasto) || 0, 0);
@@ -687,7 +750,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
         const gastoRatio     = gastoEjec / totalEjecBase;
         const inversionRatio = inversionEjec / totalEjecBase;
 
-        const mostrandoTodos = anioFiltro === "todos";
+        const mostrandoTodos = mostrandoTodosLosAnios;
         const boxStyleFiltrado = mostrandoTodos ? {} : { flex: `0 1 ${YEAR_BOX_WIDTH}px`, minWidth: 180, maxWidth: YEAR_BOX_WIDTH };
 
         const items = anios.map(anio => {
@@ -736,15 +799,6 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
           </Box>
         );
       })()}
-
-      {/* Barra de avance */}
-      <Box mb="sm">
-        <Group justify="space-between" mb={6}>
-          <Text size="xs" c="dimmed">Avance de la acción</Text>
-          <Text size="xs" fw={700}>{avanceAccion}%</Text>
-        </Group>
-        <Progress value={Math.min(Math.max(avanceAccion, 0), 100)} color={semaforoAccion === "verde" ? "green" : semaforoAccion === "amarillo" ? "yellow" : "red"} size="md" radius="xl" />
-      </Box>
 
       {open && (
         <>
