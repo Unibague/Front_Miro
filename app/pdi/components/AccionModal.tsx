@@ -129,6 +129,14 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     : (config.acciones_por_proyecto > 0 ? parseFloat((100 / config.acciones_por_proyecto).toFixed(6)) : 0);
 
   const totalPresupuesto = Object.values(presupuestoAnios).reduce<number>((s, v) => s + (Number(v) || 0), 0);
+  const presupuestoGlobal = Number(presupuesto) || 0;
+  const diferenciaPresupuesto = totalPresupuesto - presupuestoGlobal;
+  const presupuestosCoinciden = Math.abs(diferenciaPresupuesto) < 0.01;
+  const mensajeDiferenciaPresupuesto = presupuestosCoinciden
+    ? "El presupuesto anual coincide con el presupuesto global"
+    : diferenciaPresupuesto > 0
+      ? `Supera el presupuesto global por $ ${Math.abs(diferenciaPresupuesto).toLocaleString("es-CO")}`
+      : `Faltan asignar $ ${Math.abs(diferenciaPresupuesto).toLocaleString("es-CO")}`;
 
   const toNumberMap = (m: Record<string, number | string>) =>
     Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Number(v) || 0]));
@@ -219,6 +227,14 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
     }
     if (codigoError) {
       showNotification({ title: "Codigo invalido", message: codigoError, color: "red" });
+      return;
+    }
+    if (!presupuestosCoinciden) {
+      showNotification({
+        title: "Presupuesto no válido",
+        message: `${mensajeDiferenciaPresupuesto}. La suma por año debe ser exactamente igual al presupuesto global.`,
+        color: "red",
+      });
       return;
     }
     setLoading(true);
@@ -350,11 +366,11 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
                 );
               })}
             </SimpleGrid>
-            {totalPresupuesto > 0 && (
-              <Text size="xs" c={totalPresupuesto > (Number(presupuesto) || 0) ? "red" : "dimmed"} ta="right" mt={6}>
+            {(totalPresupuesto > 0 || presupuestoGlobal > 0) && (
+              <Text size="xs" c={presupuestosCoinciden ? "teal" : "red"} ta="right" mt={6}>
                 Total: $ {totalPresupuesto.toLocaleString("es-CO")}
-                {Number(presupuesto) > 0 && ` / $ ${Number(presupuesto).toLocaleString("es-CO")}`}
-                {totalPresupuesto > (Number(presupuesto) || 0) && "  ⚠ Supera el presupuesto global"}
+                {` / $ ${presupuestoGlobal.toLocaleString("es-CO")}`}
+                {` — ${mensajeDiferenciaPresupuesto}`}
               </Text>
             )}
           </>
@@ -363,7 +379,13 @@ export default function AccionModal({ opened, onClose, selected, defaultProyecto
 
       <Group justify="flex-end" mt="lg">
         <Button variant="default" onClick={() => confirmNavigation(onClose)}>Cancelar</Button>
-        <Button loading={loading} disabled={Boolean(codigoError)} onClick={handleSave}>Guardar</Button>
+        <Button
+          loading={loading}
+          disabled={Boolean(codigoError) || !presupuestosCoinciden}
+          onClick={handleSave}
+        >
+          Guardar
+        </Button>
       </Group>
     </Modal>
   );
