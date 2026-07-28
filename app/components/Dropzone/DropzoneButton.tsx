@@ -29,13 +29,166 @@ interface DropzoneButtonProps {
   endDate: Date | undefined;
   onClose: () => void;
   onUploadSuccess: () => void | Promise<void>;
+  userDependencies?: { value: string; label: string }[];
+}
+
+interface SheetUploadData {
+  name: string;
+  data: Record<string, any>[];
+  targetDependency?: string;
 }
 
 interface PreviewData {
-  sheetsData?: { name: string; data: Record<string, any>[] }[];
+  sheetsData?: SheetUploadData[];
   data?: Record<string, any>[];
   totalRecords: number;
 }
+
+const SHARED_ORIGIN_PROPERTY = '__miroSharedOriginCode';
+const IDENTITY_FIELD_NAMES = new Set([
+  'ANO',
+  'SEMESTRE',
+  'ID_TIPO_DOCUMENTO',
+  'NUM_DOCUMENTO',
+]);
+
+const normalizeIdentityName = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
+
+const normalizeIdentityValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(normalizeIdentityValue).join(',');
+  return String(value).trim().toUpperCase();
+};
+
+const getSharedRowIdentity = (
+  row: Record<string, any>,
+  fieldNames: string[]
+): string | null => {
+  const identityFields = fieldNames.filter((name) =>
+    IDENTITY_FIELD_NAMES.has(normalizeIdentityName(name))
+  );
+  if (!identityFields.some((name) => normalizeIdentityName(name) === 'NUM_DOCUMENTO')) {
+    return null;
+  }
+
+  const parts = identityFields.map((name) => normalizeIdentityValue(row?.[name]));
+  if (parts.some((value) => value === '')) return null;
+  return parts.join('\u001f');
+};
+
+const buildSharedOriginLookup = (
+  sharedRows: Record<string, any>[],
+  fieldNames: string[]
+): Map<string, string> => {
+  const originsByIdentity = new Map<string, Set<string>>();
+
+  sharedRows.forEach((row) => {
+    const identity = getSharedRowIdentity(row, fieldNames);
+    const originCode = String(row?.__origin__?.code ?? '').trim();
+    if (!identity || !originCode) return;
+
+    const origins = originsByIdentity.get(identity) ?? new Set<string>();
+    origins.add(originCode);
+    originsByIdentity.set(identity, origins);
+  });
+
+  const result = new Map<string, string>();
+  originsByIdentity.forEach((origins, identity) => {
+    if (origins.size === 1) result.set(identity, Array.from(origins)[0]);
+  });
+  return result;
+};
+
+interface SubmittedSheetGroup {
+  targetDependency: string;
+  sheetsData: { name: string; data: Record<string, any>[] }[];
+}
+
+const normalizeVerificationValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) {
+    return value.map(normalizeVerificationValue).filter(Boolean).join(',');
+  }
+  if (value instanceof Date) return value.toISOString();
+  return String(value).trim().toUpperCase();
+};
+
+const verifySubmittedSheetGroups = async (
+  pubTemId: string,
+  groups: SubmittedSheetGroup[],
+  fieldNamesBySheet: Map<string, string[]>
+): Promise<number | null> => {
+  if (groups.length === 0) return null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${pubTemId}`,
+        { headers: { 'Cache-Control': 'no-cache' } }
+      );
+      const sharedSheetsData: Record<string, Record<string, any>[]> =
+        response.data?.shared_sheets_data || {};
+      let confirmedRecords = 0;
+      let allGroupsMatch = true;
+
+      for (const group of groups) {
+        for (const sheet of group.sheetsData) {
+          const fieldNames = fieldNamesBySheet.get(sheet.name) || Object.keys(sheet.data[0] || {});
+          const storedRows = (sharedSheetsData[sheet.name] || []).filter((row) => {
+            if (!group.targetDependency) return true;
+            return String(row?.__origin__?.code ?? '') === group.targetDependency;
+          });
+          const storedByIdentity = new Map<string, Record<string, any>[]>();
+
+          storedRows.forEach((row) => {
+            const identity = getSharedRowIdentity(row, fieldNames);
+            if (!identity) return;
+            const matches = storedByIdentity.get(identity) || [];
+            matches.push(row);
+            storedByIdentity.set(identity, matches);
+          });
+
+          for (const submittedRow of sheet.data) {
+            const identity = getSharedRowIdentity(submittedRow, fieldNames);
+            const candidates = identity ? storedByIdentity.get(identity) || [] : [];
+            const rowMatches = candidates.some((storedRow) =>
+              Object.entries(submittedRow).every(([fieldName, value]) => {
+                if (fieldName === SHARED_ORIGIN_PROPERTY) return true;
+                return normalizeVerificationValue(storedRow?.[fieldName]) ===
+                  normalizeVerificationValue(value);
+              })
+            );
+
+            if (!rowMatches) {
+              allGroupsMatch = false;
+              break;
+            }
+            confirmedRecords += 1;
+          }
+
+          if (!allGroupsMatch) break;
+        }
+        if (!allGroupsMatch) break;
+      }
+
+      if (allGroupsMatch) return confirmedRecords;
+    } catch {
+      // El backend puede estar reiniciando; se reintenta la consulta.
+    }
+  }
+
+  return null;
+};
 
 const normalizeBackendValidationErrors = (payload: any) => {
   const details = payload?.details;
@@ -49,6 +202,8 @@ const normalizeBackendValidationErrors = (payload: any) => {
       ? details
       : typeof payload?.message === 'string'
         ? payload.message
+        : typeof payload?.error === 'string'
+          ? payload.error
         : typeof payload?.status === 'string'
           ? payload.status
           : 'Error desconocido al procesar la plantilla.';
@@ -150,7 +305,13 @@ const normalizeExcelCellValue = (value: any): any => {
 };
 
 
-export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: DropzoneButtonProps) {
+export function DropzoneButton({
+  pubTemId,
+  endDate,
+  onClose,
+  onUploadSuccess,
+  userDependencies = [],
+}: DropzoneButtonProps) {
   const theme = useMantineTheme();
   const openRef = useRef<() => void>(null);
   const { data: session } = useSession();
@@ -159,6 +320,14 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
 
   const sendData = async (uploadData: PreviewData, asDraft = false) => {
     if (!session?.user?.email) return;
+
+    const submittedGroups: SubmittedSheetGroup[] = [];
+    const fieldNamesBySheet = new Map<string, string[]>(
+      (uploadData.sheetsData || []).map((sheet) => [
+        sheet.name,
+        Object.keys(sheet.data[0] || {}).filter((name) => name !== SHARED_ORIGIN_PROPERTY),
+      ])
+    );
 
     try {
       setIsSendingDraft(true);
@@ -170,18 +339,55 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
         bypassValidation: true,
       };
 
+      let responses: any[] = [];
+
       if (uploadData.sheetsData) {
-        dataToSend.sheetsData = uploadData.sheetsData;
+        // Una plantilla compartida puede contener filas que pertenecen a otra
+        // dependencia. Se envia cada grupo por separado para conservar su
+        // propietario, igual que lo hace el formulario en linea.
+        const groupedByDependency = new Map<string, Map<string, Record<string, any>[]>>();
+
+        uploadData.sheetsData.forEach((sheet) => {
+          sheet.data.forEach((row) => {
+            const originDependency = String(row?.[SHARED_ORIGIN_PROPERTY] ?? '').trim();
+            const targetDependency = originDependency || sheet.targetDependency || '';
+            const cleanRow = { ...row };
+            delete cleanRow[SHARED_ORIGIN_PROPERTY];
+
+            const sheets = groupedByDependency.get(targetDependency) ??
+              new Map<string, Record<string, any>[]>();
+            const rows = sheets.get(sheet.name) ?? [];
+            rows.push(cleanRow);
+            sheets.set(sheet.name, rows);
+            groupedByDependency.set(targetDependency, sheets);
+          });
+        });
+
+        for (const [targetDependency, sheets] of groupedByDependency.entries()) {
+          const requestSheets = Array.from(sheets.entries()).map(([name, data]) => ({ name, data }));
+          submittedGroups.push({ targetDependency, sheetsData: requestSheets });
+          const requestData = {
+            ...dataToSend,
+            sheetsData: requestSheets,
+            ...(targetDependency ? { onBehalfOfDependency: targetDependency } : {}),
+          };
+          responses.push(await axios.put(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
+            requestData
+          ));
+        }
       } else if (uploadData.data) {
         dataToSend.data = uploadData.data;
+        responses = [await axios.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
+          dataToSend
+        )];
       }
 
-      const response = await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/load`,
-        dataToSend
+      const recordsLoaded = responses.reduce(
+        (total, response) => total + Number(response.data?.recordsLoaded || 0),
+        0
       );
-
-      const recordsLoaded = response.data.recordsLoaded;
       const message = asDraft
         ? `Se guardó como borrador: ${recordsLoaded} registros.`
         : `Se enviaron ${recordsLoaded} registros correctamente.`;
@@ -206,7 +412,35 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
       console.error('Error enviando los datos:', error);
 
       if (axios.isAxiosError(error)) {
-        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        const confirmedRecords = uploadData.sheetsData
+          ? await verifySubmittedSheetGroups(pubTemId, submittedGroups, fieldNamesBySheet)
+          : null;
+
+        if (confirmedRecords !== null) {
+          setShowSuccessAnimation(true);
+          showNotification({
+            title: 'Informacion guardada y verificada',
+            message: `Se confirmaron ${confirmedRecords} registros aunque se perdio la respuesta inicial del servidor.`,
+            color: 'teal',
+            autoClose: 6000,
+          });
+          void Promise.resolve(onUploadSuccess()).catch((refreshError) => {
+            console.error('Error refrescando plantillas despues de verificar:', refreshError);
+          });
+          setTimeout(() => {
+            setShowSuccessAnimation(false);
+            onClose();
+          }, 3000);
+          return;
+        }
+
+        const diagnosticPayload = error.response?.data ?? {
+          column: 'Carga de plantilla',
+          message: error.message,
+          status: error.code || 'Error de conexion',
+          value: error.config?.url || 'Sin respuesta del servidor',
+        };
+        const normalizedErrors = normalizeBackendValidationErrors(diagnosticPayload);
         if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
           localStorage.setItem('errorDetails', JSON.stringify(normalizedErrors));
           if (typeof window !== 'undefined') window.location.href = '/logs';
@@ -270,6 +504,8 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
       const validators: any[] = templateResponse.data.template.validators || [];
       const topFields: any[] = templateResponse.data.template.fields || [];
       const workbookSheets: any[] = templateResponse.data.template.workbook_sheets || [];
+      const sharedSheetsData: Record<string, Record<string, any>[]> =
+        templateResponse.data.shared_sheets_data || {};
       const sheetFields: any[] = workbookSheets.flatMap((s: any) => s.fields || []);
       const allFields: any[] = topFields.length > 0 ? topFields : sheetFields;
       const skipCommentValidation: boolean = Boolean(templateResponse.data.template.skip_comment_validation) ||
@@ -516,18 +752,55 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
       const workbookTemplateSheets = workbookSheets.filter(
         (s: any) => s.fields?.length > 0
       );
+      const producerCodeById = new Map<string, string>();
+      (templateResponse.data.template.producers || []).forEach((producer: any) => {
+        const id = String(producer?._id ?? producer?.id ?? '');
+        const code = String(producer?.dep_code ?? '');
+        if (id && code) producerCodeById.set(id, code);
+      });
+      const userDependencyCodes = new Set(
+        userDependencies.map((dependency) => dependency.value)
+      );
+      const userDependencyIds = new Set(
+        Array.from(producerCodeById.entries())
+          .filter(([, code]) => userDependencyCodes.has(code))
+          .map(([id]) => id)
+      );
+      const responsibleProducerIds = (
+        templateResponse.data.publishedTemplate?.responsible_producers || []
+      ).map((producer: any) => String(producer?._id ?? producer));
+      const isResponsibleProducer = responsibleProducerIds.some((id: string) =>
+        userDependencyIds.has(id)
+      );
+      const hasResolvedUserDependencies = userDependencyCodes.size > 0;
+      if (workbookTemplateSheets.length > 0 && !hasResolvedUserDependencies) {
+        showNotification({
+          title: 'No se pudieron verificar tus permisos',
+          message: 'Recarga la pagina e intenta subir nuevamente la plantilla.',
+          color: 'red',
+        });
+        return;
+      }
+      const editableWorkbookTemplateSheets = workbookTemplateSheets.filter((sheet: any) => {
+        if (isResponsibleProducer) return true;
+        const sheetProducerIds = (sheet.producers || []).map((producer: any) =>
+          String(producer?._id ?? producer)
+        );
+        if (sheetProducerIds.length === 0) return true;
+        return sheetProducerIds.some((id: string) => userDependencyIds.has(id));
+      });
 
       try {
         if (!session?.user?.email) throw new Error('Usuario no autenticado');
 
-        console.log('[Dropzone] workbookTemplateSheets:', workbookTemplateSheets.map((s: any) => s.name));
+        console.log('[Dropzone] editableWorkbookTemplateSheets:', editableWorkbookTemplateSheets.map((s: any) => s.name));
         console.log('[Dropzone] Excel worksheets:', workbook.worksheets.map(ws => ws.name));
 
         if (workbookTemplateSheets.length > 0) {
           // === MULTI-SHEET MODE ===
-          const sheetsData: { name: string; data: Record<string, any>[] }[] = [];
+          const sheetsData: SheetUploadData[] = [];
 
-          for (const wbSheet of workbookTemplateSheets) {
+          for (const wbSheet of editableWorkbookTemplateSheets) {
             if (!wbSheet.fields?.length) continue;
 
             const allowedFields = new Set<string>(
@@ -569,16 +842,35 @@ export function DropzoneButton({ pubTemId, endDate, onClose, onUploadSuccess }: 
             if (!matchingWorksheet) continue;
 
             const rows = readSheetRows(matchingWorksheet, allowedFields, wbSheet.name);
+            const fieldNames = wbSheet.fields.map((field: any) => field.name);
+            const sharedOriginLookup = buildSharedOriginLookup(
+              sharedSheetsData[wbSheet.name] || [],
+              fieldNames
+            );
+            const rowsWithOrigins = rows.map((row) => {
+              const identity = getSharedRowIdentity(row, fieldNames);
+              const originCode = identity ? sharedOriginLookup.get(identity) : undefined;
+              return originCode
+                ? { ...row, [SHARED_ORIGIN_PROPERTY]: originCode }
+                : row;
+            });
+            const ownSheetProducerCode = (wbSheet.producers || [])
+              .map((producer: any) => producerCodeById.get(String(producer?._id ?? producer)))
+              .find((code: string | undefined) => Boolean(code) && userDependencyCodes.has(code!));
             console.log(`[Dropzone] Sheet "${wbSheet.name}" → ${rows.length} rows`);
-            if (rows.length > 0) {
-              sheetsData.push({ name: wbSheet.name, data: rows });
+            if (rowsWithOrigins.length > 0) {
+              sheetsData.push({
+                name: wbSheet.name,
+                data: rowsWithOrigins,
+                targetDependency: ownSheetProducerCode,
+              });
             }
           }
 
           console.log('[Dropzone] sheetsData:', sheetsData.map(s => ({ name: s.name, rows: s.data.length })));
 
           if (sheetsData.length === 0) {
-            const templateNames = workbookTemplateSheets.map((s: any) => s.name).join(', ');
+            const templateNames = editableWorkbookTemplateSheets.map((s: any) => s.name).join(', ');
             const excelNames = workbook.worksheets.map(ws => ws.name).join(', ');
             showNotification({
               title: 'No se encontraron hojas coincidentes',

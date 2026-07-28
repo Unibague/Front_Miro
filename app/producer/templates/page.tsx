@@ -1748,6 +1748,7 @@ if (field.multiple) {
             endDate={undefined}
             onClose={closeUploadModal}
             onUploadSuccess={() => refreshTemplates({ refreshUploaded: true, scrollToUploaded: true })}
+            userDependencies={userDependencies}
           />
         )}
       </Modal>
