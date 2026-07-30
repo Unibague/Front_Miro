@@ -90,9 +90,16 @@ const DashboardPage = () => {
   // interfaz.
   const ADMIN_RECOVERY_KEYS = ["configuration", "profiles"];
 
+  // El rol base "Usuario" no tiene una entrada propia en "Gestionar vistas"
+  // (ningun perfil puede otorgar estas llaves), asi que si se dejaran sujetas
+  // al filtro de perfil, un Usuario con perfil asignado nunca las veria. Se
+  // muestran siempre que el rol activo sea "Usuario", sin importar el perfil.
+  const USUARIO_ALWAYS_VISIBLE_KEYS = ["historicoDocentesUsuario"];
+
   const canSee = (key: string, roles: string[]) => {
     if (!roles.includes(userRole)) return false;
     if (userRole === "Administrador" && ADMIN_RECOVERY_KEYS.includes(key)) return true;
+    if (userRole === "Usuario" && USUARIO_ALWAYS_VISIBLE_KEYS.includes(key)) return true;
     if (hasProfile) return hasViewPermission(key);
     return true;
   };
@@ -1300,8 +1307,48 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
+            {canSee("historicoDocentesUsuario", ["Usuario"]) && (
+              <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                <Card
+                  radius="xl"
+                  p="xl"
+                  className="module-card"
+                  onClick={() => router.push("/historico-docentes/ambitos")}
+                  style={{
+                    cursor: "pointer",
+                    height: 340,
+                    color: "white",
+                    border: "none",
+                    overflow: "hidden",
+                    transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                    position: "relative" as const,
+                    background: "linear-gradient(135deg, #3b0764 0%, #7c3aed 100%)",
+                    boxShadow: "0 18px 45px rgba(59, 7, 100, 0.22)",
+                  }}
+                >
+                  <Stack justify="space-between" h="100%" align="center">
+                    <Stack align="center" gap="xs">
+                      <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                        <IconUsersGroup size={34} />
+                      </ThemeIcon>
+                      <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
+                        Consulta de Información
+                      </Title>
+                      <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
+                        Consulta plantillas, informes e histórico docentes (SNIES).
+                      </Text>
+                    </Stack>
+                    <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
+                      Abrir módulo
+                    </Button>
+                  </Stack>
+                </Card>
+              </Grid.Col>
+            )}
+
             {/* Fallback: usuario sin roles ni permisos */}
             {!canSeeAny(GESTION_REPORTES_KEYS, ["Administrador", "Responsable", "Productor"]) &&
+             !canSee("historicoDocentesUsuario", ["Usuario"]) &&
              !canSee("supportTemplates", ["Administrador"]) &&
              !canSee("dateReview", ["Administrador"]) &&
              !canSee("dateReviewComunicaciones", ["Administrador"]) &&

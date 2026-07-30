@@ -4,9 +4,9 @@ import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
 import { IconFolders, IconLayoutDashboard } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 
-// El link a "Tablero" queda oculto por ahora (a pedido del usuario), sin
-// borrar la página: se reactiva poniendo esto en true.
-const SHOW_TABLERO_LINK = false;
+// El link a "Tablero" se puede ocultar sin borrar la pagina poniendo esto en
+// false.
+const SHOW_TABLERO_LINK = true;
 
 // Menu lateral del modulo "Consulta de Información", igual en espiritu al
 // PdiSidebar: navegacion fija a la izquierda, resaltando la ruta activa.

@@ -101,6 +101,14 @@ const displayHeader = (h: string) => {
   return h;
 };
 
+// En Consulta de Información no se debe mostrar el número de documento
+// (dato personal) de quienes aparecen reportados en la plantilla.
+const HIDDEN_COLUMN_PATTERNS = [/^NUM(ERO)?[_ ]?DOCUMENTO$/];
+const isHiddenColumnHeader = (h: string) => {
+  const normalized = h.trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return HIDDEN_COLUMN_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
 // Algunos archivos cargados antes de esta corrección guardaron las fechas
 // como el toString() completo de un Date de JS (ej. "Tue Jan 06 2026
 // 19:00:00 GMT-0500 (hora estándar de Colombia)") en vez de dd/mm/aaaa.
@@ -403,7 +411,13 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     (f) => !listSearch.trim() || f.file_name.toLowerCase().includes(listSearch.trim().toLowerCase())
   );
 
-  const renderDataTable = (data: HistoricoData, loading: boolean) => (
+  const renderDataTable = (data: HistoricoData, loading: boolean) => {
+    const visibleColumnIndexes = data.currentSheet.headers
+      .map((header, index) => ({ header, index }))
+      .filter(({ header }) => !isHiddenColumnHeader(header))
+      .map(({ index }) => index);
+
+    return (
     <>
       <Group mb="md" align="flex-end">
         <Box style={{ flex: 1, maxWidth: 340 }}>
@@ -443,9 +457,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                           <Table.Th style={{ minWidth: 40, backgroundColor: "#f8f9fa" }}>
                             <Text size="xs" c="dimmed">#</Text>
                           </Table.Th>
-                          {data.currentSheet.headers.map((header, i) => (
-                            <Table.Th key={i} style={{ whiteSpace: "nowrap", backgroundColor: "#f8f9fa" }}>
-                              {displayHeader(header)}
+                          {visibleColumnIndexes.map((colIndex) => (
+                            <Table.Th key={colIndex} style={{ whiteSpace: "nowrap", backgroundColor: "#f8f9fa" }}>
+                              {displayHeader(data.currentSheet.headers[colIndex])}
                             </Table.Th>
                           ))}
                         </Table.Tr>
@@ -453,7 +467,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                       <Table.Tbody>
                         {data.currentSheet.rows.length === 0 ? (
                           <Table.Tr>
-                            <Table.Td colSpan={data.currentSheet.headers.length + 1}>
+                            <Table.Td colSpan={visibleColumnIndexes.length + 1}>
                               <Center py="md"><Text c="dimmed">No hay datos.</Text></Center>
                             </Table.Td>
                           </Table.Tr>
@@ -463,7 +477,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                             return (
                               <Table.Tr key={rowIndex}>
                                 <Table.Td><Text size="xs" c="dimmed">{num}</Text></Table.Td>
-                                {data.currentSheet.headers.map((_, colIndex) => (
+                                {visibleColumnIndexes.map((colIndex) => (
                                   <Table.Td key={colIndex} style={{ whiteSpace: "nowrap" }}>{displayCellValue(row[colIndex])}</Table.Td>
                                 ))}
                               </Table.Tr>
@@ -490,7 +504,8 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
         ))}
       </Tabs>
     </>
-  );
+    );
+  };
 
   const renderAnexos = () => (
     <Box mt="xl">

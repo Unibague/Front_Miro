@@ -131,10 +131,7 @@ export default function Navbar() {
           params: { email: session.user.email },
         })
         .then((response) => {
-          const roles = response.data.roles.filter(
-            (role: string) => role !== "Usuario"
-          );
-          setAvailableRoles(roles);
+          setAvailableRoles(response.data.roles || []);
         })
         .catch((error) => {
           console.error("Error fetching roles:", error);
