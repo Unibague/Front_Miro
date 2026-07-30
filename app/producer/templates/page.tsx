@@ -517,9 +517,14 @@ const ProducerTemplatesPage = () => {
     // dep_codes del usuario actual (principal + adicionales)
     const userDepCodes = new Set((userDependencies || []).map((d) => d.value));
 
+    // El productor encargado puede editar todas las hojas, aunque no este
+    // asignado explicitamente a cada una.
+    const isResponsibleProducerForDownload = isResponsibleForTemplate(publishedTemplate);
+
     // Hojas editables: solo si tiene productores asignados Y el usuario es uno de ellos
     // Hojas sin productores (ej. INFO) → siempre bloqueadas
     const canUserEditSheet = (sheet: TemplateWorksheet): boolean => {
+      if (isResponsibleProducerForDownload) return true;
       if (!sheet.producers || sheet.producers.length === 0) return false;
       return sheet.producers.some((producerId) => {
         const depCode = producerIdMap.get(producerId.toString());

@@ -553,8 +553,17 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             senderEmail: session?.user?.email || null,
           };
           setUserSource(userSrc);
+          // El productor encargado (responsible_producers) puede editar todas
+          // las hojas de la plantilla aunque no este asignado explicitamente
+          // a cada una.
+          const responsibleIdsForAccess: string[] = (
+            (response.data.publishedTemplate as any)?.responsible_producers || []
+          ).map((rid: any) => String(rid));
+          const isResponsibleForAccess = responsibleIdsForAccess.length > 0 &&
+            sessionUserDepIds.some((id) => responsibleIdsForAccess.includes(id));
           editable = wbSheets.filter((sheet: WorkbookSheet) => {
             if (!sheet.fields?.length) return false;
+            if (isResponsibleForAccess) return true;
             if (!sheet.producers?.length) return true;
             return sheet.producers.some((p: string) => sessionUserDepIds.includes(p.toString()));
           });
