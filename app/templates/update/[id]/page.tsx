@@ -711,9 +711,13 @@ const UpdateTemplatePage = () => {
       ? flattenWorkbookSheets(workbookSheetsToSave)
       : fields.map(prepareFieldForSave);
 
+    // El productor encargado siempre debe quedar en la lista general de
+    // productores de la plantilla, aunque no este asignado explicitamente a
+    // ninguna hoja: esa lista es la que determina si la plantilla aparece
+    // como pendiente para esa dependencia.
     const derivedProducers = hasWorkbookSheets
-      ? [...new Set(workbookSheets.flatMap(s => s.producers || []))]
-      : selectedDependencies;
+      ? [...new Set([...workbookSheets.flatMap(s => s.producers || []), ...responsibleProducers])]
+      : [...new Set([...selectedDependencies, ...responsibleProducers])];
 
     const missing: string[] = [];
     if (!name) missing.push("Nombre de la plantilla");
