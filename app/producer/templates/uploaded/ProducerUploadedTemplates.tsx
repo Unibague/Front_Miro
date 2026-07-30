@@ -25,7 +25,7 @@ import {
   IconArrowsTransferDown,
   IconChecks,
   IconDownload,
-  IconEdit,
+  IconUpload,
   IconEye,
   IconPencil,
   IconTrash,
@@ -56,10 +56,10 @@ import {
   formatTemplateDateValue,
 } from "@/app/utils/templateUtils";
 
-const DropzoneUpdateButton = dynamic(
+const DropzoneButton = dynamic(
   () =>
-    import("@/app/components/DropzoneUpdate/DropzoneUpdateButton").then(
-      (mod) => mod.DropzoneUpdateButton
+    import("@/app/components/Dropzone/DropzoneButton").then(
+      (mod) => mod.DropzoneButton
     ),
   { ssr: false }
 );
@@ -685,7 +685,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                   onClick={() => handleEditClick(publishedTemplate)}
                   disabled={uploadDisable}
                 >
-                  <IconEdit size={16} />
+                  <IconUpload size={16} />
                 </Button>
               </Tooltip>
               <Tooltip
@@ -945,11 +945,15 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
         withCloseButton={false}
       >
         {selectedTemplateId && producerEndDate && (
-          <DropzoneUpdateButton
+          <DropzoneButton
             pubTemId={selectedTemplateId}
             endDate={producerEndDate}
             onClose={closeUploadModal}
-            edit
+            onUploadSuccess={() => {
+              fetchTemplates(page, search, selectedCategory, pageSize);
+              fetchTemp();
+            }}
+            userDependencies={userDependencies}
           />
         )}
         {selectedTemplateId && !producerEndDate && (
