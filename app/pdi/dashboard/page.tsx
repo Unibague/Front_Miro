@@ -95,7 +95,7 @@ export default function DashboardPage() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Memoria técnica del cálculo del avance del PDI ${new Date().toISOString().slice(0, 10)}.xlsx`);
+      link.setAttribute("download", `Memoria técnica del cálculo del avance acumulado del PDI 2026–2029 ${new Date().toISOString().slice(0, 10)}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -120,7 +120,7 @@ export default function DashboardPage() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Memoria técnica del cálculo del avance del PDI ${anio} ${new Date().toISOString().slice(0, 10)}.xlsx`);
+      link.setAttribute("download", `Memoria técnica del cálculo del cumplimiento de la vigencia ${anio} ${new Date().toISOString().slice(0, 10)}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -221,7 +221,7 @@ export default function DashboardPage() {
                   onClick={handleExportarAvance}
                   loading={exportando}
                 >
-                  Memoria técnica del cálculo del avance PDI
+                  Memoria técnica del cálculo del avance acumulado del PDI 2026–2029
                 </Button>
               )}
               {isAdmin && (
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                   onClick={handleExportarAvanceAnio}
                   loading={exportandoAnio}
                 >
-                  Memoria técnica del avance {resumen?.anio_actual ?? new Date().getFullYear()}
+                  Memoria técnica del cálculo del cumplimiento de la vigencia {resumen?.anio_actual ?? new Date().getFullYear()}
                 </Button>
               )}
               {isAdmin && (
