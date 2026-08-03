@@ -22,8 +22,10 @@ import {
   ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
+  getConfiguredFieldPosition,
   getExcelCellAddress,
   loadWorkbookFromBase64,
+  applyAdditionalFieldHeaderStyle,
   patchNoteSize,
   reorderWorkbookSheets,
   sanitizeSheetName,
@@ -1609,15 +1611,8 @@ const AdminTemplatesPage = () => {
         if (!hasBase) return;
         sheet.fields.forEach((field, index) => {
           if (field.locked !== false) return;
-          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
-          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
-          const cell = ws.getCell(hRow, col);
-          cell.value = field.name;
-          cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } };
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          const colObj = ws.getColumn(col);
-          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+          const { col, headerRow: hRow } = getConfiguredFieldPosition(field, index, sheet.fields);
+          applyAdditionalFieldHeaderStyle(ws, ws.getCell(hRow, col), field.name, col);
         });
       });
 

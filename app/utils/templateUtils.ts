@@ -30,17 +30,55 @@ interface WorkbookSheetWithFields {
   fields?: FieldWithValidator[];
 }
 
-export const getConfiguredFieldPosition = (field: FieldWithValidator, fieldIndex: number) => {
+// Cuando `allFields` se provee, los campos sin `column`/`header_row` propio
+// (típicamente campos adicionales agregados a una plantilla ya publicada,
+// que se guardan con locked:false y sin posición) reciben una columna libre
+// real (después de la última columna configurada del archivo original) en
+// vez de `fieldIndex + 1`, que podía coincidir con la columna de otro campo
+// base y pisar sus valores al exportar.
+export const getConfiguredFieldPosition = (
+  field: FieldWithValidator,
+  fieldIndex: number,
+  allFields?: FieldWithValidator[]
+) => {
   const configuredColumn = Number(field.column);
   const configuredHeaderRow = Number(field.header_row);
+  const hasConfiguredColumn = Number.isFinite(configuredColumn) && configuredColumn > 0;
+  const hasConfiguredHeaderRow = Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0;
+
+  if (hasConfiguredColumn) {
+    return {
+      col: configuredColumn,
+      headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : 1,
+      isFallbackColumn: false,
+    };
+  }
+
+  if (allFields?.length) {
+    const maxConfiguredCol = allFields.reduce((max, f) => {
+      const c = Number(f.column);
+      return Number.isFinite(c) && c > 0 ? Math.max(max, c) : max;
+    }, 0);
+    const unconfiguredBefore = allFields.slice(0, fieldIndex).filter((f) => {
+      const c = Number(f.column);
+      return !(Number.isFinite(c) && c > 0);
+    }).length;
+    const defaultHeaderRow = allFields.reduce((row, f) => {
+      const hr = Number(f.header_row);
+      return Number.isFinite(hr) && hr > 0 ? hr : row;
+    }, 1);
+
+    return {
+      col: maxConfiguredCol + 1 + unconfiguredBefore,
+      headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : defaultHeaderRow,
+      isFallbackColumn: true,
+    };
+  }
 
   return {
-    col: Number.isFinite(configuredColumn) && configuredColumn > 0
-      ? configuredColumn
-      : fieldIndex + 1,
-    headerRow: Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0
-      ? configuredHeaderRow
-      : 1,
+    col: fieldIndex + 1,
+    headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : 1,
+    isFallbackColumn: true,
   };
 };
 
@@ -148,10 +186,27 @@ export const cloneExcelValue = <T,>(value: T): T => {
 
 export const getSheetDataStartRow = (fields: FieldWithValidator[]) => {
   const headerRows = fields
-    .map((field, index) => getConfiguredFieldPosition(field, index).headerRow)
+    .map((field, index) => getConfiguredFieldPosition(field, index, fields).headerRow)
     .filter((row) => Number.isFinite(row) && row > 0);
 
   return (headerRows.length ? Math.min(...headerRows) : 1) + 1;
+};
+
+// Mismo estilo de encabezado verde que usa la descarga de la plantilla base
+// (app/admin/templates/page.tsx) para los campos agregados (locked: false),
+// para que un campo adicional se vea igual sin importar desde qué pantalla se descargue.
+export const applyAdditionalFieldHeaderStyle = (
+  worksheet: ExcelJS.Worksheet,
+  cell: ExcelJS.Cell,
+  fieldName: string,
+  col: number
+) => {
+  cell.value = fieldName;
+  cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+  cell.alignment = { vertical: "middle", horizontal: "center" };
+  const colObj = worksheet.getColumn(col);
+  if (!colObj.width || colObj.width < 20) colObj.width = 20;
 };
 
 export const copyCellPresentation = (target: ExcelJS.Cell, source: ExcelJS.Cell) => {
@@ -277,10 +332,13 @@ export const populateWorksheetWithFilledData = (
     worksheet.insertRows(startRow + 1, Array.from({ length: numRows - 1 }, () => []));
   }
 
+  const positions = fields.map((field, index) => getConfiguredFieldPosition(field, index, fields));
+  const headerRow = Math.max(1, startRow - 1);
+
   for (let i = 0; i < numRows; i++) {
     const dataRow = startRow + i;
     fields.forEach((field, colIdx) => {
-      const { col: fieldCol } = getConfiguredFieldPosition(field, colIdx);
+      const { col: fieldCol } = positions[colIdx];
       const fd = relevant.find((entry) => normalizeFieldKey(entry.field_name) === normalizeFieldKey(field.name));
       const val = fd?.values?.[i] ?? null;
       const targetCell = worksheet.getCell(dataRow, fieldCol);
@@ -288,6 +346,16 @@ export const populateWorksheetWithFilledData = (
       targetCell.value = toExcelCellValue(formatTemplateDateValue(val, field.name) ?? val);
     });
   }
+
+  // Los campos sin columna configurada (agregados a la plantilla ya publicada)
+  // caen en una columna que no existía en el archivo original: su encabezado
+  // no está escrito físicamente, hay que agregarlo con el mismo estilo verde
+  // que usa la descarga de la plantilla base para campos añadidos.
+  fields.forEach((field, colIdx) => {
+    const { col, isFallbackColumn } = positions[colIdx];
+    if (!isFallbackColumn) return;
+    applyAdditionalFieldHeaderStyle(worksheet, worksheet.getCell(headerRow, col), field.name, col);
+  });
 };
 
 // Rellena la hoja de la plantilla ORIGINAL con datos YA CONSOLIDADOS por
@@ -314,13 +382,13 @@ export const populateWorksheetWithMergedRows = (
     worksheet.insertRows(startRow + 1, Array.from({ length: rows.length - 1 }, () => []));
   }
 
-  const usedCols = fields.map((field, index) => getConfiguredFieldPosition(field, index).col);
-  const maxCol = usedCols.length ? Math.max(...usedCols) : 0;
+  const positions = fields.map((field, index) => getConfiguredFieldPosition(field, index, fields));
+  const maxCol = positions.length ? Math.max(...positions.map((p) => p.col)) : 0;
 
   rows.forEach((row, i) => {
     const dataRow = startRow + i;
     fields.forEach((field, colIdx) => {
-      const { col } = getConfiguredFieldPosition(field, colIdx);
+      const { col } = positions[colIdx];
       const cell = worksheet.getCell(dataRow, col);
       copyCellPresentation(cell, templateRow.getCell(col));
       cell.value = toExcelCellValue(findRowValueByFieldName(row, field.name));
@@ -331,6 +399,16 @@ export const populateWorksheetWithMergedRows = (
       copyCellPresentation(cell, templateRow.getCell(col));
       cell.value = toExcelCellValue(findRowValueByFieldName(row, key));
     });
+  });
+
+  // Los campos sin columna configurada (agregados a la plantilla ya publicada)
+  // caen en una columna que no existía en el archivo original, así que su
+  // encabezado no está escrito físicamente: hay que agregarlo con el mismo
+  // estilo verde que usa la descarga de la plantilla base para campos añadidos.
+  fields.forEach((field, colIdx) => {
+    const { col, isFallbackColumn } = positions[colIdx];
+    if (!isFallbackColumn) return;
+    applyAdditionalFieldHeaderStyle(worksheet, worksheet.getCell(headerRow, col), field.name, col);
   });
 
   extraColumns.forEach((key, extraIdx) => {
@@ -718,7 +796,7 @@ export const injectWorkbookSheetHeaderComments = async (
     sheet.fields.forEach((field, fieldIndex) => {
       const comment = getFieldCommentForNote(field);
       if (!comment) return;
-      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
       commentsByRef.set(getExcelCellAddress(headerRow, col), comment);
     });
 
@@ -835,7 +913,7 @@ export const appendMissingFieldComments = async (
     sheet.fields.forEach((field, fieldIndex) => {
       const comment = getFieldCommentForNote(field);
       if (!comment) return;
-      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
       const ref = getExcelCellAddress(headerRow, col);
       if (!existingVmlRefs.has(ref)) {
         fieldsToAdd.push({ ref, text: comment, rowNumber: headerRow, columnNumber: col });
@@ -1154,6 +1232,19 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
   return normalizeDropdownOptionTexts(options);
 };
 
+// Muchos comentarios de campo son preguntas de si/no terminadas en "(S/N)"
+// o "(S/N)?" (ej. "¿Incluye actividades administrativas (S/N)?"), sin la
+// sección "Valores válidos son:" que detecta extractOptionsFromCommentValidators.
+// Se detecta ese patrón para ofrecer S/N como lista desplegable en cualquier
+// descarga que aplique dropdowns a partir de comentarios.
+const SI_NO_COMMENT_PATTERN = /\(\s*S\s*\/\s*N\s*\)\s*\??\s*$/i;
+
+const extractYesNoOptionsFromComment = (comment: string): string[] => {
+  if (!comment) return [];
+  const normalized = comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return SI_NO_COMMENT_PATTERN.test(normalized) ? ["S", "N"] : [];
+};
+
 const stripOptionPrefix = (value: string): string =>
   value.replace(/^\s*(?:[-*•]|\d+[).:\-\s]+)\s*/, "").replace(/\s+/g, " ").trim();
 
@@ -1217,6 +1308,11 @@ export const applyValidatorDropdowns = ({
       options = extractOptionsFromCommentValidators(field.comment);
     }
 
+    // 1.5 Respaldo: el comentario es una pregunta de si/no terminada en "(S/N)"
+    if (options.length === 0 && field.comment) {
+      options = extractYesNoOptionsFromComment(field.comment);
+    }
+
     // 2. Respaldo: dropdown_options ya almacenadas
     if (options.length === 0 && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
       const seen = new Set<string>();
@@ -1262,7 +1358,7 @@ export const applyValidatorDropdowns = ({
     options = normalizeDropdownOptionTexts(options);
     if (options.length === 0) return;
 
-    const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+    const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
     const firstDataRow = Math.max(startRow, headerRow + 1);
     const rangeAddress = `${toColumnLetter(templateCol)}${firstDataRow}:${toColumnLetter(templateCol)}${endRow}`;
 
@@ -1344,7 +1440,7 @@ export const applyWorkbookSheetDropdowns = ({
     const originalComments = originalCommentsBySheet?.get(sheet.name);
     const fields = originalComments
       ? sheet.fields.map((field, fieldIndex) => {
-          const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+          const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
           // Los comentarios pueden estar en la celda de encabezado (fila 1) o
           // en la primera fila de datos (fila 2+), dependiendo de cómo se generó el workbook
           const firstDataRow = Math.max(2, headerRow + 1);

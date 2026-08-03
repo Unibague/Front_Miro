@@ -54,6 +54,7 @@ import {
   toExcelCellValue,
   mergeFilledDataAcrossDependencies,
   formatTemplateDateValue,
+  applyAdditionalFieldHeaderStyle,
 } from "@/app/utils/templateUtils";
 
 const DropzoneButton = dynamic(
@@ -407,15 +408,18 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
 
       const startRow = getSheetDataStartRow(fields);
       const templateRow = ws.getRow(startRow);
+      const headerRow = Math.max(1, startRow - 1);
 
       if (numRows > 1) {
         ws.insertRows(startRow + 1, Array.from({ length: numRows - 1 }, () => []));
       }
 
+      const positions = fields.map((field: any, index: number) => getConfiguredFieldPosition(field, index, fields));
+
       for (let i = 0; i < numRows; i++) {
         const dataRow = startRow + i;
         fields.forEach((field: any, colIdx: number) => {
-          const { col: fieldCol } = getConfiguredFieldPosition(field, colIdx);
+          const { col: fieldCol } = positions[colIdx];
           const fd = relevant.find((d: FilledFieldData) => d.field_name === field.name);
           const val = fd?.values?.[i] ?? null;
           const targetCell = ws.getCell(dataRow, fieldCol);
@@ -423,6 +427,16 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           targetCell.value = toExcelCellValue(formatTemplateDateValue(val, field.name) ?? val);
         });
       }
+
+      // Los campos sin columna configurada (agregados a la plantilla ya publicada)
+      // caen en una columna que no existía en el archivo original: su encabezado
+      // no está escrito físicamente, hay que agregarlo con el mismo estilo verde
+      // que usa la descarga de la plantilla base para campos añadidos.
+      fields.forEach((field: any, colIdx: number) => {
+        const { col, isFallbackColumn } = positions[colIdx];
+        if (!isFallbackColumn) return;
+        applyAdditionalFieldHeaderStyle(ws, ws.getCell(headerRow, col), field.name, col);
+      });
     };
 
     // === RUTA 1: workbook base64 (preserva estructura original) ===

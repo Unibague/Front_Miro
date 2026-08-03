@@ -119,9 +119,11 @@ interface TemplateStatusRow {
   user_email: string;
   dependency: string;
   has_submitted: boolean;
+  is_empty_submission?: boolean;
   submitted_date: string | null;
   total_assigned: number;
   total_submitted: number;
+  total_empty?: number;
   total_pending: number;
   completion_percentage: number;
   pending_percentage: number;
@@ -555,7 +557,9 @@ const PublishedTemplatesPage = () => {
           userName,
           userEmail,
           item.dependency,
-          item.has_submitted ? 'Enviado' : 'Pendiente',
+          item.has_submitted
+            ? (item.is_empty_submission ? 'Enviado (vacío)' : 'Enviado')
+            : 'Pendiente',
           item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
           item.deadline ? new Date(item.deadline).toLocaleDateString() : '',
           item.total_assigned ?? '',
@@ -618,6 +622,7 @@ const PublishedTemplatesPage = () => {
         deadline: item.deadline,
         total_assigned: item.total_assigned,
         total_submitted: item.total_submitted,
+        total_empty: item.total_empty ?? 0,
         total_pending: item.total_pending,
         completion_percentage: item.completion_percentage,
         pending_percentage: item.pending_percentage,
@@ -640,6 +645,7 @@ const PublishedTemplatesPage = () => {
     deadline: string;
     total_assigned: number;
     total_submitted: number;
+    total_empty: number;
     total_pending: number;
     completion_percentage: number;
     pending_percentage: number;
@@ -1082,6 +1088,11 @@ const PublishedTemplatesPage = () => {
                   <Badge variant="outline" color="green" size="lg">
                     Enviados: {group.total_submitted}
                   </Badge>
+                  {group.total_empty > 0 && (
+                    <Badge variant="outline" color="yellow" size="lg">
+                      Vacíos: {group.total_empty}
+                    </Badge>
+                  )}
                   <Badge variant="outline" color="orange" size="lg">
                     Pendientes: {group.total_pending}
                   </Badge>
@@ -1109,6 +1120,11 @@ const PublishedTemplatesPage = () => {
                           <List.Item key={`${group.template_id}-sent-${index}`}>
                             {item.user_name || 'N/A'} - {item.dependency}
                             {item.submitted_date ? ` (${new Date(item.submitted_date).toLocaleDateString()})` : ''}
+                            {item.is_empty_submission && (
+                              <Badge color="yellow" variant="light" size="xs" ml={6}>
+                                Vacío
+                              </Badge>
+                            )}
                           </List.Item>
                         ))}
                       </List>
@@ -1151,10 +1167,12 @@ const PublishedTemplatesPage = () => {
                         <Table.Td>{item.dependency}</Table.Td>
                         <Table.Td>
                           <Badge
-                            color={item.has_submitted ? 'green' : 'orange'}
+                            color={item.has_submitted ? (item.is_empty_submission ? 'yellow' : 'green') : 'orange'}
                             variant="light"
                           >
-                            {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                            {item.has_submitted
+                              ? (item.is_empty_submission ? 'Enviado (vacío)' : 'Enviado')
+                              : 'Pendiente'}
                           </Badge>
                         </Table.Td>
                         <Table.Td>
