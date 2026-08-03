@@ -13,7 +13,7 @@ import {
   LineChart, Line, Legend,
 } from "recharts";
 import {
-  IconX, IconCurrencyDollar, IconTrendingUp, IconTarget, IconBulb, IconSearch,
+  IconX, IconCurrencyDollar, IconTrendingUp, IconBulb, IconSearch,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { PDI_ROUTES } from "../api";
@@ -1080,13 +1080,6 @@ export default function PdiGraficas() {
     };
   }, [accionActual, proyectoActual, verTodos, resumen, proysMacro, macroActual]);
 
-  const avanceGeneral = useMemo(() => {
-    if (accionActual) return Math.round(Number(accionActual.avance) || 0);
-    if (proyectoActual) return Math.round(Number(proyectoActual.avance) || 0);
-    if (!verTodos && macroActual) return Math.round(Number(macroActual.avance) || 0);
-    return resumen?.avance_global ?? 0;
-  }, [accionActual, proyectoActual, macroActual, verTodos, resumen]);
-
   const indicadoresConRetrasos = useMemo(() => metricIndicators.filter((ind) =>
     (ind.periodos ?? []).some((p) => String(p.justificacion_retrasos ?? "").trim() !== "")
   ).length, [metricIndicators]);
@@ -1508,17 +1501,9 @@ export default function PdiGraficas() {
 
       {/* ── Tarjetas KPI adaptativas ─────────────────────────────────────── */}
       {(() => {
-        const ctxLabel = accionActual
-          ? `${accionActual.codigo}`
-          : proyectoActual
-          ? `${proyectoActual.codigo}`
-          : macroActual
-          ? `${macroActual.codigo}`
-          : "PDI";
-        const semaforoAvance = avanceGeneral >= 90 ? "teal" : avanceGeneral >= 60 ? "yellow" : "red";
         return (
           <>
-            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
               <StatCard
                 icon={<IconCurrencyDollar size={18} />}
                 title={accionActual ? "Presupuesto de la acción" : proyectoActual ? "Presupuesto del proyecto" : macroActual ? "Presupuesto del macroproyecto" : "Presupuesto total PDI"}
@@ -1531,12 +1516,6 @@ export default function PdiGraficas() {
                 value={fmtCOP(budgetStats.ejecutado)}
                 sub={`${budgetStats.porcentaje_ejecucion}% del total`}
                 color={budgetStats.porcentaje_ejecucion >= 70 ? "teal" : "orange"}
-              />
-              <StatCard
-                icon={<IconTarget size={18} />}
-                title={`Avance general ${ctxLabel}`}
-                value={`${avanceGeneral}%`}
-                color={semaforoAvance}
               />
               <StatCard
                 icon={<IconBulb size={18} />}
