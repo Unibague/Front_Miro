@@ -1740,6 +1740,10 @@ export default function PdiPage() {
   const [macroModal, setMacroModal] = useState(false);
   const [configModal, setConfigModal] = useState(false);
   const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
+  // Si la carga inicial falla (p.ej. el backend aun no respondia), sin esto la
+  // pagina se queda pegada en 0 hasta un refresh manual — con backoff se
+  // reintenta sola hasta que la carga sea exitosa.
+  const [failedLoadAttempts, setFailedLoadAttempts] = useState(0);
   const cargarPortfolio = async () => {
     try {
       const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes, pendientesLiderRes, pendientesPlaneacionRes] = await Promise.all([
@@ -1837,8 +1841,10 @@ export default function PdiPage() {
       setAccionesPorMacro(accionesCountMap);
       setIndicadoresPorMacro(indicadoresCountMap);
       setAnnualStatsPorMacro(annualStatsMap);
+      setFailedLoadAttempts(0);
     } catch (e) {
       console.error(e);
+      setFailedLoadAttempts((n) => n + 1);
     } finally {
       setLoadingMacros(false);
     }
@@ -1872,6 +1878,13 @@ export default function PdiPage() {
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
+
+  useEffect(() => {
+    if (failedLoadAttempts === 0) return;
+    const delay = Math.min(3000 * failedLoadAttempts, 15000);
+    const timeout = setTimeout(() => { cargarPortfolio(); }, delay);
+    return () => clearTimeout(timeout);
+  }, [failedLoadAttempts]);
 
   const refrescarMacro = async (macroId: string) => {
     try {

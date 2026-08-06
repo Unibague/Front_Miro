@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon, Badge, Box, Button, Center, Container, Divider, Group,
-  Loader, Paper, SimpleGrid, Stack, Text,
+  Loader, Paper, Select, SimpleGrid, Stack, Text,
   ThemeIcon, Title, RingProgress,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
@@ -70,6 +70,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [exportandoAnio, setExportandoAnio] = useState(false);
+  const [anioMemoriaVigencia, setAnioMemoriaVigencia] = useState<string>(String(new Date().getFullYear()));
+  const [anioMemoriaTouched, setAnioMemoriaTouched] = useState(false);
   const [exportandoIndicadores, setExportandoIndicadores] = useState(false);
   const [recalculando, setRecalculando] = useState(false);
 
@@ -87,6 +89,14 @@ export default function DashboardPage() {
   };
 
   useEffect(() => { cargarDatos(); }, []);
+
+  // El año por defecto del selector es la vigencia actual del PDI, pero solo
+  // mientras el usuario no lo haya cambiado el mismo.
+  useEffect(() => {
+    if (!anioMemoriaTouched && resumen?.anio_actual) {
+      setAnioMemoriaVigencia(String(resumen.anio_actual));
+    }
+  }, [resumen?.anio_actual, anioMemoriaTouched]);
 
   const handleExportarAvance = async () => {
     setExportando(true);
@@ -113,7 +123,7 @@ export default function DashboardPage() {
   };
 
   const handleExportarAvanceAnio = async () => {
-    const anio = resumen?.anio_actual ?? String(new Date().getFullYear());
+    const anio = anioMemoriaVigencia;
     setExportandoAnio(true);
     try {
       const response = await axios.get(PDI_ROUTES.dashboardExportarAvanceAnio(anio), { responseType: "blob" });
@@ -193,7 +203,7 @@ export default function DashboardPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <PdiSidebar />
       <div style={{ flex: 1, overflowY: "auto", height: "100vh" }}>
-        <Container size="xl" py="xl">
+        <Container fluid py="xl" px={{ base: "md", md: "xl" }}>
 
           {/* Header */}
           <Group justify="space-between" mb="xl">
@@ -225,16 +235,31 @@ export default function DashboardPage() {
                 </Button>
               )}
               {isAdmin && (
-                <Button
-                  variant="light"
-                  color="teal"
-                  radius="xl"
-                  leftSection={<IconFileSpreadsheet size={17} />}
-                  onClick={handleExportarAvanceAnio}
-                  loading={exportandoAnio}
-                >
-                  Memoria técnica del cálculo del cumplimiento de la vigencia {resumen?.anio_actual ?? new Date().getFullYear()}
-                </Button>
+                <Group gap={6} wrap="nowrap">
+                  <Select
+                    size="xs"
+                    radius="xl"
+                    w={90}
+                    data={(config.anios ?? []).map((a) => String(a))}
+                    value={anioMemoriaVigencia}
+                    onChange={(value) => {
+                      if (!value) return;
+                      setAnioMemoriaTouched(true);
+                      setAnioMemoriaVigencia(value);
+                    }}
+                    allowDeselect={false}
+                  />
+                  <Button
+                    variant="light"
+                    color="teal"
+                    radius="xl"
+                    leftSection={<IconFileSpreadsheet size={17} />}
+                    onClick={handleExportarAvanceAnio}
+                    loading={exportandoAnio}
+                  >
+                    Memoria técnica del cálculo del cumplimiento de la vigencia {anioMemoriaVigencia}
+                  </Button>
+                </Group>
               )}
               {isAdmin && (
                 <Button

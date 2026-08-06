@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Stack, NavLink, Text, Divider, ThemeIcon } from "@mantine/core";
+import { Stack, NavLink, Text, Divider, ThemeIcon, ActionIcon, Group, Tooltip } from "@mantine/core";
 import {
   IconChartBarPopular, IconHistory, IconCalendarStats,
   IconLayoutDashboard, IconGitPullRequest, IconForms, IconReportAnalytics,
-  IconCurrencyDollar, IconTarget, IconNetwork,
+  IconCurrencyDollar, IconTarget, IconNetwork, IconChevronLeft, IconChevronRight,
 } from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -29,6 +29,7 @@ type PdiNavGroup = {
 };
 
 const normalizeText = (value?: string | null) => String(value ?? "").toLowerCase().trim();
+const SIDEBAR_STORAGE_KEY = "miro-pdi-sidebar-collapsed";
 
 
 // Links exclusivos para administrador
@@ -96,6 +97,19 @@ export default function PdiSidebar() {
   const { data: session, status } = useSession();
   const { userRole } = useRole();
   const [isMacroLeader, setIsMacroLeader] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "true");
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
 
   // El menú debe reflejar el rol ACTIVO de la cuenta que se está viendo (la
   // impersonada, si aplica) — igual que el resto de las páginas de PDI y la
@@ -157,6 +171,36 @@ export default function PdiSidebar() {
       .filter((group) => group.items.length > 0);
   }, [isAdmin, isMacroLeader]);
 
+  if (collapsed) {
+    return (
+      <Stack
+        align="center"
+        p={6}
+        style={{
+          width: 48,
+          minWidth: 48,
+          borderRight: "1px solid var(--mantine-color-default-border)",
+          minHeight: "100vh",
+          paddingTop: 16,
+          transition: "width 180ms ease, min-width 180ms ease",
+        }}
+      >
+        <Tooltip label="Mostrar menú PDI" position="right" withArrow>
+          <ActionIcon
+            variant="light"
+            color="violet"
+            radius="xl"
+            size="lg"
+            onClick={toggleCollapsed}
+            aria-label="Mostrar menú PDI"
+          >
+            <IconChevronRight size={18} />
+          </ActionIcon>
+        </Tooltip>
+      </Stack>
+    );
+  }
+
   return (
     <Stack
       gap={4}
@@ -167,12 +211,26 @@ export default function PdiSidebar() {
         borderRight: "1px solid var(--mantine-color-default-border)",
         minHeight: "100vh",
         paddingTop: 16,
+        transition: "width 180ms ease, min-width 180ms ease",
       }}
     >
       <Stack gap={2} px={8} pb={8}>
-        <ThemeIcon size={32} radius="xl" color="violet" variant="light">
-          <IconChartBarPopular size={18} />
-        </ThemeIcon>
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+            <IconChartBarPopular size={18} />
+          </ThemeIcon>
+          <Tooltip label="Ocultar menú PDI" position="right" withArrow>
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              radius="xl"
+              onClick={toggleCollapsed}
+              aria-label="Ocultar menú PDI"
+            >
+              <IconChevronLeft size={17} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
         <Text size="xs" fw={700} c="violet" mt={4}>Panel PDI</Text>
       </Stack>
 
