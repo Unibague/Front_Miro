@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import {
   Container, Title, Text, Paper, Group, Badge, Button, Stack,
   Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
-  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List, Grid,
+  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List, Grid, Select,
 } from "@mantine/core";
 import {
   IconChartBarPopular, IconArrowLeft, IconChevronRight,
   IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
-  IconFlag, IconAlertTriangle, IconCurrencyDollar,
-  IconListCheck, IconExternalLink, IconSettings, IconSearch, IconClipboardCheck, IconShieldCheck,
+  IconAlertTriangle, IconCurrencyDollar,
+  IconExternalLink, IconSettings, IconSearch, IconClipboardCheck, IconShieldCheck,
 } from "@tabler/icons-react";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
@@ -641,7 +641,20 @@ type PresupuestoDashboardRow = {
   ejecutadoInversion?: number;
   gasto?: number;
   inversion?: number;
+  presupuestoPorAnio?: Record<string, { gasto?: number; inversion?: number; total?: number }>;
   detalles?: PresupuestoDetalleResumen[];
+};
+
+type PresupuestoResumen = {
+  total: number;
+  presupuestoGasto: number;
+  presupuestoInversion: number;
+  causado: number;
+  causadoGasto: number;
+  causadoInversion: number;
+  ejecutado: number;
+  ejecutadoGasto: number;
+  ejecutadoInversion: number;
 };
 
 type PresupuestoDashboardResponse = {
@@ -742,29 +755,22 @@ const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
   return { gasto: presupuesto, inversion: 0 };
 };
 
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, alertasActivas, resumen, pendientesLider, pendientesAprobacion }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, resumen, aniosPdi, pendientesLider, pendientesAprobacion }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
-  alertasActivas: number;
   resumen: DashboardResumen | null;
+  aniosPdi: number[];
   pendientesLider: PendienteAprobacion[];
   pendientesAprobacion: PendienteAprobacion[];
 }) {
   const router = useRouter();
+  const anioInicial = String(resumen?.anio_actual ?? new Date().getFullYear());
+  const [anioSeleccionado, setAnioSeleccionado] = useState(anioInicial);
+  const [resumenVigencia, setResumenVigencia] = useState<DashboardResumen | null>(resumen);
   const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
-  const [presupuestoAnio, setPresupuestoAnio] = useState<{
-    total: number;
-    presupuestoGasto: number;
-    presupuestoInversion: number;
-    causado: number;
-    causadoGasto: number;
-    causadoInversion: number;
-    ejecutado: number;
-    ejecutadoGasto: number;
-    ejecutadoInversion: number;
-  } | null>(null);
+  const [presupuestosPorAnio, setPresupuestosPorAnio] = useState<Record<string, PresupuestoResumen>>({});
   const [modalPendientes, setModalPendientes] = useState(false);
   const [modalPendientesLider, setModalPendientesLider] = useState(false);
   const [modalAprobaciones, setModalAprobaciones] = useState(false);
@@ -841,7 +847,7 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutado), 0)
           || (ejecutadoGasto + ejecutadoInversion);
 
-        setPresupuestoAnio({
+        const presupuestoBase: PresupuestoResumen = {
           total,
           presupuestoGasto,
           presupuestoInversion,
@@ -851,10 +857,54 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           ejecutado,
           ejecutadoGasto,
           ejecutadoInversion,
-        });
+        };
+        const porAnio: Record<string, PresupuestoResumen> = {
+          [anioInicial]: presupuestoBase,
+        };
+        for (const anio of aniosPdi.map(String)) {
+          if (anio === anioInicial) continue;
+          const acumulado = rows.reduce<{ total: number; presupuestoGasto: number; presupuestoInversion: number }>(
+            (acc, row) => {
+              const vigencia = row.presupuestoPorAnio?.[anio];
+              if (!vigencia) return acc;
+              const gasto = toBudgetNumber(vigencia.gasto);
+              const inversion = toBudgetNumber(vigencia.inversion);
+              acc.presupuestoGasto += gasto;
+              acc.presupuestoInversion += inversion;
+              acc.total += toBudgetNumber(vigencia.total) || gasto + inversion;
+              return acc;
+            },
+            { total: 0, presupuestoGasto: 0, presupuestoInversion: 0 }
+          );
+          porAnio[anio] = {
+            ...acumulado,
+            causado: 0,
+            causadoGasto: 0,
+            causadoInversion: 0,
+            ejecutado: 0,
+            ejecutadoGasto: 0,
+            ejecutadoInversion: 0,
+          };
+        }
+        setPresupuestosPorAnio(porAnio);
       })
       .catch(() => {});
-  }, []);
+  }, [anioInicial, aniosPdi]);
+
+  useEffect(() => {
+    if (!aniosPdi.length || aniosPdi.map(String).includes(anioSeleccionado)) return;
+    setAnioSeleccionado(String(aniosPdi[0]));
+  }, [anioSeleccionado, aniosPdi]);
+
+  useEffect(() => {
+    if (anioSeleccionado === resumen?.anio_actual) {
+      setResumenVigencia(resumen);
+      return;
+    }
+    axios.get<DashboardResumen>(PDI_ROUTES.dashboardResumen(anioSeleccionado))
+      .then(({ data }) => setResumenVigencia(data))
+      .catch(() => setResumenVigencia(null));
+  }, [anioSeleccionado, resumen]);
 
   const totalProyectos = Object.values(proyectosPorMacro).flat().length;
   const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
@@ -864,32 +914,38 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   // el servidor (y que replica la Memoria técnica en Excel), sin una segunda
   // implementación del promedio ponderado que se pueda desincronizar.
   const avancePonderado = resumen?.avance_global ?? 0;
-  const criticos = macros.filter((m) => m.semaforo === "rojo").length;
-  const amarillos = macros.filter((m) => m.semaforo === "amarillo").length;
-  const verdes = macros.filter((m) => m.semaforo === "verde").length;
-  const sinAvance = macros.filter((m) => m.avance === 0).length;
-  const alertas = alertasActivas;
   const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
   const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Crítico";
-  const presupuestoTotal = resumen?.presupuesto.total
-    ?? macros.reduce((s, m) => s + (Number(m.presupuesto) || 0), 0);
-  const presupuestoEjecutado = resumen?.presupuesto.ejecutado
-    ?? macros.reduce((s, m) => s + (Number(m.presupuesto_ejecutado) || 0), 0);
+  const presupuestosDisponibles = Object.values(presupuestosPorAnio);
+  const presupuestoTotal = presupuestosDisponibles.length
+    ? presupuestosDisponibles.reduce((s, item) => s + item.total, 0)
+    : (resumen?.presupuesto.total ?? macros.reduce((s, m) => s + (Number(m.presupuesto) || 0), 0));
+  const presupuestoGastoTotal = presupuestosDisponibles.reduce((s, item) => s + item.presupuestoGasto, 0);
+  const presupuestoInversionTotal = presupuestosDisponibles.reduce((s, item) => s + item.presupuestoInversion, 0);
+  const presupuestoEjecutado = presupuestosDisponibles.length
+    ? presupuestosDisponibles.reduce((s, item) => s + item.ejecutado, 0)
+    : (resumen?.presupuesto.ejecutado ?? macros.reduce((s, m) => s + (Number(m.presupuesto_ejecutado) || 0), 0));
+  const presupuestoEjecutadoGastoTotal = presupuestosDisponibles.reduce((s, item) => s + item.ejecutadoGasto, 0);
+  const presupuestoEjecutadoInversionTotal = presupuestosDisponibles.reduce((s, item) => s + item.ejecutadoInversion, 0);
+  const presupuestoCausado = presupuestosDisponibles.reduce((s, item) => s + item.causado, 0);
   const avanceFinanciero = presupuestoTotal > 0
+    ? Math.min(Math.round((presupuestoCausado / presupuestoTotal) * 100), 100)
+    : 0;
+  const porcentajeEjecucionTotal = presupuestoTotal > 0
     ? Math.min(Math.round((presupuestoEjecutado / presupuestoTotal) * 100), 100)
     : 0;
+  const ejecucionColorTotal = porcentajeEjecucionTotal >= 70 ? "teal" : porcentajeEjecucionTotal >= 40 ? "blue" : "orange";
   const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
   const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
-  const anioActualLabel = resumen?.anio_actual ?? String(new Date().getFullYear());
-  const avanceAnioActual = resumen?.avance_anio_actual ?? 0;
+  const anioActualLabel = anioSeleccionado;
+  const avanceAnioActual = resumenVigencia?.avance_anio_actual ?? 0;
   const avanceAnioActualColor = avanceAnioActual >= 70 ? "green" : avanceAnioActual >= 40 ? "blue" : avanceAnioActual >= 20 ? "orange" : "red";
   const avanceAnioActualBadge = avanceAnioActual >= 70 ? "Buen ritmo" : avanceAnioActual >= 40 ? "En progreso" : avanceAnioActual >= 20 ? "Atención" : "Crítico";
+  const presupuestoAnio = presupuestosPorAnio[anioSeleccionado];
   const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
   const presupuestoAnioGasto = presupuestoAnio?.presupuestoGasto ?? 0;
   const presupuestoAnioInversion = presupuestoAnio?.presupuestoInversion ?? 0;
-  // "Ejecutado" (pagado), no "causado" (obligación reconocida): son etapas
-  // distintas de la ejecución presupuestal, y el avance financiero del año
-  // debe medir lo realmente ejecutado frente al presupuesto de ese año.
+  const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
   const presupuestoAnioEjecutado = presupuestoAnio?.ejecutado ?? 0;
   const presupuestoAnioEjecutadoGasto = presupuestoAnio?.ejecutadoGasto ?? 0;
   const presupuestoAnioEjecutadoInversion = presupuestoAnio?.ejecutadoInversion ?? 0;
@@ -902,9 +958,14 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     0
   );
   const avanceFinancieroAnio = presupuestoAnioTotal > 0
+    ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
+    : 0;
+  const porcentajeEjecucionAnio = presupuestoAnioTotal > 0
     ? Math.min(Math.round((presupuestoAnioEjecutado / presupuestoAnioTotal) * 100), 100)
     : 0;
   const finColorAnio = avanceFinancieroAnio >= 70 ? "teal" : avanceFinancieroAnio >= 40 ? "blue" : "orange";
+  const ejecucionColorAnio = porcentajeEjecucionAnio >= 70 ? "teal" : porcentajeEjecucionAnio >= 40 ? "blue" : "orange";
+  const corteEsVigencia = Boolean(corteActual?.periodo?.startsWith(anioSeleccionado));
   const estructuraResumen = [
     { label: "Macroproyectos", value: macros.length, color: "violet" },
     { label: "Proyectos", value: totalProyectos, color: "blue" },
@@ -959,32 +1020,20 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
             </Group>
 
             <Text size="sm" c="dimmed" maw={560}>
-              Vista general del portafolio del PDI
+              Avance acumulado y presupuesto del PDI hasta {Math.max(...aniosPdi, Number(anioActualLabel))}
             </Text>
 
             <Stack gap="xs" mt={6}>
               <div>
-                <Text size="xs" c="dimmed">Avance ponderado</Text>
+                <Text size="xs" c="dimmed">Avance técnico consolidado {Math.max(...aniosPdi, Number(anioActualLabel))}</Text>
                 <Group gap="sm" align="flex-end">
                   <Text size="2.8rem" fw={900} lh={1}>{formatNumeroEs(avancePonderado, 2, 2)}%</Text>
                   <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
                 </Group>
                 <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
-                {resumen && (
-                  <Box mt={10}>
-                    <Group gap={6} align="center" justify="space-between">
-                      <Text size="xs" c="dimmed">Avance {anioActualLabel}</Text>
-                      <Group gap={6} align="center">
-                        <Text size="sm" fw={700}>{formatNumeroEs(avanceAnioActual, 2, 2)}%</Text>
-                        <Badge size="xs" color={avanceAnioActualColor} variant="light" radius="xl">{avanceAnioActualBadge}</Badge>
-                      </Group>
-                    </Group>
-                    <Progress value={avanceAnioActual} color={avanceAnioActualColor} size="sm" radius="xl" mt={4} />
-                  </Box>
-                )}
               </div>
               <div>
-                <Text size="xs" c="dimmed">Avance financiero</Text>
+                <Text size="xs" c="dimmed">Avance financiero hasta {Math.max(...aniosPdi, Number(anioActualLabel))}</Text>
                 <Group gap="sm" align="flex-end">
                   <Text size="2.8rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
                   <Badge size="md" color={finColor} variant="light" radius="xl" mb={6}>{finBadge}</Badge>
@@ -992,28 +1041,40 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                 <Progress value={avanceFinanciero} color={finColor} size="md" radius="xl" mt="xs" />
                 {presupuestoTotal > 0 && (
                   <Text size="xs" c="dimmed" mt={2}>
-                    {formatCOP(presupuestoEjecutado)} / {formatCOP(presupuestoTotal)}
+                    {formatCOP(presupuestoCausado)} causado de {formatCOP(presupuestoTotal)}
                   </Text>
-                )}
-                {presupuestoAnioTotal > 0 && (
-                  <Box mt={10}>
-                    <Group gap={6} align="center" justify="space-between">
-                      <Text size="xs" c="dimmed">Avance financiero {anioActualLabel}</Text>
-                      <Group gap={6} align="center">
-                        <Text size="sm" fw={700}>{avanceFinancieroAnio}%</Text>
-                        <Badge size="xs" color={finColorAnio} variant="light" radius="xl">
-                          {avanceFinancieroAnio >= 70 ? "Buen ritmo" : avanceFinancieroAnio >= 40 ? "En progreso" : "Atención"}
-                        </Badge>
-                      </Group>
-                    </Group>
-                    <Progress value={avanceFinancieroAnio} color={finColorAnio} size="sm" radius="xl" mt={4} />
-                    <Text size="xs" c="dimmed" mt={2}>
-                      {formatCOP(presupuestoAnioEjecutado)} / {formatCOP(presupuestoAnioTotal)}
-                    </Text>
-                  </Box>
                 )}
               </div>
             </Stack>
+
+            <Paper withBorder radius="lg" p="md" style={{ background: "rgba(255,255,255,0.72)" }}>
+              <Box>
+                <Text size="xs" c="dimmed">Ejecutado vs Presupuesto</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{porcentajeEjecucionTotal}%</Text>
+                <Progress value={porcentajeEjecucionTotal} color={ejecucionColorTotal} size="sm" radius="xl" mt={8} />
+                <Text size="xs" c="dimmed" mt={6}>
+                  {formatCOP(presupuestoEjecutado)} ejecutado de {formatCOP(presupuestoTotal)}
+                </Text>
+                <SimpleGrid cols={2} spacing={6} mt={6}>
+                  <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: 8 }}>
+                    <Group gap={4} mb={4}>
+                      <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                      <Text size="10px" fw={700} c="blue.6">Gasto</Text>
+                    </Group>
+                    <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoEjecutadoGastoTotal)}</Text>
+                    <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoGastoTotal)}</Text>
+                  </Box>
+                  <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: 8 }}>
+                    <Group gap={4} mb={4}>
+                      <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
+                      <Text size="10px" fw={700} c="violet.6">Inversión</Text>
+                    </Group>
+                    <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoEjecutadoInversionTotal)}</Text>
+                    <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoInversionTotal)}</Text>
+                  </Box>
+                </SimpleGrid>
+              </Box>
+            </Paper>
 
             <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mt="sm">
               {estructuraResumen.map((item) => (
@@ -1036,25 +1097,62 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
           </Stack>
 
           <Grid gutter="md">
-            <Grid.Col span={6}>
+            <Grid.Col span={12}>
+              <Group justify="space-between" align="flex-end">
+                <Box>
+                  <Text fw={800}>Detalle por vigencia</Text>
+                  <Text size="xs" c="dimmed">Consulta el avance y el presupuesto de un año específico.</Text>
+                </Box>
+                <Select
+                  label="Año"
+                  value={anioSeleccionado}
+                  onChange={(value) => value && setAnioSeleccionado(value)}
+                  data={aniosPdi.map((anio) => ({ value: String(anio), label: String(anio) }))}
+                  allowDeselect={false}
+                  w={120}
+                  size="xs"
+                />
+              </Group>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
               <Paper withBorder radius="lg" p="lg" h="100%">
                 <Group justify="space-between" align="flex-start" mb="xs">
-                  <ThemeIcon size={42} radius="xl" color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light">
-                    <IconFlag size={20} />
+                  <ThemeIcon size={42} radius="xl" color={avanceAnioActualColor} variant="light">
+                    <IconTrendingUp size={20} />
                   </ThemeIcon>
-                  <Badge color={criticos > 0 ? "red" : amarillos > 0 ? "orange" : "green"} variant="light" radius="xl">
-                    {criticos > 0 ? "Crítico" : amarillos > 0 ? "En riesgo" : "Estable"}
+                  <Badge color={avanceAnioActualColor} variant="light" radius="xl">
+                    {anioSeleccionado}
                   </Badge>
                 </Group>
-                <Text size="xs" c="dimmed">Estado del portafolio</Text>
-                <Text size="1.8rem" fw={800} lh={1} mt={4}>{verdes}/{macros.length || 0}</Text>
-                <Text size="xs" c="dimmed" mt={6}>Macroproyectos en cumplimiento adecuado</Text>
+                <Text size="xs" c="dimmed">Avance técnico</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{formatNumeroEs(avanceAnioActual, 2, 2)}%</Text>
+                <Progress value={avanceAnioActual} color={avanceAnioActualColor} size="sm" radius="xl" mt="sm" />
+                <Text size="xs" c="dimmed" mt={6}>{avanceAnioActualBadge}</Text>
               </Paper>
             </Grid.Col>
 
-            <Grid.Col span={6}>
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                    <IconCurrencyDollar size={20} />
+                  </ThemeIcon>
+                  <Badge color={finColorAnio} variant="light" radius="xl">
+                    {anioSeleccionado}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Avance financiero</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{avanceFinancieroAnio}%</Text>
+                <Progress value={avanceFinancieroAnio} color={finColorAnio} size="sm" radius="xl" mt="sm" />
+                <Text size="xs" c="dimmed" mt={6}>
+                  {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                </Text>
+              </Paper>
+            </Grid.Col>
+
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
               <Paper withBorder radius="lg" p="lg" h="100%" style={{ position: "relative" }}>
-                {(corteActual?.sin_reporte ?? 0) > 0 && (
+                {corteEsVigencia && (corteActual?.sin_reporte ?? 0) > 0 && (
                   <ActionIcon
                     size="sm" variant="subtle" color="gray"
                     style={{ position: "absolute", bottom: 10, right: 10 }}
@@ -1068,20 +1166,20 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
                   <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
                     <IconAlertTriangle size={20} />
                   </ThemeIcon>
-                  <Badge color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
-                    {corteActual ? corteActual.periodo : "—"}
+                  <Badge color={corteEsVigencia && (corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
+                    {anioSeleccionado}
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
                 <Text size="1.8rem" fw={800} lh={1} mt={4}>
-                  {corteActual ? corteActual.sin_reporte : "—"}
+                  {corteEsVigencia && corteActual ? corteActual.sin_reporte : "—"}
                 </Text>
                 <Text size="xs" c="dimmed" mt={6}>
-                  {corteActual
+                  {corteEsVigencia && corteActual
                     ? corteActual.sin_reporte === 0
                       ? "Todos han reportado"
                       : `Sin reporte en ${corteActual.periodo}`
-                    : "Cargando período..."}
+                    : "Sin corte activo para esta vigencia"}
                 </Text>
               </Paper>
             </Grid.Col>
@@ -1143,36 +1241,22 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
               )}
             </Modal>
 
-            <Grid.Col span={6}>
+            <Grid.Col span={12}>
               <Paper withBorder radius="lg" p="lg" h="100%">
                 <Group justify="space-between" align="flex-start" mb="xs">
-                  <ThemeIcon size={42} radius="xl" color="blue" variant="light">
-                    <IconListCheck size={20} />
-                  </ThemeIcon>
-                  <Badge color="blue" variant="light" radius="xl">Cobertura</Badge>
-                </Group>
-                <Text size="xs" c="dimmed">Macroproyectos al 50% o más</Text>
-                <Text size="1.8rem" fw={800} lh={1} mt={4}>{macros.filter((m) => m.avance >= 50).length}</Text>
-                <Text size="xs" c="dimmed" mt={6}>de {macros.length || 0} Macroproyectos</Text>
-              </Paper>
-            </Grid.Col>
-
-            <Grid.Col span={6}>
-              <Paper withBorder radius="lg" p="lg" h="100%">
-                <Group justify="space-between" align="flex-start" mb="xs">
-                  <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                  <ThemeIcon size={42} radius="xl" color={ejecucionColorAnio} variant="light">
                     <IconCurrencyDollar size={20} />
                   </ThemeIcon>
-                  <Badge color={finColorAnio} variant="light" radius="xl">
-                    {new Date().getFullYear()}
+                  <Badge color={ejecucionColorAnio} variant="light" radius="xl">
+                    {anioSeleccionado}
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">Ejecutado vs Presupuesto</Text>
                 <Text size="1.8rem" fw={800} lh={1} mt={4}>
-                  {avanceFinancieroAnio}%
+                  {porcentajeEjecucionAnio}%
                 </Text>
                 <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
-                  <Box style={{ width: `${avanceFinancieroAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: avanceFinancieroAnio >= 70 ? "#20c997" : avanceFinancieroAnio >= 40 ? "#228be6" : "#fd7e14" }} />
+                  <Box style={{ width: `${porcentajeEjecucionAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: porcentajeEjecucionAnio >= 70 ? "#20c997" : porcentajeEjecucionAnio >= 40 ? "#228be6" : "#fd7e14" }} />
                 </Box>
                 {presupuestoAnioTotal > 0 ? (
                   <Stack gap={4}>
@@ -1518,13 +1602,15 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
   return (
     <Paper
       withBorder radius="xl" p="lg" shadow="xs"
-      style={{ transition: "box-shadow .2s, transform .2s", cursor: "default" }}
+      style={{ transition: "box-shadow .2s, transform .2s", cursor: "default", height: "100%", display: "flex", flexDirection: "column" }}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
     >
-      <Group justify="space-between" align="flex-start" mb="xs">
-        <Text fw={700} size="lg" style={{ flex: 1, lineHeight: 1.3 }}>{macro.nombre}</Text>
-        <Group gap={4}>
+      {/* Alto fijo (2 líneas) para que el nombre del macroproyecto no empuje
+          los cuadros morado/azul a distinta posición entre tarjetas. */}
+      <Group justify="space-between" align="flex-start" mb="xs" style={{ minHeight: 52 }}>
+        <Text fw={700} size="lg" lineClamp={2} style={{ flex: 1, lineHeight: 1.3 }}>{macro.nombre}</Text>
+        <Group gap={4} wrap="nowrap">
           <Badge color={statusColor} variant="light" size="sm" radius="xl">{statusLabel}</Badge>
           {admin && <>
             <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(macro)}><IconEdit size={13} /></ActionIcon>
@@ -1545,27 +1631,29 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
             border: "1px solid var(--mantine-color-violet-3)",
             borderRadius: 14,
             padding: "12px 14px",
+            height: 225,
+            boxSizing: "border-box",
           }}
         >
           <Text size="xs" fw={700} c="violet" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
             Meta final {anioFin}
           </Text>
           <SimpleGrid cols={2} spacing="md">
-            <div>
-              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance ponderado</Text>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance técnico</Text>
               <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
               <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
                 <Box style={{ height: "100%", width: `${Math.min(macro.avance, 100)}%`, background: colorForValue(macro.avance), borderRadius: 99, transition: "width .4s" }} />
               </Box>
             </div>
-            <div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
               <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
               <Text size="1.6rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
               <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
                 <Box style={{ height: "100%", width: `${Math.min(avanceFinanciero, 100)}%`, background: colorForValue(avanceFinanciero), borderRadius: 99, transition: "width .4s" }} />
               </Box>
               {presupuesto > 0 && (
-                <Text size="xs" c="dimmed" mt={4}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
+                <Text size="xs" c="dimmed" mt={4} style={{ minHeight: 40 }}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
               )}
             </div>
           </SimpleGrid>
@@ -1577,27 +1665,29 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
             border: "1px solid var(--mantine-color-blue-3)",
             borderRadius: 14,
             padding: "12px 14px",
+            height: 225,
+            boxSizing: "border-box",
           }}
         >
           <Text size="xs" fw={700} c="blue" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
             Año en curso {anioActual}
           </Text>
           <SimpleGrid cols={2} spacing="md">
-            <div>
-              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance ponderado</Text>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance técnico</Text>
               <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(annualStats.avance)}%</Text>
               <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
                 <Box style={{ height: "100%", width: `${Math.min(annualStats.avance, 100)}%`, background: colorForValue(annualStats.avance), borderRadius: 99, transition: "width .4s" }} />
               </Box>
             </div>
-            <div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
               <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
               <Text size="1.6rem" fw={900} lh={1}>{avanceFinancieroAnio}%</Text>
               <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
                 <Box style={{ height: "100%", width: `${Math.min(avanceFinancieroAnio, 100)}%`, background: colorForValue(avanceFinancieroAnio), borderRadius: 99, transition: "width .4s" }} />
               </Box>
               {annualStats.presupuesto > 0 && (
-                <Text size="xs" c="dimmed" mt={4}>{formatCOP(annualStats.presupuestoEjecutado)} / {formatCOP(annualStats.presupuesto)}</Text>
+                <Text size="xs" c="dimmed" mt={4} style={{ minHeight: 40 }}>{formatCOP(annualStats.presupuestoEjecutado)} / {formatCOP(annualStats.presupuesto)}</Text>
               )}
             </div>
           </SimpleGrid>
@@ -1623,6 +1713,7 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
         radius="xl" size="md" fullWidth
         rightSection={<IconExternalLink size={15} />}
         onClick={() => router.push(`/pdi/${macro._id}`)}
+        style={{ marginTop: "auto" }}
       >
         Ver detalle
       </Button>
@@ -1839,7 +1930,16 @@ export default function PdiPage() {
 
       <Divider mb="lg" />
 
-      <StatsCards macros={macros} proyectosPorMacro={proyectosPorMacro} accionesPorMacro={accionesPorMacro} indicadoresPorMacro={indicadoresPorMacro} alertasActivas={resumen?.alertas?.indicadores_con_alertas ?? 0} resumen={resumen} pendientesLider={pendientesLider} pendientesAprobacion={pendientesAprobacion} />
+      <StatsCards
+        macros={macros}
+        proyectosPorMacro={proyectosPorMacro}
+        accionesPorMacro={accionesPorMacro}
+        indicadoresPorMacro={indicadoresPorMacro}
+        resumen={resumen}
+        aniosPdi={config.anios}
+        pendientesLider={pendientesLider}
+        pendientesAprobacion={pendientesAprobacion}
+      />
 
       <Group justify="space-between" align="center" mb="md">
         <div>

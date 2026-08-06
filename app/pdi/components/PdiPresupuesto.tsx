@@ -530,7 +530,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
       "Presupuesto", "Presupuesto gasto", "Presupuesto inversión",
       "Comprometido gasto", "Comprometido inversión", "Saldo gasto", "Saldo inversión", "Total comprometido",
       "Total causado", "Causado gasto", "Causado inversión",
-      "Ejecutado gasto", "Ejecutado inversión", "Total ejecutado", "% ejecutado", "Fechas ejecutado",
+      "Ejecutado gasto", "Ejecutado inversión", "Ejecución total", "% ejecutado", "Fechas ejecutado",
     ];
     const aoa: (string | number)[][] = [headers];
 
@@ -827,7 +827,7 @@ export default function PdiPresupuesto({ refreshSignal = 0, defaultMacroCodes, r
                   <th style={{ ...thStyle, textAlign: "right" }}>Total causado</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Ejec. gasto</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Ejec. inversión</th>
-                  <th style={{ ...thStyle, textAlign: "right" }}>Total ejec.</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Ejecución total</th>
                   <th style={{ ...thStyle, textAlign: "center" }}>% ejecutado</th>
                 </tr>
               </thead>

@@ -718,7 +718,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
 
         return (
           <Box mb="sm">
-            <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
+            <Text size="xs" fw={700} mb={8}>Presupuesto</Text>
             {mostrandoTodos ? (
               <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">{items}</SimpleGrid>
             ) : (

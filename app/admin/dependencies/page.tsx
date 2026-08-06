@@ -223,7 +223,7 @@ const AdminDependenciesPage = () => {
       title: 'Confirmar Sincronización',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas sincronizar todas las dependencias? Esta acción actualizará la información desde el sistema externo.
+          ¿Estás seguro de que deseas sincronizar todas las dependencias? Se crearán o actualizarán las vigentes, se asignarán sus líderes y se eliminarán de la base de datos las que ya no existan en el sistema externo.
         </Text>
       ),
       labels: { confirm: 'Sincronizar', cancel: 'Cancelar' },
@@ -263,14 +263,18 @@ const AdminDependenciesPage = () => {
       // Establecer cookie para el middleware
       document.cookie = `userEmail=${session.user.email}; path=/`;
       
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/updateAll`, payload, { headers });
+      const { data: syncResult } = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/dependencies/updateAll`,
+        payload,
+        { headers }
+      );
       
       // Recargar los datos después de la sincronización exitosa
       await fetchDependencies(page, search);
       
       showNotification({
         title: "Sincronizado",
-        message: "Dependencias sincronizadas exitosamente",
+        message: `${syncResult.count ?? 0} dependencias sincronizadas, ${syncResult.deletedCount ?? 0} eliminadas y ${syncResult.leadersAssigned ?? 0} líderes asignados.`,
         color: "teal",
       });
     } catch (error) {
@@ -554,13 +558,7 @@ const AdminDependenciesPage = () => {
     }
   };
 
-  //filter dependencies
-
-  const filteredDependencies = sortedDependencies.filter(
-    (dependency) => dependency.members && dependency.members.length > 0
-  );
-
- const rows = filteredDependencies.map((dependency) => (
+ const rows = sortedDependencies.map((dependency) => (
     <Table.Tr key={dependency._id}>
       <Table.Td>{dependency.dep_code}</Table.Td>
       <Table.Td>{dependency.name}</Table.Td>

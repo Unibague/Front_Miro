@@ -906,7 +906,7 @@ function AccionMetaAvanceCard({
                     <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 600 }} />
                     <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
                     <ReTooltip formatter={weightedPdiTooltip} />
-                    <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance ponderado"} />
+                    <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance técnico"} />
                     <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 4, fill: color }} />
                     <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 4, fill: pieColor }}
                       label={{ position: "top", fontSize: 11, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />
@@ -928,7 +928,7 @@ function AccionMetaAvanceCard({
                 <XAxis dataKey="corte" tick={{ fontSize: 10, fontWeight: 600 }} />
                 <YAxis domain={[0, PDI_WEIGHTED_PERCENT_MAX]} ticks={PDI_WEIGHTED_AXIS_TICKS} tickFormatter={weightedPdiAxisTick} tick={{ fontSize: 11 }} />
                 <ReTooltip formatter={weightedPdiTooltip} />
-                <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance ponderado"} />
+                <Legend formatter={(name) => name === "meta" ? "Meta ponderada" : "Avance técnico"} />
                 <Line type="monotone" dataKey="meta" name="meta" stroke={color} strokeWidth={2} strokeDasharray="6 3" dot={{ r: 3, fill: color }} />
                 <Line type="monotone" dataKey="avance" name="avance" stroke={pieColor} strokeWidth={2.5} dot={{ r: 3, fill: pieColor }}
                   label={{ position: "top", fontSize: 10, fontWeight: 700, fill: "#555", formatter: weightedPdiLabel }} />

@@ -724,6 +724,7 @@ export default function PdiNodeNetworkPage() {
                         const isConnected = !isNodeHoverActive || hoveredConnectedIds!.has(edge.origen) || hoveredConnectedIds!.has(edge.destino);
                         const color = relationColor(edge.tipo_relacion);
                         const width = intensityWidth(edge.puntaje);
+                        const isComplementary = edge.tipo_relacion.toLowerCase().includes("complement");
                         const opacity = isSelected || isHovered
                           ? 0.95
                           : isNodeHoverActive
@@ -738,6 +739,7 @@ export default function PdiNodeNetworkPage() {
                               stroke={color}
                               strokeWidth={isSelected || isHovered || (isConnected && isNodeHoverActive) ? width + 1.2 : width}
                               strokeOpacity={opacity}
+                              markerStart={isComplementary ? "url(#arrow)" : undefined}
                               markerEnd="url(#arrow)"
                               style={{ cursor: "pointer" }}
                               onClick={(event) => {

@@ -1657,7 +1657,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
 
           return (
             <Box mb="md" onClick={(e) => e.stopPropagation()}>
-              <Text size="xs" fw={700} mb={8}>Distribución presupuestal por año</Text>
+              <Text size="xs" fw={700} mb={8}>Presupuesto</Text>
               <SimpleGrid cols={{ base: 2, sm: anios.length }} spacing="sm">
                 {anios.map((anio) => {
                   const usaReal       = anio === ANIO_ACTUAL && !!presupuestoReal;
@@ -1813,6 +1813,7 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   esAdmin?: boolean;
 }) {
   const [openProyecto, setOpenProyecto] = useState(true);
+  const [selectedAccionId, setSelectedAccionId] = useState<string | null>(null);
   const indicadoresCount = vista.acciones.reduce((acc, item) => acc + item.indicadores.length, 0);
   const indicadoresProyecto = vista.acciones.flatMap((item) => item.indicadores);
   const accionesConAvance = vista.acciones.map((item) => ({
@@ -1966,30 +1967,77 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
             </Text>
           </Paper>
         ) : (
-          <Stack gap="lg">
-            {vista.acciones.map((item) => {
-              const esResponsableAccion = esAdmin || puedeReportarAccion(item.accion, vista.proyecto, email, fullName);
-              // El responsable del proyecto evalua esta accion cuando no es el mismo
-              // quien la reporta (es decir, la accion tiene su propio lider asignado).
-              const esEvaluadorAccion = esLiderProyecto || esAdmin || (esResponsableProyecto && !esResponsableAccion);
-              return (
-                <AccionResponsableCard
-                  key={item.accion._id}
-                  accion={item.accion}
-                  indicadores={item.indicadores}
-                  cortesVigentes={cortesVigentes}
-                  aniosPdi={aniosPdi}
-                  anioMeta={anioMeta}
-                  onUpdated={onUpdated}
-                  onSolicitarCambio={onSolicitarCambio}
-                  email={email}
-                  esLider={esEvaluadorAccion}
-                  esResponsable={esResponsableAccion}
-                  canManage={esLiderProyecto || esResponsableProyecto || esResponsableAccion}
-                />
-              );
-            })}
-          </Stack>
+          <>
+            {vista.acciones.length > 1 && (
+              <Box mb="md" onClick={(e) => e.stopPropagation()}>
+                {selectedAccionId ? (
+                  <Group gap={8}>
+                    <Badge
+                      variant="light"
+                      color="violet"
+                      radius="xl"
+                      size="lg"
+                      rightSection={
+                        <ActionIcon
+                          size="xs"
+                          radius="xl"
+                          variant="transparent"
+                          color="violet"
+                          onClick={() => setSelectedAccionId(null)}
+                        >
+                          <IconX size={11} />
+                        </ActionIcon>
+                      }
+                    >
+                      {vista.acciones.find((item) => item.accion._id === selectedAccionId)?.accion.codigo}
+                    </Badge>
+                  </Group>
+                ) : (
+                  <Select
+                    label="Filtrar por acción estratégica"
+                    placeholder="Todas las acciones"
+                    size="xs"
+                    searchable
+                    clearable
+                    data={vista.acciones.map((item) => ({
+                      value: item.accion._id,
+                      label: `${item.accion.codigo} · ${item.accion.nombre}`,
+                    }))}
+                    value={selectedAccionId}
+                    onChange={setSelectedAccionId}
+                  />
+                )}
+              </Box>
+            )}
+            {(vista.acciones.length === 1 || selectedAccionId) && (
+              <Stack gap="lg">
+                {vista.acciones
+                  .filter((item) => vista.acciones.length === 1 || item.accion._id === selectedAccionId)
+                  .map((item) => {
+                    const esResponsableAccion = esAdmin || puedeReportarAccion(item.accion, vista.proyecto, email, fullName);
+                    // El responsable del proyecto evalua esta accion cuando no es el mismo
+                    // quien la reporta (es decir, la accion tiene su propio lider asignado).
+                    const esEvaluadorAccion = esLiderProyecto || esAdmin || (esResponsableProyecto && !esResponsableAccion);
+                    return (
+                      <AccionResponsableCard
+                        key={item.accion._id}
+                        accion={item.accion}
+                        indicadores={item.indicadores}
+                        cortesVigentes={cortesVigentes}
+                        aniosPdi={aniosPdi}
+                        anioMeta={anioMeta}
+                        onUpdated={onUpdated}
+                        onSolicitarCambio={onSolicitarCambio}
+                        email={email}
+                        esLider={esEvaluadorAccion}
+                        esResponsable={esResponsableAccion}
+                        canManage={esLiderProyecto || esResponsableProyecto || esResponsableAccion}
+                      />
+                    );
+                  })}
+              </Stack>
+            )}
+          </>
         )}
       </Collapse>
     </Paper>

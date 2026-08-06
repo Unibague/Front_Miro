@@ -56,7 +56,7 @@ export const PDI_ROUTES = {
   razonRechazo: (id: string)    => `${BASE()}/pdi/razones-rechazo/${id}`,
 
   // Tableros de control
-  dashboardResumen:                   () => `${BASE()}/pdi/dashboard/resumen`,
+  dashboardResumen:                   (anio?: string | number) => `${BASE()}/pdi/dashboard/resumen${anio ? `?anio=${encodeURIComponent(String(anio))}` : ""}`,
   dashboardMacroproyecto: (id: string) => `${BASE()}/pdi/dashboard/macroproyecto/${id}`,
   dashboardCorte: (periodo: string)    => `${BASE()}/pdi/dashboard/corte/${encodeURIComponent(periodo)}`,
   dashboardExportarAvance:            () => `${BASE()}/pdi/dashboard/exportar-avance`,

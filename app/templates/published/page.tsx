@@ -118,6 +118,7 @@ interface TemplateStatusRow {
   user_name: string;
   user_email: string;
   dependency: string;
+  dependency_exists?: boolean;
   has_submitted: boolean;
   is_empty_submission?: boolean;
   submitted_date: string | null;
@@ -507,7 +508,7 @@ const PublishedTemplatesPage = () => {
         },
         withCredentials: true
       });
-      
+
       setTemplateStatusData(response.data || []);
       setShowConsolidatedReport(false);
       setConsolidatedStatusFilter('all');
@@ -608,8 +609,13 @@ const PublishedTemplatesPage = () => {
     return matchesStatus && matchesEmail && matchesDependency;
   });
 
-  // Get unique dependencies for filter
-  const uniqueDependencies = [...new Set(templateStatusData.map(item => item.dependency))].sort();
+  // Get unique dependencies for filter — se excluyen nombres que quedaron
+  // congelados en envios viejos de una dependencia ya eliminada/renombrada
+  // (dependency_exists: false, calculado en el backend contra la coleccion
+  // vigente de dependencias).
+  const uniqueDependencies = [...new Set(
+    templateStatusData.filter(item => item.dependency_exists !== false).map(item => item.dependency)
+  )].sort();
 
   const groupedTemplateStatus = filteredTemplateStatusData.reduce((acc, item) => {
     const key = item.template_id;
