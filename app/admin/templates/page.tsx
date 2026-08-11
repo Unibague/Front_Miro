@@ -800,7 +800,7 @@ const getTemplateWorksheets = (template: Template): TemplateWorksheet[] => {
 };
 
 const AdminTemplatesPage = () => {
-  const { selectedPeriodId } = usePeriod();
+  const { selectedPeriodId, availablePeriods } = usePeriod();
   const { canManage } = useViewPermission("adminTemplates");
   const [templates, setTemplates] = useState<Template[]>([]);
   const searchParams = useSearchParams();
@@ -827,6 +827,9 @@ const AdminTemplatesPage = () => {
   const [creatingBaseTemplates, setCreatingBaseTemplates] = useState(false);
   const [auditModalOpened, setAuditModalOpened] = useState(false);
   const [selectedTemplateForAudit, setSelectedTemplateForAudit] = useState<Template | null>(null);
+  const [duplicateTarget, setDuplicateTarget] = useState<Template | null>(null);
+  const [duplicateTargetPeriodId, setDuplicateTargetPeriodId] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<Template>(templates, { key: null, direction: "asc" });
 
@@ -878,6 +881,45 @@ const AdminTemplatesPage = () => {
   useEffect(() => {
     fetchTemplates(page, search);
   }, [page, selectedPeriodId]);
+
+  const openDuplicateModal = (template: Template) => {
+    setDuplicateTarget(template);
+    setDuplicateTargetPeriodId(null);
+  };
+
+  const closeDuplicateModal = () => {
+    if (duplicating) return;
+    setDuplicateTarget(null);
+    setDuplicateTargetPeriodId(null);
+  };
+
+  const handleDuplicateTemplate = async () => {
+    if (!duplicateTarget || !duplicateTargetPeriodId) return;
+    setDuplicating(true);
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/templates/duplicate`, {
+        id: duplicateTarget._id,
+        targetPeriodId: duplicateTargetPeriodId,
+        email: session?.user?.email,
+      });
+      showNotification({
+        title: "Duplicada",
+        message: "Plantilla duplicada exitosamente en el periodo seleccionado",
+        color: "teal",
+      });
+      setDuplicateTarget(null);
+      setDuplicateTargetPeriodId(null);
+      fetchTemplates(page, search);
+    } catch (error: any) {
+      showNotification({
+        title: "Error",
+        message: error?.response?.data?.mensaje || "Hubo un error al duplicar la plantilla",
+        color: "red",
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
 
   // selectedPeriodId arranca en null y se resuelve de forma asincrona al cargar
   // los periodos; solo se reinicia la pagina cuando el periodo cambia de un
@@ -1804,7 +1846,7 @@ const AdminTemplatesPage = () => {
               <Button
                 variant="outline"
                 color="orange"
-                onClick={() => router.push(`/templates/duplicate/${template._id}`)}
+                onClick={() => openDuplicateModal(template)}
               >
                 <IconCopy size={16} />
               </Button>
@@ -2106,6 +2148,34 @@ const AdminTemplatesPage = () => {
         </form>
       </Modal>
       
+      <Modal
+        opened={!!duplicateTarget}
+        onClose={closeDuplicateModal}
+        title={`Duplicar plantilla "${duplicateTarget?.name ?? ""}"`}
+        centered
+      >
+        <Text size="sm" mb="md">
+          Selecciona el periodo en el que se creará una copia de esta plantilla. La plantilla original no se modifica.
+        </Text>
+        <Select
+          label="Periodo destino"
+          placeholder="Seleccionar periodo"
+          data={availablePeriods.map((period) => ({ value: period._id, label: period.name }))}
+          value={duplicateTargetPeriodId}
+          onChange={setDuplicateTargetPeriodId}
+          searchable
+          mb="md"
+        />
+        <Group justify="flex-end">
+          <Button variant="outline" onClick={closeDuplicateModal} disabled={duplicating}>
+            Cancelar
+          </Button>
+          <Button onClick={handleDuplicateTemplate} loading={duplicating} disabled={!duplicateTargetPeriodId}>
+            Duplicar
+          </Button>
+        </Group>
+      </Modal>
+
       <ConfigAuditModal
         opened={auditModalOpened}
         onClose={() => {
