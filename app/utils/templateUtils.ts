@@ -227,6 +227,11 @@ export const toExcelCellValue = (value: any): ExcelJS.CellValue => {
 
 const padDatePart = (value: number) => String(value).padStart(2, "0");
 
+const JS_DATE_TOSTRING_MONTHS: Record<string, number> = {
+  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
+};
+
 // Formatea fechas de datos de plantilla sin aplicar la zona horaria local.
 // Excel suele serializar una fecha sin hora como medianoche UTC; convertirla
 // a America/Bogota desplaza el valor al dia anterior. Usar UTC conserva el dia
@@ -248,6 +253,21 @@ export const formatTemplateDateValue = (value: any, fieldName = ""): string | nu
   const calendarMatch = raw.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
   if (calendarMatch) {
     return `${calendarMatch[3]}/${calendarMatch[2]}/${calendarMatch[1]}`;
+  }
+
+  // Salida cruda de Date.toString() en JS, ej. "Mon Mar 02 2026 19:00:00
+  // GMT-0500 (hora estandar de Colombia)". El dia/mes/anio ya impresos ahi
+  // son la fecha calendario local que se guardo; si en cambio se reconvierte
+  // con new Date(raw) y se leen los campos en UTC, el offset de zona horaria
+  // incluido en el propio texto desplaza el resultado un dia.
+  const jsDateStringMatch = raw.match(
+    /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(\d{4})/i
+  );
+  if (jsDateStringMatch) {
+    const month = JS_DATE_TOSTRING_MONTHS[jsDateStringMatch[1] as keyof typeof JS_DATE_TOSTRING_MONTHS];
+    if (month) {
+      return `${jsDateStringMatch[2]}/${padDatePart(month)}/${jsDateStringMatch[3]}`;
+    }
   }
 
   const parsed = value instanceof Date ? value : new Date(raw);

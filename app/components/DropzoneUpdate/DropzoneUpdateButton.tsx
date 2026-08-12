@@ -101,7 +101,7 @@ const normalizeExcelCellValue = (value: any): any => {
     return value;
   }
 
-  if (value instanceof Date) return value;
+  if (value instanceof Date) return value.toISOString();
 
   if (Array.isArray(value)) {
     return value.map((item) => normalizeExcelCellValue(item)).filter((item) => item !== null && item !== undefined).join(', ');

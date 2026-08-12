@@ -481,8 +481,10 @@ const ProducerTemplatesPage = () => {
         ? userFilledData.filter(fd => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
         : userFilledData;
       if (!relevant.length) return;
-      const firstFilled = relevant.find(fd => Array.isArray(fd.values) && fd.values.length > 0);
-      const numRows = firstFilled?.values.length ?? 0;
+      const numRows = relevant.reduce(
+        (max, fd) => Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0),
+        0
+      );
       for (let i = 0; i < numRows; i++) {
         const rowValues = fields.map(field => {
           const fd = relevant.find(d => d.field_name === field.name);

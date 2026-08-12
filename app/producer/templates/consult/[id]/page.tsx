@@ -19,11 +19,9 @@ import {
   Select,
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
-import { IconCheck, IconX, IconArrowLeft, IconTableRow, IconFilter, IconDownload } from "@tabler/icons-react";
+import { IconCheck, IconX, IconArrowLeft, IconTableRow, IconFilter } from "@tabler/icons-react";
 import DateConfig from "@/app/components/DateConfig";
 import FilterSidebar from "@/app/components/FilterSidebar";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
 import { showNotification } from "@mantine/notifications";
 import { paramId } from "@/app/utils/routeParams";
 import { formatTemplateDateValue } from "@/app/utils/templateUtils";
@@ -320,103 +318,6 @@ const ProducerConsultTemplatePage = () => {
     return <Text size="sm">{stringValue}</Text>;
   };
 
-  const downloadExcel = async (data: RowData[], fileName: string) => {
-    if (data.length === 0) {
-      showNotification({ title: "Sin datos", message: "No hay datos para descargar", color: "orange" });
-      return;
-    }
-
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(templateName || "Datos");
-    const columns = Object.keys(data[0]);
-
-    const headerRow = worksheet.addRow(columns);
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0f1f39" } };
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-      cell.alignment = { vertical: "middle", horizontal: "center" };
-    });
-
-    data.forEach((row) => {
-      const rowValues = columns.map((column) => {
-        const value = row[column];
-        if (value === null || value === undefined) return "";
-        const formattedDate = formatTemplateDateValue(value, column);
-        if (formattedDate) return formattedDate;
-        if (typeof value === "boolean") return value ? "Sí" : "No";
-
-        if (typeof value === "object") {
-          if (value.hyperlink || value.text || value.formula) return value.text || value.hyperlink || value.formula;
-          if (value.text) return value.text;
-          const mongoNumeric = value?.$numberInt || value?.$numberDouble;
-          if (mongoNumeric !== undefined) return mongoNumeric;
-
-          const possibleEmailKeys = ["email", "value", "label", "mail", "correo", "address", "emailAddress"];
-          const emailKey = possibleEmailKeys.find((key) => value[key] && typeof value[key] === "string");
-          if (emailKey) return value[emailKey];
-
-          if (Array.isArray(value)) {
-            if (value.length === 0) return "";
-            return value
-              .map((item) => {
-                if (typeof item === "object" && item !== null) {
-                  if (item.hyperlink || item.text || item.formula) return item.text || item.hyperlink || item.formula;
-                  const itemEmailKey = possibleEmailKeys.find((key) => item[key] && typeof item[key] === "string");
-                  return itemEmailKey ? item[itemEmailKey] : item.text || JSON.stringify(item);
-                }
-                return item;
-              })
-              .join(", ");
-          }
-
-          const objectValues = Object.values(value).filter((val) => typeof val === "string" && val.length > 0);
-          if (objectValues.length > 0) {
-            const firstStringValue = objectValues[0] as string;
-            if (firstStringValue.includes("@") || firstStringValue.includes(".com") || firstStringValue.includes(".edu")) {
-              return firstStringValue;
-            }
-          }
-          return JSON.stringify(value);
-        }
-
-        return value.toString();
-      });
-
-      const dataRow = worksheet.addRow(rowValues);
-      dataRow.eachCell((cell) => {
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-    });
-
-    worksheet.columns.forEach((column) => {
-      column.width = 20;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${fileName}.xlsx`);
-
-    showNotification({
-      title: "Éxito",
-      message: `Archivo ${fileName}.xlsx descargado exitosamente`,
-      color: "green",
-    });
-  };
-
-  const handleDownloadFiltered = () => downloadExcel(tableData, `${templateName}_filtrado`);
-  const handleDownloadAll = () => downloadExcel(originalTableData, `${templateName}_completo`);
-
   const handleFiltersChange = (filters: Record<string, string[]>) => {
     setAppliedFilters(filters);
 
@@ -608,28 +509,10 @@ const ProducerConsultTemplatePage = () => {
             </Text>
           ) : (
             <Box>
-              <Group justify="space-between" mb="md">
-                <Text size="sm" c="dimmed">
-                  {tableData.length} registro{tableData.length !== 1 ? "s" : ""} encontrado
-                  {tableData.length !== 1 ? "s" : ""}
-                </Text>
-                <Group gap="xs">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    leftSection={<IconDownload size={16} />}
-                    onClick={handleDownloadFiltered}
-                    disabled={tableData.length === 0}
-                  >
-                    Descargar datos {Object.keys(appliedFilters).length > 0 ? "filtrados" : "completos"}
-                  </Button>
-                  {Object.keys(appliedFilters).length > 0 && (
-                    <Button variant="subtle" size="sm" leftSection={<IconDownload size={16} />} onClick={handleDownloadAll}>
-                      Descargar todos los datos
-                    </Button>
-                  )}
-                </Group>
-              </Group>
+              <Text size="sm" c="dimmed" mb="md">
+                {tableData.length} registro{tableData.length !== 1 ? "s" : ""} encontrado
+                {tableData.length !== 1 ? "s" : ""}
+              </Text>
 
               <Box
                 style={{

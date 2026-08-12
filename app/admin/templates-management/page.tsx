@@ -42,6 +42,7 @@ import {
   loadWorkbookFromBase64,
   extractWorkbookCommentsFromBase64,
   populateWorksheetWithMergedRows,
+  formatTemplateDateValue,
 } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import { logPublishedTemplateAction, logFilterConfigChange, logMultiTemplateDownload } from "@/app/utils/auditUtils";
@@ -449,26 +450,16 @@ const TemplatesWithFiltersPage = () => {
         publishedTemplate.validators;
       const workbookSheets: WorkbookSheet[] = template.workbook_sheets || [];
 
-      // Campos de tipo fecha para formatear correctamente (incluye campos definidos
-      // dentro de las hojas del workbook, no solo los campos de nivel superior)
-      const allFields: Field[] = [
-        ...(template.fields || []),
-        ...workbookSheets.flatMap((sheet) => sheet.fields || []),
-      ];
-      const dateFields = new Set(
-        allFields
-          .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
-          .map(f => f.name)
-      );
+      // Formatea las columnas de fecha a dd/mm/aaaa. Las claves de `row` vienen
+      // normalizadas por el backend (mergedData), por lo que no se puede saber
+      // aqui el datatype configurado del campo; formatTemplateDateValue detecta
+      // por la forma del valor (ISO, "Mon Mar 02 2026 ..." de un Date crudo, etc.)
+      // en vez de depender del nombre de columna.
       const formatDateFields = (row: Record<string, any>) => {
         const out: Record<string, any> = { ...row };
         Object.keys(out).forEach((key) => {
-          const value = out[key];
-          if (value && dateFields.has(key) &&
-            (typeof value === 'string' || typeof value === 'number' || value instanceof Date)) {
-            const date = new Date(value);
-            if (!isNaN(date.getTime())) out[key] = date.toISOString().slice(0, 10); // YYYY-MM-DD
-          }
+          const formatted = formatTemplateDateValue(out[key], key);
+          if (formatted !== null) out[key] = formatted;
         });
         return out;
       };
