@@ -284,11 +284,13 @@ const PublishedTemplatesPage = () => {
       title: 'Confirmar eliminación de información enviada',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas eliminar toda la información enviada de la plantilla &quot;{templateToClear?.name}&quot;?
-          Esta acción no se puede deshacer: los productores deberán volver a cargar sus datos.
+          Esto retira la información enviada por <strong>TODAS las dependencias</strong> de la plantilla &quot;{templateToClear?.name}&quot;
+          (no solo una), y las devuelve al estado &quot;pendiente&quot; para que la vuelvan a enviar.
+          <br /><br />
+          Los datos no se borran de forma permanente: quedan guardados como borrador y un administrador puede recuperarlos si fue un error.
         </Text>
       ),
-      labels: { confirm: 'Eliminar información', cancel: 'Cancelar' },
+      labels: { confirm: 'Eliminar información de todas las dependencias', cancel: 'Cancelar' },
       confirmProps: { color: 'red' },
       onConfirm: async () => {
         try {

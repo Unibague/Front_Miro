@@ -475,6 +475,44 @@ const ProducerTemplatesPage = () => {
           (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
         )?.filled_data || []);
 
+    // Con includeAllProducers, cada fila combinada puede venir de una dependencia
+    // distinta: se arma una columna "Dependencia" por hoja (mismo orden en que
+    // mergeFilledDataAcrossDependencies concatena los valores: entrada por
+    // entrada) para que el encargado vea de dónde vino cada fila, igual que en
+    // la descarga administrativa.
+    const dependencyColumnBySheet: Record<string, string[]> = {};
+    if (includeAllProducers) {
+      const depCodes = Array.from(
+        new Set((publishedTemplate.loaded_data || []).map((entry) => entry.dependency).filter(Boolean))
+      );
+      let depNameByCode: Record<string, string> = {};
+      if (depCodes.length) {
+        try {
+          const namesResp = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/names`, {
+            codes: depCodes,
+          });
+          (namesResp.data || []).forEach((d: { code: string; name: string }) => {
+            depNameByCode[d.code] = d.name;
+          });
+        } catch {
+          // si falla, se usan los codigos de dependencia tal cual
+        }
+      }
+      (publishedTemplate.loaded_data || []).forEach((entry) => {
+        const depLabel = depNameByCode[entry.dependency] || entry.dependency_code || entry.dependency || '';
+        const rowCountBySheet = new Map<string, number>();
+        (entry.filled_data || []).forEach((fd) => {
+          const sheetKey = fd.sheet_name || fd.sheet || fd.sheetName || '';
+          const len = Array.isArray(fd.values) ? fd.values.length : 0;
+          rowCountBySheet.set(sheetKey, Math.max(rowCountBySheet.get(sheetKey) || 0, len));
+        });
+        rowCountBySheet.forEach((count, sheetKey) => {
+          if (!dependencyColumnBySheet[sheetKey]) dependencyColumnBySheet[sheetKey] = [];
+          for (let i = 0; i < count; i++) dependencyColumnBySheet[sheetKey].push(depLabel);
+        });
+      });
+    }
+
     // Helper: poblar hoja con datos existentes
     const populateSheetWithData = (ws: ExcelJS.Worksheet, fields: Field[], sheetName?: string) => {
       const relevant = sheetName
@@ -485,12 +523,26 @@ const ProducerTemplatesPage = () => {
         (max, fd) => Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0),
         0
       );
+      const dependencyColumn = includeAllProducers ? (dependencyColumnBySheet[sheetName || ''] || []) : [];
+      if (dependencyColumn.length) {
+        const headerRowNumber = ws.lastRow ? ws.lastRow.number : 1;
+        const depCol = fields.length + 1;
+        const depHeaderCell = ws.getCell(headerRowNumber, depCol);
+        depHeaderCell.value = 'Dependencia';
+        depHeaderCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        depHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } };
+        depHeaderCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        ws.getColumn(depCol).width = 24;
+      }
       for (let i = 0; i < numRows; i++) {
         const rowValues = fields.map(field => {
           const fd = relevant.find(d => d.field_name === field.name);
           const value = fd?.values?.[i] ?? null;
           return formatTemplateDateValue(value, field.name) ?? value;
         });
+        if (dependencyColumn.length) {
+          rowValues.push(dependencyColumn[i] ?? '');
+        }
         ws.addRow(rowValues);
       }
     };
