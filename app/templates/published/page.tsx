@@ -277,6 +277,48 @@ const PublishedTemplatesPage = () => {
     });
   }
 
+  const handleDeleteLoadedData = async (id: string) => {
+    const templateToClear = templates.find(t => t._id === id);
+
+    modals.openConfirmModal({
+      title: 'Confirmar eliminación de información enviada',
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas eliminar toda la información enviada de la plantilla &quot;{templateToClear?.name}&quot;?
+          Esta acción no se puede deshacer: los productores deberán volver a cargar sus datos.
+        </Text>
+      ),
+      labels: { confirm: 'Eliminar información', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const response = await axios.delete(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/deleteLoadedData`,
+            {
+              params: { id, email: session?.user?.email },
+            }
+          );
+
+          if (response.data) {
+            showNotification({
+              title: "Éxito",
+              message: "Información enviada eliminada exitosamente",
+              color: "green",
+            });
+            fetchTemplates(page, search);
+          }
+        } catch (error) {
+          console.error("Error deleting loaded data:", error);
+          showNotification({
+            title: "Error",
+            message: "Hubo un error al eliminar la información enviada",
+            color: "red",
+          });
+        }
+      },
+    });
+  }
+
   const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
       const freshTemplateResponse = await axios.get(
@@ -798,7 +840,7 @@ const PublishedTemplatesPage = () => {
               { userRole === "Administrador" &&
                 <Tooltip
                   label={ publishedTemplate.loaded_data?.length > 0 ?
-                    "No puedes eliminar una plantilla con información enviada"
+                    "Eliminar información enviada"
                     : "Eliminar plantilla publicada"
                   }
                   transitionProps={{ transition: "slide-up", duration: 300 }}
@@ -806,9 +848,12 @@ const PublishedTemplatesPage = () => {
                 >
                   <Button
                     variant="outline"
-                    onClick={() => handleDelete(publishedTemplate._id)}
+                    onClick={() =>
+                      publishedTemplate.loaded_data?.length > 0
+                        ? handleDeleteLoadedData(publishedTemplate._id)
+                        : handleDelete(publishedTemplate._id)
+                    }
                     color="red"
-                    disabled={publishedTemplate.loaded_data?.length > 0}
                   >
                     <IconTrash size={18} />
                   </Button>
