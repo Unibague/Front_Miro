@@ -504,8 +504,6 @@ export function DropzoneButton({
       const validators: any[] = templateResponse.data.template.validators || [];
       const topFields: any[] = templateResponse.data.template.fields || [];
       const workbookSheets: any[] = templateResponse.data.template.workbook_sheets || [];
-      const sharedSheetsData: Record<string, Record<string, any>[]> =
-        templateResponse.data.shared_sheets_data || {};
       const sheetFields: any[] = workbookSheets.flatMap((s: any) => s.fields || []);
       const allFields: any[] = topFields.length > 0 ? topFields : sheetFields;
       const skipCommentValidation: boolean = Boolean(templateResponse.data.template.skip_comment_validation) ||
@@ -842,18 +840,15 @@ export function DropzoneButton({
             if (!matchingWorksheet) continue;
 
             const rows = readSheetRows(matchingWorksheet, allowedFields, wbSheet.name);
-            const fieldNames = wbSheet.fields.map((field: any) => field.name);
-            const sharedOriginLookup = buildSharedOriginLookup(
-              sharedSheetsData[wbSheet.name] || [],
-              fieldNames
-            );
-            const rowsWithOrigins = rows.map((row) => {
-              const identity = getSharedRowIdentity(row, fieldNames);
-              const originCode = identity ? sharedOriginLookup.get(identity) : undefined;
-              return originCode
-                ? { ...row, [SHARED_ORIGIN_PROPERTY]: originCode }
-                : row;
-            });
+            // Antes, cada fila se comparaba contra lo ya guardado de TODAS las
+            // dependencias (por AÑO+SEMESTRE+TIPO_DOC+NUM_DOC) para detectar si
+            // "pertenecía" a otra dependencia y reenviarla como corrección a su
+            // nombre. Esa reasignación automática hacía que un archivo subido por
+            // una dependencia terminara REEMPLAZANDO por completo lo que OTRA
+            // dependencia ya tenía cargado (con solo las filas del archivo nuevo),
+            // perdiendo silenciosamente el resto de su información. Ahora toda
+            // fila subida se queda en la dependencia desde la que se sube.
+            const rowsWithOrigins = rows;
             const ownSheetProducerCode = (wbSheet.producers || [])
               .map((producer: any) => producerCodeById.get(String(producer?._id ?? producer)))
               .find((code: string | undefined) => Boolean(code) && userDependencyCodes.has(code!));
