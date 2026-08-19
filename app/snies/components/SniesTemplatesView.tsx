@@ -16,6 +16,7 @@ import {
 } from "@/app/utils/templateUtils";
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -41,6 +42,7 @@ import {
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
+  IconAlertTriangle,
   IconArrowLeft,
   IconChevronDown,
   IconChevronUp,
@@ -606,6 +608,10 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [dataModalColumns, setDataModalColumns] = useState<string[]>([]);
   const [dataModalLoading, setDataModalLoading] = useState(false);
   const [downloadingDirectId, setDownloadingDirectId] = useState<string | null>(null);
+  const [connectedDataModalOpened, { open: openConnectedDataModal, close: closeConnectedDataModal }] = useDisclosure(false);
+  const [connectedDataResponse, setConnectedDataResponse] = useState<any>(null);
+  const [connectedDataLoading, setConnectedDataLoading] = useState(false);
+  const [connectedDataDownloading, setConnectedDataDownloading] = useState(false);
   const [equivalenceOpened, { open: openEquivalence, close: closeEquivalence }] = useDisclosure(false);
   const [equivalenceTemplate, setEquivalenceTemplate] = useState<SniesTemplate | null>(null);
   const [cnaFieldOptions, setCnaFieldOptions] = useState<CnaFieldOption[]>([]);
@@ -1438,13 +1444,63 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     router.push(`${moduleBasePath}/${template._id}${query}`);
   };
 
-  const handleDownloadSnisFilled = (sniesTemplate: SniesTemplate) => {
+  const handleDownloadSnisFilled = (sniesTemplate: SniesTemplate, pubTemId?: string) => {
     if (!session?.user?.email) return;
+    const params = new URLSearchParams({ email: session.user.email });
+    if (pubTemId) params.set('pubTemId', pubTemId);
     window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/download-connected-data?email=${encodeURIComponent(session.user.email)}`,
+      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/download-connected-data?${params.toString()}`,
       "_blank",
       "noopener,noreferrer"
     );
+  };
+
+  // Igual que handleOpenConnectedData, pero en vez de redirigir a otra pagina
+  // muestra la misma informacion (datos conectados/consolidados de SNIES,
+  // incluidas las cedulas excluidas por no estar matriculadas) en un cuadro
+  // (modal), para que "Ver datos" se comporte igual en todas las filas de la
+  // lista, tengan o no plantilla SNIES vinculada.
+  const handleOpenConnectedDataModal = async (sniesTemplate: SniesTemplate, pubTemId?: string) => {
+    if (!session?.user?.email) return;
+    setConnectedDataResponse(null);
+    setConnectedDataLoading(true);
+    openConnectedDataModal();
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/connected-data`,
+        { params: { email: session.user.email, ...(pubTemId ? { pubTemId } : {}) } }
+      );
+      setConnectedDataResponse(response.data);
+    } catch (error) {
+      showNotification({ title: "Error", message: "No fue posible cargar la información enviada.", color: "red" });
+      closeConnectedDataModal();
+    } finally {
+      setConnectedDataLoading(false);
+    }
+  };
+
+  const handleDownloadConnectedDataModal = async () => {
+    if (!session?.user?.email || !connectedDataResponse?.template?._id) return;
+    setConnectedDataDownloading(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${connectedDataResponse.template._id}/download-connected-data`,
+        { params: { email: session.user.email }, responseType: "blob" }
+      );
+      const fileName = connectedDataResponse.template?.file_name || connectedDataResponse.template?.name || "plantilla_snies.xlsx";
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo descargar el archivo.", color: "red" });
+    } finally {
+      setConnectedDataDownloading(false);
+    }
   };
 
   // En las plantillas de Miro, el encabezado de los campos que SI son de
@@ -1888,41 +1944,43 @@ const activeMiroTemplateId =
                           <Center>
                             {pt.final_submitted && (
                               <Group gap={6}>
-                                <Tooltip label={linkedSnies ? `Ver información en ${moduleUpper}` : `Ver información enviada`}>
+                                <Tooltip label="Ver información enviada">
                                   <Button
                                     variant="outline"
                                     color="blue"
                                     size="xs"
                                     leftSection={<IconEye size={14} />}
                                     onClick={() => linkedSnies
-                                      ? handleOpenConnectedData(linkedSnies, pt._id)
+                                      ? handleOpenConnectedDataModal(linkedSnies, pt._id)
                                       : handleOpenRawData(pt)
                                     }
                                   >
                                     Ver datos
                                   </Button>
                                 </Tooltip>
-                                {!linkedSnies && (
-                                  <Tooltip label="Descargar información enviada">
-                                    <Button
-                                      variant="outline"
-                                      color="teal"
-                                      size="xs"
-                                      leftSection={<IconDownload size={14} />}
-                                      loading={downloadingDirectId === pt._id}
-                                      onClick={async () => {
-                                        setDownloadingDirectId(pt._id);
-                                        try {
-                                          await downloadPublishedTemplateExcel(pt);
-                                        } finally {
-                                          setDownloadingDirectId(null);
-                                        }
-                                      }}
-                                    >
-                                      Descargar
-                                    </Button>
-                                  </Tooltip>
-                                )}
+                                <Tooltip label={linkedSnies ? `Descargar plantilla ${moduleUpper} diligenciada` : "Descargar información enviada"}>
+                                  <Button
+                                    variant="outline"
+                                    color="teal"
+                                    size="xs"
+                                    leftSection={<IconDownload size={14} />}
+                                    loading={downloadingDirectId === pt._id}
+                                    onClick={async () => {
+                                      if (linkedSnies) {
+                                        handleDownloadSnisFilled(linkedSnies, pt._id);
+                                        return;
+                                      }
+                                      setDownloadingDirectId(pt._id);
+                                      try {
+                                        await downloadPublishedTemplateExcel(pt);
+                                      } finally {
+                                        setDownloadingDirectId(null);
+                                      }
+                                    }}
+                                  >
+                                    Descargar
+                                  </Button>
+                                </Tooltip>
                               </Group>
                             )}
                           </Center>
@@ -2485,6 +2543,104 @@ const activeMiroTemplateId =
               </Table.Tbody>
             </Table>
           </ScrollArea>
+        )}
+      </Modal>
+
+      {/* Modal para ver datos de plantilla CON SNIES vinculado: misma información
+          conectada/consolidada que antes se mostraba en una página aparte, ahora
+          en un cuadro para que "Ver datos" se comporte igual en toda la lista. */}
+      <Modal
+        opened={connectedDataModalOpened}
+        onClose={closeConnectedDataModal}
+        title={
+          <Group justify="space-between" style={{ width: '100%' }}>
+            <Text fw={600}>
+              Información enviada: {connectedDataResponse?.template?.name || ''}
+            </Text>
+          </Group>
+        }
+        size="90%"
+        overlayProps={{ backgroundOpacity: 0.55, blur: 3 }}
+      >
+        {connectedDataLoading ? (
+          <Center py="xl"><Loader /></Center>
+        ) : !connectedDataResponse ? (
+          <Center py="xl"><Text c="dimmed">No hay información disponible para esta plantilla.</Text></Center>
+        ) : (
+          <Stack gap="sm">
+            <Group justify="flex-end">
+              <Button
+                leftSection={<IconDownload size={16} />}
+                color="teal"
+                size="xs"
+                loading={connectedDataDownloading}
+                onClick={handleDownloadConnectedDataModal}
+              >
+                Descargar plantilla {moduleUpper} llena
+              </Button>
+            </Group>
+
+            <Tabs defaultValue={connectedDataResponse.sheets?.[0]?.worksheetName || "sin-hojas"}>
+              <Tabs.List>
+                {connectedDataResponse.sheets.map((sheet: any) => (
+                  <Tabs.Tab key={sheet.worksheetName} value={sheet.worksheetName}>
+                    {sheet.worksheetName}
+                  </Tabs.Tab>
+                ))}
+              </Tabs.List>
+              {connectedDataResponse.sheets.map((sheet: any) => (
+                <Tabs.Panel key={sheet.worksheetName} value={sheet.worksheetName} pt="sm">
+                  {sheet.excludedIdentifications && sheet.excludedIdentifications.length > 0 && (
+                    <Alert
+                      icon={<IconAlertTriangle size={16} />}
+                      color="yellow"
+                      title="Estudiantes no incluidos por no estar matriculados"
+                      mb="sm"
+                    >
+                      Las siguientes cédulas no aparecen en la plantilla de Matriculados del período actual, por lo que
+                      no se incluyen en este reporte: {sheet.excludedIdentifications.join(", ")}.
+                    </Alert>
+                  )}
+                  <ScrollArea h={420}>
+                    <Table striped withTableBorder withColumnBorders style={{ fontSize: 12 }}>
+                      <Table.Thead>
+                        <Table.Tr>
+                          {sheet.headers.map((header: string) => (
+                            <Table.Th key={header} style={{ whiteSpace: 'nowrap' }}>{header}</Table.Th>
+                          ))}
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {sheet.rows.length > 0 ? (
+                          sheet.rows.map((row: Record<string, string>, rowIndex: number) => (
+                            <Table.Tr key={rowIndex}>
+                              {sheet.headers.map((header: string) => (
+                                <Table.Td key={header} style={{ whiteSpace: 'nowrap' }}>
+                                  {String(row[header] ?? '') || '-'}
+                                </Table.Td>
+                              ))}
+                            </Table.Tr>
+                          ))
+                        ) : (
+                          <Table.Tr>
+                            <Table.Td colSpan={sheet.headers.length || 1}>
+                              <Center>
+                                <Text c="dimmed">
+                                  {sheet.preserveOriginalContent
+                                    ? "La hoja INFO se conserva exactamente como viene en la plantilla."
+                                    : "No hay datos conectados para esta hoja."}
+                                </Text>
+                              </Center>
+                            </Table.Td>
+                          </Table.Tr>
+                        )}
+                      </Table.Tbody>
+                    </Table>
+                  </ScrollArea>
+                </Tabs.Panel>
+              ))}
+            </Tabs>
+          </Stack>
         )}
       </Modal>
     </Container>

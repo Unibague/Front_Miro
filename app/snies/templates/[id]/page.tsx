@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import {
+  Alert,
   Box,
   Button,
   Center,
@@ -15,7 +16,7 @@ import {
   Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { IconArrowLeft, IconDownload } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconDownload } from "@tabler/icons-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
 import { useSession } from "next-auth/react";
@@ -37,6 +38,7 @@ interface ConnectedDataResponse {
     sourceTemplate: SourceTemplate | null;
     headers: string[];
     rows: Array<Record<string, string>>;
+    excludedIdentifications?: string[];
     preserveOriginalContent?: boolean;
   }>;
 }
@@ -176,11 +178,21 @@ export default function SniesTemplateDetailPage() {
               <Tabs.Panel
                 key={sheet.worksheetName}
                 value={sheet.worksheetName}
-                style={{ flex: 1, minHeight: 0, paddingTop: 12 }}
+                style={{ flex: 1, minHeight: 0, paddingTop: 12, display: "flex", flexDirection: "column" }}
               >
-               
+                {sheet.excludedIdentifications && sheet.excludedIdentifications.length > 0 && (
+                  <Alert
+                    icon={<IconAlertTriangle size={16} />}
+                    color="yellow"
+                    title="Estudiantes no incluidos por no estar matriculados"
+                    mb="sm"
+                  >
+                    Las siguientes cédulas no aparecen en la plantilla de Matriculados del período actual, por lo que no
+                    se incluyen en este reporte: {sheet.excludedIdentifications.join(", ")}.
+                  </Alert>
+                )}
 
-                <ScrollArea style={{ height: "calc(100% - 32px)" }} scrollbarSize={8}>
+                <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={8}>
                   <Table striped withTableBorder style={{ minWidth: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
                     <Table.Thead
                       style={{
