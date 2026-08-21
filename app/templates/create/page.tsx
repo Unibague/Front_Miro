@@ -10,6 +10,8 @@ import { useRole } from "@/app/context/RoleContext";
 import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange } from "@/app/utils/auditUtils";
+import { usePeriod } from "@/app/context/PeriodContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 
 interface Field {
   name: string;
@@ -66,6 +68,8 @@ const CreateTemplatePage = () => {
   const router = useRouter();
   const { data: session } = useSession();
   const { userRole } = useRole();
+  const { selectedPeriodId } = usePeriod();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
     const fetchDimensions = async () => {
@@ -107,7 +111,8 @@ const CreateTemplatePage = () => {
     const fetchValidatorOptions = async () => {
       try {
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/validators/options`
+          `${process.env.NEXT_PUBLIC_API_URL}/validators/options`,
+          { params: { periodId: selectedPeriodId } }
         );
         setValidatorOptions(response.data.options);
       } catch (error) {
@@ -125,9 +130,10 @@ const CreateTemplatePage = () => {
       fetchDependencies();
       fetchValidatorOptions();
     }
-  }, [session, userRole]);
+  }, [session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
 
@@ -233,6 +239,7 @@ const CreateTemplatePage = () => {
         message: "Plantilla creada exitosamente",
         color: "teal",
       });
+      setHasChanges(false);
       router.back();
     } catch (error) {
       console.error("Error guardando plantilla:", error);
@@ -293,21 +300,21 @@ const CreateTemplatePage = () => {
         label="Nombre"
         placeholder="Nombre de la plantilla"
         value={name}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onChange={(event) => { setName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Nombre del Archivo"
         placeholder="Nombre del archivo"
         value={fileName}
-        onChange={(event) => setFileName(event.currentTarget.value)}
+        onChange={(event) => { setFileName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Descripción del Archivo"
         placeholder="Descripción del archivo"
         value={fileDescription}
-        onChange={(event) => setFileDescription(event.currentTarget.value)}
+        onChange={(event) => { setFileDescription(event.currentTarget.value); setHasChanges(true); }}
         mb="sm"
       />
       {userRole === "Administrador" && (
@@ -486,7 +493,7 @@ const CreateTemplatePage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
           color="red"
         >
           Cancelar

@@ -153,7 +153,7 @@ const AdminDependenciesPage = () => {
       title: "Confirmar eliminación",
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas eliminar la dependencia "{dependency.name}"?
+          ¿Estás seguro de que deseas eliminar la dependencia &quot;{dependency.name}&quot;?
           {dependency.children && dependency.children.length > 0 && (
             <>
               <br /><br />

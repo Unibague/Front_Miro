@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -34,7 +35,14 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import {
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  loadWorkbookFromBase64,
+  extractWorkbookCommentsFromBase64,
+  populateWorksheetWithMergedRows,
+} from "@/app/utils/templateUtils";
 import { modals } from "@mantine/modals";
 
 interface Field {
@@ -55,6 +63,11 @@ interface Dependency {
   name: string;
 }
 
+interface WorkbookSheet {
+  name: string;
+  fields?: Field[];
+}
+
 interface Template {
   _id: string;
   name: string;
@@ -64,6 +77,12 @@ interface Template {
   fields: Field[];
   producers: [Dependency]
   active: boolean;
+  validators?: Validator[];
+  workbook_sheets?: WorkbookSheet[];
+  original_workbook_base64?: string;
+  fecha_final_productores?: Date;
+  fecha_final_responsables?: Date;
+  fecha_final?: Date;
 }
 
 interface Validator {
@@ -84,6 +103,11 @@ interface PublishedTemplate {
   loaded_data: any[];
   validators: Validator[];
   deadline: Date;
+  fecha_inicio?: Date;
+  fecha_final_productores?: Date;
+  fecha_final_responsables?: Date;
+  fecha_final?: Date;
+  isEncargado?: boolean;
 }
 
 interface TemplateStatusRow {
@@ -94,10 +118,13 @@ interface TemplateStatusRow {
   user_name: string;
   user_email: string;
   dependency: string;
+  dependency_exists?: boolean;
   has_submitted: boolean;
+  is_empty_submission?: boolean;
   submitted_date: string | null;
   total_assigned: number;
   total_submitted: number;
+  total_empty?: number;
   total_pending: number;
   completion_percentage: number;
   pending_percentage: number;
@@ -135,13 +162,21 @@ const PublishedTemplatesPage = () => {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension`,
         {
-          params: { 
+          params: {
             page,
             limit: 10,
             search,
             email: session?.user?.email,
             periodId: selectedPeriodId,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
+            filterByUserScope: true,
+            userRole,
+            // Este listado solo necesita nombre, fechas, período y conteos
+            // (progreso "X de Y"): el modo completo trae y transforma todos
+            // los registros cargados (validators, dependencias, etc.), que es
+            // costoso y no se usa aquí; por eso la página tardaba tanto al
+            // cambiar de página. El detalle completo se pide aparte al
+            // abrir/descargar una plantilla puntual.
+            summary: true,
           },
         }
       );
@@ -150,8 +185,8 @@ const PublishedTemplatesPage = () => {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
       }
-    } catch (error) {
-      console.error("Error fetching templates:", error);
+    } catch (error: any) {
+      console.error("Error fetching templates:", error?.response?.data || error?.message || error);
       showNotification({
         title: "Error",
         message: "Hubo un error al obtener las plantillas",
@@ -207,7 +242,7 @@ const PublishedTemplatesPage = () => {
       title: 'Confirmar eliminación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas eliminar la plantilla publicada "{templateToDelete?.name}"? 
+          ¿Estás seguro de que deseas eliminar la plantilla publicada &quot;{templateToDelete?.name}&quot;? 
           Esta acción no se puede deshacer y los productores ya no podrán acceder a ella.
         </Text>
       ),
@@ -242,101 +277,252 @@ const PublishedTemplatesPage = () => {
     });
   }
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
-          },
+  const handleDeleteLoadedData = async (id: string) => {
+    const templateToClear = templates.find(t => t._id === id);
+
+    modals.openConfirmModal({
+      title: 'Confirmar eliminación de información enviada',
+      children: (
+        <Text size="sm">
+          Esto retira la información enviada por <strong>TODAS las dependencias</strong> de la plantilla &quot;{templateToClear?.name}&quot;
+          (no solo una), y las devuelve al estado &quot;pendiente&quot; para que la vuelvan a enviar.
+          <br /><br />
+          Los datos no se borran de forma permanente: quedan guardados como borrador y un administrador puede recuperarlos si fue un error.
+        </Text>
+      ),
+      labels: { confirm: 'Eliminar información de todas las dependencias', cancel: 'Cancelar' },
+      confirmProps: { color: 'red' },
+      onConfirm: async () => {
+        try {
+          const response = await axios.delete(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/deleteLoadedData`,
+            {
+              params: { id, email: session?.user?.email },
+            }
+          );
+
+          if (response.data) {
+            showNotification({
+              title: "Éxito",
+              message: "Información enviada eliminada exitosamente",
+              color: "green",
+            });
+            fetchTemplates(page, search);
+          }
+        } catch (error) {
+          console.error("Error deleting loaded data:", error);
+          showNotification({
+            title: "Error",
+            message: "Hubo un error al eliminar la información enviada",
+            color: "red",
+          });
         }
+      },
+    });
+  }
+
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
+    try {
+      const freshTemplateResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+      );
+      let template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+
+      // Plantillas con varias hojas (ej. una hoja principal + hojas hijas de
+      // relación 1-a-muchos) suelen repetir nombres de campo entre hojas
+      // (llaves como AÑO/CODIGO_PROYECTO). Pedir todo en una sola consulta sin
+      // filtro de hoja hace que esos campos se pisen entre sí al reconstruir
+      // las filas en el backend. Se pide por hoja, igual que hace la vista
+      // "Información Cargada", para que la descarga refleje lo mismo que se
+      // ve en línea.
+      const workbookSheetsRaw = template.workbook_sheets || [];
+      const sheetsWithFields = workbookSheetsRaw.filter(sheet => sheet.fields?.length);
+      const sheetNamesToQuery: (string | null)[] = sheetsWithFields.length > 0
+        ? sheetsWithFields.map(sheet => sheet.name)
+        : [null];
+
+      const mergedResponses = await Promise.all(
+        sheetNamesToQuery.map(sheetName =>
+          axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+            {
+              params: {
+                pubTem_id: publishedTemplate._id,
+                email: session?.user?.email,
+                filterByUserScope: true, // Filtrar por ámbito del usuario
+                ...(sheetName ? { sheetName } : {}),
+              },
+            }
+          )
+        )
       );
 
-      const data = response.data.data;
-      const { template } = publishedTemplate;
-
-      // Campos de tipo fecha para formatear correctament
-const dateFields = new Set(
-  template.fields
-    .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
-    .map(f => f.name)
-);
-
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
-      // Usar las claves que realmente vienen del backend
-      const dataKeys = Object.keys(data[0]);
-      // Asegurar que Dependencia esté primero
-      const availableFields = dataKeys.sort((a, b) => {
-        if (a === 'Dependencia') return -1;
-        if (b === 'Dependencia') return 1;
-        return 0;
-      });
-      
-      const headerRow = worksheet.addRow(availableFields);
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: "FFFFFF" } };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "0f1f39" },
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.alignment = { vertical: "middle", horizontal: "center" };
+      const dataBySheet = new Map<string, Record<string, any>[]>();
+      sheetNamesToQuery.forEach((sheetName, index) => {
+        dataBySheet.set(sheetName ?? "__root__", mergedResponses[index].data.data || []);
       });
 
-      worksheet.columns.forEach((column) => {
-        column.width = 20;
-      });
+      const hasAnyData = Array.from(dataBySheet.values()).some(rows => rows.length > 0);
+      if (!hasAnyData) {
+        showNotification({
+          title: "Sin datos cargados",
+          message: "Aún no hay información enviada para esta plantilla.",
+          color: "yellow",
+        });
+        return;
+      }
 
-      // Add the data to the worksheet using the same field order
-      data.forEach((row: any) => {
-        const formattedRow = availableFields.map(fieldName => {
-          let value = row[fieldName];
-          
-          if (value && dateFields.has(fieldName)) {
-            if (
-              typeof value === 'string' ||
-              typeof value === 'number' ||
-              value instanceof Date
-            ) {
+      const periodId =
+        (publishedTemplate as any).period?._id ??
+        (publishedTemplate as any).period ??
+        null;
+
+      try {
+        const freshRes = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
+          { params: { withValidators: 'true', ...(periodId ? { periodId } : {}) } }
+        );
+        if (freshRes.data?.validators) {
+          template = { ...template, validators: freshRes.data.validators };
+        }
+      } catch {
+        // si falla, se usan los validators cacheados
+      }
+
+      const validators =
+        template?.validators ??
+        publishedTemplate.validators;
+
+      // Campos de tipo fecha para formatear correctamente antes de escribirlos.
+      // El set de campos de fecha depende de la hoja (cada hoja tiene sus
+      // propios campos), por eso se calcula por hoja en vez de una sola vez
+      // con los `fields` de nivel superior.
+      const formatDateFields = (rows: Record<string, any>[], fields: Field[]) => {
+        const dateFields = new Set(
+          fields
+            .filter(f => f.datatype === "Fecha" || f.datatype === "Fecha Inicial / Fecha Final")
+            .map(f => f.name)
+        );
+        return rows.map(row => {
+          const out: Record<string, any> = { ...row };
+          Object.keys(out).forEach((key) => {
+            const value = out[key];
+            if (value && dateFields.has(key) &&
+              (typeof value === 'string' || typeof value === 'number' || value instanceof Date)) {
               const date = new Date(value);
-              if (!isNaN(date.getTime())) {
-                return date.toISOString().slice(0, 10); // YYYY-MM-DD
-              }
+              if (!isNaN(date.getTime())) out[key] = date.toISOString().slice(0, 10); // YYYY-MM-DD
             }
+          });
+          return out;
+        });
+      };
+
+      // === RUTA 1: workbook base64 (preserva estructura, colores y hojas originales) ===
+      if (template.original_workbook_base64) {
+        const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
+        const commentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
+        for (const [sheetName, sheetComments] of commentsBySheet.entries()) {
+          const ws = workbook.getWorksheet(sheetName);
+          if (!ws) continue;
+          for (const [cellRef, noteText] of sheetComments.entries()) {
+            if (noteText) applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
           }
-          return value;
+        }
+
+        const workbookSheets = template.workbook_sheets || [];
+        const mainWorksheet = workbook.getWorksheet(template.name) || workbook.worksheets[0];
+        // Si la hoja principal del archivo coincide con una hoja definida en
+        // workbook_sheets, sus campos reales viven ahí (el `fields` de nivel
+        // superior puede estar vacío) — usar esos para no perder columnas ni
+        // dejar la hoja sin datos.
+        const mainSheetDef = workbookSheets.find(sheet => sheet.name === mainWorksheet?.name);
+        if (mainWorksheet) {
+          const mainFields = mainSheetDef?.fields?.length ? mainSheetDef.fields : template.fields;
+          const mainRows = formatDateFields(dataBySheet.get(mainSheetDef?.name ?? "__root__") || [], mainFields);
+          populateWorksheetWithMergedRows(mainWorksheet, mainFields, mainRows, ['Dependencia']);
+        }
+        for (const sheet of workbookSheets) {
+          if (!sheet.fields?.length || sheet === mainSheetDef) continue;
+          const ws = workbook.getWorksheet(sheet.name);
+          if (!ws) continue;
+          const rows = formatDateFields(dataBySheet.get(sheet.name) || [], sheet.fields);
+          populateWorksheetWithMergedRows(ws, sheet.fields, rows);
+        }
+
+        const dropdownSheets = workbookSheets.length > 0
+          ? workbookSheets
+          : (template.fields?.length
+            ? [{ name: mainWorksheet?.name || template.name, fields: template.fields }]
+            : []);
+        applyWorkbookSheetDropdowns({
+          workbook,
+          workbookSheets: dropdownSheets,
+          validators,
+          originalCommentsBySheet: commentsBySheet,
         });
 
-        worksheet.addRow(formattedRow);
-      });
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template.file_name || template.name}.xlsx`);
+        return;
+      }
 
-      applyValidatorDropdowns({
-        workbook,
-        worksheet,
-        fields: template.fields,
-        validators,
-        startRow: 2,
-        endRow: 1000,
+      // === RUTA 2: sin workbook original guardado -> construir un libro nuevo ===
+      // (una hoja por cada hoja configurada, o una sola con los `fields` de
+      // nivel superior si la plantilla no tiene workbook_sheets)
+      const workbook = new ExcelJS.Workbook();
+      const sheetDefsToWrite: { name: string; fields: Field[] }[] = sheetsWithFields.length > 0
+        ? sheetsWithFields.map(sheet => ({ name: sheet.name, fields: sheet.fields || [] }))
+        : [{ name: template.name, fields: template.fields }];
+
+      sheetDefsToWrite.forEach((sheetDef) => {
+        const rows = formatDateFields(
+          dataBySheet.get(sheetsWithFields.length > 0 ? sheetDef.name : "__root__") || [],
+          sheetDef.fields
+        );
+        const worksheet = workbook.addWorksheet(sheetDef.name);
+        const availableFields = sheetDef.fields.length
+          ? sheetDef.fields.map(f => f.name)
+          : (rows[0] ? Object.keys(rows[0]).sort((a, b) => (a === 'Dependencia' ? -1 : b === 'Dependencia' ? 1 : 0)) : []);
+        const allFields = ['Dependencia', ...availableFields.filter(name => name !== 'Dependencia')];
+
+        const headerRow = worksheet.addRow(allFields);
+        headerRow.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: "FFFFFF" } };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "0f1f39" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        });
+
+        worksheet.columns.forEach((column) => {
+          column.width = 20;
+        });
+
+        rows.forEach((row) => {
+          worksheet.addRow(allFields.map(fieldName => row[fieldName]));
+        });
+
+        applyValidatorDropdowns({
+          workbook,
+          worksheet,
+          fields: sheetDef.fields,
+          validators,
+          startRow: 2,
+          endRow: 1000,
+        });
       });
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/octet-stream" });
-      saveAs(blob, `${template.file_name}.xlsx`);
+      saveAs(blob, `${template.file_name || template.name}.xlsx`);
     } catch (error) {
       console.error("Error downloading merged data:", error);
       showNotification({
@@ -366,7 +552,7 @@ const dateFields = new Set(
         },
         withCredentials: true
       });
-      
+
       setTemplateStatusData(response.data || []);
       setShowConsolidatedReport(false);
       setConsolidatedStatusFilter('all');
@@ -416,7 +602,9 @@ const dateFields = new Set(
           userName,
           userEmail,
           item.dependency,
-          item.has_submitted ? 'Enviado' : 'Pendiente',
+          item.has_submitted
+            ? (item.is_empty_submission ? 'Enviado (vacío)' : 'Enviado')
+            : 'Pendiente',
           item.submitted_date ? new Date(item.submitted_date).toLocaleDateString() : '',
           item.deadline ? new Date(item.deadline).toLocaleDateString() : '',
           item.total_assigned ?? '',
@@ -465,8 +653,13 @@ const dateFields = new Set(
     return matchesStatus && matchesEmail && matchesDependency;
   });
 
-  // Get unique dependencies for filter
-  const uniqueDependencies = [...new Set(templateStatusData.map(item => item.dependency))].sort();
+  // Get unique dependencies for filter — se excluyen nombres que quedaron
+  // congelados en envios viejos de una dependencia ya eliminada/renombrada
+  // (dependency_exists: false, calculado en el backend contra la coleccion
+  // vigente de dependencias).
+  const uniqueDependencies = [...new Set(
+    templateStatusData.filter(item => item.dependency_exists !== false).map(item => item.dependency)
+  )].sort();
 
   const groupedTemplateStatus = filteredTemplateStatusData.reduce((acc, item) => {
     const key = item.template_id;
@@ -479,6 +672,7 @@ const dateFields = new Set(
         deadline: item.deadline,
         total_assigned: item.total_assigned,
         total_submitted: item.total_submitted,
+        total_empty: item.total_empty ?? 0,
         total_pending: item.total_pending,
         completion_percentage: item.completion_percentage,
         pending_percentage: item.pending_percentage,
@@ -501,6 +695,7 @@ const dateFields = new Set(
     deadline: string;
     total_assigned: number;
     total_submitted: number;
+    total_empty: number;
     total_pending: number;
     completion_percentage: number;
     pending_percentage: number;
@@ -561,7 +756,21 @@ const dateFields = new Set(
         </Table.Td>
         <Table.Td>
           <Center>
-            {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+            {dateToGMT(
+              userRole === "Responsable"
+                ? (publishedTemplate.isEncargado
+                    ? (publishedTemplate.fecha_final_responsables
+                        ?? publishedTemplate.template?.fecha_final_responsables
+                        ?? publishedTemplate.deadline
+                        ?? publishedTemplate.period?.producer_end_date)
+                    : (publishedTemplate.fecha_final_productores
+                        ?? publishedTemplate.template?.fecha_final_productores
+                        ?? publishedTemplate.fecha_final
+                        ?? publishedTemplate.template?.fecha_final
+                        ?? publishedTemplate.deadline
+                        ?? publishedTemplate.period?.producer_end_date))
+                : (publishedTemplate.fecha_final ?? publishedTemplate.deadline ?? publishedTemplate.period?.producer_end_date)
+            )}
           </Center>
         </Table.Td>
         <Table.Td>
@@ -633,7 +842,7 @@ const dateFields = new Set(
               { userRole === "Administrador" &&
                 <Tooltip
                   label={ publishedTemplate.loaded_data?.length > 0 ?
-                    "No puedes eliminar una plantilla con información enviada"
+                    "Eliminar información enviada"
                     : "Eliminar plantilla publicada"
                   }
                   transitionProps={{ transition: "slide-up", duration: 300 }}
@@ -641,9 +850,12 @@ const dateFields = new Set(
                 >
                   <Button
                     variant="outline"
-                    onClick={() => handleDelete(publishedTemplate._id)}
+                    onClick={() =>
+                      publishedTemplate.loaded_data?.length > 0
+                        ? handleDeleteLoadedData(publishedTemplate._id)
+                        : handleDelete(publishedTemplate._id)
+                    }
                     color="red"
-                    disabled={publishedTemplate.loaded_data?.length > 0}
                   >
                     <IconTrash size={18} />
                   </Button>
@@ -659,8 +871,13 @@ const dateFields = new Set(
   return (
     <Container size="xl">
       <DateConfig />
+      <Group mb="md">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+      </Group>
       <Title ta="center" mb={"md"}>
-        Gestión de Plantillas
+        {userRole === "Responsable" ? "Plantillas de mis Productores" : "Gestión de Plantillas"}
       </Title>
       <TextInput
         placeholder="Buscar plantillas"
@@ -924,6 +1141,11 @@ const dateFields = new Set(
                   <Badge variant="outline" color="green" size="lg">
                     Enviados: {group.total_submitted}
                   </Badge>
+                  {group.total_empty > 0 && (
+                    <Badge variant="outline" color="yellow" size="lg">
+                      Vacíos: {group.total_empty}
+                    </Badge>
+                  )}
                   <Badge variant="outline" color="orange" size="lg">
                     Pendientes: {group.total_pending}
                   </Badge>
@@ -951,6 +1173,11 @@ const dateFields = new Set(
                           <List.Item key={`${group.template_id}-sent-${index}`}>
                             {item.user_name || 'N/A'} - {item.dependency}
                             {item.submitted_date ? ` (${new Date(item.submitted_date).toLocaleDateString()})` : ''}
+                            {item.is_empty_submission && (
+                              <Badge color="yellow" variant="light" size="xs" ml={6}>
+                                Vacío
+                              </Badge>
+                            )}
                           </List.Item>
                         ))}
                       </List>
@@ -993,10 +1220,12 @@ const dateFields = new Set(
                         <Table.Td>{item.dependency}</Table.Td>
                         <Table.Td>
                           <Badge
-                            color={item.has_submitted ? 'green' : 'orange'}
+                            color={item.has_submitted ? (item.is_empty_submission ? 'yellow' : 'green') : 'orange'}
                             variant="light"
                           >
-                            {item.has_submitted ? 'Enviado' : 'Pendiente'}
+                            {item.has_submitted
+                              ? (item.is_empty_submission ? 'Enviado (vacío)' : 'Enviado')
+                              : 'Pendiente'}
                           </Badge>
                         </Table.Td>
                         <Table.Td>

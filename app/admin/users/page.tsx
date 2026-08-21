@@ -40,10 +40,12 @@ import {
   IconX,
   IconArrowRight,
   IconHistory,
+  IconFileSpreadsheet,
 } from "@tabler/icons-react";
 import styles from "./AdminUsersPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { signIn, useSession } from "next-auth/react";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 
 interface User {
   _id: string;
@@ -54,6 +56,18 @@ interface User {
   roles: string[];
   isActive: boolean;
   dep_code: string;
+}
+
+interface SessionUser {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
 }
 
 interface Dependency {
@@ -79,6 +93,8 @@ interface PendingChange {
 
 const AdminUsersPage = () => {
   const { data: session } = useSession();
+  const { canManage } = useViewPermission("users");
+  const sessionUser = session?.user as SessionUser | undefined;
   const [users, setUsers] = useState<User[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [page, setPage] = useState(1);
@@ -91,6 +107,7 @@ const AdminUsersPage = () => {
   const [roles, setRoles] = useState<string[]>([]);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [historyChanges, setHistoryChanges] = useState<PendingChange[]>([]);
   const [selectedChanges, setSelectedChanges] = useState<string[]>([]);
@@ -225,7 +242,7 @@ const AdminUsersPage = () => {
           email: selectedUser.email,
           roles,
           adminEmail: session?.user?.email
-        });
+        }, { headers: { "user-email": session?.user?.email } });
         showNotification({
           title: "Actualizado",
           message: "Roles del usuario actualizados exitosamente",
@@ -280,7 +297,7 @@ const AdminUsersPage = () => {
         userId,
         isActive,
         adminEmail: session?.user?.email
-      });
+      }, { headers: { "user-email": session?.user?.email } });
       showNotification({
         title: "Actualizado",
         message: "Estado del usuario actualizado exitosamente",
@@ -297,10 +314,44 @@ const AdminUsersPage = () => {
     }
   };
 
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/exportActiveUsers`,
+        {
+          responseType: "blob",
+          headers: { "user-email": session?.user?.email },
+        }
+      );
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "usuarios_activos.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error exportando usuarios:", error);
+      showNotification({
+        title: "Error",
+        message: "No se pudo descargar el archivo Excel.",
+        color: "red",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleSyncUsers = async () => {
     setIsLoading(true);
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`);
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/updateAll`,
+        {},
+        { headers: { "user-email": session?.user?.email } }
+      );
       showNotification({
         title: "Sincronizado",
         message: "Usuarios sincronizados exitosamente",
@@ -325,10 +376,8 @@ const AdminUsersPage = () => {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_API_URL}/users/impersonate`,
         {
-          params: {
-            id: userId,
-            adminEmail: session?.user?.email
-          }
+          params: { id: userId, adminEmail: session?.user?.email },
+          headers: { "user-email": session?.user?.email }
         }
       );
 
@@ -345,6 +394,10 @@ const AdminUsersPage = () => {
         id: _id,
         userEmail: email,
         userName: full_name,
+        originalUserId: sessionUser?.originalUserId || sessionUser?.id,
+        originalUserEmail: sessionUser?.originalUserEmail || sessionUser?.email,
+        originalUserName: sessionUser?.originalUserName || sessionUser?.name,
+        originalUserImage: sessionUser?.originalUserImage || sessionUser?.image || "",
         isImpersonating: true,
       });
     } catch (error) {
@@ -449,58 +502,34 @@ const AdminUsersPage = () => {
       <Table.Td>{user.roles.join(", ")}</Table.Td>
       <Table.Td>
         <Stack gap={5}>
-          <Button variant="outline" onClick={() => handleEdit(user)}>
+          <Button variant="outline" onClick={() => handleEdit(user)} disabled={!canManage}>
             <IconEdit size={16} />
           </Button>
-          <Tooltip
-            label="Migrar Usuario de Dependencia"
-            position="top"
-            transitionProps={{ transition: "fade-up", duration: 300 }}
-          >
-            <Button
-              color="orange"
-              variant="outline"
-              onClick={() => {
-                fetchDependencies();
-                setMigrateModalOpened(true);
-                setSelectedUser(user);
-              }}
-            >
+          <Tooltip label="Migrar Usuario de Dependencia" position="top" transitionProps={{ transition: "fade-up", duration: 300 }}>
+            <Button color="orange" variant="outline" disabled={!canManage}
+              onClick={() => { fetchDependencies(); setMigrateModalOpened(true); setSelectedUser(user); }}>
               <IconSwitch3 size={16} />
             </Button>
           </Tooltip>
-          
-
-
-          {session?.user?.image ? (
-            <Tooltip
-              label="Impersonar usuario"
-              position="top"
-              transitionProps={{ transition: "fade-up", duration: 300 }}
-            >
-              <Button
-                color="green"
-                variant="outline"
-                onClick={() => {
-                  handleImpersonateUser(user._id);
-                }}
-              >
+          {session?.user?.email && (
+            <Tooltip label="Impersonar usuario" position="top" transitionProps={{ transition: "fade-up", duration: 300 }}>
+              <Button color="green" variant="outline" disabled={!canManage}
+                onClick={() => { handleImpersonateUser(user._id); }}>
                 <IconUser size={16} />
               </Button>
             </Tooltip>
-          ) : null}
+          )}
         </Stack>
       </Table.Td>
       <Table.Td>
         <Center>
           <Switch
             checked={user.isActive}
-            onChange={(event) =>
-              handleToggleActive(user._id, event.currentTarget.checked)
-            }
+            onChange={(event) => canManage && handleToggleActive(user._id, event.currentTarget.checked)}
             label={user.isActive ? "Activo" : "Inactivo"}
             color="teal"
             ml="md"
+            disabled={!canManage}
           />
         </Center>
       </Table.Td>
@@ -632,6 +661,15 @@ const AdminUsersPage = () => {
               onChange={(event) => setSearch(event.currentTarget.value)}
               className={styles.searchInput}
             />
+            <Button
+              variant="light"
+              color="green"
+              onClick={handleExportExcel}
+              loading={isExporting}
+              leftSection={<IconFileSpreadsheet />}
+            >
+              Descargar Excel
+            </Button>
             <Button
               variant="light"
               onClick={handleSyncUsers}

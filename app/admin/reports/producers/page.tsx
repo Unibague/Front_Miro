@@ -159,7 +159,7 @@ const ProducerReportPage = () => {
       title: 'Confirmar asignación',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas asignar el informe "{selectedReport?.name}" 
+          ¿Estás seguro de que deseas asignar el informe &quot;{selectedReport?.name}&quot; 
           al período seleccionado? Los productores podrán acceder a este informe.
         </Text>
       ),
@@ -351,7 +351,7 @@ const ProducerReportPage = () => {
         </Button>
         <Button
           ml={"auto"}
-          onClick={() => router.push("/reports")}
+          onClick={() => router.push("/reportproducers")}
           variant="outline"
           rightSection={<IconArrowRight size={16} />}
         >
@@ -477,6 +477,7 @@ const ProducerReportPage = () => {
         entityType="producer-report"
         entityId={selectedReportForAudit?._id || ''}
         entityName={selectedReportForAudit?.name || ''}
+        email={session?.user?.email ?? ''}
       />
     </Container>
     );

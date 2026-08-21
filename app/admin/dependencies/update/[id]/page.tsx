@@ -15,7 +15,8 @@ import {
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { useSession } from 'next-auth/react';
+import { useSession } from "next-auth/react";
+import { paramId } from "@/app/utils/routeParams";
 
 interface Member {
   email: string;
@@ -27,7 +28,7 @@ const AdminUpdateDependencyPage = () => {
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const id = paramId(params);
 
   const [dependency, setDependency] = useState({
     dep_code: "",
@@ -49,23 +50,21 @@ const AdminUpdateDependencyPage = () => {
           );
 
           setDependency(response.data);
-          const membersResponse = await axios.get(
-            `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${response.data.dep_code}/members`
+          
+          // Traer TODOS los usuarios de la dependencia (incluyendo inactivos)
+          const allUsersResponse = await axios.get(
+            `${process.env.NEXT_PUBLIC_API_URL}/users/${response.data.dep_code}/users`
           );
 
-          const updatedMembers = await Promise.all(
-            membersResponse.data.map(async (member: any) => {
-              const rolesResponse = await axios.get(
-                `${process.env.NEXT_PUBLIC_API_URL}/users/roles?email=${member.email}`
-              );
-              const isProducer = rolesResponse.data.roles.includes("Productor");
-              return {
-                email: member.email,
-                full_name: member.full_name,
-                isProducer,
-              };
-            })
-          );
+          // Los usuarios ya vienen con sus roles del backend, no necesitamos hacer otra llamada
+          const updatedMembers = allUsersResponse.data.map((member: any) => {
+            const isProducer = member.roles?.includes("Productor") || false;
+            return {
+              email: member.email,
+              full_name: member.full_name,
+              isProducer,
+            };
+          });
 
           setMembers(updatedMembers);
         } catch (error) {
@@ -103,6 +102,19 @@ const AdminUpdateDependencyPage = () => {
       // Establecer cookie para el middleware
       document.cookie = `userEmail=${session.user.email}; path=/`;
 
+      // ✅ PASO 1: ACTUALIZAR LA LISTA DE MIEMBROS (NUEVO)
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/dependencies/${id}`,
+        {
+          dep_code: dependency.dep_code,
+          name: dependency.name,
+          responsible: dependency.visualizers && dependency.visualizers.length > 0 ? dependency.visualizers[0] : null,
+          dep_father: dependency.dep_father,
+          producers: producers,
+          adminEmail: session.user.email
+        },
+        { headers }
+      );
       await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/dependencies/setResponsible`,
         {
@@ -141,7 +153,7 @@ const AdminUpdateDependencyPage = () => {
           { headers }
         );
       }
-
+ 
       showNotification({
         title: "Actualizado",
         message: "Dependencia actualizada exitosamente",
@@ -149,8 +161,8 @@ const AdminUpdateDependencyPage = () => {
       });
 
       router.push("/admin/dependencies");
-    } catch (error) {
-      console.error("Error updating dependency:", error);
+    } catch (error: any) {
+      console.error('❌ ERROR:', error.response?.data || error.message);
       showNotification({
         title: "Error",
         message: "Hubo un error al actualizar la dependencia",

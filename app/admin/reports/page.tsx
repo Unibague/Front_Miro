@@ -45,6 +45,7 @@ import { showNotification } from "@mantine/notifications";
 import uploadAnimation from "../../../public/lottie/upload.json";
 import successAnimation from "../../../public/lottie/success.json";
 import { useRouter } from "next/navigation";
+import { useViewPermission } from "@/app/hooks/useViewPermission";
 import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import { DateInput, DatePickerInput } from "@mantine/dates";
@@ -92,6 +93,7 @@ interface DriveFile {
 
 const AdminReportsPage = () => {
   const { data: session } = useSession();
+  const { canManage } = useViewPermission("adminReports");
   const [reports, setReports] = useState<Report[]>([]);
   const [opened, setOpened] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -301,7 +303,7 @@ const confirmDelete = (id: string) => {
               label="Editar informe"
               transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button variant="outline" onClick={() => router.push(`reports/${report._id}`)}>
+              <Button variant="outline" onClick={() => router.push(`reports/${report._id}`)} disabled={!canManage}>
                 <IconEdit size={16} />
               </Button>
             </Tooltip>
@@ -309,12 +311,7 @@ const confirmDelete = (id: string) => {
               label="Eliminar informe"
               transitionProps={{ transition: 'fade-up', duration: 300 }}
             >
-              <Button
-                color="red"
-                variant="outline"
-                onClick={() => confirmDelete(report._id)}
-
-              >
+              <Button color="red" variant="outline" onClick={() => confirmDelete(report._id)} disabled={!canManage}>
                 <IconTrash size={16} />
               </Button>
             </Tooltip>
@@ -385,10 +382,9 @@ const confirmDelete = (id: string) => {
       </Group>
       <Group>
         <Button
-          onClick={() => {
-            router.push(`reports/create`);
-          }}
+          onClick={() => { router.push(`reports/create`); }}
           leftSection={<IconCirclePlus/>}
+          disabled={!canManage}
         >
           Crear Nuevo Informe
         </Button>

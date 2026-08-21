@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 export const sanitizeSheetName = (name: string): string => {
   return name.replace(/[/\\?*[\]]/g, '').substring(0, 31);
@@ -10,20 +11,432 @@ export const shouldAddWorksheet = (workbook: ExcelJS.Workbook, sheetName: string
 
 interface FieldWithValidator {
   name: string;
-  validate_with?: string;
+  validate_with?: string | { id?: string; name?: string };
   multiple?: boolean;
   comment?: string;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
 }
 
 interface ValidatorOptionSource {
   name: string;
   values: Record<string, unknown>[];
+  columns?: { name: string; is_validator?: boolean; type?: string }[];
 }
 
-interface FieldWithComment {
+interface WorkbookSheetWithFields {
   name: string;
-  comment?: string;
+  fields?: FieldWithValidator[];
 }
+
+// Cuando `allFields` se provee, los campos sin `column`/`header_row` propio
+// (típicamente campos adicionales agregados a una plantilla ya publicada,
+// que se guardan con locked:false y sin posición) reciben una columna libre
+// real (después de la última columna configurada del archivo original) en
+// vez de `fieldIndex + 1`, que podía coincidir con la columna de otro campo
+// base y pisar sus valores al exportar.
+export const getConfiguredFieldPosition = (
+  field: FieldWithValidator,
+  fieldIndex: number,
+  allFields?: FieldWithValidator[]
+) => {
+  const configuredColumn = Number(field.column);
+  const configuredHeaderRow = Number(field.header_row);
+  const hasConfiguredColumn = Number.isFinite(configuredColumn) && configuredColumn > 0;
+  const hasConfiguredHeaderRow = Number.isFinite(configuredHeaderRow) && configuredHeaderRow > 0;
+
+  if (hasConfiguredColumn) {
+    return {
+      col: configuredColumn,
+      headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : 1,
+      isFallbackColumn: false,
+    };
+  }
+
+  if (allFields?.length) {
+    const maxConfiguredCol = allFields.reduce((max, f) => {
+      const c = Number(f.column);
+      return Number.isFinite(c) && c > 0 ? Math.max(max, c) : max;
+    }, 0);
+    const unconfiguredBefore = allFields.slice(0, fieldIndex).filter((f) => {
+      const c = Number(f.column);
+      return !(Number.isFinite(c) && c > 0);
+    }).length;
+    const defaultHeaderRow = allFields.reduce((row, f) => {
+      const hr = Number(f.header_row);
+      return Number.isFinite(hr) && hr > 0 ? hr : row;
+    }, 1);
+
+    return {
+      col: maxConfiguredCol + 1 + unconfiguredBefore,
+      headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : defaultHeaderRow,
+      isFallbackColumn: true,
+    };
+  }
+
+  return {
+    col: fieldIndex + 1,
+    headerRow: hasConfiguredHeaderRow ? configuredHeaderRow : 1,
+    isFallbackColumn: true,
+  };
+};
+
+const getValidateWithText = (validateWith: FieldWithValidator["validate_with"]): string => {
+  if (!validateWith) return "";
+  if (typeof validateWith === "string") return validateWith.trim();
+  return String(validateWith.name || validateWith.id || "").trim();
+};
+
+const splitValidateWithReference = (validateWith: FieldWithValidator["validate_with"]) => {
+  const text = getValidateWithText(validateWith);
+  const parts = text.split(" - ");
+  return {
+    text,
+    validatorName: (parts[0] || "").trim(),
+    columnName: parts.slice(1).join(" - ").trim(),
+  };
+};
+
+const findValidatorByName = (validators: ValidatorOptionSource[], name = "") =>
+  validators.find((item) => normalizeToken(item.name) === normalizeToken(name));
+
+const findValidatorForField = (
+  field: FieldWithValidator,
+  validators: ValidatorOptionSource[]
+): { validator: ValidatorOptionSource; columnName?: string } | null => {
+  const { validatorName, columnName } = splitValidateWithReference(field.validate_with);
+
+  if (validatorName) {
+    const validator = findValidatorByName(validators, validatorName);
+    if (validator) return { validator, columnName: columnName || field.name };
+  }
+
+  const fieldNorm = normalizeToken(field.name);
+  for (const validator of validators) {
+    const columnMatch =
+      (validator.columns?.some((column) => normalizeToken(column.name) === fieldNorm)) ||
+      (validator.values.length > 0 &&
+        Object.keys(validator.values[0]).some((key) => normalizeToken(key) === fieldNorm));
+
+    if (columnMatch) return { validator, columnName: field.name };
+  }
+
+  return null;
+};
+
+const getFieldCommentForNote = (field: FieldWithValidator): string => {
+  return field.comment
+    ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+    : "";
+};
+
+const applyHeaderCommentNote = (
+  worksheet: ExcelJS.Worksheet,
+  field: FieldWithValidator,
+  fieldIndex: number,
+  startRow: number = 2,
+  endRow: number = 1000,
+  _fallbackOptions: string[] = []
+) => {
+  const comment = getFieldCommentForNote(field);
+  if (!comment) return;
+
+  const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex);
+  const firstDataRow = Math.max(startRow, headerRow + 1);
+  for (let row = firstDataRow; row <= endRow; row++) {
+    applyFieldCommentNote(worksheet.getCell(row, col), comment);
+  }
+};
+
+export const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...Array.from(chunk));
+  }
+
+  return btoa(binary);
+};
+
+export const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes.buffer;
+};
+
+export const loadWorkbookFromBase64 = async (base64: string): Promise<ExcelJS.Workbook> => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(base64ToArrayBuffer(base64));
+  return workbook;
+};
+
+export const cloneExcelValue = <T,>(value: T): T => {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+};
+
+export const getSheetDataStartRow = (fields: FieldWithValidator[]) => {
+  const headerRows = fields
+    .map((field, index) => getConfiguredFieldPosition(field, index, fields).headerRow)
+    .filter((row) => Number.isFinite(row) && row > 0);
+
+  return (headerRows.length ? Math.min(...headerRows) : 1) + 1;
+};
+
+// Mismo estilo de encabezado verde que usa la descarga de la plantilla base
+// (app/admin/templates/page.tsx) para los campos agregados (locked: false),
+// para que un campo adicional se vea igual sin importar desde qué pantalla se descargue.
+export const applyAdditionalFieldHeaderStyle = (
+  worksheet: ExcelJS.Worksheet,
+  cell: ExcelJS.Cell,
+  fieldName: string,
+  col: number
+) => {
+  cell.value = fieldName;
+  cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+  cell.alignment = { vertical: "middle", horizontal: "center" };
+  const colObj = worksheet.getColumn(col);
+  if (!colObj.width || colObj.width < 20) colObj.width = 20;
+};
+
+export const copyCellPresentation = (target: ExcelJS.Cell, source: ExcelJS.Cell) => {
+  target.style = cloneExcelValue(source.style || {});
+  if (source.dataValidation) target.dataValidation = cloneExcelValue(source.dataValidation);
+  if (source.note) target.note = cloneExcelValue(source.note);
+};
+
+export const toExcelCellValue = (value: any): ExcelJS.CellValue => {
+  if (value === undefined || value === null || value === "") return null;
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") {
+    if ("text" in value || "hyperlink" in value) return value as ExcelJS.CellValue;
+    return JSON.stringify(value);
+  }
+  return value as ExcelJS.CellValue;
+};
+
+const padDatePart = (value: number) => String(value).padStart(2, "0");
+
+const JS_DATE_TOSTRING_MONTHS: Record<string, number> = {
+  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
+};
+
+// Formatea fechas de datos de plantilla sin aplicar la zona horaria local.
+// Excel suele serializar una fecha sin hora como medianoche UTC; convertirla
+// a America/Bogota desplaza el valor al dia anterior. Usar UTC conserva el dia
+// calendario que el productor envio originalmente.
+export const formatTemplateDateValue = (value: any, fieldName = ""): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+
+  const raw = value instanceof Date ? value.toISOString() : String(value).trim();
+  const isDateField = /(^|[^A-Z])(FECHA|DATE)([^A-Z]|$)/i.test(fieldName);
+  const isRecognizableDate =
+    /^\d{2}\/\d{2}\/\d{4}$/.test(raw) ||
+    /^\d{4}[-/]\d{2}[-/]\d{2}(?:T.*)?$/.test(raw) ||
+    /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s/i.test(raw) ||
+    /GMT[+-]\d{4}/i.test(raw);
+
+  if (!isDateField && !isRecognizableDate && !(value instanceof Date)) return null;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+
+  const calendarMatch = raw.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (calendarMatch) {
+    return `${calendarMatch[3]}/${calendarMatch[2]}/${calendarMatch[1]}`;
+  }
+
+  // Salida cruda de Date.toString() en JS, ej. "Mon Mar 02 2026 19:00:00
+  // GMT-0500 (hora estandar de Colombia)". El dia/mes/anio ya impresos ahi
+  // son la fecha calendario local que se guardo; si en cambio se reconvierte
+  // con new Date(raw) y se leen los campos en UTC, el offset de zona horaria
+  // incluido en el propio texto desplaza el resultado un dia.
+  const jsDateStringMatch = raw.match(
+    /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\s+(\d{4})/i
+  );
+  if (jsDateStringMatch) {
+    const month = JS_DATE_TOSTRING_MONTHS[jsDateStringMatch[1] as keyof typeof JS_DATE_TOSTRING_MONTHS];
+    if (month) {
+      return `${jsDateStringMatch[2]}/${padDatePart(month)}/${jsDateStringMatch[3]}`;
+    }
+  }
+
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${padDatePart(parsed.getUTCDate())}/${padDatePart(parsed.getUTCMonth() + 1)}/${parsed.getUTCFullYear()}`;
+};
+
+// Combina el filled_data de varias dependencias en uno solo, concatenando los
+// valores de cada campo (por nombre de campo + hoja) para reportes que
+// consolidan la informacion de todos los productores en un solo archivo.
+export const mergeFilledDataAcrossDependencies = (
+  entries: Array<{ filled_data?: Array<{ field_name: string; sheet_name?: string; sheet?: string; sheetName?: string; values?: any[] }> }>
+) => {
+  const byKey = new Map<string, { field_name: string; sheet_name?: string; sheet?: string; sheetName?: string; values: any[] }>();
+  for (const entry of entries) {
+    for (const fd of entry.filled_data || []) {
+      const sheetKey = fd.sheet_name || fd.sheet || fd.sheetName || '';
+      const key = `${fd.field_name}::${sheetKey}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.values = [...(existing.values || []), ...(fd.values || [])];
+      } else {
+        byKey.set(key, { ...fd, values: [...(fd.values || [])] });
+      }
+    }
+  }
+  return Array.from(byKey.values());
+};
+
+interface FilledFieldValues {
+  field_name: string;
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
+  values?: any[];
+}
+
+// El backend guarda las filas combinadas (mergedData) con las claves normalizadas
+// a MAYUSCULAS_CON_GUIONES (ver normalizeFieldName en publishedTemplates.js), pero
+// el nombre de campo configurado en la plantilla puede tener otra mayúscula/minúscula,
+// espacios o tildes distintas. Sin esta normalización, cualquier campo cuyo nombre no
+// coincida caracter a caracter queda vacío aunque el dato sí llegó del backend.
+const normalizeFieldKey = (value: string): string =>
+  normalizeToken(String(value ?? "")).replace(/[^A-Z0-9]/g, "");
+
+const findRowValueByFieldName = (row: Record<string, any>, fieldName: string): any => {
+  if (Object.prototype.hasOwnProperty.call(row, fieldName)) return row[fieldName];
+  const target = normalizeFieldKey(fieldName);
+  const matchedKey = Object.keys(row).find((key) => normalizeFieldKey(key) === target);
+  return matchedKey ? row[matchedKey] : undefined;
+};
+
+// Rellena la hoja de la plantilla ORIGINAL (tal cual fue subida) con el
+// filled_data crudo (por campo, con su arreglo de valores), preservando el
+// estilo/validacion de cada celda base pero SIN volver a aplicar dropdowns:
+// es para generar un archivo final de solo lectura, no para editarlo de nuevo.
+export const populateWorksheetWithFilledData = (
+  worksheet: ExcelJS.Worksheet,
+  fields: FieldWithValidator[],
+  filledData: FilledFieldValues[],
+  sheetName?: string
+) => {
+  if (!fields.length) return;
+
+  let relevant = sheetName
+    ? filledData.filter((fd) => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
+    : filledData;
+  if (relevant.length === 0 && sheetName) {
+    const sheetFieldNames = new Set(fields.map((field) => field.name));
+    relevant = filledData.filter((fd) => sheetFieldNames.has(fd.field_name));
+  }
+
+  const numRows = relevant.reduce((max, fd) => (
+    Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0)
+  ), 0);
+  if (!numRows) return;
+
+  const startRow = getSheetDataStartRow(fields);
+  const templateRow = worksheet.getRow(startRow);
+
+  if (numRows > 1) {
+    worksheet.insertRows(startRow + 1, Array.from({ length: numRows - 1 }, () => []));
+  }
+
+  const positions = fields.map((field, index) => getConfiguredFieldPosition(field, index, fields));
+  const headerRow = Math.max(1, startRow - 1);
+
+  for (let i = 0; i < numRows; i++) {
+    const dataRow = startRow + i;
+    fields.forEach((field, colIdx) => {
+      const { col: fieldCol } = positions[colIdx];
+      const fd = relevant.find((entry) => normalizeFieldKey(entry.field_name) === normalizeFieldKey(field.name));
+      const val = fd?.values?.[i] ?? null;
+      const targetCell = worksheet.getCell(dataRow, fieldCol);
+      copyCellPresentation(targetCell, templateRow.getCell(fieldCol));
+      targetCell.value = toExcelCellValue(formatTemplateDateValue(val, field.name) ?? val);
+    });
+  }
+
+  // Los campos sin columna configurada (agregados a la plantilla ya publicada)
+  // caen en una columna que no existía en el archivo original: su encabezado
+  // no está escrito físicamente, hay que agregarlo con el mismo estilo verde
+  // que usa la descarga de la plantilla base para campos añadidos.
+  fields.forEach((field, colIdx) => {
+    const { col, isFallbackColumn } = positions[colIdx];
+    if (!isFallbackColumn) return;
+    applyAdditionalFieldHeaderStyle(worksheet, worksheet.getCell(headerRow, col), field.name, col);
+  });
+};
+
+// Rellena la hoja de la plantilla ORIGINAL con datos YA CONSOLIDADOS por
+// fila (un objeto {nombre_campo: valor} por fila, ej. la respuesta de
+// /pTemplates/dimension/mergedData que ya junta el envío de TODAS las
+// dependencias en una tabla), a diferencia de populateWorksheetWithFilledData
+// que espera el formato "por campo con arreglo de valores". Se usa para las
+// descargas administrativas que muestran una fila por envío, preservando la
+// estructura/colores/hojas del archivo original y agregando columnas extra
+// (ej. "Dependencia") que no forman parte de los campos propios de la plantilla.
+export const populateWorksheetWithMergedRows = (
+  worksheet: ExcelJS.Worksheet,
+  fields: FieldWithValidator[],
+  rows: Record<string, any>[],
+  extraColumns: string[] = []
+) => {
+  if (!fields.length || !rows.length) return;
+
+  const startRow = getSheetDataStartRow(fields);
+  const headerRow = Math.max(1, startRow - 1);
+  const templateRow = worksheet.getRow(startRow);
+
+  if (rows.length > 1) {
+    worksheet.insertRows(startRow + 1, Array.from({ length: rows.length - 1 }, () => []));
+  }
+
+  const positions = fields.map((field, index) => getConfiguredFieldPosition(field, index, fields));
+  const maxCol = positions.length ? Math.max(...positions.map((p) => p.col)) : 0;
+
+  rows.forEach((row, i) => {
+    const dataRow = startRow + i;
+    fields.forEach((field, colIdx) => {
+      const { col } = positions[colIdx];
+      const cell = worksheet.getCell(dataRow, col);
+      copyCellPresentation(cell, templateRow.getCell(col));
+      cell.value = toExcelCellValue(findRowValueByFieldName(row, field.name));
+    });
+    extraColumns.forEach((key, extraIdx) => {
+      const col = maxCol + 1 + extraIdx;
+      const cell = worksheet.getCell(dataRow, col);
+      copyCellPresentation(cell, templateRow.getCell(col));
+      cell.value = toExcelCellValue(findRowValueByFieldName(row, key));
+    });
+  });
+
+  // Los campos sin columna configurada (agregados a la plantilla ya publicada)
+  // caen en una columna que no existía en el archivo original, así que su
+  // encabezado no está escrito físicamente: hay que agregarlo con el mismo
+  // estilo verde que usa la descarga de la plantilla base para campos añadidos.
+  fields.forEach((field, colIdx) => {
+    const { col, isFallbackColumn } = positions[colIdx];
+    if (!isFallbackColumn) return;
+    applyAdditionalFieldHeaderStyle(worksheet, worksheet.getCell(headerRow, col), field.name, col);
+  });
+
+  extraColumns.forEach((key, extraIdx) => {
+    const col = maxCol + 1 + extraIdx;
+    const headerCell = worksheet.getCell(headerRow, col);
+    if (headerCell.value == null || headerCell.value === "") headerCell.value = key;
+  });
+};
 
 const toColumnLetter = (index: number): string => {
   let n = index;
@@ -36,6 +449,632 @@ const toColumnLetter = (index: number): string => {
   return letters;
 };
 
+export const getExcelCellAddress = (row: number, col: number): string =>
+  `${toColumnLetter(col)}${row}`;
+
+const resolveZipPath = (fromPath: string, target: string): string => {
+  const normalizedTarget = target.replace(/\\/g, "/");
+  if (normalizedTarget.startsWith("/")) return normalizedTarget.replace(/^\/+/, "");
+
+  const parts = fromPath.split("/").slice(0, -1);
+  normalizedTarget.split("/").forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") {
+      parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+
+  return parts.join("/");
+};
+
+const parseXml = (xml: string): Document =>
+  new DOMParser().parseFromString(xml, "application/xml");
+
+const getRelTargets = (relsXml: string): Map<string, { target: string; type: string }> => {
+  const rels = new Map<string, { target: string; type: string }>();
+  const doc = parseXml(relsXml);
+  Array.from(doc.getElementsByTagName("Relationship")).forEach((node) => {
+    const id = node.getAttribute("Id") || "";
+    const target = node.getAttribute("Target") || "";
+    const type = node.getAttribute("Type") || "";
+    if (id && target) rels.set(id, { target, type });
+  });
+  return rels;
+};
+
+const getCommentNodeText = (node: Element): string => {
+  const textNodes = Array.from(node.getElementsByTagName("t"));
+  if (textNodes.length > 0) {
+    return textNodes.map((item) => item.textContent || "").join("").trim();
+  }
+  return (node.textContent || "").trim();
+};
+
+const getWorksheetPathMap = async (zip: JSZip): Promise<Map<string, string>> => {
+  const worksheetPathByName = new Map<string, string>();
+  const workbookPath = "xl/workbook.xml";
+  const workbookXml = await zip.file(workbookPath)?.async("text");
+  const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (!workbookXml || !workbookRelsXml) return worksheetPathByName;
+
+  const workbookRels = getRelTargets(workbookRelsXml);
+  const workbookDoc = parseXml(workbookXml);
+  const sheets = Array.from(workbookDoc.getElementsByTagName("sheet"));
+
+  sheets.forEach((sheetNode) => {
+    const sheetName = sheetNode.getAttribute("name") || "";
+    const relId =
+      sheetNode.getAttribute("r:id") ||
+      sheetNode.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "id"
+      ) ||
+      sheetNode.getAttribute("id") ||
+      "";
+    const sheetRel = workbookRels.get(relId);
+    if (!sheetName || !sheetRel?.target) return;
+    worksheetPathByName.set(sheetName, resolveZipPath(workbookPath, sheetRel.target));
+  });
+
+  return worksheetPathByName;
+};
+
+const getWorksheetRelsPath = (worksheetPath: string): string => {
+  const parts = worksheetPath.split("/");
+  const worksheetFileName = parts.pop() || "";
+  return `${parts.join("/")}/_rels/${worksheetFileName}.rels`;
+};
+
+const createRelationshipsDoc = (): Document =>
+  parseXml(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+  );
+
+const getNextRelId = (relsDoc: Document): string => {
+  const used = new Set(
+    Array.from(relsDoc.getElementsByTagName("Relationship"))
+      .map((node) => node.getAttribute("Id") || "")
+      .filter(Boolean)
+  );
+  let index = 1;
+  while (used.has(`rIdMiroComments${index}`)) index += 1;
+  return `rIdMiroComments${index}`;
+};
+
+const getSheetCommentsFromRelationships = async (
+  zip: JSZip,
+  worksheetPath: string
+): Promise<Map<string, string>> => {
+  const comments = new Map<string, string>();
+  const relsXml = await zip.file(getWorksheetRelsPath(worksheetPath))?.async("text");
+  if (!relsXml) return comments;
+
+  const sheetRels = getRelTargets(relsXml);
+  for (const rel of sheetRels.values()) {
+    const normalizedType = rel.type.toLowerCase();
+    if (!normalizedType.includes("/comments") || normalizedType.includes("/threadedcomments")) {
+      continue;
+    }
+
+    const commentsPath = resolveZipPath(worksheetPath, rel.target);
+    const commentsXml = await zip.file(commentsPath)?.async("text");
+    if (!commentsXml) continue;
+
+    const commentsDoc = parseXml(commentsXml);
+    Array.from(commentsDoc.getElementsByTagName("comment")).forEach((commentNode) => {
+      const ref = commentNode.getAttribute("ref") || "";
+      const text = getCommentNodeText(commentNode);
+      if (ref && text) comments.set(ref.replace(/\$/g, ""), text);
+    });
+  }
+
+  return comments;
+};
+
+const columnLettersToNumber = (letters: string): number => {
+  return letters.toUpperCase().split("").reduce((total, char) => {
+    const value = char.charCodeAt(0) - 64;
+    return value >= 1 && value <= 26 ? total * 26 + value : total;
+  }, 0);
+};
+
+const parseCellAddress = (ref: string): { rowNumber: number; columnNumber: number } | null => {
+  const match = /^([A-Z]+)(\d+)$/i.exec(ref.replace(/\$/g, ""));
+  if (!match) return null;
+  return {
+    columnNumber: columnLettersToNumber(match[1]),
+    rowNumber: Number(match[2]),
+  };
+};
+
+const escapeXmlText = (str: string): string =>
+  str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const buildCommentsXml = (comments: Array<{ ref: string; text: string }>): string => {
+  const commentElements = comments
+    .map(
+      (c) =>
+        `<comment ref="${c.ref}" authorId="0"><text><r><t xml:space="preserve">${escapeXmlText(c.text)}</t></r></text></comment>`
+    )
+    .join("");
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<authors><author></author></authors>` +
+    `<commentList>${commentElements}</commentList>` +
+    `</comments>`
+  );
+};
+
+const buildVmlShapeNodes = (
+  comments: Array<{ rowNumber: number; columnNumber: number }>,
+  startShapeId = 1025
+): string =>
+  comments
+    .map((comment, index) => {
+      const startColumn = Math.max(comment.columnNumber - 1, 0);
+      const startRow = Math.max(comment.rowNumber - 1, 0);
+      const endColumn = startColumn + 5;
+      const endRow = startRow + 20;
+
+      return (
+        `<v:shape id="_x0000_s${startShapeId + index}" type="#_x0000_t202"` +
+        ` style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:200pt;height:60pt;z-index:1;visibility:hidden"` +
+        ` fillcolor="#ffffe1" o:insetmode="auto">` +
+        `<v:fill color2="#ffffe1"/>` +
+        `<v:shadow on="t" color="black" obscured="t"/>` +
+        `<v:path o:connecttype="none"/>` +
+        `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>` +
+        `<x:ClientData ObjectType="Note">` +
+        `<x:MoveWithCells/><x:SizeWithCells/>` +
+        `<x:Anchor>${startColumn}, 0, ${startRow}, 0, ${endColumn}, 0, ${endRow}, 0</x:Anchor>` +
+        `<x:AutoFill>False</x:AutoFill>` +
+        `<x:Row>${startRow}</x:Row><x:Column>${startColumn}</x:Column>` +
+        `</x:ClientData></v:shape>`
+      );
+    })
+    .join("");
+
+const buildVmlCommentsXml = (
+  comments: Array<{ rowNumber: number; columnNumber: number }>
+): string => {
+  const shapeNodes = buildVmlShapeNodes(comments);
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<xml xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:x="urn:schemas-microsoft-com:office:excel">` +
+    `<o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="1"/></o:shapelayout>` +
+    `<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe">` +
+    `<v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/>` +
+    `</v:shapetype>` +
+    shapeNodes +
+    `</xml>`
+  );
+};
+
+const getVmlCellRefs = (vmlText: string): Set<string> => {
+  const refs = new Set<string>();
+  for (const match of vmlText.matchAll(/<x:Row>(\d+)<\/x:Row>[\s\S]*?<x:Column>(\d+)<\/x:Column>/g)) {
+    const row = parseInt(match[1], 10) + 1;
+    const col = parseInt(match[2], 10) + 1;
+    refs.add(getExcelCellAddress(row, col));
+  }
+  return refs;
+};
+
+const appendMissingVmlShapes = (
+  vmlText: string,
+  comments: Array<{ ref: string; rowNumber: number; columnNumber: number }>
+): string => {
+  const existingRefs = getVmlCellRefs(vmlText);
+  const missing = comments.filter((comment) => !existingRefs.has(comment.ref));
+  if (missing.length === 0) return vmlText;
+
+  const idMatches = [...vmlText.matchAll(/id="_x0000_s(\d+)"/g)];
+  const maxId = idMatches.length > 0
+    ? Math.max(...idMatches.map((match) => parseInt(match[1], 10)))
+    : 1024;
+  const newShapes = buildVmlShapeNodes(missing, maxId + 1);
+
+  return vmlText.includes("</xml>")
+    ? vmlText.replace("</xml>", `${newShapes}</xml>`)
+    : `${vmlText}${newShapes}`;
+};
+
+const ensureWorksheetLegacyDrawing = async (
+  zip: JSZip,
+  worksheetPath: string,
+  vmlRelId: string
+) => {
+  const worksheetXml = await zip.file(worksheetPath)?.async("text");
+  if (!worksheetXml) return;
+
+  const legacyDrawing = `<legacyDrawing r:id="${vmlRelId}"/>`;
+  const withoutLegacyDrawing = worksheetXml
+    .replace(/<legacyDrawing\b[\s\S]*?(?:\/>|>[\s\S]*?<\/legacyDrawing>)/g, "");
+
+  zip.file(worksheetPath, withoutLegacyDrawing.replace("</worksheet>", `${legacyDrawing}</worksheet>`));
+};
+
+const ensureContentTypeEntry = (
+  typesDoc: Document,
+  selector: () => boolean,
+  createEntry: (doc: Document) => Element
+) => {
+  if (selector()) return;
+  typesDoc.getElementsByTagName("Types")[0]?.appendChild(createEntry(typesDoc));
+};
+
+const upsertWorksheetComments = async (
+  zip: JSZip,
+  worksheetPath: string,
+  comments: Array<{ ref: string; text: string; rowNumber: number; columnNumber: number }>,
+  commentIndex: number
+): Promise<string | null> => {
+  const serializer = new XMLSerializer();
+  const relsPath = getWorksheetRelsPath(worksheetPath);
+
+  const relsXml = await zip.file(relsPath)?.async("text");
+  const relsDoc = relsXml ? parseXml(relsXml) : createRelationshipsDoc();
+  const relationshipsNode = relsDoc.getElementsByTagName("Relationships")[0];
+  if (!relationshipsNode) return null;
+
+  let commentsTarget = "";
+  let vmlTarget = "";
+  let vmlRelId = "";
+
+  const relationshipNodes = Array.from(relsDoc.getElementsByTagName("Relationship"));
+  relationshipNodes.forEach((relationship) => {
+    const type = String(relationship.getAttribute("Type") || "");
+    const normalizedType = type.toLowerCase();
+    if (normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) {
+      commentsTarget ||= String(relationship.getAttribute("Target") || "");
+      return;
+    }
+    if (normalizedType.includes("/vmldrawing")) {
+      vmlTarget ||= String(relationship.getAttribute("Target") || "");
+      vmlRelId ||= String(relationship.getAttribute("Id") || "");
+    }
+  });
+
+  if (commentsTarget && vmlTarget && vmlRelId) {
+    const commentsPath = resolveZipPath(worksheetPath, commentsTarget);
+    const vmlPath = resolveZipPath(worksheetPath, vmlTarget);
+    const vmlText = await zip.file(vmlPath)?.async("text");
+
+    if (vmlText) {
+      zip.file(commentsPath, buildCommentsXml(comments));
+      zip.file(vmlPath, appendMissingVmlShapes(vmlText, comments));
+      await ensureWorksheetLegacyDrawing(zip, worksheetPath, vmlRelId);
+      return commentsPath;
+    }
+  }
+
+  relationshipNodes.forEach((relationship) => {
+    const type = String(relationship.getAttribute("Type") || "");
+    const normalizedType = type.toLowerCase();
+    if (
+      (normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) ||
+      normalizedType.includes("/vmldrawing")
+    ) {
+      relationship.parentNode?.removeChild(relationship);
+    }
+  });
+
+  commentsTarget = `../commentsMiro${commentIndex}.xml`;
+  vmlTarget = `../drawings/vmlDrawingMiro${commentIndex}.vml`;
+
+  const commentsPath = resolveZipPath(worksheetPath, commentsTarget);
+  const vmlPath = resolveZipPath(worksheetPath, vmlTarget);
+
+  const commentsRelId = getNextRelId(relsDoc);
+  vmlRelId = `${commentsRelId}Vml`;
+
+  const commentsRel = relsDoc.createElement("Relationship");
+  commentsRel.setAttribute("Id", commentsRelId);
+  commentsRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments");
+  commentsRel.setAttribute("Target", commentsTarget);
+  relationshipsNode.appendChild(commentsRel);
+
+  const vmlRel = relsDoc.createElement("Relationship");
+  vmlRel.setAttribute("Id", vmlRelId);
+  vmlRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing");
+  vmlRel.setAttribute("Target", vmlTarget);
+  relationshipsNode.appendChild(vmlRel);
+
+  zip.file(relsPath, serializer.serializeToString(relsDoc));
+  await ensureWorksheetLegacyDrawing(zip, worksheetPath, vmlRelId);
+
+  zip.file(commentsPath, buildCommentsXml(comments));
+  zip.file(vmlPath, buildVmlCommentsXml(comments));
+  return commentsPath;
+};
+
+export const injectWorkbookSheetHeaderComments = async (
+  buffer: ArrayBuffer,
+  workbookSheets: WorkbookSheetWithFields[]
+): Promise<ArrayBuffer> => {
+  if (!Array.isArray(workbookSheets) || workbookSheets.length === 0) return buffer;
+
+  const zip = await JSZip.loadAsync(buffer);
+  const worksheetPathByName = await getWorksheetPathMap(zip);
+  const contentTypeComments: string[] = [];
+  let commentIndex = 1;
+
+  for (const sheet of workbookSheets) {
+    if (!sheet?.name || !Array.isArray(sheet.fields) || sheet.fields.length === 0) continue;
+    const worksheetPath = worksheetPathByName.get(sheet.name);
+    if (!worksheetPath || !zip.file(worksheetPath)) continue;
+
+    const commentsByRef = await getSheetCommentsFromRelationships(zip, worksheetPath);
+    sheet.fields.forEach((field, fieldIndex) => {
+      const comment = getFieldCommentForNote(field);
+      if (!comment) return;
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
+      commentsByRef.set(getExcelCellAddress(headerRow, col), comment);
+    });
+
+    const comments = Array.from(commentsByRef.entries())
+      .map(([ref, text]) => {
+        const parsed = parseCellAddress(ref);
+        if (!parsed || !text) return null;
+        return { ref, text, ...parsed };
+      })
+      .filter((item): item is { ref: string; text: string; rowNumber: number; columnNumber: number } => Boolean(item));
+
+    if (comments.length === 0) continue;
+    const commentsPath = await upsertWorksheetComments(zip, worksheetPath, comments, commentIndex);
+    if (commentsPath) contentTypeComments.push(`/${commentsPath}`);
+    commentIndex += 1;
+  }
+
+  const contentTypesXml = await zip.file("[Content_Types].xml")?.async("text");
+  if (contentTypesXml && contentTypeComments.length > 0) {
+    const serializer = new XMLSerializer();
+    const typesDoc = parseXml(contentTypesXml);
+
+    ensureContentTypeEntry(
+      typesDoc,
+      () => Array.from(typesDoc.getElementsByTagName("Default")).some(
+        (node) =>
+          node.getAttribute("Extension") === "vml" &&
+          node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.vmlDrawing"
+      ),
+      (doc) => {
+        const node = doc.createElement("Default");
+        node.setAttribute("Extension", "vml");
+        node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.vmlDrawing");
+        return node;
+      }
+    );
+
+    contentTypeComments.forEach((partName) => {
+      ensureContentTypeEntry(
+        typesDoc,
+        () => Array.from(typesDoc.getElementsByTagName("Override")).some(
+          (node) =>
+            node.getAttribute("PartName") === partName &&
+            node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
+        ),
+        (doc) => {
+          const node = doc.createElement("Override");
+          node.setAttribute("PartName", partName);
+          node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml");
+          return node;
+        }
+      );
+    });
+
+    zip.file("[Content_Types].xml", serializer.serializeToString(typesDoc));
+  }
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+
+/**
+ * Appends VML comment shapes and comment entries for fields that don't yet have them
+ * in the existing VML/comments files. Used for workbooks loaded from base64 where
+ * ExcelJS preserves original VML but doesn't add shapes for newly set cell.note values.
+ */
+export const appendMissingFieldComments = async (
+  buffer: ArrayBuffer,
+  workbookSheets: WorkbookSheetWithFields[]
+): Promise<ArrayBuffer> => {
+  if (!Array.isArray(workbookSheets) || workbookSheets.length === 0) return buffer;
+
+  const zip = await JSZip.loadAsync(buffer);
+  const worksheetPathByName = await getWorksheetPathMap(zip);
+
+  for (const sheet of workbookSheets) {
+    if (!sheet?.name || !Array.isArray(sheet.fields) || sheet.fields.length === 0) continue;
+    const worksheetPath = worksheetPathByName.get(sheet.name);
+    if (!worksheetPath || !zip.file(worksheetPath)) continue;
+
+    const relsXml = await zip.file(getWorksheetRelsPath(worksheetPath))?.async("text");
+    if (!relsXml) continue;
+
+    const sheetRels = getRelTargets(relsXml);
+    let commentsPath = "";
+    let vmlPath = "";
+
+    for (const rel of sheetRels.values()) {
+      const type = rel.type.toLowerCase();
+      if (type.includes("/comments") && !type.includes("threadedcomments")) {
+        commentsPath = resolveZipPath(worksheetPath, rel.target);
+      }
+      if (type.includes("vmldrawing")) {
+        vmlPath = resolveZipPath(worksheetPath, rel.target);
+      }
+    }
+
+    if (!commentsPath || !vmlPath) continue;
+
+    const vmlText = await zip.file(vmlPath)?.async("text");
+    if (!vmlText) continue;
+
+    // Find which cells already have VML shapes so we don't duplicate
+    const existingVmlRefs = new Set<string>();
+    const vmlCellRegex = /<x:Row>(\d+)<\/x:Row>[\s\S]*?<x:Column>(\d+)<\/x:Column>/g;
+    let vmlCellMatch: RegExpExecArray | null;
+    while ((vmlCellMatch = vmlCellRegex.exec(vmlText)) !== null) {
+      const row = parseInt(vmlCellMatch[1], 10) + 1;
+      const col = parseInt(vmlCellMatch[2], 10) + 1;
+      existingVmlRefs.add(getExcelCellAddress(row, col));
+    }
+
+    // Collect fields that are missing VML shapes
+    const fieldsToAdd: Array<{ ref: string; text: string; rowNumber: number; columnNumber: number }> = [];
+    sheet.fields.forEach((field, fieldIndex) => {
+      const comment = getFieldCommentForNote(field);
+      if (!comment) return;
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
+      const ref = getExcelCellAddress(headerRow, col);
+      if (!existingVmlRefs.has(ref)) {
+        fieldsToAdd.push({ ref, text: comment, rowNumber: headerRow, columnNumber: col });
+      }
+    });
+
+    if (fieldsToAdd.length === 0) continue;
+
+    // Find cells already in comments XML so we don't duplicate entries
+    const commentsXml = await zip.file(commentsPath)?.async("text");
+    const existingCommentRefs = new Set<string>();
+    if (commentsXml) {
+      const refRegex = /\bref="([^"]+)"/g;
+      let refMatch: RegExpExecArray | null;
+      while ((refMatch = refRegex.exec(commentsXml)) !== null) {
+        existingCommentRefs.add(refMatch[1].replace(/\$/g, ""));
+      }
+    }
+
+    // Append comment entries for cells not already in comments XML
+    const newCommentElements = fieldsToAdd
+      .filter((f) => !existingCommentRefs.has(f.ref))
+      .map(
+        (c) =>
+          `<comment ref="${c.ref}" authorId="0"><text><r><t xml:space="preserve">${escapeXmlText(c.text)}</t></r></text></comment>`
+      )
+      .join("");
+
+    if (commentsXml && newCommentElements) {
+      zip.file(commentsPath, commentsXml.replace("</commentList>", `${newCommentElements}</commentList>`));
+    }
+
+    // Find highest existing shape ID so new shapes don't conflict
+    const shapeIdRegex = /id="_x0000_s(\d+)"/g;
+    const shapeIds: number[] = [];
+    let shapeIdMatch: RegExpExecArray | null;
+    while ((shapeIdMatch = shapeIdRegex.exec(vmlText)) !== null) {
+      shapeIds.push(parseInt(shapeIdMatch[1], 10));
+    }
+    const maxId = shapeIds.length > 0 ? Math.max(...shapeIds) : 1024;
+
+    // Append VML shapes for missing cells
+    const newShapes = fieldsToAdd
+      .map((comment, idx) => {
+        const startColumn = Math.max(comment.columnNumber - 1, 0);
+        const startRow = Math.max(comment.rowNumber - 1, 0);
+        const endColumn = startColumn + 5;
+        const endRow = startRow + 20;
+        return (
+          `<v:shape id="_x0000_s${maxId + 1 + idx}" type="#_x0000_t202"` +
+          ` style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:200pt;height:60pt;z-index:1;visibility:hidden"` +
+          ` fillcolor="#ffffe1" o:insetmode="auto">` +
+          `<v:fill color2="#ffffe1"/>` +
+          `<v:shadow on="t" color="black" obscured="t"/>` +
+          `<v:path o:connecttype="none"/>` +
+          `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>` +
+          `<x:ClientData ObjectType="Note">` +
+          `<x:MoveWithCells/><x:SizeWithCells/>` +
+          `<x:Anchor>${startColumn}, 0, ${startRow}, 0, ${endColumn}, 0, ${endRow}, 0</x:Anchor>` +
+          `<x:AutoFill>False</x:AutoFill>` +
+          `<x:Row>${startRow}</x:Row><x:Column>${startColumn}</x:Column>` +
+          `</x:ClientData></v:shape>`
+        );
+      })
+      .join("");
+
+    zip.file(vmlPath, vmlText.replace("</xml>", `${newShapes}</xml>`));
+  }
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+
+export const extractWorkbookCommentsFromBase64 = async (
+  base64: string
+): Promise<Map<string, Map<string, string>>> => {
+  const commentsBySheet = new Map<string, Map<string, string>>();
+  if (!base64) return commentsBySheet;
+
+  const zip = await JSZip.loadAsync(base64ToArrayBuffer(base64));
+  const workbookPath = "xl/workbook.xml";
+  const workbookXml = await zip.file(workbookPath)?.async("text");
+  const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("text");
+  if (!workbookXml || !workbookRelsXml) return commentsBySheet;
+
+  const workbookRels = getRelTargets(workbookRelsXml);
+  const workbookDoc = parseXml(workbookXml);
+  const sheets = Array.from(workbookDoc.getElementsByTagName("sheet"));
+
+  for (const sheetNode of sheets) {
+    const sheetName = sheetNode.getAttribute("name") || "";
+    const relId =
+      sheetNode.getAttribute("r:id") ||
+      sheetNode.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "id"
+      ) ||
+      sheetNode.getAttribute("id") ||
+      "";
+    const sheetRel = workbookRels.get(relId);
+    if (!sheetName || !sheetRel?.target) continue;
+
+    const sheetPath = resolveZipPath(workbookPath, sheetRel.target);
+    const sheetParts = sheetPath.split("/");
+    const sheetFileName = sheetParts.pop();
+    if (!sheetFileName) continue;
+
+    const sheetRelsPath = `${sheetParts.join("/")}/_rels/${sheetFileName}.rels`;
+    const sheetRelsXml = await zip.file(sheetRelsPath)?.async("text");
+    if (!sheetRelsXml) continue;
+
+    const sheetRels = getRelTargets(sheetRelsXml);
+    const comments = new Map<string, string>();
+
+    for (const rel of sheetRels.values()) {
+      const normalizedType = rel.type.toLowerCase();
+      if (!normalizedType.includes("/comments") && !normalizedType.includes("/threadedcomments")) {
+        continue;
+      }
+
+      // Targets in .rels files are relative to the parent document (sheetPath), not the .rels file itself
+      const commentsPath = resolveZipPath(sheetPath, rel.target);
+      const commentsXml = await zip.file(commentsPath)?.async("text");
+      if (!commentsXml) continue;
+
+      const commentsDoc = parseXml(commentsXml);
+      const legacyComments = Array.from(commentsDoc.getElementsByTagName("comment"));
+      const threadedComments = Array.from(commentsDoc.getElementsByTagName("threadedComment"));
+
+      [...legacyComments, ...threadedComments].forEach((commentNode) => {
+        const ref = commentNode.getAttribute("ref") || "";
+        const text = getCommentNodeText(commentNode);
+        if (ref && text) comments.set(ref.replace(/\$/g, ""), text);
+      });
+    }
+
+    if (comments.size > 0) commentsBySheet.set(sheetName, comments);
+  }
+
+  return commentsBySheet;
+};
+
 const normalizeToken = (value: string): string =>
   value
     .normalize("NFD")
@@ -43,6 +1082,39 @@ const normalizeToken = (value: string): string =>
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
+
+const collapseRepeatedCompositeOption = (value: string): string => {
+  const option = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!option) return "";
+
+  const dashParts = option.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  if (dashParts.length >= 4 && dashParts.length % 2 === 0) {
+    const midpoint = dashParts.length / 2;
+    const left = dashParts.slice(0, midpoint).join(" - ");
+    const right = dashParts.slice(midpoint).join(" - ");
+
+    if (normalizeToken(left) === normalizeToken(right)) {
+      return left;
+    }
+  }
+
+  return option;
+};
+
+const normalizeDropdownOptionTexts = (options: string[]): string[] => {
+  const seen = new Set<string>();
+
+  return options.flatMap((option) => {
+    const cleaned = collapseRepeatedCompositeOption(String(option || "").trim());
+    if (!cleaned) return [];
+
+    const key = normalizeOptionKey(cleaned);
+    if (!key || seen.has(key)) return [];
+
+    seen.add(key);
+    return [cleaned];
+  });
+};
 
 const resolveValueByKey = (row: Record<string, unknown>, targetKey: string): unknown => {
   if (Object.prototype.hasOwnProperty.call(row, targetKey)) return row[targetKey];
@@ -76,7 +1148,13 @@ const getValidatorOptions = (
       ? keys.find((key) => normalizeToken(key) === normalizeToken(preferredColumnName))
       : undefined;
 
-    const idKey = preferredKey || keys[0];
+    const configuredValidatorKey = validator.columns
+      ?.find((column) => column?.is_validator)
+      ?.name;
+    const validatorKey = configuredValidatorKey
+      ? keys.find((key) => normalizeToken(key) === normalizeToken(configuredValidatorKey))
+      : undefined;
+    const idKey = preferredKey || validatorKey || keys[0];
     const idValue = resolveValueByKey(row, idKey);
     if (idValue === null || idValue === undefined) return;
 
@@ -90,19 +1168,130 @@ const getValidatorOptions = (
       );
     });
 
-    const idText = toOptionText(idValue);
-    if (!idText) return;
+    const rawIdText = collapseRepeatedCompositeOption(toOptionText(idValue));
+    if (!rawIdText) return;
 
     const descValue = descKey ? resolveValueByKey(row, descKey) : undefined;
-    const descText = toOptionText(descValue);
-    const displayLabel = descText ? `${idText} - ${descText}` : idText;
+    const descText = collapseRepeatedCompositeOption(toOptionText(descValue));
+    if (descKey && !descText) return;
 
-    if (seen.has(idText)) return;
-    seen.add(idText);
-    options.push({ value: idText, displayLabel });
+    // When there is no separate description column, detect "CODE description" in a single value
+    // e.g. "CC Cédula de ciudadanía" → storedValue = "CC"
+    // e.g. "1 Posdoctorado"         → storedValue = "1"
+    let storedValue = rawIdText;
+    if (!descKey) {
+      const codeMatch = /^([A-Z0-9]{1,6})\s+.+$/.exec(rawIdText);
+      if (codeMatch) storedValue = codeMatch[1];
+    }
+
+    const displayLabel = collapseRepeatedCompositeOption(
+      descText ? `${rawIdText} - ${descText}` : rawIdText
+    );
+    const seenKey = normalizeOptionKey(displayLabel);
+
+    if (seen.has(storedValue) || seen.has(seenKey)) return;
+    seen.add(storedValue);
+    seen.add(seenKey);
+    options.push({ value: storedValue, displayLabel });
   });
 
   return options;
+};
+
+const extractOptionsFromCommentValidators = (comment: string): string[] => {
+  if (!comment) return [];
+  const lines = comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+  const options: string[] = [];
+  let inValidSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      if (inValidSection && options.length > 0) {
+        inValidSection = false;
+      }
+      continue;
+    }
+
+    const normalized = trimmed
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toUpperCase();
+
+    // Detect "Los valores válidos/posibles/permitidos son:" marker (MUST end with ":")
+    const hasValueWord =
+      normalized.includes("VALORES") ||
+      normalized.includes("VALOSRES") ||
+      normalized.includes("VALOSR");
+    const looksLikeInstruction =
+      (normalized.includes("OBLIGAT") || normalized.includes("OPCIONAL")) &&
+      (
+        normalized.includes("NUMERIC") ||
+        normalized.includes("TEXTO") ||
+        normalized.includes("FECHA") ||
+        normalized.includes("DECIMAL") ||
+        normalized.includes("CARACTER")
+      );
+    if (
+      normalized.endsWith(":") &&
+      hasValueWord &&
+      (normalized.includes("VALIDOS") || normalized.includes("POSIBLES") || normalized.includes("PERMITIDOS"))
+    ) {
+      inValidSection = true;
+      continue;
+    }
+
+    if (inValidSection) {
+      if (looksLikeInstruction) continue;
+      options.push(trimmed.replace(/\s+/g, " "));
+    }
+  }
+
+  return normalizeDropdownOptionTexts(options);
+};
+
+// Muchos comentarios de campo son preguntas de si/no terminadas en "(S/N)"
+// o "(S/N)?" (ej. "¿Incluye actividades administrativas (S/N)?"), sin la
+// sección "Valores válidos son:" que detecta extractOptionsFromCommentValidators.
+// Se detecta ese patrón para ofrecer S/N como lista desplegable en cualquier
+// descarga que aplique dropdowns a partir de comentarios.
+const SI_NO_COMMENT_PATTERN = /\(\s*S\s*\/\s*N\s*\)\s*\??\s*$/i;
+
+const extractYesNoOptionsFromComment = (comment: string): string[] => {
+  if (!comment) return [];
+  const normalized = comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return SI_NO_COMMENT_PATTERN.test(normalized) ? ["S", "N"] : [];
+};
+
+const stripOptionPrefix = (value: string): string =>
+  value.replace(/^\s*(?:[-*•]|\d+[).:\-\s]+)\s*/, "").replace(/\s+/g, " ").trim();
+
+const normalizeOptionKey = (value: string): string => {
+  const stripped = stripOptionPrefix(value);
+  return normalizeToken(stripped || value);
+};
+
+const appendOptionTexts = (
+  options: { value: string; displayLabel: string }[],
+  optionTexts: string[]
+): { value: string; displayLabel: string }[] => {
+  const seen = new Set(options.map((option) => normalizeOptionKey(option.displayLabel)));
+  const merged = [...options];
+
+  optionTexts.forEach((optionText) => {
+    const displayLabel = collapseRepeatedCompositeOption(String(optionText || "").trim());
+    if (!displayLabel) return;
+
+    const key = normalizeOptionKey(displayLabel);
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    merged.push({ value: displayLabel, displayLabel });
+  });
+
+  return merged;
 };
 
 export const applyValidatorDropdowns = ({
@@ -112,6 +1301,7 @@ export const applyValidatorDropdowns = ({
   validators,
   startRow = 2,
   endRow = 1000,
+  preloadedValidatorOptions = {},
 }: {
   workbook: ExcelJS.Workbook;
   worksheet: ExcelJS.Worksheet;
@@ -119,68 +1309,221 @@ export const applyValidatorDropdowns = ({
   validators: ValidatorOptionSource[];
   startRow?: number;
   endRow?: number;
+  preloadedValidatorOptions?: Record<string, string[]>;
 }): void => {
   const sourcesSheetName = "_Listas";
-  const existingSourcesSheet = workbook.getWorksheet(sourcesSheetName);
-  const sourcesSheet = existingSourcesSheet ?? workbook.addWorksheet(sourcesSheetName);
-  sourcesSheet.state = "veryHidden";
-
+  // Reusar o crear la hoja _Listas; si ya existe, continuar desde la última columna usada
+  let sourcesSheet = workbook.getWorksheet(sourcesSheetName);
+  if (!sourcesSheet) {
+    sourcesSheet = workbook.addWorksheet(sourcesSheetName);
+    sourcesSheet.state = "veryHidden";
+  }
   let sourceCol = Math.max(1, sourcesSheet.columnCount + 1);
 
   fields.forEach((field, fieldIndex) => {
-    if (!field.validate_with || field.multiple) return;
+    let options: string[] = [];
 
-    const validateWithParts = field.validate_with.split(" - ");
-    const validatorName = validateWithParts[0]?.trim();
-    const validatorColumnName = validateWithParts.slice(1).join(" - ").trim();
-    if (!validatorName) return;
-
-    const validator = validators.find((item) => normalizeToken(item.name) === normalizeToken(validatorName));
-    if (!validator) return;
-
-    const options = getValidatorOptions(validator, validatorColumnName);
-    if (options.length === 0) return;
-
-    // Store the full display label ("CC - Cédula de ciudadanía") in the dropdown list
-    options.forEach((option, optionIndex) => {
-      sourcesSheet.getCell(optionIndex + 1, sourceCol).value = option.displayLabel;
-    });
-
-    const colLetter = toColumnLetter(sourceCol);
-    const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
-    const templateCol = fieldIndex + 1;
-    const normalizedComment = field.comment
-      ? String(field.comment)
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n")
-          .trim()
-      : "";
-
-    const promptText =
-      normalizedComment.length > 220
-        ? `${normalizedComment.slice(0, 217)}... (ver hoja Guia)`
-        : normalizedComment;
-
-    for (let row = startRow; row <= endRow; row++) {
-      const cell = worksheet.getCell(row, templateCol);
-      const validation: ExcelJS.DataValidation = {
-        type: "list",
-        allowBlank: true,
-        formulae: [rangeRef],
-        showErrorMessage: true,
-        errorTitle: "Valor no valido",
-        error: "Selecciona un valor de la lista desplegable.",
-      };
-      if (promptText) {
-        validation.showInputMessage = true;
-        validation.promptTitle = field.name.slice(0, 32);
-        validation.prompt = promptText;
-      }
-      cell.dataValidation = validation;
+    // 1. Extraer del comentario
+    if (field.comment) {
+      options = extractOptionsFromCommentValidators(field.comment);
     }
 
+    // 1.5 Respaldo: el comentario es una pregunta de si/no terminada en "(S/N)"
+    if (options.length === 0 && field.comment) {
+      options = extractYesNoOptionsFromComment(field.comment);
+    }
+
+    // 2. Respaldo: dropdown_options ya almacenadas
+    if (options.length === 0 && Array.isArray(field.dropdown_options) && field.dropdown_options.length > 0) {
+      const seen = new Set<string>();
+      options = field.dropdown_options
+        .map((o) => collapseRepeatedCompositeOption(String(o || "").trim()))
+        .filter((o) => o && !seen.has(o) && !!seen.add(o));
+    }
+
+    // 3. Respaldo: validador conectado explícitamente al campo (solo si el
+    // campo no trae ya sus propias opciones en el comentario/dropdown_options)
+    if (options.length === 0) {
+      const validatorMatch = validators.length > 0 ? findValidatorForField(field, validators) : null;
+      if (validatorMatch) {
+        const matched = getValidatorOptions(validatorMatch.validator, validatorMatch.columnName || field.name);
+        if (matched.length > 0) {
+          options = matched.map((option) => option.displayLabel);
+        }
+      }
+    }
+
+    // 4. Respaldo: valores del validador del período (precargados)
+    if (options.length === 0 && preloadedValidatorOptions[field.name]?.length) {
+      options = preloadedValidatorOptions[field.name];
+    }
+
+    // 5. Auto-detección: buscar en validadores cuya columna coincida con el nombre del campo
+    if (options.length === 0 && validators.length > 0) {
+      const fieldNorm = normalizeToken(field.name);
+      for (const validator of validators) {
+        const columnMatch =
+          (validator.columns?.some((c) => normalizeToken(c.name) === fieldNorm)) ||
+          (validator.values.length > 0 &&
+            Object.keys(validator.values[0]).some((k) => normalizeToken(k) === fieldNorm));
+        if (!columnMatch) continue;
+        const matched = getValidatorOptions(validator, field.name);
+        if (matched.length > 0) {
+          options = matched.map((o) => o.displayLabel);
+          break;
+        }
+      }
+    }
+
+    options = normalizeDropdownOptionTexts(options);
+    if (options.length === 0) return;
+
+    const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
+    const firstDataRow = Math.max(startRow, headerRow + 1);
+    const rangeAddress = `${toColumnLetter(templateCol)}${firstDataRow}:${toColumnLetter(templateCol)}${endRow}`;
+
+    // Escribir opciones en hoja oculta _Listas
+    options.forEach((opt, i) => {
+      sourcesSheet.getCell(i + 1, sourceCol).value = opt;
+    });
+    const colLetter = toColumnLetter(sourceCol);
+    const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
     sourceCol += 1;
+
+    // Limpiar validaciones de celda individuales para esta columna (evitar conflictos)
+    const dvModel = (worksheet as any).dataValidations?.model;
+    if (dvModel && typeof dvModel === "object" && !Array.isArray(dvModel)) {
+      Object.keys(dvModel).forEach((key) => {
+        const col = key.replace(/[0-9]/g, "");
+        if (col === toColumnLetter(templateCol)) delete dvModel[key];
+      });
+    }
+
+    const normalizedComment = field.comment
+      ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+      : "";
+    const promptText = normalizedComment.length > 220
+      ? `${normalizedComment.slice(0, 217)}...`
+      : normalizedComment;
+
+    const validation: ExcelJS.DataValidation = {
+      type: "list",
+      allowBlank: true,
+      formulae: [rangeRef],
+      showErrorMessage: !field.multiple,
+      errorTitle: "Valor no valido",
+      error: "Selecciona un valor de la lista desplegable.",
+    };
+    if (promptText) {
+      validation.showInputMessage = true;
+      validation.promptTitle = field.name.slice(0, 32);
+      validation.prompt = promptText;
+    }
+    (worksheet as any).dataValidations.add(rangeAddress, validation);
   });
+};
+
+export const applyWorkbookSheetDropdowns = ({
+  workbook,
+  workbookSheets,
+  validators,
+  originalCommentsBySheet,
+  endRow = 1000,
+  preloadedValidatorOptions = {},
+}: {
+  workbook: ExcelJS.Workbook;
+  workbookSheets: WorkbookSheetWithFields[];
+  validators: ValidatorOptionSource[];
+  originalCommentsBySheet?: Map<string, Map<string, string>>;
+  endRow?: number;
+  preloadedValidatorOptions?: Record<string, string[]>;
+}): void => {
+  // Remove the existing _Listas sheet so it is rebuilt from scratch with code-only values.
+  // Without this, the original workbook's full-text options would remain in the sheet and
+  // sourceCol would start after them, leaving old cell references pointing to stale data.
+  const existingListasSheet = workbook.getWorksheet("_Listas");
+  if (existingListasSheet) {
+    workbook.removeWorksheet(existingListasSheet.id);
+  }
+
+  workbookSheets.forEach((sheet) => {
+    if (!Array.isArray(sheet.fields) || sheet.fields.length === 0) return;
+
+    const worksheet = workbook.getWorksheet(sheet.name);
+    if (!worksheet) return;
+
+    // Clear all existing data validations from the worksheet before rebuilding.
+    // The original workbook's validations reference the old _Listas layout, which is
+    // now stale after removing and rebuilding the _Listas sheet.
+    (worksheet as any).dataValidations.model = {};
+
+    const originalComments = originalCommentsBySheet?.get(sheet.name);
+    const fields = originalComments
+      ? sheet.fields.map((field, fieldIndex) => {
+          const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
+          // Los comentarios pueden estar en la celda de encabezado (fila 1) o
+          // en la primera fila de datos (fila 2+), dependiendo de cómo se generó el workbook
+          const firstDataRow = Math.max(2, headerRow + 1);
+          const originalComment =
+            originalComments.get(getExcelCellAddress(headerRow, col)) ||
+            originalComments.get(getExcelCellAddress(firstDataRow, col));
+          // Always prefer the fresh JSZip-extracted comment; fall back to stored comment
+          const resolvedComment = originalComment ?? field.comment;
+          return resolvedComment !== field.comment ? { ...field, comment: resolvedComment } : field;
+        })
+      : sheet.fields;
+
+    applyValidatorDropdowns({
+      workbook,
+      worksheet,
+      fields,
+      validators,
+      startRow: 2,
+      endRow: Math.max(endRow, worksheet.rowCount + 500),
+      preloadedValidatorOptions,
+    });
+  });
+};
+
+export const fetchValidatorOptionsForFields = async (
+  fields: FieldWithValidator[],
+  periodId: string,
+  apiUrl: string
+): Promise<Record<string, string[]>> => {
+  const result: Record<string, string[]> = {};
+  await Promise.all(
+    fields.map(async (field) => {
+      if (!field.validate_with) return;
+      try {
+        let validatorId = '';
+        if (typeof field.validate_with === 'string') {
+          const parts = field.validate_with.split(' - ');
+          validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
+        } else {
+          validatorId = (field.validate_with as any).id ?? '';
+        }
+        if (!validatorId) return;
+        const res = await fetch(
+          `${apiUrl}/validators/id?id=${encodeURIComponent(validatorId)}&periodId=${encodeURIComponent(periodId)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const validator = data.validator;
+        if (!validator?.columns?.length) return;
+        const idCol = validator.columns.find((c: any) => c.is_validator) ?? validator.columns[0];
+        if (!idCol?.values?.length) return;
+        const descCol = validator.columns.find(
+          (c: any) => !c.is_validator && /desc/i.test(c.name)
+        ) ?? validator.columns.find((c: any) => !c.is_validator);
+        result[field.name] = idCol.values.map((v: any, i: number) => {
+          const id = collapseRepeatedCompositeOption(String(v ?? '').trim());
+          const desc = descCol ? collapseRepeatedCompositeOption(String(descCol.values[i] ?? '').trim()) : '';
+          return collapseRepeatedCompositeOption(desc ? `${id} - ${desc}` : id);
+        }).filter(Boolean);
+      } catch { /* ignorar errores individuales */ }
+    })
+  );
+  return result;
 };
 
 const normalizeMultilineText = (text: string): string =>
@@ -216,78 +1559,293 @@ const wrapTextByLength = (text: string, maxLen = 52): string => {
   return wrappedLines.join("\n");
 };
 
-const estimateRowHeight = (text: string, min = 22): number => {
-  const lineCount = Math.max(1, normalizeMultilineText(text).split("\n").length);
-  return Math.max(min, lineCount * 16);
-};
-
 export const applyFieldCommentNote = (
   cell: ExcelJS.Cell,
-  rawComment?: string
+  rawComment?: string,
+  options: { preserveText?: boolean } = {}
 ): void => {
   if (!rawComment) return;
   const cleanComment = normalizeMultilineText(rawComment).replace(/^"+|"+$/g, "");
   if (!cleanComment) return;
-  // Excel note popups are visually constrained by the app, so keep note short.
-  // Full instruction is delivered through data-validation input message + "Guía" sheet.
-  if (cleanComment.length <= 120) {
-    cell.note = wrapTextByLength(cleanComment, 44);
-  } else {
-    cell.note = "Instruccion: selecciona una celda de esta columna para ver el detalle completo.";
+  cell.note = options.preserveText ? cleanComment : wrapTextByLength(cleanComment, 68);
+};
+
+interface DownloadableField extends FieldWithValidator {
+  datatype?: string;
+  locked?: boolean;
+}
+
+interface DownloadableWorksheet {
+  name: string;
+  fields?: DownloadableField[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  columnWidths?: number[];
+  cellNotes?: { row: number; col: number; note: string }[];
+}
+
+export const applyDatatypeValidation = (cell: ExcelJS.Cell, field: DownloadableField): void => {
+  switch (field.datatype) {
+    case "Entero":
+      cell.dataValidation = { type: "whole", operator: "between", formulae: [1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
+      break;
+    case "Decimal":
+      cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal." };
+      break;
+    case "Porcentaje":
+      cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, 100.0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal entre 0.0 y 100.0." };
+      break;
+    case "Texto Corto":
+      cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [60], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 60 caracteres." };
+      break;
+    case "Texto Largo":
+      cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [500], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 500 caracteres." };
+      break;
+    case "True/False":
+      cell.dataValidation = { type: "list", allowBlank: true, formulae: ['"Si,No"'], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, selecciona Si o No." };
+      break;
+    case "Fecha":
+    case "Fecha Inicial / Fecha Final":
+      cell.dataValidation = { type: "date", operator: "between", formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce una fecha válida en el formato DD/MM/AAAA." };
+      cell.numFmt = "DD/MM/YYYY";
+      break;
+    case "Link":
+      cell.dataValidation = { type: "textLength", operator: "greaterThan", formulae: [0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un enlace válido." };
+      break;
+    default:
+      break;
+  }
+
+  if (field.comment && cell.dataValidation) {
+    const normalizedComment = String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    const promptBase = normalizedComment.slice(0, 220);
+    cell.dataValidation = {
+      ...cell.dataValidation,
+      showInputMessage: true,
+      promptTitle: field.name.slice(0, 32),
+      prompt: normalizedComment.length > 220 ? `${promptBase}...` : promptBase,
+    };
   }
 };
 
-export const buildStyledHelpWorksheet = (
+// Crea desde cero una hoja para un sheet que aun no existe en el workbook
+// cargado (p. ej. una hoja nueva creada en el editor que no viene del xlsx
+// original subido). Encabezados + validaciones por tipo de dato.
+export const createFieldsWorksheet = (
   workbook: ExcelJS.Workbook,
-  fields: FieldWithComment[]
+  worksheetName: string,
+  fields: DownloadableField[],
+  maxRows = 1000
 ): ExcelJS.Worksheet => {
-  const helpWorksheet = workbook.addWorksheet("Guía");
-  helpWorksheet.columns = [{ width: 38 }, { width: 120 }];
-  helpWorksheet.views = [{ state: "frozen", ySplit: 1 }];
+  const worksheet = workbook.addWorksheet(worksheetName);
 
-  const helpHeaderRow = helpWorksheet.addRow(["Campo", "Comentario del campo"]);
-  helpHeaderRow.height = 24;
-  helpHeaderRow.eachCell((cell) => {
+  const headerRow = worksheet.addRow(fields.map((f) => f.name));
+  headerRow.eachCell((cell, colNumber) => {
+    const field = fields[colNumber - 1];
+    // Una hoja completamente nueva no tiene "campos base": todos sus campos
+    // son contenido añadido por el usuario, asi que se resaltan en verde
+    // igual que los campos añadidos en las hojas originales.
+    const isAdded = field?.locked !== true;
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF0F1F39" },
-    };
-    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "FF166534" : "FF0f1f39" } };
     cell.border = {
-      top: { style: "thin", color: { argb: "FFCBD5E1" } },
-      left: { style: "thin", color: { argb: "FFCBD5E1" } },
-      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+      top: { style: "thin" }, left: { style: "thin" },
+      bottom: { style: "thin" }, right: { style: "thin" },
     };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    applyFieldCommentNote(cell, field?.comment);
   });
+
+  worksheet.columns.forEach((col) => { col.width = 20; });
 
   fields.forEach((field, index) => {
-    const wrappedComment = field.comment ? wrapTextByLength(field.comment, 90) : "";
-    const helpRow = helpWorksheet.addRow([field.name, wrappedComment]);
-    helpRow.height = estimateRowHeight(wrappedComment, 22);
-
-    helpRow.getCell(1).alignment = { vertical: "top", horizontal: "left", wrapText: true };
-    helpRow.getCell(2).alignment = { vertical: "top", horizontal: "left", wrapText: true };
-    helpRow.getCell(1).font = { bold: true, color: { argb: "FF0F1F39" } };
-    helpRow.getCell(2).font = { color: { argb: "FF111827" } };
-
-    const rowFill = index % 2 === 0 ? "FFF8FAFC" : "FFFFFFFF";
-    helpRow.eachCell((cell) => {
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: rowFill },
-      };
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFE2E8F0" } },
-        left: { style: "thin", color: { argb: "FFE2E8F0" } },
-        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
-        right: { style: "thin", color: { argb: "FFE2E8F0" } },
-      };
-    });
+    const colNumber = index + 1;
+    for (let rowNumber = 2; rowNumber <= maxRows; rowNumber++) {
+      applyDatatypeValidation(worksheet.getRow(rowNumber).getCell(colNumber), field);
+    }
   });
 
-  return helpWorksheet;
+  return worksheet;
 };
+
+// Crea en el workbook cualquier hoja de workbookSheets que aun no exista
+// (hojas nuevas creadas en el editor que no vienen del xlsx original). Debe
+// llamarse ANTES de applyWorkbookSheetDropdowns para que esa funcion tambien
+// aplique los dropdowns de validacion sobre las hojas recien creadas.
+export const ensureMissingWorkbookSheets = (
+  workbook: ExcelJS.Workbook,
+  workbookSheets: DownloadableWorksheet[]
+): void => {
+  workbookSheets.forEach((sheet) => {
+    if (!sheet?.name || workbook.getWorksheet(sheet.name)) return;
+
+    if (sheet.preserveOriginalContent) {
+      const worksheet = workbook.addWorksheet(sheet.name);
+      (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+      (sheet.columnWidths || []).forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width || 20;
+      });
+      (sheet.cellNotes || []).forEach((note) => {
+        if (!note?.row || !note?.col || !note?.note) return;
+        applyFieldCommentNote(worksheet.getCell(note.row, note.col), note.note, { preserveText: true });
+      });
+      return;
+    }
+
+    if (Array.isArray(sheet.fields) && sheet.fields.length > 0) {
+      createFieldsWorksheet(workbook, sheet.name, sheet.fields);
+    }
+  });
+};
+
+// Reordena las pestanas del workbook segun el orden actual de workbookSheets
+// (que puede haber sido cambiado por drag-and-drop en el editor). Las hojas
+// no rastreadas (p. ej. _Listas u otras hojas de soporte del xlsx original)
+// se dejan al final, preservando su orden relativo original.
+export const reorderWorkbookSheets = (
+  workbook: ExcelJS.Workbook,
+  orderedNames: string[]
+): void => {
+  const originalOrder = workbook.worksheets;
+  const seen = new Set<string>();
+  let orderNo = 1;
+
+  orderedNames.forEach((name) => {
+    const ws = workbook.getWorksheet(name);
+    if (!ws || seen.has(name)) return;
+    (ws as any).orderNo = orderNo++;
+    seen.add(name);
+  });
+
+  originalOrder
+    .filter((ws) => !seen.has(ws.name))
+    .forEach((ws) => {
+      (ws as any).orderNo = orderNo++;
+    });
+};
+
+const NOTE_WIDTH_PT = 360;
+const NOTE_LINE_HEIGHT_PT = 14;
+const NOTE_VERTICAL_PAD_PT = 20;
+const NOTE_MIN_HEIGHT_PT = 60;
+const NOTE_CHARS_PER_LINE = Math.floor((NOTE_WIDTH_PT - 20) / 5);
+
+const computeNoteHeight = (text: string): number => {
+  let lines = 0;
+  for (const line of text.split("\n")) {
+    lines += Math.max(1, Math.ceil((line.length || 1) / NOTE_CHARS_PER_LINE));
+  }
+  return Math.max(NOTE_MIN_HEIGHT_PT, lines * NOTE_LINE_HEIGHT_PT + NOTE_VERTICAL_PAD_PT);
+};
+
+export const patchNoteSize = async (buffer: ArrayBuffer): Promise<ArrayBuffer> => {
+  const zip = await JSZip.loadAsync(buffer);
+
+  // Step 1: Map vmlPath → commentsPath using each sheet's .rels file.
+  // The relationship between VML drawing and comments is declared in
+  // xl/worksheets/_rels/sheetN.xml.rels, NOT in a VML-level .rels file.
+  const vmlToComments = new Map<string, string>();
+
+  for (const relsPath of Object.keys(zip.files)) {
+    if (!/xl\/worksheets\/_rels\/.+\.xml\.rels$/.test(relsPath)) continue;
+
+    const relsXml = await zip.files[relsPath].async("text");
+    const doc = new DOMParser().parseFromString(relsXml, "application/xml");
+
+    // The document that owns these rels (remove /_rels/ and .rels suffix)
+    const docPath = relsPath.replace("/_rels/", "/").replace(/\.rels$/, "");
+
+    let vmlPath = "";
+    let commentsPath = "";
+
+    for (const rel of Array.from(doc.getElementsByTagName("Relationship"))) {
+      const type = (rel.getAttribute("Type") || "").toLowerCase();
+      const target = rel.getAttribute("Target") || "";
+      if (type.includes("vmldrawing")) {
+        vmlPath = resolveZipPath(docPath, target);
+      }
+      if (type.includes("/comments") && !type.includes("threadedcomments")) {
+        commentsPath = resolveZipPath(docPath, target);
+      }
+    }
+
+    if (vmlPath && commentsPath) vmlToComments.set(vmlPath, commentsPath);
+  }
+
+  // Step 2: Parse each unique comments file to get (cellRef → full text)
+  const textByFile = new Map<string, Map<string, string>>();
+
+  for (const commentsPath of new Set(vmlToComments.values())) {
+    const file = zip.file(commentsPath);
+    if (!file) continue;
+    const xml = await file.async("text");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const refMap = new Map<string, string>();
+    for (const node of Array.from(doc.getElementsByTagName("comment"))) {
+      const ref = node.getAttribute("ref") || "";
+      const text = Array.from(node.getElementsByTagName("t"))
+        .map((t) => t.textContent || "")
+        .join("")
+        .trim();
+      if (ref && text) refMap.set(ref, text);
+    }
+    textByFile.set(commentsPath, refMap);
+  }
+
+  // Step 3: Patch VML note shapes with computed dimensions
+  const vmlPaths = Object.keys(zip.files).filter((p) => p.endsWith(".vml"));
+
+  await Promise.all(
+    vmlPaths.map(async (vmlPath) => {
+      const refMap = textByFile.get(vmlToComments.get(vmlPath) ?? "");
+      const vmlText = await zip.files[vmlPath].async("text");
+
+      // Matches both single- and double-quoted style attributes containing visibility:hidden
+      const patched = vmlText.replace(
+        /<v:shape\b([^>]*?)style=(["'])([^"']*?visibility:hidden[^"']*)\2([^>]*>[\s\S]*?<\/v:shape>)/g,
+        (_match, beforeStyle, quote, styleContent, afterTag) => {
+          const rowMatch = /<x:Row>(\d+)<\/x:Row>/.exec(afterTag);
+          const colMatch = /<x:Column>(\d+)<\/x:Column>/.exec(afterTag);
+          if (!rowMatch || !colMatch) return _match;
+
+          const row = parseInt(rowMatch[1], 10) + 1;
+          const col = parseInt(colMatch[1], 10) + 1;
+          const cellRef = `${toColumnLetter(col)}${row}`;
+          const noteText = refMap?.get(cellRef) || "";
+          const height = computeNoteHeight(noteText);
+
+          const newStyle = styleContent
+            .replace(/width:\d+(?:\.\d+)?pt/, `width:${NOTE_WIDTH_PT}pt`)
+            .replace(/height:\d+(?:\.\d+)?pt/, `height:${height}pt`);
+
+          return `<v:shape${beforeStyle}style=${quote}${newStyle}${quote}${afterTag}`;
+        }
+      );
+
+      zip.file(vmlPath, patched);
+    })
+  );
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+
+export const patchNoteBackgroundColor = async (
+  buffer: ArrayBuffer,
+  hexColor = "#ffffff"
+): Promise<ArrayBuffer> => {
+  const zip = await JSZip.loadAsync(buffer);
+  const vmlPaths = Object.keys(zip.files).filter((p) => p.endsWith(".vml"));
+
+  await Promise.all(
+    vmlPaths.map(async (path) => {
+      const text = await zip.files[path].async("text");
+      const patched = text
+        .replace(/fillcolor="[^"]+"/g, `fillcolor="${hexColor}"`)
+        .replace(/(<v:fill[^>]*?)color2="[^"]+"/g, `$1color2="${hexColor}"`);
+      zip.file(path, patched);
+    })
+  );
+
+  return zip.generateAsync({ type: "arraybuffer" });
+};
+

@@ -281,7 +281,7 @@ export default function AdminAmbitUploadedReportsPage() {
           variant="outline"
           leftSection={<IconArrowLeft size={16} />}
         >
-          Ir a Configuracion de Informes
+          Ir a Configuración de Informes
         </Button>
       </Group>
 

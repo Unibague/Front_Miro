@@ -10,6 +10,7 @@ import { showNotification } from '@mantine/notifications';
 import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
 import { endOfDayGMT5 } from '../DateConfig';
+import { getEffectiveRequired, isBlankRequiredValue } from '../../utils/requiredFields';
 
 interface DropzoneButtonProps {
   pubTemId: string;
@@ -17,6 +18,116 @@ interface DropzoneButtonProps {
   onClose: () => void;
   edit?: boolean;
 }
+
+const normalizeBackendValidationErrors = (payload: any) => {
+  const details = payload?.details;
+
+  if (Array.isArray(details)) {
+    return details;
+  }
+
+  const fallbackMessage =
+    typeof details === 'string'
+      ? details
+      : typeof payload?.message === 'string'
+        ? payload.message
+        : typeof payload?.status === 'string'
+          ? payload.status
+          : 'Error desconocido al procesar la plantilla.';
+
+  return [
+    {
+      column: payload?.column || 'Campo desconocido',
+      errors: [
+        {
+          register: 1,
+          message: fallbackMessage,
+          value: payload?.value ?? 'Sin valor',
+        },
+      ],
+    },
+  ];
+};
+
+const buildRequiredErrorDetails = (
+  rows: Record<string, any>[],
+  fields: any[]
+) => fields
+  .filter((field) => getEffectiveRequired(field))
+  .map((field) => {
+    const errors = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => isBlankRequiredValue(row?.[field.name]))
+      .map(({ index }) => ({
+        register: index + 1,
+        value: 'Sin valor',
+        message: `El campo "${field.name}" es obligatorio y no puede estar vacio (fila ${index + 1})`,
+      }));
+
+    return {
+      column: field.name,
+      errors,
+    };
+  })
+  .filter((detail) => detail.errors.length > 0);
+
+const showRequiredUploadErrors = (details: any[]) => {
+  localStorage.setItem('errorDetails', JSON.stringify(details));
+  if (typeof window !== 'undefined') window.location.href = '/logs';
+
+  showNotification({
+    title: 'Campos obligatorios sin completar',
+    message: 'La plantilla no se subio. Revisa los campos marcados como obligatorios en los comentarios.',
+    color: 'red',
+    autoClose: 7000,
+  });
+};
+
+const normalizeExcelCellValue = (value: any): any => {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('{') || trimmed.startsWith('[')) &&
+      /"?(richText|hyperlink|text|result|formula|value)"?\s*:/.test(trimmed)
+    ) {
+      try {
+        return normalizeExcelCellValue(JSON.parse(trimmed));
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  if (value instanceof Date) return value.toISOString();
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeExcelCellValue(item)).filter((item) => item !== null && item !== undefined).join(', ');
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) {
+      return value.richText.map((item: any) => normalizeExcelCellValue(item?.text ?? '')).join('');
+    }
+    if (value.text !== undefined || value.hyperlink !== undefined) {
+      return normalizeExcelCellValue(value.text ?? value.hyperlink ?? '');
+    }
+    if (value.result !== undefined || value.formula !== undefined) {
+      return normalizeExcelCellValue(value.result ?? value.formula ?? '');
+    }
+    if (value.value !== undefined) {
+      return normalizeExcelCellValue(value.value);
+    }
+    if (value.$numberInt !== undefined || value.$numberDouble !== undefined) {
+      return value.$numberInt ?? value.$numberDouble;
+    }
+    return String(value);
+  }
+
+  return value;
+};
 
 export function DropzoneUpdateButton({ pubTemId, endDate, onClose, edit = false }: DropzoneButtonProps) {
   const theme = useMantineTheme();
@@ -109,7 +220,26 @@ const handleFileDrop = async (files: File[]) => {
       if (lookup.size > 0) fieldValidatorLookup[f.name] = lookup;
     });
 
-    const sheet = workbook.worksheets[0];
+    const expectedColumns = Object.keys(fieldTypes);
+    const guideHeaders = new Set(['CAMPO', 'COMENTARIO DEL CAMPO']);
+    const sheet = workbook.worksheets.find((worksheet) => {
+      const headerRow = worksheet.getRow(1);
+      const worksheetHeaders: string[] = [];
+
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        worksheetHeaders.push(cell.text?.toString?.() ?? cell.value?.toString?.() ?? '');
+      });
+
+      const filledHeaders = worksheetHeaders.map((header) => header.trim()).filter(Boolean);
+      if (filledHeaders.length === 0) return false;
+
+      const normalizedHeaders = filledHeaders.map((header) => _vNorm(header));
+      const isGuideSheet = normalizedHeaders.every((header) => guideHeaders.has(header));
+      if (isGuideSheet) return false;
+
+      return filledHeaders.some((header) => expectedColumns.includes(header));
+    }) ?? workbook.worksheets[0];
+
     if (sheet) {
       let headers: string[] = [];
 
@@ -120,8 +250,7 @@ const handleFileDrop = async (files: File[]) => {
             headers.push(cell.text?.toString?.() ?? cell.value?.toString?.() ?? '');
           });
           
-          // 🚨 Validar columnas antes de procesar datos
-          const expectedColumns = Object.keys(fieldTypes);
+          //  Validar columnas antes de procesar datos
           const invalidColumns = headers.filter(header => header && !expectedColumns.includes(header));
           
           if (invalidColumns.length > 0) {
@@ -135,7 +264,7 @@ const handleFileDrop = async (files: File[]) => {
             }));
             
             localStorage.setItem("errorDetails", JSON.stringify(errorDetails));
-            if (typeof window !== "undefined") window.open("/logs", "_blank");
+            if (typeof window !== "undefined") window.location.href = "/logs";
             hasInvalidColumns = true;
             return;
           }
@@ -151,7 +280,7 @@ const handleFileDrop = async (files: File[]) => {
 
             if (!key || tipo === undefined) return;
 
-            let parsedValue: any = cell.value;
+            let parsedValue: any = normalizeExcelCellValue(cell.value);
             
             // 🚨 Manejar errores de Excel específicamente
             if (typeof cell.value === 'object' && cell.value !== null && 'error' in cell.value) {
@@ -159,23 +288,17 @@ const handleFileDrop = async (files: File[]) => {
             }
             // 🔍 Detectar si tiene hipervínculo
             else if (tipo === "Link" && (cell as any).hyperlink) {
-              const hyperlink = (cell as any).hyperlink;
-              parsedValue = typeof hyperlink === 'object' ? 
-                (hyperlink.hyperlink || hyperlink.text || JSON.stringify(hyperlink)) : 
-                String(hyperlink);
+              parsedValue = String(normalizeExcelCellValue(cell.value) || normalizeExcelCellValue((cell as any).hyperlink) || '');
             } else if (multiple) {
               // 🧠 Si es múltiple, trata el valor como string, incluso si el tipo de dato es numérico
-              let rawValue = cell.value;
-              if (typeof rawValue === 'object' && rawValue !== null) {
-                rawValue = JSON.stringify(rawValue);
-              }
+              const rawValue = normalizeExcelCellValue(cell.value);
               const raw = String(rawValue ?? "").trim();
               parsedValue = raw.split(",").map(v => v.trim()).filter(Boolean);
             } else {
               // 🔑 Resolver código del validador ANTES de convertir el tipo
               // Soporta: "CC - Cédula de ciudadanía" → "CC", "1 - Financiero" → "1", "FINANCIERO" → "1"
               if (fieldValidatorLookup[key]) {
-                const rawStr = _vStr(cell.value);
+                const rawStr = _vStr(normalizeExcelCellValue(cell.value));
                 if (rawStr) {
                   const found = fieldValidatorLookup[key].get(_vNorm(rawStr));
                   if (found !== undefined) parsedValue = found;
@@ -185,7 +308,7 @@ const handleFileDrop = async (files: File[]) => {
               switch (tipo) {
                 case "Entero":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = String(parsedValue);
+                    parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
                     parsedValue = parseInt(String(parsedValue));
                     if (isNaN(parsedValue)) parsedValue = String(parsedValue);
@@ -195,7 +318,7 @@ const handleFileDrop = async (files: File[]) => {
                 case "Decimal":
                 case "Porcentaje":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = String(parsedValue);
+                    parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
                     parsedValue = parseFloat(String(parsedValue));
                     if (isNaN(parsedValue)) parsedValue = String(parsedValue);
@@ -204,7 +327,7 @@ const handleFileDrop = async (files: File[]) => {
 
                 case "Fecha":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = String(parsedValue);
+                    parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
                     const dateValue = new Date(String(parsedValue));
                     parsedValue = isNaN(dateValue.getTime()) ? String(parsedValue) : dateValue.toISOString();
@@ -213,7 +336,7 @@ const handleFileDrop = async (files: File[]) => {
 
                 case "True/False":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = String(parsedValue);
+                    parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
                     parsedValue = String(parsedValue).toLowerCase() === "si" || parsedValue === true;
                   }
@@ -221,13 +344,12 @@ const handleFileDrop = async (files: File[]) => {
 
                 case "Texto Corto":
                 case "Texto Largo":
-                  parsedValue = typeof parsedValue === 'object' && parsedValue !== null ?
-                    JSON.stringify(parsedValue) : String(parsedValue ?? "");
+                  parsedValue = String(normalizeExcelCellValue(parsedValue) ?? "");
                   break;
 
                 case "Fecha Inicial / Fecha Final":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = JSON.stringify(parsedValue);
+                    parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
                     try {
                       parsedValue = JSON.parse(String(parsedValue));
@@ -239,8 +361,7 @@ const handleFileDrop = async (files: File[]) => {
                   break;
 
                 default:
-                  parsedValue = typeof parsedValue === 'object' && parsedValue !== null ?
-                    JSON.stringify(parsedValue) : parsedValue;
+                  parsedValue = normalizeExcelCellValue(parsedValue);
               }
             }
 
@@ -252,7 +373,7 @@ const handleFileDrop = async (files: File[]) => {
             Object.entries(rowData).map(([key, value]) => [
               key,
               typeof value === 'object' && value !== null && !Array.isArray(value) ?
-                JSON.stringify(value) : value
+                normalizeExcelCellValue(value) : normalizeExcelCellValue(value)
             ])
           );
 
@@ -274,16 +395,25 @@ const handleFileDrop = async (files: File[]) => {
           sanitizedRow[key] = null;
         } else if (Array.isArray(value)) {
           sanitizedRow[key] = value.map(v => 
-            typeof v === 'object' && v !== null ? String(v) : v
+            typeof v === 'object' && v !== null ? normalizeExcelCellValue(v) : normalizeExcelCellValue(v)
           );
         } else if (typeof value === 'object') {
-          sanitizedRow[key] = String(value);
+          sanitizedRow[key] = normalizeExcelCellValue(value);
         } else {
-          sanitizedRow[key] = value;
+          sanitizedRow[key] = normalizeExcelCellValue(value);
         }
       }
       return sanitizedRow;
     });
+
+    const requiredErrors = buildRequiredErrorDetails(
+      finalSanitizedData,
+      templateMeta.data.template.fields || []
+    );
+    if (requiredErrors.length > 0) {
+      showRequiredUploadErrors(requiredErrors);
+      return;
+    }
 
     try {
       if (!session?.user?.email) throw new Error('Usuario no autenticado');
@@ -309,10 +439,16 @@ const handleFileDrop = async (files: File[]) => {
     } catch (error) {
       console.error('Error enviando los datos al servidor:', error);
       if (axios.isAxiosError(error)) {
-        const details = error.response?.data.details;
-        if (Array.isArray(details)) {
-          localStorage.setItem("errorDetails", JSON.stringify(details));
-          if (typeof window !== "undefined") window.open("/logs", "_blank");
+        console.error('Detalles del error:', error.response?.data);
+        console.error(
+          'Detalles del error JSON:',
+          JSON.stringify(error.response?.data ?? {}, null, 2)
+        );
+
+        const normalizedErrors = normalizeBackendValidationErrors(error.response?.data);
+        if (Array.isArray(normalizedErrors) && normalizedErrors.length > 0) {
+          localStorage.setItem("errorDetails", JSON.stringify(normalizedErrors));
+          if (typeof window !== "undefined") window.location.href = "/logs";
         } else {
           showNotification({
             title: "Error de validación",

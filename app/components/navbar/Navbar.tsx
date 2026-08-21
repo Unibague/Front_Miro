@@ -17,22 +17,22 @@ import {
   Avatar,
   Image,
   useMantineColorScheme,
+  ActionIcon,
+  Tooltip,
   Select,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
 import { usePeriod } from "@/app/context/PeriodContext";
-
-// Components
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
-
-// Styles
 import classes from "./Navbar.module.css";
-import { IconDoorExit, IconHome, IconSubtask, IconSwitch3 } from "@tabler/icons-react";
+import { IconCalendarStats, IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3, IconHelp } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -42,6 +42,25 @@ type LinkItem = {
 };
 
 type Roles = "Usuario" | "Administrador" | "Responsable" | "Productor";
+
+type ImpersonatedUser = {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  role?: string;
+  isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
+};
+
+const normalizeAvatarSrc = (value?: string | null) => {
+  const normalized = value?.trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") return undefined;
+  return normalized;
+};
 
 const linksByRole: Record<Roles, LinkItem[]> = {
   Usuario: [{ link: "/dashboard", label: "Inicio" }],
@@ -55,47 +74,51 @@ const linksByRole: Record<Roles, LinkItem[]> = {
     { link: "/admin/dimensions", label: "Ámbitos" },
     { link: "/admin/dependencies", label: "Dependencias" },
     { link: "/admin/validations", label: "Validaciones" },
+    { link: "/apoyos-plantillas", label: "Cruce de apoyos" },
     { link: "/admin/users", label: "Usuarios" },
   ],
   Responsable: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/templates/published", label: "Plantillas publicadas" },
-    { link: "/responsible/reports", label: "Reportes" },
-    { link: "/responsible/dimension", label: "Ámbito" },
+    { link: "/reports", label: "Gestion de información" },
+    { link: "/pdi-modulo", label: "PDI" },
+    { link: "/responsible/admin", label: "Administración" },
   ],
   Productor: [
     { link: "/dashboard", label: "Inicio" },
-    { link: "/producer/templates", label: "Plantillas pendientes" },
-    { link: "/templates-with-filters", label: "Plantillas con filtros" },
+    { link: "/reports", label: "Gestion de información" },
   ],
 };
 
 const home = [{ link: "/dashboard", label: "Inicio" }];
 
 export default function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
   const { data: session } = useSession();
-type ImpersonatedUser = {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  role?: string;
-  isImpersonating?: boolean;
-};
-
-const user = session?.user as ImpersonatedUser;
+  const showProcessesMenVolver = isProcessesMenOrLegacyPath(pathname);
+  const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const [selectedRole, setSelectedRole] = useState<string>("");
-  const { userRole, setUserRole } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, setUserAccessProfiles, setAllowedDependencies, setAllowedDimensions } = useRole();
+  const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
   const [roleMenuOpened, setRoleMenuOpened] = useState(false);
   const [manageMenuOpened, setManageMenuOpened] = useState(false);
   const { colorScheme } = useMantineColorScheme();
-  const { selectedPeriodId, setSelectedPeriodId, availablePeriods } = usePeriod();
-  const [tempPeriod, setTempPeriod] = useState<string>(selectedPeriodId || "");
-  const [periodModalOpened, setPeriodModalOpened] = useState(false);
 
+  const PERIOD_SELECTOR_PATHS = [
+    "/snies", "/cna", "/reports", "/admin/templates", "/admin/reports",
+    "/templates", "/producer", "/responsible", "/templates-with-filters",
+    "/dependency", "/traceability", "/reportproducers", "/pdi-modulo",
+    "/admin/templates-management", "/admin/logs", "/admin/audit",
+    "/admin/validations", "/validations", "/historico-docentes",
+    "/apoyos-plantillas", "/admin/dimensions",
+  ];
+  const showPeriodSelector =
+    !!pathname &&
+    PERIOD_SELECTOR_PATHS.some((p) => pathname.startsWith(p));
+  const avatarSrc = normalizeAvatarSrc(user?.image);
 
   const titles = session
     ? [{ link: "/dashboard", label: "MIRÓ" }]
@@ -108,38 +131,30 @@ const user = session?.user as ImpersonatedUser;
           params: { email: session.user.email },
         })
         .then((response) => {
-          const roles = response.data.roles.filter(
-            (role: string) => role !== "Usuario"
-          );
-          setAvailableRoles(roles);
-          if (response.data.activeRole) {
-            setUserRole(response.data.activeRole as Roles);
-          }
+          setAvailableRoles(response.data.roles || []);
         })
         .catch((error) => {
           console.error("Error fetching roles:", error);
         });
     }
-  }, [session]);
-
-  useEffect(() => {
-    if (periodModalOpened) {
-      setTempPeriod(selectedPeriodId || "");
-    }
-  }, [periodModalOpened, selectedPeriodId]);
-  
+  }, [session, setUserRole]);
 
   const handleRoleChange = async (role: string) => {
     if (!session?.user?.email) return;
     try {
-      const response = await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`,
-        {
-          email: session.user.email,
-          activeRole: role,
-        }
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/users/updateActiveRole`, {
+        email: session.user.email,
+        activeRole: role,
+      });
+      const permResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
+        { params: { email: session.user.email } }
       );
       setUserRole(role as Roles);
+      setViewPermissions(permResponse.data.viewPermissions || {});
+      setUserAccessProfiles(permResponse.data.accessProfiles || []);
+      setAllowedDependencies(permResponse.data.allowedDependencies || []);
+      setAllowedDimensions(permResponse.data.allowedDimensions || []);
       showNotification({
         title: "Rol actualizado",
         message: `Tu nuevo rol es ${role}`,
@@ -158,19 +173,79 @@ const user = session?.user as ImpersonatedUser;
     }
   };
 
-  const links = linksByRole[userRole as Roles] || linksByRole.Usuario;
+  const handleExitImpersonation = async () => {
+    if (
+      !user?.originalUserId ||
+      !user?.originalUserEmail ||
+      !user?.originalUserName
+    ) {
+      showNotification({
+        title: "No se puede restaurar la sesión",
+        message: "No se encontró la cuenta original del administrador.",
+        autoClose: 5000,
+        color: "red",
+      });
+      return;
+    }
 
-  const items = links.map((link: LinkItem) => (
-    <Link href={link.link} key={link.label} passHref>
-      <Button variant="light" size="sm" style={{ fontWeight: 500 }}>
-        {link.label}
-      </Button>
-    </Link>
-  ));
+    await signIn("impersonate", {
+      id: user.originalUserId,
+      userEmail: user.originalUserEmail,
+      userName: user.originalUserName,
+      isImpersonating: false,
+      redirect: true,
+      callbackUrl:
+        process.env.APP_ENV === "development" ? "/dev/admin/users" : "/admin/users",
+      userImage: normalizeAvatarSrc(user.originalUserImage) || "",
+    });
+  };
+
+  // Links base por rol
+  const baseLinks = linksByRole[userRole as Roles] || linksByRole.Usuario;
+
+  // Links extra desde viewPermissions del cargo (para roles sin privilegio o complementar)
+  const VIEW_LINK_MAP: Record<string, LinkItem> = {
+    dashboard:                { link: "/dashboard",                    label: "Inicio" },
+    adminTemplates:           { link: "/admin/templates",              label: "Plantillas" },
+    publishedTemplates:       { link: "/templates/published",          label: "Plantillas publicadas" },
+    producerTemplates:        { link: "/producer/templates",           label: "Plantillas pendientes" },
+    templatesWithFilters:     { link: "/templates-with-filters",       label: "Plantillas con filtros" },
+    adminReports:             { link: "/admin/reports",                label: "Configurar reportes" },
+    publishedReports:         { link: "/admin/reports/uploaded",       label: "Reportes publicados" },
+    producerReportsConfig:    { link: "/admin/reports/producers",      label: "Informes productores" },
+    producerReportsManagement:{ link: "/reportproducers",              label: "Gestionar informes" },
+    producerReports:          { link: "/producer/reports",             label: "Reportes productor" },
+    responsibleReports:       { link: "/responsible/reports",          label: "Reportes responsable" },
+    periods:                  { link: "/admin/periods",                label: "Periodos" },
+    dimensions:               { link: "/admin/dimensions",             label: "Ámbitos" },
+    dependencies:             { link: "/admin/dependencies",           label: "Dependencias" },
+    validations:              { link: "/admin/validations",            label: "Validaciones" },
+    users:                    { link: "/admin/users",                  label: "Usuarios" },
+    configuration:            { link: "/configuracion",                label: "Configuración" },
+    profiles:                 { link: "/configuracion/perfiles",       label: "Perfiles" },
+    snies:                    { link: "/snies/templates",              label: "SNIES" },
+    cna:                      { link: "/cna/templates",                label: "CNA" },
+    supportTemplates:         { link: "/apoyos-plantillas",            label: "Cruce de apoyos" },
+    pdi:                      { link: "/pdi",                          label: "PDI" },
+    pdiMine:                  { link: "/pdi/mis-indicadores",          label: "Mis indicadores PDI" },
+    pdiDashboard:             { link: "/pdi/dashboard",                label: "Tablero PDI" },
+    pdiForms:                 { link: "/pdi/formularios",              label: "Formularios PDI" },
+    pdiCharts:                { link: "/pdi/graficas",                 label: "Gráficas PDI" },
+  };
+
+  const permissionLinks = Object.entries(viewPermissions)
+    .filter(([, levels]) => Array.isArray(levels) && levels.length > 0)
+    .map(([key]) => VIEW_LINK_MAP[key])
+    .filter(Boolean) as LinkItem[];
+
+  // Combinar: base + permisos de cargo sin duplicar
+  const existingLinks = new Set(baseLinks.map((l) => l.link));
+  const extraLinks = permissionLinks.filter((l) => !existingLinks.has(l.link));
+  const links = [...baseLinks, ...extraLinks];
 
   const homeLink = home.map((link: LinkItem) => (
     <Link href={link.link} key={link.label} passHref>
-      <Button variant="light" size="sm" fw={700} leftSection={<IconHome size={18}/>}>
+      <Button variant="light" size="sm" fw={700} leftSection={<IconHome size={18} />}>
         {link.label}
       </Button>
     </Link>
@@ -191,8 +266,8 @@ const user = session?.user as ImpersonatedUser;
 
   const titleButton = titles.map((link: LinkItem) => (
     <Link href={link.link} key={link.label} passHref>
-      <Group gap={"xs"}>
-        <MiroEye/>
+      <Group gap="xs">
+        <MiroEye />
         <Image
           src={`/assets/textoMiro-${colorScheme}.svg`}
           alt="MIRÓ"
@@ -218,29 +293,44 @@ const user = session?.user as ImpersonatedUser;
       </Link>
     ));
 
-
-
   return (
     <>
       <header className={classes.header}>
         <Container size="xl" className={classes.inner}>
-          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-          <Group>{titleButton}</Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            {showProcessesMenVolver && (
+              <Tooltip label="Volver" withArrow>
+                <ActionIcon
+                  variant="default"
+                  size="sm"
+                  onClick={() => router.push("/dashboard?gestionProcesos=1")}
+                  style={{ flexShrink: 0 }}
+                  aria-label="Volver al panel de gestión de procesos"
+                >
+                  <IconChevronLeft size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+            <Group gap="xs" wrap="nowrap">
+              {titleButton}
+            </Group>
+          </Group>
 
           {session?.user ? (
             <>
-              <Group gap={8} visibleFrom="xs">
-              
-{user?.isImpersonating ? (
-  <Badge color="red" size="lg" m={20} variant="light">
-    Estás impersonando al usuario: {user.name}
-  </Badge>
-) : null}
-
+              <Group gap={8} visibleFrom="xs" wrap="nowrap">
+                {user?.isImpersonating ? (
+                  <Badge color="red" size="lg" m={20} variant="light">
+                    Estás impersonando al usuario: {user.name}
+                  </Badge>
+                ) : null}
                 <Badge m={20} variant="light">
                   {userRole}
                 </Badge>
+
                 {homeLink}
+
                 {availableRoles.length > 0 && (
                   <Menu
                     shadow="md"
@@ -251,7 +341,12 @@ const user = session?.user as ImpersonatedUser;
                     onOpen={() => setRoleMenuOpened(true)}
                   >
                     <Menu.Target>
-                      <Button variant="light" size="sm" fw={700} leftSection={<IconSwitch3 size={18}/>}>
+                      <Button
+                        variant="light"
+                        size="sm"
+                        fw={700}
+                        leftSection={<IconSwitch3 size={18} />}
+                      >
                         Rol
                       </Button>
                     </Menu.Target>
@@ -259,7 +354,7 @@ const user = session?.user as ImpersonatedUser;
                       {availableRoles.map((role) => (
                         <Button
                           key={role}
-                          mt={"xs"}
+                          mt="xs"
                           fullWidth
                           variant={userRole === role ? "outline" : "light"}
                           onClick={() => handleRoleChange(role)}
@@ -270,6 +365,7 @@ const user = session?.user as ImpersonatedUser;
                     </Menu.Dropdown>
                   </Menu>
                 )}
+
                 <Menu
                   shadow="md"
                   width={200}
@@ -278,45 +374,81 @@ const user = session?.user as ImpersonatedUser;
                   onOpen={() => setManageMenuOpened(true)}
                 >
                   <Menu.Target>
-                    <Button variant="light" size="sm" fw={700} leftSection={<IconSubtask size={18}/>}>
+                    <Button
+                      variant="light"
+                      size="sm"
+                      fw={700}
+                      leftSection={<IconSubtask size={18} />}
+                    >
                       Gestión
                     </Button>
                   </Menu.Target>
                   <Menu.Dropdown>{actionItems}</Menu.Dropdown>
                 </Menu>
+
+                <Link href="/ayudas" passHref>
+                  <Button variant="light" size="sm" fw={700} leftSection={<IconHelp size={18} />}>
+                    Ayudas
+                  </Button>
+                </Link>
+
                 <ThemeChanger />
+
+                {showPeriodSelector && availablePeriods.length > 0 && (
+                  <Select
+                    size="sm"
+                    data={availablePeriods.map((p) => ({ value: p._id, label: p.name }))}
+                    value={selectedPeriodId}
+                    onChange={(val) => val && setSelectedPeriodId(val)}
+                    visibleFrom="sm"
+                    allowDeselect={false}
+                    leftSection={<IconCalendarStats size={14} />}
+                    style={{ width: 130 }}
+                    styles={{
+                      input: {
+                        backgroundColor: "var(--mantine-color-blue-light)",
+                        border: "1px solid transparent",
+                        color: "var(--mantine-color-blue-filled)",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      },
+                      section: {
+                        color: "var(--mantine-color-blue-filled)",
+                      },
+                    }}
+                  />
+                )}
+
                 <Menu shadow="md" width={200}>
                   <Menu.Target>
                     <Avatar
                       component="a"
-                      src={session?.user?.image || undefined}
+                      src={avatarSrc}
+                      alt={user?.name || "Usuario"}
                       color="blue"
                       radius="xl"
+                      imageProps={{ referrerPolicy: "no-referrer" }}
                       className={classes.avatarClickable}
                     />
                   </Menu.Target>
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <Button 
-                      size="xs"
-                      style={{
-                        marginTop: "40px",
-                        position: "absolute",
-                        top: "110%",
-                        left: "70%",
-                        transform: "translateX(-100%)",
-                        zIndex: 1,
-                      }} onClick={() => setPeriodModalOpened(true)} variant="light" fw={700}>
-                        Periodo: {availablePeriods.find((p) => p._id === selectedPeriodId)?.name || "Seleccionar"}
-                    </Button>
-                  </div>
-                  {/* Menu Dropdown */}
+
                   <Menu.Dropdown>
+                    {user?.isImpersonating ? (
+                      <Menu.Item
+                        color="red"
+                        leftSection={
+                          <IconSwitch3 style={{ width: rem(14), height: rem(14) }} />
+                        }
+                        onClick={handleExitImpersonation}
+                      >
+                        Salir de la impersonación
+                      </Menu.Item>
+                    ) : null}
+
                     <Menu.Item
                       color="red"
                       leftSection={
-                        <IconDoorExit
-                          style={{ width: rem(14), height: rem(14) }}
-                        />
+                        <IconDoorExit style={{ width: rem(14), height: rem(14) }} />
                       }
                       variant="transparent"
                       onClick={() => setModalOpened(true)}
@@ -345,8 +477,42 @@ const user = session?.user as ImpersonatedUser;
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
+              {showProcessesMenVolver && (
+                <Tooltip label="Volver" withArrow>
+                  <ActionIcon
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      router.push("/dashboard?gestionProcesos=1");
+                      toggle();
+                    }}
+                    aria-label="Volver al panel de gestión de procesos"
+                  >
+                    <IconChevronLeft size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
               {itemsDrawer}
+              <Link href="/ayudas" passHref>
+                <Button fullWidth variant="light" size="sm" style={{ fontWeight: 500, marginBottom: "8px" }}>
+                  Ayudas
+                </Button>
+              </Link>
               <ThemeChangerMobile />
+              {session?.user && user?.isImpersonating ? (
+                <Button
+                  mt={8}
+                  fullWidth
+                  color="red"
+                  variant="light"
+                  onClick={() => {
+                    toggle();
+                    handleExitImpersonation();
+                  }}
+                >
+                  Salir de la impersonación
+                </Button>
+              ) : null}
               {session?.user && (
                 <>
                   <Divider />
@@ -367,6 +533,30 @@ const user = session?.user as ImpersonatedUser;
             </Stack>
           </Drawer>
         </Container>
+
+        {user?.isImpersonating ? (
+          <div className={classes.impersonationBar}>
+            <div className={classes.impersonationContent}>
+              <Badge
+                color="red"
+                size="lg"
+                variant="light"
+                className={classes.impersonationBadge}
+              >
+                ESTAS IMPERSONANDO AL USUARIO: {user.name}
+              </Badge>
+              <Button
+                color="red"
+                variant="light"
+                size="sm"
+                className={classes.impersonationButton}
+                onClick={handleExitImpersonation}
+              >
+                Salir de la impersonación
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <Modal
@@ -386,48 +576,14 @@ const user = session?.user as ImpersonatedUser;
           <Button
             color="red"
             onClick={async () => {
-              await signOut({ 
-                callbackUrl: process.env.APP_ENV==="development" ? 
-                "/dev" : "/"
+              await signOut({
+                callbackUrl: process.env.APP_ENV === "development" ? "/dev" : "/",
               });
             }}
           >
             Cerrar Sesión
           </Button>
         </Group>
-      </Modal>
-      <Modal
-        opened={periodModalOpened}
-        onClose={() => setPeriodModalOpened(false)}
-        title="Selecciona un Periodo"
-      >
-        <Select
-          label="Periodo"
-          placeholder="Selecciona un periodo"
-          value={tempPeriod}
-          onChange={(value) =>{
-            console.log("Periodo seleccionado en navbar:", value);
-            setTempPeriod(value || "")
-          }}
-          searchable
-          allowDeselect={false}
-          data={availablePeriods.map((period) => ({
-            value: period._id,
-            label: period.name,
-          }))}
-        />
-        <Button
-          fullWidth
-          mt="md"
-          onClick={() => {
-            if (tempPeriod) {
-              setSelectedPeriodId(tempPeriod);
-              setPeriodModalOpened(false);
-            }
-          }}
-        >
-          Confirmar
-        </Button>
       </Modal>
     </>
   );

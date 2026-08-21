@@ -29,18 +29,21 @@ interface ConfigAuditModalProps {
   entityType: 'template' | 'report' | 'producer-report';
   entityId: string;
   entityName: string;
+  email?: string;
 }
 
-export default function ConfigAuditModal({ opened, onClose, entityType, entityId, entityName }: ConfigAuditModalProps) {
+export default function ConfigAuditModal({ opened, onClose, entityType, entityId, entityName, email }: ConfigAuditModalProps) {
   const [auditHistory, setAuditHistory] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchAuditHistory = async () => {
     if (!entityId) return;
-    
+
     setLoading(true);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/config-audit/${entityType}/${entityId}`);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/config-audit/${entityType}/${entityId}`, {
+        params: { email },
+      });
       setAuditHistory(response.data.audits || []);
     } catch (error) {
       console.error("Error fetching audit history:", error);

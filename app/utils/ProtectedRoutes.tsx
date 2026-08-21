@@ -6,47 +6,141 @@ import { useRole } from "@/app/context/RoleContext";
 import { showNotification } from "@mantine/notifications";
 import LoadingScreen from "@/app/components/LoadingScreen";
 
+// Orden importa: las más específicas primero
+const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
+  { key: "publishedReports",          pattern: /^\/admin\/reports\/uploaded/ },
+  { key: "producerReportsConfig",     pattern: /^\/admin\/reports\/producers/ },
+  { key: "adminReports",              pattern: /^\/admin\/reports/ },
+  { key: "adminTemplates",            pattern: /^\/admin\/templates/ },
+  { key: "periods",                   pattern: /^\/admin\/periods/ },
+  { key: "dimensions",                pattern: /^\/admin\/dimensions/ },
+  { key: "dependencies",              pattern: /^\/admin\/dependencies/ },
+  { key: "validations",               pattern: /^\/admin\/validations/ },
+  { key: "users",                     pattern: /^\/admin\/users/ },
+  { key: "profiles",                  pattern: /^\/configuracion\/perfiles/ },
+  { key: "configuration",             pattern: /^\/configuracion/ },
+  { key: "publishedTemplates",        pattern: /^\/templates\/published/ },
+  { key: "producerTemplates",         pattern: /^\/producer\/templates/ },
+  { key: "producerReports",           pattern: /^\/producer\/reports/ },
+  { key: "responsibleReports",        pattern: /^\/responsible\/reports/ },
+  { key: "producerReportsManagement", pattern: /^\/reportproducers$/ },
+  { key: "templatesWithFilters",      pattern: /^\/templates-with-filters/ },
+  { key: "supportTemplates",          pattern: /^\/apoyos-plantillas/ },
+  { key: "snies",                     pattern: /^\/snies/ },
+  { key: "cna",                       pattern: /^\/cna/ },
+  { key: "pdiDashboard",              pattern: /^\/pdi\/dashboard/ },
+  { key: "pdiForms",                  pattern: /^\/pdi\/formularios/ },
+  { key: "pdiCharts",                 pattern: /^\/pdi\/graficas/ },
+  { key: "pdiMine",                   pattern: /^\/pdi\/mis-indicadores/ },
+  { key: "pdi",                       pattern: /^\/pdi$/ },
+  { key: "dateReviewProgram",          pattern: /^\/processes-MEN\/program/ },
+  { key: "dateReviewAdmin",            pattern: /^\/processes-MEN\/admin/ },
+  { key: "dateReviewResponsible",      pattern: /^\/processes-MEN\/responsible/ },
+  { key: "dateReviewTasks",            pattern: /^\/processes-MEN\/tasks/ },
+  { key: "dateReview",                 pattern: /^\/processes-MEN/ },
+];
+
+// Algunas llaves de permiso están separadas por rol aunque compartan la misma
+// ruta (p. ej. "pdi" para Administrador y "pdiResponsable" para Responsable):
+// este mapa resuelve, para cada llave "base" de VIEW_PERMISSION_ROUTES, cuál
+// es la llave real que le corresponde revisar a cada rol distinto del dueño
+// original de la llave.
+const ROLE_KEY_VARIANTS: Record<string, Partial<Record<string, string>>> = {
+  publishedTemplates:        { Responsable: "publishedTemplatesResponsable" },
+  templatesWithFilters:      { Productor: "templatesWithFiltersProductor" },
+  producerReportsManagement: { Responsable: "producerReportsManagementResponsable" },
+  snies:                     { Productor: "sniesProductor" },
+  pdi:                       { Responsable: "pdiResponsable" },
+  pdiMine:                   { Responsable: "pdiMineResponsable" },
+  pdiDashboard:              { Responsable: "pdiDashboardResponsable" },
+  pdiForms:                  { Responsable: "pdiFormsResponsable" },
+  pdiCharts:                 { Responsable: "pdiChartsResponsable" },
+};
+
+const FREE_ROUTES = /^\/(|dashboard|logs|traceability|operations|historico-docentes)(\/|$)/;
+
+/** Rutas accesibles por rol sin necesitar permiso de cargo explícito */
+const ROLE_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [
+  { roles: ["Responsable", "Productor"], pattern: /^\/processes-MEN\/responsible/ },
+];
+
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
-  const { userRole } = useRole();
+  const { userRole, viewPermissions, permissionsLoaded } = useRole();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [isVerifying, setIsVerifying] = useState(true);
 
+  const role = userRole?.trim() ? userRole : "Usuario";
+
   useEffect(() => {
-    if (!userRole) {
+    if (!permissionsLoaded) return;
+
+    if (pathname.startsWith("/public")) {
+      setIsVerifying(false);
       return;
     }
 
-    const adminRoutes = /^\/admin/;
-    const responsibleRoutes = /^\/responsible/;
-    const producerRoutes = /^\/producer/;
-    const templateRoutes = /^\/templates/;
-    const reportRoutes = /^\/reports/;
-    const templatesWithFiltersRoute = /^\/templates-with-filters/;
-    const templateDetailRoute = /^\/templates\/uploaded\/[^/]+$/; // Ruta específica para detalles de template
-
-    if (
-      (adminRoutes.test(pathname) && userRole !== "Administrador") ||
-      (responsibleRoutes.test(pathname) && userRole !== "Responsable") ||
-      (producerRoutes.test(pathname) && userRole !== "Productor") ||
-      (templateRoutes.test(pathname) && 
-       !templatesWithFiltersRoute.test(pathname) && 
-       !templateDetailRoute.test(pathname) && 
-       !["Administrador", "Responsable"].includes(userRole)) ||
-      (reportRoutes.test(pathname) && !["Administrador", "Responsable"].includes(userRole))
-    ) {
-      showNotification({
-        title: "Acceso denegado",
-        message: "No tienes permiso para acceder a esta página",
-        color: "red",
-      });
-      router.replace("/dashboard");
-    } else {
+    // Rutas libres para todos
+    if (FREE_ROUTES.test(pathname)) {
       setIsVerifying(false);
+      return;
     }
-  }, [userRole, pathname, router]);
 
-  if (isVerifying || !userRole) {
+    // Rutas accesibles por rol sin permiso de cargo
+    const roleRoute = ROLE_ROUTES.find(({ pattern }) => pattern.test(pathname));
+    if (roleRoute) {
+      if (roleRoute.roles.includes(role)) {
+        setIsVerifying(false);
+        return;
+      }
+    }
+
+    // Buscar la clave más específica que haga match con la ruta actual
+    const matched = VIEW_PERMISSION_ROUTES.find(({ pattern }) => pattern.test(pathname));
+
+    if (matched) {
+      // Administrador pasa en todas las rutas sin excepción
+      if (role === "Administrador") {
+        setIsVerifying(false);
+        return;
+      }
+
+      // Sin perfil asignado → acceso completo basado en el rol
+      if (Object.keys(viewPermissions).length === 0) {
+        setIsVerifying(false);
+        return;
+      }
+
+      const levels: string[] = Array.isArray(viewPermissions[matched.key])
+        ? viewPermissions[matched.key]
+        : [];
+      const altKey = ROLE_KEY_VARIANTS[matched.key]?.[role];
+      const altLevels: string[] = altKey && Array.isArray(viewPermissions[altKey])
+        ? viewPermissions[altKey]
+        : [];
+      if (levels.length > 0 || altLevels.length > 0) {
+        setIsVerifying(false);
+        return;
+      }
+    } else {
+      // Ruta no mapeada: Administrador siempre pasa, otros también (rutas internas)
+      if (role === "Administrador") {
+        setIsVerifying(false);
+        return;
+      }
+      setIsVerifying(false);
+      return;
+    }
+
+    showNotification({
+      title: "Acceso denegado",
+      message: "No tienes permiso para acceder a esta página",
+      color: "red",
+    });
+    router.replace("/dashboard");
+  }, [role, viewPermissions, permissionsLoaded, pathname, router]);
+
+  if (!permissionsLoaded || isVerifying) {
     return <LoadingScreen />;
   }
 

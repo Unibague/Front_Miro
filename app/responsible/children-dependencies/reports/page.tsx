@@ -31,7 +31,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
 
 interface Field {
   name: string;
@@ -60,6 +60,7 @@ interface Template {
   fields: Field[];
   producers: [Dependency]
   active: boolean;
+  validators?: Validator[];
 }
 
 interface Validator {
@@ -155,29 +156,33 @@ const PublishedTemplatesPage = () => {
     }
   }
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
+      const data = dataResponse.data.data;
       console.log("Data: ", data);
-      const { template } = publishedTemplate;
+      const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
       console.log("Template: ", template);
+      const validators =
+        template?.validators ??
+        publishedTemplate.validators;
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
       const headerRow = worksheet.addRow(Object.keys(data[0]));
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };

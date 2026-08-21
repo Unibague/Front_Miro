@@ -2,25 +2,51 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip } from "@mantine/core";
+import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, Loader, Center, MultiSelect, Textarea, rem, Tooltip, Tabs, Text, Box, Divider, Badge, ActionIcon, Modal, Stack } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
+import "dayjs/locale/es";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconDownload } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft, IconPlus, IconTrash } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import {
+  appendMissingFieldComments,
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  ensureMissingWorkbookSheets,
+  extractWorkbookCommentsFromBase64,
+  getExcelCellAddress,
+  injectWorkbookSheetHeaderComments,
+  loadWorkbookFromBase64,
+  patchNoteBackgroundColor,
+  patchNoteSize,
+  reorderWorkbookSheets,
+  sanitizeSheetName,
+} from "@/app/utils/templateUtils";
+import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { getEffectiveRequired } from "@/app/utils/requiredFields";
 
 interface Field {
   name: string;
   datatype: string;
   required: boolean;
+  required_override?: boolean;
   multiple: boolean;
   validate_with?: string;
   comment?: string;
+  locked?: boolean;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
 }
 
 type FieldKey = "name" | "datatype" | "required" | "validate_with" | "multiple" | "comment";
@@ -52,11 +78,24 @@ interface Dimension {
 interface ValidatorOption {
   name: string;
   type: string;
+  validator_name?: string;
+  column_name?: string;
 }
 
 interface Validator { 
   name: string;
   values: any[];
+}
+
+interface TemplateWorksheet {
+  name: string;
+  fields: Field[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  cellNotes?: { row: number; col: number; note: string }[];
+  columnWidths?: number[];
+  producers?: string[];
+  shared?: boolean;
 }
 
 const UpdateTemplatePage = () => {
@@ -72,12 +111,234 @@ const UpdateTemplatePage = () => {
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
+  const [shared, setShared] = useState(false);
+  const [allowsQr, setAllowsQr] = useState(false);
+  const [fechaInicio, setFechaInicio] = useState<Date | null>(null);
+  const [fechaFinalProductores, setFechaFinalProductores] = useState<Date | null>(null);
+  const [fechaFinalResponsables, setFechaFinalResponsables] = useState<Date | null>(null);
+  const [fechaFinal, setFechaFinal] = useState<Date | null>(null);
+  const [responsibleProducers, setResponsibleProducers] = useState<string[]>([]);
+  const [qrAuthorizedProducers, setQrAuthorizedProducers] = useState<string[]>([]);
+  const [notifyProducers, setNotifyProducers] = useState(false);
+  const [isSnies, setIsSnies] = useState(false);
+  const [skipCommentValidation, setSkipCommentValidation] = useState(false);
+  const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
+  const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
+  const [originalSheetNames, setOriginalSheetNames] = useState<Set<string>>(new Set());
+  const [activeSheet, setActiveSheet] = useState<string | null>(null);
+  const [newField, setNewField] = useState<Field>({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
   const [loading, setLoading] = useState(true);
   const [originalTemplate, setOriginalTemplate] = useState<any>(null);
+  const [showNewSheetModal, setShowNewSheetModal] = useState(false);
+  const [newSheetName, setNewSheetName] = useState("");
+  const [showDeleteSheetModal, setShowDeleteSheetModal] = useState(false);
+  const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const { data: session } = useSession();
   const { userRole } = useRole();
+  const { selectedPeriodId } = usePeriod();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+
+  const validateWithToText = (value: unknown) => {
+    if (!value) return "";
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "object") {
+      const ref = value as { name?: string; id?: string };
+      return String(ref.name || ref.id || "").trim();
+    }
+    return String(value).trim();
+  };
+
+  const normalizeValidatorText = (value: unknown) =>
+    validateWithToText(value).toLowerCase().replace(/\s+/g, " ").trim();
+
+  const findValidatorOption = (value: unknown) => {
+    const raw = validateWithToText(value);
+    const normalized = normalizeValidatorText(raw);
+    if (!normalized) return undefined;
+
+    return validatorOptions.find((option) => {
+      const optionName = normalizeValidatorText(option.name);
+      const validatorName = normalizeValidatorText(option.validator_name);
+      const optionBaseName = normalizeValidatorText(option.name.split(" - ")[0]);
+
+      return (
+        optionName === normalized ||
+        validatorName === normalized ||
+        optionBaseName === normalized
+      );
+    });
+  };
+
+  const getValidatorSelectValue = (value: unknown) => {
+    const raw = validateWithToText(value);
+    return findValidatorOption(raw)?.name || raw || null;
+  };
+
+  const getValidatorSelectData = (value?: unknown) => {
+    const currentValue = getValidatorSelectValue(value);
+    const data = validatorOptions.map((option) => ({ value: option.name, label: option.name }));
+    if (currentValue && !data.some((item) => item.value === currentValue)) {
+      return [{ value: currentValue, label: currentValue }, ...data];
+    }
+    return data;
+  };
+
+  const applyValidatorDatatype = (field: Field, validateWith: string): Field => {
+    const selectedOption = findValidatorOption(validateWith);
+    if (!selectedOption) {
+      return { ...field, validate_with: validateWith, datatype: validateWith ? field.datatype : "" };
+    }
+
+    const optionType = String(selectedOption.type || "").toLowerCase();
+    const datatype = optionType.includes("número") || optionType.includes("numero")
+      ? "Entero"
+      : optionType.includes("texto")
+        ? "Texto Largo"
+        : field.datatype;
+
+    return { ...field, validate_with: selectedOption.name, datatype };
+  };
+
+  const createEmptyField = (): Field => ({
+    name: "",
+    datatype: "",
+    required: true,
+    validate_with: "",
+    comment: "",
+    multiple: false,
+    locked: false,
+  });
+
+  const normalizeField = (field: Partial<Field>, defaultLocked: boolean): Field => ({
+    name: field.name || "",
+    datatype: field.datatype || "",
+    required: field.required ?? true,
+    required_override: field.required_override ?? false,
+    validate_with: validateWithToText(field.validate_with),
+    comment: field.comment || "",
+    multiple: field.multiple ?? false,
+    locked: field.locked ?? defaultLocked,
+    dropdown_options: Array.isArray(field.dropdown_options) ? field.dropdown_options : [],
+    header_row: field.header_row,
+    column: field.column,
+  });
+
+  const normalizeWorkbookSheets = (template: any): TemplateWorksheet[] => {
+    const sheets = Array.isArray(template?.workbook_sheets)
+      ? template.workbook_sheets
+      : [];
+
+    return sheets
+      .map((sheet: any, index: number) => ({
+        name: sheet?.name || `Hoja_${index + 1}`,
+        fields: Array.isArray(sheet?.fields)
+          ? sheet.fields.map((field: Field) => normalizeField(field, true))
+          : [],
+        preserveOriginalContent: sheet?.preserveOriginalContent || false,
+        rawRows: Array.isArray(sheet?.rawRows) ? sheet.rawRows : undefined,
+        cellNotes: Array.isArray(sheet?.cellNotes) ? sheet.cellNotes : undefined,
+        columnWidths: Array.isArray(sheet?.columnWidths) ? sheet.columnWidths : undefined,
+        producers: Array.isArray(sheet?.producers) ? sheet.producers.map((p: any) => String(p)) : [],
+        shared: sheet?.shared ?? false,
+      }))
+      .filter((sheet: TemplateWorksheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields.length > 0);
+  };
+
+  const makeUniqueFieldName = (value: string, usedValues: Map<string, number>) => {
+    const base = value.trim() || "Campo";
+    const normalized = base.toLowerCase();
+    const count = usedValues.get(normalized) || 0;
+    usedValues.set(normalized, count + 1);
+    return count === 0 ? base : `${base} (${count + 1})`;
+  };
+
+  const flattenWorkbookSheets = (sheets: TemplateWorksheet[]) => {
+    const usedFieldNames = new Map<string, number>();
+    return sheets.flatMap((sheet) =>
+      sheet.fields.map((field) => ({
+        ...field,
+        name: makeUniqueFieldName(field.name, usedFieldNames),
+      }))
+    );
+  };
+
+  const hasWorkbookSheets = workbookSheets.length > 0;
+  const activeSheetData = workbookSheets.find((sheet) => sheet.name === activeSheet) || workbookSheets[0];
+  const displayedFields = hasWorkbookSheets ? activeSheetData?.fields || [] : fields;
+
+  const isBaseField = (field: Field) => hasWorkbookSheets && field.locked !== false;
+  const baseFields = displayedFields.filter(isBaseField);
+  const editableFields = displayedFields.filter((f) => !isBaseField(f));
+
+  const setFieldsForActiveSheet = (updater: (currentFields: Field[]) => Field[]) => {
+    if (!activeSheetData) return;
+    setWorkbookSheets((currentSheets) =>
+      currentSheets.map((sheet) =>
+        sheet.name === activeSheetData.name
+          ? { ...sheet, fields: updater(sheet.fields) }
+          : sheet
+      )
+    );
+  };
+
+  const toggleBaseFieldRequired = (fieldName: string, required: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => (f.name === fieldName ? { ...f, required } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
+  // Permite al admin desmarcar un campo base como obligatorio aunque su
+  // comentario diga "obligatorio" (o marcarlo de nuevo), para que el
+  // productor pueda subir la plantilla sin ese campo diligenciado.
+  const toggleBaseFieldRequiredOverride = (fieldName: string, overridden: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => (f.name === fieldName ? { ...f, required_override: overridden } : f));
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
+  // Aplica el override a todos los campos base que actualmente serian
+  // obligatorios (por flag o comentario) de la hoja activa. `overridden`
+  // true = "Desmarcar todos" (ninguno queda obligatorio), false = "Marcar
+  // todos como obligatorios" (se restaura el comportamiento por defecto).
+  const setAllBaseFieldsRequiredOverride = (overridden: boolean) => {
+    const updater = (currentFields: Field[]) =>
+      currentFields.map((f) => {
+        if (!isBaseField(f)) return f;
+        const requiredBySource = getEffectiveRequired({ required: f.required, comment: f.comment });
+        if (!requiredBySource) return f;
+        return { ...f, required_override: overridden };
+      });
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(updater);
+    } else {
+      setFields(updater);
+    }
+  };
+
+  const resolveUniqueSheetName = (workbook: ExcelJS.Workbook, rawName: string, fallback: string) => {
+    const base = sanitizeSheetName(rawName || fallback) || fallback;
+    let candidate = base;
+    let counter = 1;
+
+    while (workbook.getWorksheet(candidate)) {
+      const suffix = `_${counter}`;
+      candidate = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+      counter += 1;
+    }
+
+    return candidate;
+  };
 
   useEffect(() => {
     const fetchTemplate = async () => {
@@ -89,8 +350,43 @@ const UpdateTemplatePage = () => {
             setName(response.data.name);
             setFileName(response.data.file_name);
             setFileDescription(response.data.file_description);
-            setFields(response.data.fields);
+            const normalizedSheets = normalizeWorkbookSheets(response.data);
+            const nextFields = normalizedSheets.length > 0
+              ? flattenWorkbookSheets(normalizedSheets)
+              : (response.data.fields || []).map((field: Field) => normalizeField(field, false));
+            const firstEditableSheet = normalizedSheets.find(
+              (sheet) => !sheet.preserveOriginalContent && sheet.fields.length > 0
+            ) || normalizedSheets[0];
+
+            setWorkbookSheets(normalizedSheets);
+            const originalBase64 = response.data.original_workbook_base64 || "";
+            setOriginalWorkbookBase64(originalBase64);
+            if (originalBase64) {
+              try {
+                const originalWorkbook = await loadWorkbookFromBase64(originalBase64);
+                setOriginalSheetNames(new Set(originalWorkbook.worksheets.map((ws) => ws.name)));
+              } catch (error) {
+                console.error("Error leyendo hojas del workbook original:", error);
+                setOriginalSheetNames(new Set());
+              }
+            } else {
+              setOriginalSheetNames(new Set());
+            }
+            setActiveSheet(firstEditableSheet?.name || null);
+            setFields(nextFields);
             setActive(response.data.active);
+            setShared(response.data.shared ?? false);
+            setAllowsQr(response.data.allows_qr ?? false);
+            setFechaInicio(response.data.fecha_inicio ? new Date(response.data.fecha_inicio) : null);
+            setFechaFinalProductores(response.data.fecha_final_productores ? new Date(response.data.fecha_final_productores) : null);
+            setFechaFinalResponsables(response.data.fecha_final_responsables ? new Date(response.data.fecha_final_responsables) : null);
+            setFechaFinal(response.data.fecha_final ? new Date(response.data.fecha_final) : null);
+            setResponsibleProducers((response.data.responsible_producers || []).map((p: any) => String(p)));
+            setQrAuthorizedProducers((response.data.qr_authorized_producers || []).map((p: any) => String(p)));
+            setNotifyProducers(response.data.notify_producers ?? false);
+            setSkipCommentValidation(response.data.skip_comment_validation ?? false);
+            const categoryName: string = response.data.category?.name ?? "";
+            setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -98,9 +394,11 @@ const UpdateTemplatePage = () => {
             setOriginalTemplate({
               name: response.data.name,
               file_description: response.data.file_description,
-              fields: response.data.fields,
+              fields: nextFields,
+              workbook_sheets: normalizedSheets,
               dimensions: response.data.dimensions,
-              producers: response.data.producers
+              producers: response.data.producers,
+              notify_producers: response.data.notify_producers ?? false
             });
           }
         } catch (error) {
@@ -148,7 +446,9 @@ const UpdateTemplatePage = () => {
 
     const fetchValidatorOptions = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/options`, {
+          params: { periodId: selectedPeriodId },
+        });
         setValidatorOptions(response.data.options);
       } catch (error) {
         console.error("Error fetching validator options:", error);
@@ -176,25 +476,15 @@ const UpdateTemplatePage = () => {
     fetchTemplate();
     fetchValidatorOptions();
     fetchValidators();
-  }, [id, session, userRole]);
+  }, [id, session, userRole, selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: FieldKey, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
-    updatedFields[index] = { ...updatedFields[index], [field]: value };
-
-    if (field === 'validate_with') {
-      const selectedOption = validatorOptions.find(option => option.name === value);
-
-      if (selectedOption) {
-        if (selectedOption.type === 'Número') {
-          updatedFields[index].datatype = 'Entero';
-        } else if (selectedOption.type === 'Texto') {
-          updatedFields[index].datatype = 'Texto Largo';
-        }
-      } else {
-        updatedFields[index].datatype = "";
-      }
-    }
+    const nextField = { ...updatedFields[index], [field]: value };
+    updatedFields[index] = field === "validate_with"
+      ? applyValidatorDatatype(nextField, value || "")
+      : nextField;
 
     setFields(updatedFields);
   };
@@ -208,12 +498,242 @@ const UpdateTemplatePage = () => {
     setFields(updatedFields);
   };
 
-  const handleSave = async () => {
-    if (!name || !fileName || !fileDescription || fields.length === 0 || selectedDimensions.length === 0 || selectedDependencies.length === 0) {
+  const handleDisplayedFieldChange = (index: number, field: FieldKey, value: any) => {
+    const applyFieldChange = (currentFields: Field[]) => {
+      const updatedFields = [...currentFields];
+      const currentField = updatedFields[index];
+
+      if (!currentField || isBaseField(currentField)) {
+        return currentFields;
+      }
+
+      const nextField = { ...currentField, [field]: value };
+      updatedFields[index] = field === "validate_with"
+        ? applyValidatorDatatype(nextField, value || "")
+        : nextField;
+
+      return updatedFields;
+    };
+
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(applyFieldChange);
+    } else {
+      setFields(applyFieldChange);
+    }
+  };
+
+  const addDisplayedField = () => {
+    if (!newField.name.trim()) {
+      showNotification({ title: "Error", message: "El nombre del campo es requerido", color: "red" });
+      return;
+    }
+
+    const fieldToAdd: Field = { ...newField, locked: false };
+
+    if (hasWorkbookSheets) {
+      const targetSheet = activeSheetData?.name;
+      if (!targetSheet) {
+        showNotification({ title: "Error", message: "No hay hoja activa seleccionada.", color: "red" });
+        return;
+      }
+      setWorkbookSheets((currentSheets) =>
+        currentSheets.map((sheet) =>
+          sheet.name === targetSheet
+            ? { ...sheet, fields: [...sheet.fields, fieldToAdd] }
+            : sheet
+        )
+      );
+      setActiveSheet(targetSheet);
+    } else {
+      setFields([...fields, fieldToAdd]);
+    }
+
+    setNewField({ name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false });
+  };
+
+  const removeDisplayedField = (index: number) => {
+    const removeEditableField = (currentFields: Field[]) => {
+      const currentField = currentFields[index];
+      if (!currentField || isBaseField(currentField)) {
+        return currentFields;
+      }
+      return currentFields.filter((_, i) => i !== index);
+    };
+
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(removeEditableField);
+    } else {
+      setFields(removeEditableField);
+    }
+  };
+
+  const handleCreateNewSheet = () => {
+    if (!newSheetName.trim()) {
       showNotification({
         title: "Error",
-        message: "Todos los campos son requeridos",
+        message: "El nombre de la hoja es requerido",
         color: "red",
+      });
+      return;
+    }
+
+    // Validar que el nombre sea único
+    if (workbookSheets.some((sheet) => sheet.name.toLowerCase() === newSheetName.toLowerCase())) {
+      showNotification({
+        title: "Error",
+        message: "Ya existe una hoja con ese nombre",
+        color: "red",
+      });
+      return;
+    }
+
+    // Crear la nueva hoja con campos vacíos
+    const newSheet: TemplateWorksheet = {
+      name: newSheetName,
+      fields: [createEmptyField()],
+      preserveOriginalContent: false,
+      producers: [],
+      shared: false,
+    };
+
+    setWorkbookSheets([...workbookSheets, newSheet]);
+    setActiveSheet(newSheetName);
+    setNewSheetName("");
+    setShowNewSheetModal(false);
+    setHasChanges(true);
+
+    showNotification({
+      title: "Éxito",
+      message: `Hoja "${newSheetName}" creada exitosamente`,
+      color: "teal",
+    });
+  };
+
+  // Una hoja se puede eliminar si su nombre no existe en el Excel original
+  // subido: es decir, si fue creada dentro del editor (en esta sesión o en
+  // una anterior ya guardada), y no si vino incluida en el archivo cargado.
+  const isDeletableSheet = (sheetName: string) => !originalSheetNames.has(sheetName);
+
+  const handleDeleteSheet = (sheetName: string) => {
+    // Validación 1: Solo se pueden eliminar hojas creadas por el usuario, no las originales del Excel
+    if (!isDeletableSheet(sheetName)) {
+      showNotification({
+        title: "Acción no permitida",
+        message: "Solo puedes eliminar hojas que hayas creado tú. Las hojas originales de la plantilla no se pueden eliminar.",
+        color: "red",
+      });
+      return;
+    }
+
+    // Validación 2: No permitir eliminar la única hoja
+    if (workbookSheets.length === 1) {
+      showNotification({
+        title: "Error",
+        message: "No puedes eliminar la única hoja de la plantilla",
+        color: "red",
+      });
+      return;
+    }
+
+    // Abrir modal de confirmación
+    setSheetToDelete(sheetName);
+    setShowDeleteSheetModal(true);
+  };
+
+  const onDragEndSheets = (result: DropResult) => {
+    const { destination, source } = result;
+    if (!destination) return;
+    if (destination.index === source.index) return;
+
+    setWorkbookSheets((currentSheets) => {
+      const reordered = Array.from(currentSheets);
+      const [removed] = reordered.splice(source.index, 1);
+      reordered.splice(destination.index, 0, removed);
+      return reordered;
+    });
+    setHasChanges(true);
+  };
+
+  const confirmDeleteSheet = () => {
+    if (!sheetToDelete) return;
+
+    // Validación 2: Verificar si la hoja tiene campos
+    const sheet = workbookSheets.find((s) => s.name === sheetToDelete);
+    if (sheet?.fields && sheet.fields.length > 0) {
+      const editableFields = sheet.fields.filter((f) => f.locked !== true);
+      if (editableFields.length > 0) {
+        showNotification({
+          title: "Advertencia",
+          message: `La hoja "${sheetToDelete}" contiene ${editableFields.length} campo(s). Se eliminarán al guardar.`,
+          color: "yellow",
+          autoClose: 5000,
+        });
+      }
+    }
+
+    const updatedSheets = workbookSheets.filter((s) => s.name !== sheetToDelete);
+    setWorkbookSheets(updatedSheets);
+    
+    // Si eliminamos la hoja activa, cambiar a la primera disponible
+    if (activeSheet === sheetToDelete) {
+      setActiveSheet(updatedSheets[0]?.name || null);
+    }
+
+    setHasChanges(true);
+    setShowDeleteSheetModal(false);
+    setSheetToDelete(null);
+
+    showNotification({
+      title: "Éxito",
+      message: `Hoja "${sheetToDelete}" eliminada`,
+      color: "teal",
+      autoClose: 3000,
+    });
+  };
+
+  const handleSave = async () => {
+    setHasChanges(false);
+    const prepareFieldForSave = (field: Field): Field => {
+      const validateWith = getValidatorSelectValue(field.validate_with) || "";
+      return {
+        ...field,
+        validate_with: validateWith,
+        multiple: validateWith ? field.multiple : false,
+      };
+    };
+    const workbookSheetsToSave = hasWorkbookSheets
+      ? workbookSheets.map((sheet) => ({
+          ...sheet,
+          fields: sheet.fields.map(prepareFieldForSave),
+        }))
+      : [];
+    const fieldsToSave = hasWorkbookSheets
+      ? flattenWorkbookSheets(workbookSheetsToSave)
+      : fields.map(prepareFieldForSave);
+
+    // El productor encargado siempre debe quedar en la lista general de
+    // productores de la plantilla, aunque no este asignado explicitamente a
+    // ninguna hoja: esa lista es la que determina si la plantilla aparece
+    // como pendiente para esa dependencia.
+    const derivedProducers = hasWorkbookSheets
+      ? [...new Set([...workbookSheets.flatMap(s => s.producers || []), ...responsibleProducers])]
+      : [...new Set([...selectedDependencies, ...responsibleProducers])];
+
+    const missing: string[] = [];
+    if (!name) missing.push("Nombre de la plantilla");
+    if (!fileName) missing.push("Nombre del archivo");
+    if (!fileDescription) missing.push("Descripción del archivo");
+    if (fieldsToSave.length === 0) missing.push("Al menos un campo");
+    if (selectedDimensions.length === 0) missing.push("Ámbito");
+    if (derivedProducers.length === 0) missing.push("Productores");
+
+    if (missing.length > 0) {
+      showNotification({
+        id: "save-validation-error",
+        title: "Faltan campos requeridos",
+        message: missing.join(", "),
+        color: "red",
+        autoClose: 6000,
       });
       return;
     }
@@ -222,10 +742,23 @@ const UpdateTemplatePage = () => {
       name,
       file_name: fileName,
       file_description: fileDescription,
-      fields,
+      fields: fieldsToSave,
+      workbook_sheets: workbookSheetsToSave,
+      original_workbook_base64: originalWorkbookBase64 || undefined,
       active,
+      shared,
+      allows_qr: allowsQr,
+      notify_producers: notifyProducers,
+      is_snies: isSnies,
+      skip_comment_validation: skipCommentValidation,
+      fecha_inicio: fechaInicio,
+      fecha_final_productores: fechaFinalProductores,
+      fecha_final_responsables: fechaFinalResponsables,
+      fecha_final: fechaFinal,
+      responsible_producers: responsibleProducers,
+      qr_authorized_producers: qrAuthorizedProducers,
       dimensions: selectedDimensions,
-      producers: selectedDependencies,
+      producers: derivedProducers,
       email: session?.user?.email,
       full_name: session?.user?.name
     };
@@ -444,173 +977,249 @@ router.back();
       return;
     }
 
-    const newFields = Array.from(fields);
-    const [removed] = newFields.splice(source.index, 1);
-    newFields.splice(destination.index, 0, removed);
-
-    setFields(newFields);
-  };
-
-  const handleDownloadTemplate = async () => {
-    const templateData = {
-      name,
-      file_name: fileName,
-      fields,
-      validators
+    const reorderFields = (currentFields: Field[]) => {
+      const bases = currentFields.filter((f) => isBaseField(f));
+      const editables = currentFields.filter((f) => !isBaseField(f));
+      const reordered = Array.from(editables);
+      const [removed] = reordered.splice(source.index, 1);
+      reordered.splice(destination.index, 0, removed);
+      return [...bases, ...reordered];
     };
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(templateData.name);
-    buildStyledHelpWorksheet(workbook, templateData.fields);
+    if (hasWorkbookSheets) {
+      setFieldsForActiveSheet(reorderFields);
+    } else {
+      setFields(reorderFields);
+    }
+  };
 
-    // Crear encabezados principales
-    const headerRow = worksheet.addRow(templateData.fields.map(field => field.name));
+  const applySheetHeaders = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const headerRow = worksheet.addRow(sheetFields.map((f) => f.name));
     headerRow.eachCell((cell, colNumber) => {
-      cell.font = { bold: true, color: { argb: 'FFFFFF' } };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: '0f1f39' },
-      };
+      const field = sheetFields[colNumber - 1];
+      const isAdded = field?.locked !== true;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isAdded ? "FF166534" : "FF0f1f39" } };
       cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' },
+        top: { style: "thin" }, left: { style: "thin" },
+        bottom: { style: "thin" }, right: { style: "thin" },
       };
-      cell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-      const field = templateData.fields[colNumber - 1];
+      cell.alignment = { vertical: "middle", horizontal: "center" };
       applyFieldCommentNote(cell, field.comment);
     });
+    worksheet.columns.forEach((col) => { col.width = 20; });
+  };
 
-    worksheet.columns.forEach(column => {
-      column.width = 20;
+  const applyNewFieldHeaders = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const hasBaseFields = sheetFields.some((f) => f.locked !== false);
+    if (!hasBaseFields) return;
+    sheetFields.forEach((field, index) => {
+      if (field.locked !== false) return;
+      const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0
+        ? Number(field.column)
+        : index + 1;
+      const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0
+        ? Number(field.header_row)
+        : 1;
+      const cell = worksheet.getCell(hRow, col);
+      cell.value = field.name;
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+      cell.border = {
+        top: { style: "thin" }, left: { style: "thin" },
+        bottom: { style: "thin" }, right: { style: "thin" },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      applyFieldCommentNote(cell, field.comment);
+      const currentWidth = worksheet.getColumn(col).width;
+      if (!currentWidth || currentWidth < 20) {
+        worksheet.getColumn(col).width = 20;
+      }
     });
+  };
 
-    // Agregar validaciones de datos
-    templateData.fields.forEach((field, index) => {
+  const applySheetDataValidations = (
+    worksheet: ExcelJS.Worksheet,
+    sheetFields: Field[]
+  ) => {
+    const maxRows = 1000;
+    sheetFields.forEach((field, index) => {
       const colNumber = index + 1;
-      const maxRows = 1000;
       for (let i = 2; i <= maxRows; i++) {
-        const row = worksheet.getRow(i);
-        const cell = row.getCell(colNumber);
-    
+        const cell = worksheet.getRow(i).getCell(colNumber);
         switch (field.datatype) {
-          case 'Entero':
-            cell.dataValidation = {
-              type: 'whole',
-              operator: 'between',
-              formulae: [1, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número entero.'
-            };
+          case "Entero":
+            cell.dataValidation = { type: "whole", operator: "between", formulae: [1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
             break;
-          case 'Decimal':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal.'
-            };
+          case "Decimal":
+            cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal." };
             break;
-          case 'Porcentaje':
-            cell.dataValidation = {
-              type: 'decimal',
-              operator: 'between',
-              formulae: [0.0, 100.0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un número decimal entre 0.0 y 100.0.'
-            };
+          case "Porcentaje":
+            cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, 100.0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal entre 0.0 y 100.0." };
             break;
-          case 'Texto Corto':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [60],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 60 caracteres.'
-            };
+          case "Texto Corto":
+            cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [60], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 60 caracteres." };
             break;
-          case 'Texto Largo':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'lessThanOrEqual',
-              formulae: [500],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un texto de hasta 500 caracteres.'
-            };
+          case "Texto Largo":
+            cell.dataValidation = { type: "textLength", operator: "lessThanOrEqual", formulae: [500], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un texto de hasta 500 caracteres." };
             break;
-          case 'True/False':
-            cell.dataValidation = {
-              type: 'list',
-              allowBlank: true,
-              formulae: ['"Si,No"'],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, selecciona Si o No.'
-            };
+          case "True/False":
+            cell.dataValidation = { type: "list", allowBlank: true, formulae: ['"Si,No"'], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, selecciona Si o No." };
             break;
-          case 'Fecha':
-          case 'Fecha Inicial / Fecha Final':
-            cell.dataValidation = {
-              type: 'date',
-              operator: 'between',
-              formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce una fecha válida en el formato DD/MM/AAAA.'
-            };
-            cell.numFmt = 'DD/MM/YYYY';
+          case "Fecha":
+          case "Fecha Inicial / Fecha Final":
+            cell.dataValidation = { type: "date", operator: "between", formulae: [new Date(1900, 0, 1), new Date(9999, 11, 31)], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce una fecha válida en el formato DD/MM/AAAA." };
+            cell.numFmt = "DD/MM/YYYY";
             break;
-          case 'Link':
-            cell.dataValidation = {
-              type: 'textLength',
-              operator: 'greaterThan',
-              formulae: [0],
-              showErrorMessage: true,
-              errorTitle: 'Valor no válido',
-              error: 'Por favor, introduce un enlace válido.'
-            };
+          case "Link":
+            cell.dataValidation = { type: "textLength", operator: "greaterThan", formulae: [0], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un enlace válido." };
             break;
         }
-
         if (field.comment && cell.dataValidation) {
-          const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+          const normalizedComment = field.comment.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
           const promptBase = normalizedComment.slice(0, 220);
-          const promptText = normalizedComment.length > 220
-            ? `${promptBase}... (ver hoja Guia)`
-            : promptBase;
           cell.dataValidation = {
             ...cell.dataValidation,
             showInputMessage: true,
             promptTitle: field.name.slice(0, 32),
-            prompt: promptText,
+            prompt: normalizedComment.length > 220 ? `${promptBase}...` : promptBase,
           };
         }
-
       }
     });
+  };
 
-    applyValidatorDropdowns({
-      workbook,
-      worksheet,
-      fields,
-      validators,
-      startRow: 2,
-      endRow: 1000,
+  const handleDownloadTemplate = async () => {
+    await handleSave();
+    const fieldCommentByName = new Map(
+      fields
+        .filter((field) => field.name && field.comment)
+        .map((field) => [field.name, field.comment])
+    );
+    const withSavedFieldComments = (sheet: TemplateWorksheet): TemplateWorksheet => ({
+      ...sheet,
+      fields: sheet.fields.map((field) => ({
+        ...field,
+        comment: field.comment || fieldCommentByName.get(field.name) || "",
+      })),
     });
-  
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${templateData.file_name}.xlsx`);
-    
+
+    if (originalWorkbookBase64) {
+      const workbook = await loadWorkbookFromBase64(originalWorkbookBase64);
+      const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(originalWorkbookBase64);
+      // Crear en el workbook cualquier hoja nueva que no venga del xlsx original
+      ensureMissingWorkbookSheets(workbook, workbookSheets);
+      applyWorkbookSheetDropdowns({
+        workbook,
+        workbookSheets,
+        validators,
+        originalCommentsBySheet,
+      });
+      // Encabezados de campos añadidos (solo value + fill + font, sin border para no corromper el workbook cargado)
+      workbookSheets.forEach((sheet) => {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws) return;
+        const hasBase = sheet.fields.some((f) => f.locked !== false);
+        if (!hasBase) return;
+        sheet.fields.forEach((field, index) => {
+          if (field.locked !== false) return;
+          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+          const cell = ws.getCell(hRow, col);
+          cell.value = field.name;
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          const colObj = ws.getColumn(col);
+          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+        });
+      });
+      // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
+      reorderWorkbookSheets(workbook, workbookSheets.map((sheet) => sheet.name));
+      let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+      // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
+      const augmentedForInjection = workbookSheets.map((sheet) => {
+        const sheetWithFallbackComments = withSavedFieldComments(sheet);
+        const sheetOrigComments = originalCommentsBySheet.get(sheet.name);
+        if (!sheetOrigComments) return sheetWithFallbackComments;
+        return {
+          ...sheetWithFallbackComments,
+          fields: sheetWithFallbackComments.fields.map((field, fi) => {
+            if (field.comment) return field;
+            const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : fi + 1;
+            const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+            const orig = sheetOrigComments.get(getExcelCellAddress(hRow, col));
+            return orig ? { ...field, comment: orig } : field;
+          }),
+        };
+      });
+      buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
+      buffer = await patchNoteBackgroundColor(buffer);
+      buffer = await patchNoteSize(buffer);
+      saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
+
+      showNotification({
+        title: "Éxito",
+        message: "Plantilla descargada exitosamente con las validaciones actualizadas",
+        color: "green",
+      });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+
+    const generatedSheetNameMap = new Map<string, string>();
+
+    if (hasWorkbookSheets) {
+      for (const sheet of workbookSheets) {
+        const sheetName = resolveUniqueSheetName(workbook, sheet.name, `Hoja_${workbookSheets.indexOf(sheet) + 1}`);
+        generatedSheetNameMap.set(sheet.name, sheetName);
+        if (sheet.preserveOriginalContent) {
+          const worksheet = workbook.addWorksheet(sheetName);
+          (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+          (sheet.columnWidths || []).forEach((width, index) => {
+            worksheet.getColumn(index + 1).width = width || 20;
+          });
+          (sheet.cellNotes || []).forEach((note) => {
+            if (!note?.row || !note?.col || !note?.note) return;
+            worksheet.getCell(note.row, note.col).note = note.note;
+          });
+          applyValidatorDropdowns({ workbook, worksheet, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+          applyNewFieldHeaders(worksheet, sheet.fields);
+          continue;
+        }
+        const worksheet = workbook.addWorksheet(sheetName);
+        applySheetHeaders(worksheet, sheet.fields);
+        applySheetDataValidations(worksheet, sheet.fields);
+        applyValidatorDropdowns({ workbook, worksheet, fields: sheet.fields, validators, startRow: 2, endRow: 1000 });
+      }
+    } else {
+      const worksheet = workbook.addWorksheet(name);
+      applySheetHeaders(worksheet, fields);
+      applySheetDataValidations(worksheet, fields);
+      applyValidatorDropdowns({ workbook, worksheet, fields, validators, startRow: 2, endRow: 1000 });
+    }
+
+    let buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+    buffer = await injectWorkbookSheetHeaderComments(
+      buffer,
+      hasWorkbookSheets
+        ? workbookSheets.map((sheet) => ({
+          ...withSavedFieldComments(sheet),
+          name: generatedSheetNameMap.get(sheet.name) || sheet.name,
+        }))
+        : [{ name, fields }]
+    );
+    buffer = await patchNoteBackgroundColor(buffer);
+    buffer = await patchNoteSize(buffer);
+    saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${fileName}.xlsx`);
+
     showNotification({
       title: "Éxito",
       message: "Plantilla descargada exitosamente con las validaciones actualizadas",
@@ -628,25 +1237,37 @@ router.back();
 
   return (
     <Container size="xl">
+      <Group justify="space-between" align="center" mb="md">
+        <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
+        <Switch
+          label="SNIES"
+          checked={isSnies}
+          onChange={(e) => { setIsSnies(e.currentTarget.checked); setHasChanges(true); }}
+          color="blue"
+          size="md"
+        />
+      </Group>
       <TextInput
         label="Nombre"
         placeholder="Nombre de la plantilla"
         value={name}
-        onChange={(event) => setName(event.currentTarget.value)}
+        onChange={(event) => { setName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Nombre del Archivo"
         placeholder="Nombre del archivo"
         value={fileName}
-        onChange={(event) => setFileName(event.currentTarget.value)}
+        onChange={(event) => { setFileName(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       <TextInput
         label="Descripción del Archivo"
         placeholder="Descripción del archivo"
         value={fileDescription}
-        onChange={(event) => setFileDescription(event.currentTarget.value)}
+        onChange={(event) => { setFileDescription(event.currentTarget.value); setHasChanges(true); }}
         mb="md"
       />
       {userRole === "Administrador" && (
@@ -655,36 +1276,461 @@ router.back();
         label="Ámbitos"
         placeholder="Seleccionar ámbitos"
         data={dimensions.map((dim) => ({ value: dim._id, label: dim.name }))}
-        onChange={setSelectedDimensions}
+        onChange={(v) => {
+          setSelectedDimensions(v);
+          setHasChanges(true);
+          const sniesSelected = dimensions.some(
+            (dim) => v.includes(dim._id) && dim.name.toUpperCase().includes("SNIES")
+          );
+          if (sniesSelected) setIsSnies(true);
+        }}
         value={selectedDimensions}
         searchable
       />
       )}
-      <MultiSelect
-        mb={'xl'}
-        label="Productores"
-        placeholder="Seleccionar productores"
-        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-        onChange={setSelectedDependencies}
-        value={selectedDependencies}
-        searchable
-      />
+      {!hasWorkbookSheets && (
+        <>
+          <Group justify="space-between" align="flex-end" mb={4}>
+            <Text size="sm" fw={500}>Productores</Text>
+            <Group gap="xs">
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="blue"
+                onClick={() =>
+                  modals.openConfirmModal({
+                    title: "Confirmar selección",
+                    children: (
+                      <Text size="sm">
+                        ¿Deseas seleccionar todos los productores ({dependencies.length})?
+                      </Text>
+                    ),
+                    labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
+                    confirmProps: { color: "blue" },
+                    onConfirm: () => setSelectedDependencies(dependencies.map((d) => d._id)),
+                  })
+                }
+                disabled={selectedDependencies.length === dependencies.length}
+              >
+                Seleccionar todos
+              </Button>
+              {selectedDependencies.length > 0 && (
+                <Button
+                  size="compact-xs"
+                  variant="subtle"
+                  color="red"
+                  onClick={() =>
+                    modals.openConfirmModal({
+                      title: "Confirmar limpieza",
+                      children: (
+                        <Text size="sm">
+                          ¿Deseas quitar todos los productores seleccionados ({selectedDependencies.length})?
+                        </Text>
+                      ),
+                      labels: { confirm: "Limpiar", cancel: "Cancelar" },
+                      confirmProps: { color: "red" },
+                      onConfirm: () => setSelectedDependencies([]),
+                    })
+                  }
+                >
+                  Limpiar
+                </Button>
+              )}
+            </Group>
+          </Group>
+          <MultiSelect
+            mb="xl"
+            placeholder="Seleccionar productores"
+            data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+            onChange={(v) => { setSelectedDependencies(v); setHasChanges(true); }}
+            value={selectedDependencies}
+            searchable
+          />
+        </>
+      )}
       <Switch
         label="Activo"
         checked={active}
-        onChange={(event) => setActive(event.currentTarget.checked)}
-        mb="md"
+        onChange={(event) => { setActive(event.currentTarget.checked); setHasChanges(true); }}
+        mb="sm"
       />
-              <Group>
-                <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleDownloadTemplate} 
-                  leftSection={<IconDownload />}
-                >
-                  Descargar Plantilla Actualizada
-                </Button>
+      <Switch
+        label="Información visible para otros productores"
+        description="Cuando está activo, todos los productores podrán ver (en modo lectura) la información que otros productores hayan cargado en esta plantilla."
+        checked={shared}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setShared(checked); setHasChanges(true);
+        }}
+        mb="sm"
+      />
+      <Switch
+        label="Notificar a productores"
+        description="Cuando esté activo, todos los productores asignados recibirán un correo cuando otro productor suba información."
+        checked={notifyProducers}
+        onChange={(e) => { setNotifyProducers(e.currentTarget.checked); setHasChanges(true); }}
+        mb="sm"
+      />
+      <Switch
+        label="Permite generación de código QR"
+        description="Cuando está activo, los productores podrán generar un código QR para llenar esta plantilla."
+        checked={allowsQr}
+        onChange={(e) => {
+          const checked = e.currentTarget.checked;
+          setAllowsQr(checked); setHasChanges(true);
+        }}
+        mb="sm"
+      />
+      {allowsQr && (
+        <MultiSelect
+          mb="sm"
+          label="Dependencias autorizadas para generar QR"
+          description="Además del productor encargado, estas dependencias también podrán generar el código QR de esta plantilla. Si no seleccionas ninguna, solo el encargado podrá generarlo."
+          placeholder="Seleccionar dependencias"
+          data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+          value={qrAuthorizedProducers}
+          onChange={(v) => { setQrAuthorizedProducers(v); setHasChanges(true); }}
+          searchable
+          clearable
+        />
+      )}
+      <Divider label="Fechas de la plantilla" labelPosition="left" mb="sm" />
+      <Group grow mb="xs">
+        <DateInput
+          label="Fecha inicial"
+          description="Desde cuándo pueden empezar a cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaInicio}
+          onChange={(v) => { setFechaInicio(v); setHasChanges(true); }}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final productores"
+          description="Hasta cuándo pueden cargar los productores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalProductores}
+          onChange={(v) => { setFechaFinalProductores(v); setHasChanges(true); }}
+          minDate={fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Group grow mb="md">
+        <DateInput
+          label="Fecha final productor encargado"
+          description="Fecha límite para el productor encargado"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinalResponsables}
+          onChange={(v) => { setFechaFinalResponsables(v); setHasChanges(true); }}
+          minDate={fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+        <DateInput
+          label="Fecha final administradores"
+          description="Fecha límite final visible para administradores"
+          locale="es"
+          placeholder="Seleccionar fecha"
+          value={fechaFinal}
+          onChange={(v) => { setFechaFinal(v); setHasChanges(true); }}
+          minDate={fechaFinalResponsables ?? fechaFinalProductores ?? fechaInicio ?? undefined}
+          clearable
+          valueFormat="DD/MM/YYYY"
+        />
+      </Group>
+      <Select
+        mb="md"
+        label="Productor encargado"
+        description="Este productor será el encargado del envío final al SNIES. Si no se selecciona ninguno, todos los productores asignados pueden enviar."
+        placeholder="Seleccionar productor encargado"
+        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+        value={responsibleProducers[0] ?? null}
+        onChange={(val) => { setResponsibleProducers(val ? [val] : []); setHasChanges(true); }}
+        searchable
+        clearable
+      />
+      {hasWorkbookSheets && (
+        <>
+          <Group justify="space-between" align="center" mt="md" mb="xs">
+            <Text size="sm" c="dimmed">
+              Hojas de la plantilla:
+            </Text>
+            <Button
+              size="compact-sm"
+              variant="light"
+              color="blue"
+              leftSection={<IconPlus size={16} />}
+              onClick={() => setShowNewSheetModal(true)}
+            >
+              Nueva Hoja
+            </Button>
+          </Group>
+          <Tabs
+            value={activeSheet}
+            onChange={(value) => {
+              setActiveSheet(value);
+            }}
+            mt="xs"
+            mb="sm"
+          >
+            <DragDropContext onDragEnd={onDragEndSheets}>
+              <Droppable droppableId="sheets" direction="horizontal">
+                {(provided) => (
+                  <Tabs.List ref={provided.innerRef} {...provided.droppableProps} style={{ flexWrap: "nowrap" }}>
+                    {workbookSheets.map((sheet, index) => (
+                      <Draggable key={sheet.name} draggableId={`sheet-${sheet.name}`} index={index}>
+                        {(dragProvided) => (
+                          <Group
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            gap={0}
+                            wrap="nowrap"
+                            align="center"
+                          >
+                            <Center {...dragProvided.dragHandleProps} style={{ cursor: "grab" }}>
+                              <IconGripVertical size={14} color="var(--mantine-color-gray-5)" />
+                            </Center>
+                            <Tabs.Tab value={sheet.name}>
+                              {sheet.name}
+                            </Tabs.Tab>
+                            {isDeletableSheet(sheet.name) && (
+                              <ActionIcon
+                                size="xs"
+                                variant="subtle"
+                                color="red"
+                                onClick={() => handleDeleteSheet(sheet.name)}
+                                style={{ marginRight: 4 }}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            )}
+                          </Group>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </Tabs.List>
+                )}
+              </Droppable>
+            </DragDropContext>
+          </Tabs>
+          {activeSheet && (
+            <>
+              <Group justify="space-between" align="flex-end" mb={4}>
+                <Text size="sm" fw={500}>Productores para la hoja &quot;{activeSheet}&quot;</Text>
+                <Group gap="xs">
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    color="blue"
+                    onClick={() =>
+                      modals.openConfirmModal({
+                        title: "Confirmar selección",
+                        children: (
+                          <Text size="sm">
+                            ¿Deseas seleccionar todos los productores ({dependencies.length}) para la hoja &quot;{activeSheet}&quot;?
+                          </Text>
+                        ),
+                        labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
+                        confirmProps: { color: "blue" },
+                        onConfirm: () => {
+                          const allIds = dependencies.map((d) => d._id);
+                          setWorkbookSheets(prev => prev.map(s =>
+                            s.name === activeSheet ? { ...s, producers: allIds } : s
+                          ));
+                          setHasChanges(true);
+                        },
+                      })
+                    }
+                    disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
+                  >
+                    Seleccionar todos
+                  </Button>
+                  {(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length > 0 && (
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar limpieza",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas quitar todos los productores asignados a la hoja &quot;{activeSheet}&quot;?
+                            </Text>
+                          ),
+                          labels: { confirm: "Limpiar", cancel: "Cancelar" },
+                          confirmProps: { color: "red" },
+                          onConfirm: () => {
+                            setWorkbookSheets(prev => prev.map(s =>
+                              s.name === activeSheet ? { ...s, producers: [] } : s
+                            ));
+                            setHasChanges(true);
+                          },
+                        })
+                      }
+                    >
+                      Limpiar
+                    </Button>
+                  )}
+                </Group>
               </Group>
+              <MultiSelect
+                placeholder="Asignar productores a esta hoja"
+                data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+                value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
+                onChange={(values) => {
+                  setWorkbookSheets(prev => prev.map(s =>
+                    s.name === activeSheet ? { ...s, producers: values } : s
+                  ));
+                  setHasChanges(true);
+                }}
+                searchable
+                mb="xs"
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {baseFields.length > 0 && (
+        <Box mt="sm" mb="sm" style={{ borderRadius: "var(--mantine-radius-md)", border: "1px solid var(--mantine-color-gray-3)", overflow: "hidden" }}>
+          {/* Encabezado */}
+          {(() => {
+            const requiredBaseFields = baseFields.filter((f) =>
+              getEffectiveRequired({ required: f.required, comment: f.comment })
+            );
+            const overriddenCount = requiredBaseFields.filter((f) => f.required_override).length;
+            return (
+              <Group
+                justify="space-between"
+                px="sm"
+                py={8}
+                style={{ background: "var(--mantine-color-gray-1)", borderBottom: "1px solid var(--mantine-color-gray-3)" }}
+              >
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" style={{ letterSpacing: "0.05em" }}>
+                  Campos base
+                </Text>
+                {requiredBaseFields.length > 0 && (
+                  <Group gap="xs">
+                    <Button
+                      size="compact-xs"
+                      variant="light"
+                      color="blue"
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar selección",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas marcar como obligatorios todos los campos base ({requiredBaseFields.length}) de esta hoja?
+                            </Text>
+                          ),
+                          labels: { confirm: "Marcar todos", cancel: "Cancelar" },
+                          confirmProps: { color: "blue" },
+                          onConfirm: () => setAllBaseFieldsRequiredOverride(false),
+                        })
+                      }
+                      disabled={overriddenCount === 0}
+                    >
+                      Marcar todos
+                    </Button>
+                    <Button
+                      size="compact-xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() =>
+                        modals.openConfirmModal({
+                          title: "Confirmar limpieza",
+                          children: (
+                            <Text size="sm">
+                              ¿Deseas quitar la obligatoriedad de todos los campos base ({requiredBaseFields.length}) de esta hoja? El productor podra subir la plantilla aunque estos campos queden vacios.
+                            </Text>
+                          ),
+                          labels: { confirm: "Quitar todos", cancel: "Cancelar" },
+                          confirmProps: { color: "red" },
+                          onConfirm: () => setAllBaseFieldsRequiredOverride(true),
+                        })
+                      }
+                      disabled={overriddenCount === requiredBaseFields.length}
+                    >
+                      Quitar todos
+                    </Button>
+                  </Group>
+                )}
+              </Group>
+            );
+          })()}
+          {/* Filas */}
+          {baseFields.map((field, i) => (
+            <Group
+              key={i}
+              justify="space-between"
+              align="center"
+              px="sm"
+              py={7}
+              style={{
+                background: i % 2 === 0 ? "white" : "var(--mantine-color-gray-0)",
+                borderBottom: i < baseFields.length - 1 ? "1px solid var(--mantine-color-gray-2)" : "none",
+                transition: "background 0.15s",
+              }}
+            >
+              <Group gap="xs" align="center">
+                <Text
+                  size="xs"
+                  fw={500}
+                  style={{
+                    minWidth: 22,
+                    textAlign: "right",
+                    color: "var(--mantine-color-gray-5)",
+                  }}
+                >
+                  {i + 1}.
+                </Text>
+                <Text
+                  size="sm"
+                  fw={400}
+                  c="dimmed"
+                >
+                  {field.name}
+                </Text>
+              </Group>
+              {(() => {
+                // Lo que el campo pediria por si solo (flag `required` o la
+                // palabra "obligatorio" en el comentario), sin el override.
+                const requiredBySource = getEffectiveRequired({ required: field.required, comment: field.comment });
+                const overridden = Boolean(field.required_override);
+                const effectiveRequired = requiredBySource && !overridden;
+                return (
+                  <Group gap="xs" align="center">
+                    <Badge size="xs" variant="light" color={effectiveRequired ? "red" : "gray"}>
+                      {effectiveRequired ? "Obligatorio" : "No obligatorio"}
+                    </Badge>
+                    {requiredBySource && (
+                      <Tooltip
+                        label={overridden
+                          ? "El productor puede subir la plantilla aunque este campo quede vacio."
+                          : "Desmarca para permitir subir la plantilla aunque el comentario diga \"obligatorio\"."}
+                        withArrow
+                      >
+                        <Checkbox
+                          size="xs"
+                          label="Obligatorio"
+                          checked={!overridden}
+                          onChange={(e) => toggleBaseFieldRequiredOverride(field.name, !e.currentTarget.checked)}
+                        />
+                      </Tooltip>
+                    )}
+                  </Group>
+                );
+              })()}
+            </Group>
+          ))}
+        </Box>
+      )}
 
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="fields">
@@ -703,8 +1749,14 @@ router.back();
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {fields.map((field, index) => (
-                  <Draggable key={index} draggableId={`field-${index}`} index={index}>
+                {editableFields.map((field, editableIndex) => {
+                  const actualIndex = displayedFields.indexOf(field);
+                  return (
+                  <Draggable
+                    key={`${activeSheetData?.name || "default"}-${actualIndex}`}
+                    draggableId={`field-${activeSheetData?.name || "default"}-${actualIndex}`}
+                    index={editableIndex}
+                  >
                     {(provided) => (
                       <Table.Tr
                         ref={provided.innerRef}
@@ -719,7 +1771,7 @@ router.back();
                           <TextInput
                             placeholder="Nombre del campo"
                             value={field.name}
-                            onChange={(event) => handleFieldChange(index, "name", event.currentTarget.value)}
+                            onChange={(event) => handleDisplayedFieldChange(actualIndex, "name", event.currentTarget.value)}
                           />
                         </Table.Td>
                         <Table.Td w={rem(160)}>
@@ -727,7 +1779,7 @@ router.back();
                             placeholder="Seleccionar"
                             data={allowedDataTypes}
                             value={field.datatype}
-                            onChange={(value) => handleFieldChange(index, "datatype", value || "")}
+                            onChange={(value) => handleDisplayedFieldChange(actualIndex, "datatype", value || "")}
                             readOnly={!!field.validate_with}
                           />
                         </Table.Td>
@@ -736,16 +1788,16 @@ router.back();
                             <Checkbox
                               label=""
                               checked={field.required}
-                              onChange={(event) => handleFieldChange(index, "required", event.currentTarget.checked)}
+                              onChange={(event) => handleDisplayedFieldChange(actualIndex, "required", event.currentTarget.checked)}
                             />
                           </Center>
                         </Table.Td>
                         <Table.Td>
                           <Select
                             placeholder="Validar con"
-                            data={validatorOptions.map(option => ({ value: option.name, label: option.name }))}
-                            value={field.validate_with}
-                            onChange={(value) => handleFieldChange(index, "validate_with", value || "")}
+                            data={getValidatorSelectData(field.validate_with)}
+                            value={getValidatorSelectValue(field.validate_with)}
+                            onChange={(value) => handleDisplayedFieldChange(actualIndex, "validate_with", value || "")}
                             maxDropdownHeight={200}
                             searchable
                             clearable
@@ -753,60 +1805,208 @@ router.back();
                           />
                         </Table.Td>
                         <Table.Td>
-                            <Center>
-                              <Tooltip
-                                label="Esta opción solo se puede activar si se selecciona una validación"
-                                position="top"
-                                withArrow
-                                transitionProps={{ transition: "slide-up", duration: 300 }}
-                                disabled={field.validate_with !== ""}
-                              >
-                                <Checkbox
-                                  label=""
-                                  checked={field.multiple}
-                                  onChange={(event) => handleFieldChange(index, "multiple", event.currentTarget.checked)}
-                                  disabled={!field.validate_with}
-                                />
-                              </Tooltip>
-                            </Center>
+                          <Center>
+                            <Tooltip
+                              label="Esta opción solo se puede activar si se selecciona una validación"
+                              position="top"
+                              withArrow
+                              transitionProps={{ transition: "slide-up", duration: 300 }}
+                              disabled={field.validate_with !== ""}
+                            >
+                              <Checkbox
+                                label=""
+                                checked={field.multiple}
+                                onChange={(event) => handleDisplayedFieldChange(actualIndex, "multiple", event.currentTarget.checked)}
+                                disabled={!field.validate_with}
+                              />
+                            </Tooltip>
+                          </Center>
                         </Table.Td>
                         <Table.Td>
                           <Textarea
                             placeholder="Comentario del Campo / Pista"
                             value={field.comment}
                             onChange={(event) =>
-                              handleFieldChange(index, "comment", event.currentTarget.value)
+                              handleDisplayedFieldChange(actualIndex, "comment", event.currentTarget.value)
                             }
                             autosize
                             minRows={1}
                           />
                         </Table.Td>
                         <Table.Td>
-                          <Button color="red" onClick={() => removeField(index)}>
+                          <Button color="red" onClick={() => removeDisplayedField(actualIndex)}>
                             Eliminar
                           </Button>
                         </Table.Td>
                       </Table.Tr>
                     )}
                   </Draggable>
-                ))}
+                  );
+                })}
                 {provided.placeholder}
               </Table.Tbody>
+              <Table.Tfoot>
+                <Table.Tr style={{ background: "var(--mantine-color-blue-light)", borderTop: "2px dashed var(--mantine-color-blue-3)" }}>
+                  <Table.Td>
+                    <Center>
+                      <IconCirclePlus size={18} color="var(--mantine-color-blue-filled)" />
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <TextInput
+                      placeholder="Nombre del campo"
+                      value={newField.name}
+                      onChange={(e) => setNewField({ ...newField, name: e.currentTarget.value })}
+                    />
+                  </Table.Td>
+                  <Table.Td w={rem(160)}>
+                    <Select
+                      placeholder="Tipo"
+                      data={allowedDataTypes}
+                      value={newField.datatype || null}
+                      onChange={(v) => setNewField({ ...newField, datatype: v || "" })}
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Center>
+                      <Checkbox
+                        checked={newField.required}
+                        onChange={(e) => setNewField({ ...newField, required: e.currentTarget.checked })}
+                      />
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <Select
+                      placeholder="Validar con"
+                      data={getValidatorSelectData(newField.validate_with)}
+                      value={getValidatorSelectValue(newField.validate_with)}
+                      onChange={(v) => setNewField({ ...newField, validate_with: v || "" })}
+                      searchable
+                      clearable
+                      maxDropdownHeight={200}
+                      nothingFoundMessage="No existe"
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Center>
+                      <Tooltip
+                        label="Solo disponible si seleccionas una validación"
+                        disabled={!!newField.validate_with}
+                        withArrow
+                      >
+                        <Checkbox
+                          checked={newField.multiple}
+                          onChange={(e) => setNewField({ ...newField, multiple: e.currentTarget.checked })}
+                          disabled={!newField.validate_with}
+                        />
+                      </Tooltip>
+                    </Center>
+                  </Table.Td>
+                  <Table.Td>
+                    <Textarea
+                      placeholder="Comentario / Pista"
+                      value={newField.comment}
+                      onChange={(e) => setNewField({ ...newField, comment: e.currentTarget.value })}
+                      autosize
+                      minRows={1}
+                    />
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      color="blue"
+                      size="xs"
+                      onClick={addDisplayedField}
+                      leftSection={<IconCirclePlus size={14} />}
+                    >
+                      Añadir
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tfoot>
             </Table>
           )}
         </Droppable>
       </DragDropContext>
       <Group mt="md">
-        <Button onClick={addField} leftSection={<IconCirclePlus />}>
-          Añadir Campo
-        </Button>
-      </Group>
-      <Group mt="md">
         <Button onClick={handleSave} leftSection={<IconDeviceFloppy />}>Guardar</Button>
-        <Button variant="outline" onClick={() => router.back()}>
+        <Button variant="outline" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
           Cancelar
         </Button>
       </Group>
+
+      <Modal
+        opened={showNewSheetModal}
+        onClose={() => {
+          setShowNewSheetModal(false);
+          setNewSheetName("");
+        }}
+        title="Crear Nueva Hoja"
+        centered
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Nombre de la hoja"
+            placeholder="Ej: Datos Docentes, Información Adicional"
+            value={newSheetName}
+            onChange={(e) => setNewSheetName(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleCreateNewSheet();
+              }
+            }}
+            autoFocus
+          />
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNewSheetModal(false);
+                setNewSheetName("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateNewSheet} color="blue">
+              Crear Hoja
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={showDeleteSheetModal}
+        onClose={() => {
+          setShowDeleteSheetModal(false);
+          setSheetToDelete(null);
+        }}
+        title="Eliminar Hoja"
+        centered
+      >
+        <Stack gap="md">
+          <div>
+            <Text fw={500} mb="xs">
+              ¿Estás seguro de que deseas eliminar la hoja &quot;{sheetToDelete}&quot;?
+            </Text>
+            <Text size="sm" c="dimmed">
+              Esta acción es irreversible. Se eliminarán todos los campos de esta hoja, pero los datos ya cargados por los productores se conservarán.
+            </Text>
+          </div>
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteSheetModal(false);
+                setSheetToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmDeleteSheet} color="red">
+              Eliminar Hoja
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Container>
   );
 };

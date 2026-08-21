@@ -17,18 +17,17 @@ import {
   Box,
   ActionIcon,
   Anchor,
+  Select,
 } from "@mantine/core";
 import { useSession } from "next-auth/react";
-import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow, IconFilter, IconDownload } from "@tabler/icons-react";
-import dayjs from "dayjs";
-import "dayjs/locale/es";
-import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import { IconCheck, IconX, IconArrowLeft, IconCheckupList, IconTableRow, IconFilter } from "@tabler/icons-react";
+import DateConfig from "@/app/components/DateConfig";
 import { useSearchParams } from "next/navigation";
 import FilterSidebar from "@/app/components/FilterSidebar";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
+import { formatTemplateDateValue } from "@/app/utils/templateUtils";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
+import { paramId } from "@/app/utils/routeParams";
 
 interface RowData {
   [key: string]: any;
@@ -43,7 +42,7 @@ interface Dependency {
   dep_code: string,
   name: string,
   responsible: string
-  visualizers: string[]
+  visualizers?: string[]
 }
 
 interface ResumeData {
@@ -53,15 +52,21 @@ interface ResumeData {
 
 const UploadedTemplatePage = () => {
   const router = useRouter();
-  const { id } = useParams();
+  const params = useParams();
+  const id = paramId(params);
   const [tableData, setTableData] = useState<RowData[]>([]);
   const [originalTableData, setOriginalTableData] = useState<RowData[]>([]);
   const [templateName, setTemplateName] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData[]>()
   const [dependencies, setDependencies] = useState<Dependency[]>([])
+  const [dependencyNames, setDependencyNames] = useState<any[]>([]);
   const searchParams = useSearchParams();
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState(
+    searchParams?.get("sheet") || ""
+  );
   const [resume, setResume] = useState<boolean>(
-    searchParams.get("resume") === "true"
+    searchParams?.get("resume") === "true"
   );
   const { data: session } = useSession();
   const { userRole } = useRole();
@@ -70,6 +75,14 @@ const UploadedTemplatePage = () => {
   const [savedFilters, setSavedFilters] = useState<Record<string, any[]>>({});
   const [fieldComments, setFieldComments] = useState<Record<string, string>>({});
 
+  const normalizeDependencies = (items: any[] = []): Dependency[] => {
+    return items.map((dependency) => ({
+      dep_code: dependency.dep_code || dependency?.code || "",
+      name: dependency.name || "",
+      responsible: dependency.responsible || "",
+      visualizers: Array.isArray(dependency?.visualizers) ? dependency.visualizers : [],
+    }));
+  };
 
 
   const fetchDependenciesNames = async (depCodes: string[]) => {
@@ -96,27 +109,57 @@ const UploadedTemplatePage = () => {
         const templateName = response.data.name || "Plantilla sin nombre";
         setTemplateName(templateName);
         const sentData = response.data.publishedTemplate.loaded_data ?? []
-        const sentDepedencies = sentData.map((data:any) => {
-          return {dependency: data.dependency, send_by: data.send_by}
+        const onlineDraftData = response.data.qr_draft_data
+          ?? response.data.publishedTemplate?.qr_draft_data
+          ?? []
+        const hasMeaningfulValues = (entry: any) =>
+          (entry?.filled_data || []).some((field: any) =>
+            (field?.values || []).some((value: any) =>
+              value !== null && value !== undefined && String(value).trim() !== ""
+            )
+          )
+
+        // El resumen debe reconocer tambien a los productores que diligenciaron
+        // informacion en linea. Ese flujo guarda primero en qr_draft_data; si
+        // contiene valores reales, ya existe una carga del productor y debe
+        // verse en negro en el resumen. Los envios confirmados tienen prioridad
+        // cuando existen ambas entradas para la misma dependencia.
+        const sentByDependency = new Map<string, ResumeData>()
+        sentData.forEach((data: any) => {
+          if (data?.dependency) {
+            sentByDependency.set(String(data.dependency).trim(), {
+              dependency: String(data.dependency).trim(),
+              send_by: data.send_by,
+            })
+          }
         })
+        onlineDraftData.filter(hasMeaningfulValues).forEach((data: any) => {
+          const dependency = String(data?.dependency || data?.dependency_code || "").trim()
+          if (dependency && !sentByDependency.has(dependency)) {
+            sentByDependency.set(dependency, { dependency, send_by: data.send_by })
+          }
+        })
+        const sentDepedencies = Array.from(sentByDependency.values())
         setResumeData(sentDepedencies)
-        setDependencies(response.data.publishedTemplate.template.producers)
+
+        // Siempre mostrar TODOS los productores en el resumen, no solo los que enviaron
+        // response.data.template.producers tiene los productores ya resueltos con dep_code y name
+        // response.data.publishedTemplate.template.producers son solo ObjectIds (campo tipo {})
+        const allProducers: any[] = response.data.template?.producers
+          || response.data.publishedTemplate?.template?.producers
+          || []
+        const normalizedAll = normalizeDependencies(allProducers)
+        setDependencies(normalizedAll)
+
         
         // Obtener comentarios de los campos
         if (response.data.publishedTemplate?.template?.fields) {
           const comments: Record<string, string> = {};
-          console.log('🔍 Template fields with comments:', response.data.publishedTemplate.template.fields);
-          
           response.data.publishedTemplate.template.fields.forEach((field: any) => {
             if (field.comment && field.comment.trim()) {
               comments[field.name] = field.comment;
-              console.log(`✅ Comment found for field '${field.name}':`, field.comment);
-            } else {
-              console.log(`❌ No comment for field '${field.name}'`);
             }
           });
-          
-          console.log('📝 Final field comments mapping:', comments);
           setFieldComments(comments);
         }
       } catch (error: any) {
@@ -141,20 +184,26 @@ const UploadedTemplatePage = () => {
                 filterByUserScope: true, // Filtrar por ámbito del usuario
                 userRole: userRole, // Agregar rol del usuario
                 filterByUserDependency: userRole === 'Productor' || userRole === 'Responsable', // Solo filtrar por dependencia si es Productor o Responsable
+                ...(selectedSheet && { sheetName: selectedSheet }),
               },
             }
           );
 
-          const data = response.data.data;
-          console.log('📊 Data received for role:', userRole, 'Records:', data?.length || 0);
-          
-          // Mostrar información de debug sobre las dependencias encontradas
-          if (data?.length > 0) {
-            const uniqueDependencies = [...new Set(data.map((row: RowData) => row.Dependencia))];
-            console.log('🏢 Dependencies in data:', uniqueDependencies);
-            console.log('👤 User email:', session?.user?.email);
-            console.log('💼 User role:', userRole);
+          const availableSheets = Array.isArray(response.data.sheets)
+            ? response.data.sheets.filter(
+                (name: unknown): name is string =>
+                  typeof name === "string" && name.length > 0
+              )
+            : [];
+          setSheetNames(availableSheets);
+
+          // Abrir una hoja concreta para no mezclar columnas de hojas distintas.
+          if (!selectedSheet && availableSheets.length > 1) {
+            setSelectedSheet(availableSheets[0]);
+            return;
           }
+
+          const data = response.data.data;
 
           if (Array.isArray(data) && data.length > 0) {
             const depCodes = data.map((row: RowData) => row.Dependencia);
@@ -173,63 +222,19 @@ const UploadedTemplatePage = () => {
               };
             });
 
- 
-            // Analizar datos de evidencias
-            const evidenciasStats = updatedData.reduce((stats, row) => {
-              const evidencias = (row as any)['EVIDENCIAS'] || (row as any)['Evidencias'] || (row as any)['evidencias'];
-              if (evidencias && evidencias !== '' && evidencias !== undefined) {
-                stats.withData++;
-                if (stats.samples.length < 3) {
-                  stats.samples.push(evidencias);
-                }
-              } else {
-                stats.withoutData++;
-              }
-              return stats;
-            }, { withData: 0, withoutData: 0, samples: [] as any[] });
-              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
-            console.log('✅ Final data - Dependencies:', finalDependencies, 'Total records:', updatedData.length);
-            
-            // Notificar al usuario sobre el filtrado aplicado
-            if (userRole === 'Productor' || userRole === 'Responsable') {
-              const finalDependencies = [...new Set(updatedData.map((row: RowData) => row.Dependencia))];
-              if (finalDependencies.length === 1) {
-                showNotification({
-                  title: "Filtrado aplicado",
-                  titles: "Información",
-                  message: `Mostrando datos de ${finalDependencies.length} dependencias. Si solo necesitas ver tu dependencia, contacta al administrador.`,
-                  color: "blue",
-                  autoClose: 5000,
-                });
-              } else if (finalDependencies.length === 1) {
-                showNotification({
-                  title: "✅ Filtrado aplicado",
-                  message: `Mostrando datos de: ${finalDependencies[0]}`,
-                  color: "green",
-                  autoClose: 3000,
-                });
-              }
-            }
-            
-            // Debug: comparar campos de datos vs campos de plantilla
-            const dataFields = Object.keys(updatedData[0]);
-            const templateFields = Object.keys(fieldComments);
-            
-            console.log('📊 Data fields (columns in table):', dataFields);
-            console.log('📋 Template fields (with comments):', templateFields);
-            console.log('🔍 Fields in data but not in template:', dataFields.filter(f => !templateFields.includes(f)));
-            console.log('🔍 Fields in template but not in data:', templateFields.filter(f => !dataFields.includes(f)));
-            
             setTableData(updatedData);
             setOriginalTableData(updatedData);
           } else {
-            console.error("Invalid data format received from API.");
-         
-            showNotification({
-              title: "Sin datos",
-              message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
-              color: "orange",
-            });
+            setTableData([]);
+            setOriginalTableData([]);
+            // Solo mostrar notificación cuando el usuario está viendo la pestaña de datos, no el resumen
+            if (!resume) {
+              showNotification({
+                title: "Sin datos",
+                message: userRole === 'Administrador' ? "No hay datos cargados para esta plantilla." : "No se encontraron datos para esta plantilla en tu dependencia.",
+                color: "orange",
+              });
+            }
           }
         } catch (error: any) {
           console.error('Error fetching uploaded data:', error);
@@ -252,13 +257,18 @@ const UploadedTemplatePage = () => {
         }
       }
     }
-  }, [id, session, userRole]);
+  }, [id, session, userRole, selectedSheet]);
 
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
     params.set("resume", `${resume}`);
-    window.history.pushState(null, "", `?${params.toString()}`);
-  }, [resume]);
+    if (selectedSheet) {
+      params.set("sheet", selectedSheet);
+    } else {
+      params.delete("sheet");
+    }
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  }, [resume, selectedSheet]);
 
 const isValidDateString = (value: string) => {
   return (
@@ -305,13 +315,9 @@ const renderCellContent = (value: any, fieldName?: string) => {
     );
   }
 
-  if (
-    typeof value === "string" &&
-    isValidDateString(value) &&
-    isNaN(Number(value)) &&
-    dayjs(value).isValid()
-  ) {
-    return dateToGMT(value, "YYYY/MM/DD");
+  if (typeof value === "string") {
+    const formattedDate = formatTemplateDateValue(value, fieldName);
+    if (formattedDate) return formattedDate;
   }
 
   if (typeof value === "object" && value !== null) {
@@ -441,171 +447,6 @@ const renderCellContent = (value: any, fieldName?: string) => {
     </Text>
   );
 };
-  const handleDownloadFiltered = async () => {
-    try {
-      await downloadExcel(tableData, `${templateName}_filtrado`);
-    } catch (error) {
-      console.error("Error downloading fitered data:", error);
-      showNotification({
-        title: "Error",
-        message: "Error al descargar los datos filtrados",
-        color: "red",
-      });
-    }
-  };
-
-  const handleDownloadAll = async () => {
-    try {
-      await downloadExcel(originalTableData, `${templateName}_completo`);
-    } catch (error) {
-      console.error("Error downloading all data:", error);
-      showNotification({
-        title: "Error",
-        message: "Error al descargar todos los datos",
-        color: "red",
-      });
-    }
-  };
-
-  const downloadExcel = async (data: RowData[], fileName: string) => {
-    if (data.length === 0) {
-      showNotification({
-        title: "Sin datos",
-        message: "No hay datos para descargar",
-        color: "orange",
-      });
-      return;
-    }
-
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(templateName || "Datos");
-
-    // Obtener las columnas del primer registro
-    const columns = Object.keys(data[0]);
-    
-    // Crear encabezados
-    const headerRow = worksheet.addRow(columns);
-    headerRow.eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: "FFFFFF" } };
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "0f1f39" },
-      };
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-      cell.alignment = { vertical: "middle", horizontal: "center" };
-    });
-
-    // Agregar datos
-    data.forEach((row) => {
-      const rowValues = columns.map(column => {
-        const value = row[column];
-        
-        // Manejar diferentes tipos de datos
-        if (value === null || value === undefined) {
-          return "";
-        }
-        
-        if (typeof value === "boolean") {
-          return value ? "Sí" : "No";
-        }
-        
-        if (typeof value === "object") {
-          // Manejar hipervínculos de Excel primero
-          if (value.hyperlink || value.text || value.formula) {
-            return value.text || value.hyperlink || value.formula;
-          }
-          // Si tiene texto, usar ese
-          if (value.text) {
-            return value.text;
-          }
-          // Si es número de Mongo
-          const mongoNumeric = value?.$numberInt || value?.$numberDouble;
-          if (mongoNumeric !== undefined) {
-            return mongoNumeric;
-          }
-          
-          // Buscar propiedades de email de forma más exhaustiva
-          const possibleEmailKeys = ['email', 'value', 'label', 'mail', 'correo', 'address', 'emailAddress'];
-          const emailKey = possibleEmailKeys.find(key => value[key] && typeof value[key] === 'string');
-          
-          if (emailKey) {
-            return value[emailKey];
-          }
-          
-          // Si es un array, unir elementos
-          if (Array.isArray(value)) {
-            if (value.length === 0) {
-              return "";
-            }
-            return value.map(item => {
-              if (typeof item === 'object' && item !== null) {
-                // Manejar hipervínculos de Excel
-                if (item.hyperlink || item.text || item.formula) {
-                  return item.text || item.hyperlink || item.formula;
-                }
-                const itemEmailKey = possibleEmailKeys.find(key => item[key] && typeof item[key] === 'string');
-                return itemEmailKey ? item[itemEmailKey] : (item.text || JSON.stringify(item));
-              }
-              return item;
-            }).join(', ');
-          }
-          
-          // Intentar extraer cualquier valor string del objeto
-          const objectValues = Object.values(value).filter(val => typeof val === 'string' && val.length > 0);
-          if (objectValues.length > 0) {
-            const firstStringValue = objectValues[0] as string;
-            // Si parece un email, usarlo
-            if (firstStringValue.includes('@') || firstStringValue.includes('.com') || firstStringValue.includes('.edu')) {
-              return firstStringValue;
-            }
-          }
-          
-          // Por defecto, convertir a JSON
-          return JSON.stringify(value);
-        }
-        
-        // Para fechas, formatear
-        if (typeof value === "string" && isValidDateString(value) && dayjs(value).isValid()) {
-          return dayjs(value).format("YYYY/MM/DD");
-        }
-        
-        return value.toString();
-      });
-      
-      const dataRow = worksheet.addRow(rowValues);
-      dataRow.eachCell((cell) => {
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-    });
-
-    // Ajustar ancho de columnas
-    worksheet.columns.forEach((column) => {
-      column.width = 20;
-    });
-
-    // Generar y descargar archivo
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${fileName}.xlsx`);
-    
-    showNotification({
-      title: "Éxito",
-      message: `Archivo ${fileName}.xlsx descargado exitosamente`,
-      color: "green",
-    });
-  };
-
   const handleFiltersChange = (filters: Record<string, string[]>) => {
     setAppliedFilters(filters);
     
@@ -770,31 +611,24 @@ const renderCellContent = (value: any, fieldName?: string) => {
     setTableData(filteredData);
   };
 
-  const resumeRows = dependencies.map((dependency) => {
-    const hasSentData = resumeData?.some(data => data.dependency===dependency.dep_code)
+  const resumeRows = dependencies.map((dep) => {
+    const depCode = String(dep.dep_code || "").trim();
+    const depName = dep.name || depCode || "Dependencia desconocida";
+    const sentData = resumeData?.find(item => item.dependency === depCode);
+    const userName = sentData?.send_by?.full_name || sentData?.send_by?.email || "No definido";
+    const status = sentData ? "✓ Enviado" : "✗ No enviado";
+    const statusColor = sentData ? undefined : "red";
+    
     return (
-      <Table.Tr key={dependency.dep_code} c={!hasSentData ? "red" : undefined}>
-        <Table.Td>{dependency.name}</Table.Td>
+      <Table.Tr key={depCode} c={statusColor}>
+        <Table.Td>{depName}</Table.Td>
         <Table.Td>
-          {dependency.visualizers.length > 0 ? (
-            <Group gap={5}>
-              {dependency.visualizers.slice(0, 1).map((v, index) => (
-                <Text key={index}> {v} </Text>
-              ))}
-              {dependency.visualizers.length > 1 && (
-                <Badge variant="outline">
-                  +{dependency.visualizers.length - 1} más
-                </Badge>
-              )}
-            </Group>
-          ) : (
-            <Text> No definido </Text>
-          )}
+          <Text size="sm">{userName}</Text>
         </Table.Td>
-        <Table.Td>{hasSentData ? "✓ Enviado" : "✗ No enviado"}</Table.Td>
+        <Table.Td>{status}</Table.Td>
       </Table.Tr>
     );
-  })
+  }) || [];
 
   return (
     <Box style={{ display: 'flex', minHeight: '100vh' }}>
@@ -889,37 +723,34 @@ const renderCellContent = (value: any, fieldName?: string) => {
           {resumeRows}
         </Table.Tbody>
       </Table>
-      : tableData.length === 0 ? (
+      : <>
+      {sheetNames.length > 1 && (
+        <Group mb="md" align="end">
+          <Select
+            label="Hoja enviada"
+            description="Selecciona la hoja de la plantilla que deseas consultar"
+            data={sheetNames.map((name) => ({ value: name, label: name }))}
+            value={selectedSheet}
+            onChange={(value) => {
+              setAppliedFilters({});
+              setTableData([]);
+              setOriginalTableData([]);
+              setSelectedSheet(value || sheetNames[0]);
+            }}
+            allowDeselect={false}
+            searchable
+            w={360}
+          />
+        </Group>
+      )}
+      {tableData.length === 0 ? (
         <Text ta={"center"}>No hay datos cargados para esta plantilla.</Text>
       ) : (
         <Box>
-          <Group justify="space-between" mb="md">
-            <Text size="sm" c="dimmed">
-              {tableData.length} registro{tableData.length !== 1 ? 's' : ''} encontrado{tableData.length !== 1 ? 's' : ''}
-            </Text>
-            <Group gap="xs">
-              <Button
-                variant="outline"
-                size="sm"
-                leftSection={<IconDownload size={16} />}
-                onClick={() => handleDownloadFiltered()}
-                disabled={tableData.length === 0}
-              >
-                 Descargar datos {Object.keys(appliedFilters).length > 0 ? 'filtrados' : 'completos'}
-              </Button>
-              {Object.keys(appliedFilters).length > 0 && (
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  leftSection={<IconDownload size={16} />}
-                  onClick={() => handleDownloadAll()}
-                >
-                   Descargar todos los datos
-                </Button>
-              )}
-            </Group>
-          </Group>
-          
+          <Text size="sm" c="dimmed" mb="md">
+            {tableData.length} registro{tableData.length !== 1 ? 's' : ''} encontrado{tableData.length !== 1 ? 's' : ''}
+          </Text>
+
           <Box 
             style={{
               height: 'calc(100vh - 280px)',
@@ -1024,6 +855,7 @@ const renderCellContent = (value: any, fieldName?: string) => {
           </Box>
         </Box>
       )}
+      </>}
         </Container>
       </Box>
     </Box>

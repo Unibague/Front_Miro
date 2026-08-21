@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput } from "@mantine/core";
+import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput, SegmentedControl } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { IconFilter, IconX, IconBuilding, IconSchool, IconWorld, IconUser, IconSearch, IconTrash, IconChevronDown, IconCalendar } from "@tabler/icons-react";
 import axios from "axios";
@@ -41,6 +41,15 @@ interface FilterSidebarProps {
   templates?: any[];
 }
 
+const FIELD_LABEL_FIXES: Record<string, string> = {
+  'Ano': 'Año',
+  'ANO': 'Año',
+  'ano': 'Año',
+};
+
+const fixFieldLabel = (label: string): string =>
+  FIELD_LABEL_FIXES[label] ?? label.split(' ').map(w => FIELD_LABEL_FIXES[w] ?? w).join(' ');
+
 const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templateData, savedFilters, templates }: FilterSidebarProps) => {
   const { data: session } = useSession();
   const { selectedPeriodId } = usePeriod();
@@ -49,6 +58,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
   const [filterOptions, setFilterOptions] = useState<Record<string, FilterOption[]>>({});
   const [availableFields, setAvailableFields] = useState<string[]>([]);
   const [availableDependencies, setAvailableDependencies] = useState<FilterOption[]>([]);
+  const [yearModes, setYearModes] = useState<Record<string, 'single' | 'range'>>({});
 
   // Generar filtros dinámicos basados en los datos de la plantilla
   const generateDynamicFilters = (data: any[]) => {
@@ -73,8 +83,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       // Determinar tipo de input basado en el nombre del campo y cantidad de valores
       const fieldLower = fieldName.toLowerCase();
       
+      // Campos de año - selector de rango
+      if (/^a[ñn]o$/i.test(fieldLower) || fieldLower === 'year' || fieldLower === 'anio') {
+        inputType = 'yearRange';
+      }
       // Campos de fecha
-      if (fieldLower.includes('fecha') || fieldLower.includes('date') || 
+      else if (fieldLower.includes('fecha') || fieldLower.includes('date') ||
           fieldLower.includes('time') || fieldLower.includes('hora')) {
         inputType = 'date';
       }
@@ -126,7 +140,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       filters.push({
         _id: `dynamic_${index}`,
         name: fieldName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-        label: fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        label: fixFieldLabel(fieldName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())),
         type: 'select',
         source: 'template_fields',
         sourceField: fieldName,
@@ -184,7 +198,13 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                            fieldLower.includes('cantidad') ||
                            fieldLower.includes('monto') ||
                            fieldLower.includes('precio') ||
-                           fieldLower.includes('costo')) &&
+                           fieldLower.includes('costo') ||
+                           fieldLower.includes('horas') ||
+                           fieldLower.includes('porcent') ||
+                           fieldLower.includes('semestre') ||
+                           fieldLower.includes('credito') ||
+                           fieldLower.includes('nota') ||
+                           fieldLower.includes('porcentaje')) &&
                            !fieldLower.includes('beneficiarios');
     
     const fieldSuggestsValidator = !isExcludedField && (
@@ -221,7 +241,22 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                                   // Campos específicos de CONSULTORIAS
                                   fieldLower.includes('consultoria') ||
                                   fieldLower.includes('nivel') ||
-                                  fieldLower.includes('estudio')
+                                  fieldLower.includes('estudio') ||
+                                  // SNIES / Histórico Docentes / Gestión Humana
+                                  fieldLower.includes('dedicacion') ||
+                                  fieldLower.includes('dedicaci') ||
+                                  fieldLower.includes('contrato') ||
+                                  fieldLower.includes('capacitacion') ||
+                                  fieldLower.includes('capacitaci') ||
+                                  fieldLower.includes('metodologia') ||
+                                  fieldLower.includes('metodolog') ||
+                                  fieldLower.includes('ingreso') ||
+                                  fieldLower.includes('categoria') ||
+                                  fieldLower.includes('vinculacion') ||
+                                  fieldLower.includes('vinculaci') ||
+                                  fieldLower.includes('modalidad') ||
+                                  // Si tiene mapeo exacto en CleanValidatorService (captura todo lo demás)
+                                  CleanValidatorService.getInstance().hasMapping(fieldName)
                                   );
     
     console.log(`VALIDATOR DEBUG - Field: ${fieldName}`);
@@ -255,7 +290,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         console.log(`VALIDATOR DEBUG - Fetching validators for field: ${fieldName}`);
         // Obtener todos los validadores disponibles
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination?page=1&limit=200`
+          `${process.env.NEXT_PUBLIC_API_URL}/validators/pagination`,
+          { params: { page: 1, limit: 200, periodId: selectedPeriodId } }
         );
         
         if (response.data && response.data.validators) {
@@ -602,7 +638,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           
           // Usar el servicio limpio de validadores
           const cleanValidator = CleanValidatorService.getInstance();
-          const enrichedOptions = await cleanValidator.enrichWithDescriptions(fieldName, valuesArray);
+          const enrichedOptions = await cleanValidator.enrichWithDescriptions(fieldName, valuesArray, selectedPeriodId);
           return enrichedOptions;
         }
       } catch (error) {
@@ -642,6 +678,11 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     setFilterOptions(newOptions);
   };
 
+  // Resetear caché del servicio cuando cambia el periodo
+  useEffect(() => {
+    CleanValidatorService.getInstance().resetCache();
+  }, [selectedPeriodId]);
+
   useEffect(() => {
     if (templateData && templateData.length > 0) {
       let filtersToUse: (FilterConfig & { icon: any; color: string; inputType: string })[] = [];
@@ -672,7 +713,10 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
               let dynamicInputType = 'dropdown';
               
               // Aplicar la misma lógica que en generateDynamicFilters
-              if (fieldLower.includes('fecha') || fieldLower.includes('date') || 
+              if (/^a[ñn]o$/i.test(fieldLower) || fieldLower === 'year' || fieldLower === 'anio') {
+                dynamicInputType = 'yearRange';
+              }
+              else if (fieldLower.includes('fecha') || fieldLower.includes('date') ||
                   fieldLower.includes('time') || fieldLower.includes('hora')) {
                 dynamicInputType = 'date';
               }
@@ -781,7 +825,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           left: '20px',
           top: '50%',
           transform: 'translateY(-50%)',
-          zIndex: 101,
+          zIndex: 301,
           boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
         }}
       >
@@ -795,21 +839,23 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       style={{
         position: 'fixed',
         left: 0,
-        top: 0,
-        height: '100vh',
-        width: '20%',
-        zIndex: 100,
+        top: 56,
+        bottom: 0,
+        width: '300px',
+        zIndex: 300,
         backgroundColor: '#f8f9fa',
         borderRight: '2px solid #e9ecef',
         boxShadow: '2px 0 10px rgba(0,0,0,0.1)'
       }}
     >
-      <Paper 
-        p={0} 
-        style={{ 
-          height: '100%', 
+      <Paper
+        p={0}
+        style={{
+          height: '100%',
           borderRadius: 0,
-          backgroundColor: 'transparent'
+          backgroundColor: 'transparent',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {/* Header */}
@@ -817,7 +863,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
           p="lg" 
           style={{
             backgroundColor: '#495057',
-            color: 'white'
+            color: 'white',
+            flexShrink: 0,
           }}
         >
           <Group justify="space-between" align="center" mb="sm">
@@ -867,11 +914,11 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         </Box>
         
         {/* Filters Content */}
-        <ScrollArea 
-          style={{ height: 'calc(100vh - 160px)' }}
+        <ScrollArea
+          style={{ flex: 1, minHeight: 0 }}
           p="md"
           scrollbarSize={6}
-          type="never"
+          type="hover"
         >
           <Stack gap="sm">
             {activeFilters.length === 0 ? (
@@ -882,7 +929,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             ) : (
               activeFilters.map((filter) => {
                 const Icon = filter.icon;
-                const hasValues = filterValues[filter.name]?.length > 0;
+                const fromKey = `${filter.name}__from`;
+                const toKey = `${filter.name}__to`;
+                const yearMode = filter.inputType === 'yearRange' ? (yearModes[filter.name] || 'range') : undefined;
+                const hasValues = filter.inputType === 'yearRange'
+                  ? ((filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0)) > 0
+                  : (filterValues[filter.name]?.length ?? 0) > 0;
                 const options = filterOptions[filter.sourceField] || filterOptions[filter.name] || [];
                 
                 // Debug para filtros específicos
@@ -928,13 +980,17 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         {filter.label}
                       </Text>
                       {hasValues && (
-                        <Badge 
-                          size="sm" 
-                          variant="filled" 
+                        <Badge
+                          size="sm"
+                          variant="filled"
                           color={filter.color}
                           style={{ marginLeft: 'auto' }}
                         >
-                          {filterValues[filter.name]?.length || 0}
+                          {filter.inputType === 'yearRange'
+                            ? (yearMode === 'single'
+                                ? (filterValues[fromKey]?.length ?? 0)
+                                : (filterValues[fromKey]?.length ?? 0) + (filterValues[toKey]?.length ?? 0))
+                            : filterValues[filter.name]?.length || 0}
                         </Badge>
                       )}
                     </Group>
@@ -953,7 +1009,6 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         })()}
                         onChange={(value) => {
                           if (value && value.trim()) {
-                            // Buscar el valor correspondiente al label seleccionado
                             const option = options.find(opt => opt.label === value);
                             const valueToUse = option ? option.value : value.trim();
                             handleFilterChange(filter.name, [valueToUse]);
@@ -966,49 +1021,40 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         leftSection={<IconSearch size={14} />}
                         limit={10}
                         maxDropdownHeight={200}
+                        comboboxProps={{ withinPortal: true, zIndex: 10000 }}
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
                             fontSize: '12px',
-                            '&:focus': {
-                              borderColor: `var(--mantine-color-${filter.color}-6)`
-                            }
                           },
-                          dropdown: {
-                            zIndex: 10000
-                          }
                         }}
                       />
                     )}
                     
                     {filter.inputType === 'radio' && (
-                      <Radio.Group
-                        value={filterValues[filter.name]?.[0] || ''}
-                        onChange={(value) => {
-                          console.log(`RADIO ${filter.label} onChange:`, { value, filterName: filter.name });
-                          handleFilterChange(filter.name, value ? [value] : []);
-                        }}
-                      >
-                        <Stack gap={4} mt="xs">
-                          {options.map((option) => (
-                            <Radio
-                              key={option.value}
-                              value={option.value}
-                              label={option.label}
-                              color={filter.color}
-                              size="xs"
-                              styles={{
-                                label: { fontSize: '12px', fontWeight: 500 },
-                                radio: {
-                                  '&:checked': {
-                                    backgroundColor: `var(--mantine-color-${filter.color}-6)`
-                                  }
-                                }
-                              }}
-                            />
-                          ))}
-                        </Stack>
-                      </Radio.Group>
+                      options.length === 0
+                        ? <Text size="xs" c="dimmed" fs="italic">Cargando opciones...</Text>
+                        : <Radio.Group
+                            value={filterValues[filter.name]?.[0] || ''}
+                            onChange={(value) => {
+                              handleFilterChange(filter.name, value ? [value] : []);
+                            }}
+                          >
+                            <Stack gap={4} mt="xs">
+                              {options.map((option) => (
+                                <Radio
+                                  key={option.value}
+                                  value={option.value}
+                                  label={option.label}
+                                  color={filter.color}
+                                  size="xs"
+                                  styles={{
+                                    label: { fontSize: '12px', fontWeight: 500 },
+                                  }}
+                                />
+                              ))}
+                            </Stack>
+                          </Radio.Group>
                     )}
                     
                     {filter.inputType === 'dropdown' && (
@@ -1017,7 +1063,6 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         data={options}
                         value={filterValues[filter.name]?.[0] || null}
                         onChange={(value) => {
-                          console.log(`DROPDOWN ${filter.label} onChange:`, value);
                           handleFilterChange(filter.name, value ? [value] : []);
                         }}
                         searchable
@@ -1025,20 +1070,12 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                         size="xs"
                         radius="md"
                         maxDropdownHeight={200}
-                        rightSection={<IconChevronDown size={14} />}
+                        comboboxProps={{ withinPortal: true, zIndex: 10000 }}
                         styles={{
                           input: {
                             border: `1px solid var(--mantine-color-${filter.color}-3)`,
                             fontSize: '12px',
-                            '&:focus': {
-                              borderColor: `var(--mantine-color-${filter.color}-6)`
-                            }
                           },
-                          dropdown: {
-                            maxHeight: '200px',
-                            overflowY: 'auto',
-                            zIndex: 10000
-                          }
                         }}
                       />
                     )}
@@ -1074,6 +1111,87 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                       />
                     )}
                     
+                    {filter.inputType === 'yearRange' && (() => {
+                      const sortedYears = [...options].sort((a, b) => a.value.localeCompare(b.value));
+                      const fromVal = filterValues[fromKey]?.[0] || null;
+                      const toVal = filterValues[toKey]?.[0] || null;
+                      const mode = yearModes[filter.name] || 'range';
+                      const sharedStyles = {
+                        input: { border: `1px solid var(--mantine-color-${filter.color}-3)`, fontSize: '12px' },
+                        dropdown: { zIndex: 10000 }
+                      };
+
+                      const handleModeChange = (newMode: string) => {
+                        setYearModes(prev => ({ ...prev, [filter.name]: newMode as 'single' | 'range' }));
+                        const cleared = { ...filterValues, [fromKey]: [], [toKey]: [] };
+                        setFilterValues(cleared);
+                        onFiltersChange(cleared);
+                      };
+
+                      return (
+                        <Stack gap={6}>
+                          <SegmentedControl
+                            value={mode}
+                            onChange={handleModeChange}
+                            data={[
+                              { label: 'Año único', value: 'single' },
+                              { label: 'Rango', value: 'range' },
+                            ]}
+                            size="xs"
+                            fullWidth
+                          />
+                          {mode === 'single' ? (
+                            <Select
+                              label={<Text size="11px" c="dimmed">Año específico</Text>}
+                              placeholder="Seleccionar año..."
+                              data={sortedYears}
+                              value={fromVal}
+                              onChange={(v) => {
+                                const updated = { ...filterValues, [fromKey]: v ? [v] : [], [toKey]: v ? [v] : [] };
+                                setFilterValues(updated);
+                                onFiltersChange(updated);
+                              }}
+                              clearable
+                              searchable
+                              size="xs"
+                              radius="md"
+                              styles={sharedStyles}
+                              comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                            />
+                          ) : (
+                            <>
+                              <Select
+                                label={<Text size="11px" c="dimmed">Desde</Text>}
+                                placeholder="Año inicio..."
+                                data={sortedYears}
+                                value={fromVal}
+                                onChange={(v) => handleFilterChange(fromKey, v ? [v] : [])}
+                                clearable
+                                searchable
+                                size="xs"
+                                radius="md"
+                                styles={sharedStyles}
+                                comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                              />
+                              <Select
+                                label={<Text size="11px" c="dimmed">Hasta</Text>}
+                                placeholder="Año fin..."
+                                data={sortedYears}
+                                value={toVal}
+                                onChange={(v) => handleFilterChange(toKey, v ? [v] : [])}
+                                clearable
+                                searchable
+                                size="xs"
+                                radius="md"
+                                styles={sharedStyles}
+                                comboboxProps={{ withinPortal: true, zIndex: 10000 }}
+                              />
+                            </>
+                          )}
+                        </Stack>
+                      );
+                    })()}
+
                     {filter.inputType === 'date' && (
                       <DatePickerInput
                         placeholder={`Seleccionar ${filter.label.toLowerCase()}...`}

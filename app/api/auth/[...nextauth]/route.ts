@@ -9,15 +9,34 @@ type ExtendedUser = {
   id: string;
   name: string;
   email: string;
+  image?: string | null;
   isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
 };
 
 type ExtendedSessionUser = {
+  id?: string;
   name?: string | null;
   email?: string | null;
   image?: string | null;
   role?: string;
   isImpersonating?: boolean;
+  originalUserId?: string;
+  originalUserEmail?: string;
+  originalUserName?: string;
+  originalUserImage?: string | null;
+};
+
+const normalizeImageUrl = (value: unknown) => {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") return null;
+
+  return normalized;
 };
 
 const options: NextAuthOptions = {
@@ -34,10 +53,15 @@ const options: NextAuthOptions = {
         id: { label: "User id", type: "text" },
         userEmail: { label: "User Email", type: "text" },
         userName: { label: "User Name", type: "text" },
+        userImage: { label: "User Image", type: "text" },
         isImpersonating: {
           label: "Indicator of impersonating an user",
           type: "text",
         },
+        originalUserId: { label: "Original User Id", type: "text" },
+        originalUserEmail: { label: "Original User Email", type: "text" },
+        originalUserName: { label: "Original User Name", type: "text" },
+        originalUserImage: { label: "Original User Image", type: "text" },
       },
 
       async authorize(credentials) {
@@ -53,7 +77,12 @@ const options: NextAuthOptions = {
           id: credentials.id,
           name: credentials.userName,
           email: credentials.userEmail,
+          image: normalizeImageUrl(credentials.userImage),
           isImpersonating: credentials.isImpersonating === "true",
+          originalUserId: credentials.originalUserId,
+          originalUserEmail: credentials.originalUserEmail,
+          originalUserName: credentials.originalUserName,
+          originalUserImage: normalizeImageUrl(credentials.originalUserImage),
         };
       },
     }),
@@ -71,7 +100,7 @@ const options: NextAuthOptions = {
     async signIn({ user }) {
       try {
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/users`,
+          `${process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL}/users`,
           {
             params: { email: user.email },
           }
@@ -95,10 +124,22 @@ const options: NextAuthOptions = {
         : "/dashboard";
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, profile }) {
       if (user) {
         const u = user as ExtendedUser;
+        const existingPicture = normalizeImageUrl(token.picture);
+        const previousOriginalImage = normalizeImageUrl(token.originalUserImage);
+        const profilePicture = normalizeImageUrl((profile as { picture?: unknown } | undefined)?.picture);
+        const userImage = normalizeImageUrl(u.image) || profilePicture;
+        const incomingOriginalImage = normalizeImageUrl(u.originalUserImage);
+        const isImpersonating = u.isImpersonating === true;
+
         token.isImpersonating = u.isImpersonating === true;
+        token.originalUserId = u.originalUserId ?? null;
+        token.originalUserEmail = u.originalUserEmail ?? null;
+        token.originalUserName = u.originalUserName ?? null;
+        token.originalUserImage = incomingOriginalImage || (isImpersonating ? existingPicture : previousOriginalImage);
+        token.picture = userImage || (!isImpersonating ? previousOriginalImage || existingPicture : null);
       }
       return token;
     },
@@ -107,16 +148,26 @@ const options: NextAuthOptions = {
       if (session.user) {
         const u = session.user as ExtendedSessionUser;
         u.isImpersonating = token.isImpersonating ?? false;
+        u.originalUserId = typeof token.originalUserId === "string" ? token.originalUserId : undefined;
+        u.originalUserEmail = typeof token.originalUserEmail === "string" ? token.originalUserEmail : undefined;
+        u.originalUserName = typeof token.originalUserName === "string" ? token.originalUserName : undefined;
+        u.originalUserImage = normalizeImageUrl(token.originalUserImage);
+
+        const sessionImage = normalizeImageUrl(token.picture) || (!u.isImpersonating ? u.originalUserImage : null);
+        if (sessionImage) {
+          u.image = sessionImage;
+        }
 
         try {
           const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_API_URL}/users`,
+            `${process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL}/users`,
             {
               params: { email: session.user.email },
             }
           );
           const user = response.data;
           if (user) {
+            u.id = user._id;
             u.role = user.activeRole;
           }
         } catch (error) {

@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, TextInput, Button, Group, Table, Select, Tooltip, Center } from "@mantine/core";
+import { Container, TextInput, Button, Group, Table, Select, Tooltip, Center, ActionIcon } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
-import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy, IconArrowLeft } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useParams } from "next/navigation";
+import { paramKey } from "@/app/utils/routeParams";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Template {
   _id: string;
@@ -21,7 +24,10 @@ const EditCategoryPage = () => {
   const [fields, setFields] = useState<any[]>([]);
   const { data: session } = useSession();
   const router = useRouter();
-  const { categoryId } = useParams();
+  const params = useParams();
+  const categoryId = paramKey(params, "categoryId");
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -41,10 +47,8 @@ const EditCategoryPage = () => {
           );
           const category = response.data;
           setCategoryName(category.name);
-          // Mapeamos las plantillas asociadas con sus secuencias
           const templateFields = category.templates.map((template: any) => ({
             templateId: template.templateId._id,
-            sequence: template.sequence,
           }));
           setFields(templateFields);
         } catch (error) {
@@ -58,13 +62,14 @@ const EditCategoryPage = () => {
   }, [categoryId]);
 
   const handleFieldChange = (index: number, field: string, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
     setFields(updatedFields);
   };
 
   const addField = () => {
-    setFields([...fields, { templateId: "", sequence: 1 }]);
+    setFields([...fields, { templateId: "" }]);
   };
 
   const removeField = (index: number) => {
@@ -88,7 +93,6 @@ const EditCategoryPage = () => {
         name: categoryName,
         templates: fields.map(field => ({
           templateId: field.templateId,
-          sequence: field.sequence
         }))
       };
   
@@ -100,7 +104,8 @@ const EditCategoryPage = () => {
         message: "La categoría se ha actualizado exitosamente.",
         color: "teal",
       });
-  
+
+      setHasChanges(false);
       router.push("/templates/categories"); // Redirigir después de guardar
   
     } catch (error) {
@@ -115,10 +120,13 @@ const EditCategoryPage = () => {
 
   return (
     <Container size="xl">
+      <ActionIcon variant="subtle" size="lg" mb="sm" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
+        <IconArrowLeft size={18} />
+      </ActionIcon>
       <TextInput
         label="Nombre de la Categoría"
         value={categoryName}
-        onChange={(e) => setCategoryName(e.currentTarget.value)}
+        onChange={(e) => { setCategoryName(e.currentTarget.value); setHasChanges(true); }}
         placeholder="Ingrese el nombre de la categoría"
         mb="md"
         required
@@ -131,7 +139,6 @@ const EditCategoryPage = () => {
                 <Table.Tr>
                   <Table.Th>Arrastrar</Table.Th>
                   <Table.Th>Nombre de la Plantilla</Table.Th>
-                  <Table.Th>Secuencia</Table.Th>
                   <Table.Th>Acciones</Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -159,15 +166,6 @@ const EditCategoryPage = () => {
                           />
                         </Table.Td>
                         <Table.Td>
-                          <TextInput
-                            type="number"
-                            value={field.sequence}
-                            onChange={(e) => handleFieldChange(index, "sequence", parseInt(e.currentTarget.value))}
-                            min={1}
-                            placeholder="Secuencia"
-                          />
-                        </Table.Td>
-                        <Table.Td>
                           <Button color="red" onClick={() => removeField(index)}>Eliminar</Button>
                         </Table.Td>
                       </Table.Tr>
@@ -192,7 +190,7 @@ const EditCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
           color="red"
         >
           Cancelar

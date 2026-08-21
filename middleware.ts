@@ -3,7 +3,13 @@ import { NextResponse } from "next/server";
 
 export default withAuth(
   function middleware(req) {
-    // Permitir acceso a todas las rutas autenticadas
+    const { pathname } = req.nextUrl;
+    /* Legacy URLs: no existe app/date-review (solo redirects aquí → processes-MEN). */
+    if (pathname.startsWith("/date-review")) {
+      const url = req.nextUrl.clone();
+      url.pathname = pathname.replace(/^\/date-review/, "/processes-MEN");
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next();
   },
   {
@@ -25,5 +31,8 @@ export const config = {
     "/responsible/:path*",
     "/templates/:path*",
     "/templates-with-filters/:path*",
+    "/apoyos-plantillas/:path*",
+    "/date-review/:path*",
+    "/processes-MEN/:path*",
   ],
 };

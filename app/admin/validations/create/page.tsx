@@ -22,9 +22,11 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
 import axios from "axios";
+import { useSession } from "next-auth/react";
 import styles from './AdminValidationCreatePage.module.css';
 import '@mantine/dropzone/styles.css';
 import dynamic from "next/dynamic";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 const ValidationDropzone = dynamic(
   () => import("@/app/components/ValidationDropzone/ValidationDropzone").then(mod => mod.ValidationDropzone),
@@ -49,6 +51,8 @@ const AdminValidationCreatePage = () => {
   const [isFormValid, setIsFormValid] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
+  const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
 
   const handleFileProcessed = (data: any[]) => {
     const processedColumns = data.map((column) => {
@@ -143,6 +147,15 @@ const AdminValidationCreatePage = () => {
       setShowTooltip(true);
       return;
     }
+
+    if (!selectedPeriodId) {
+      showNotification({
+        title: "Periodo requerido",
+        message: "Selecciona un periodo antes de crear la validación",
+        color: "orange",
+      });
+      return;
+    }
     
     const columnsToSave = columns.map(column => ({
       ...column,
@@ -153,6 +166,10 @@ const AdminValidationCreatePage = () => {
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/validators/create`, {
         name,
         columns: columnsToSave,
+        periodId: selectedPeriodId,
+        email: session?.user?.email,
+      }, {
+        headers: { 'user-email': session?.user?.email ?? '' },
       });
       showNotification({
         title: "Validación creada",
@@ -253,7 +270,7 @@ const AdminValidationCreatePage = () => {
           <Text c="dimmed" size="xs" ta={"center"} mt="md" >
               <IconBulb color="#797979" size={20}></IconBulb>
               <br/>
-              Para el nombre de las columnas no uses "-", en su lugar usa "_"
+              Para el nombre de las columnas no uses &quot;-&quot;, en su lugar usa &quot;_&quot;
             </Text>
           <Center mb="md" mt="md">
             <Button onClick={handleAddColumn} leftSection={<IconPlus size={20} />}>

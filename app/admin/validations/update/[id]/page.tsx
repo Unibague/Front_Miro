@@ -23,7 +23,9 @@ import { showNotification } from "@mantine/notifications";
 import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
-import styles from './AdminValidationUpdatePage.module.css';
+import styles from "./AdminValidationUpdatePage.module.css";
+import { paramId } from "@/app/utils/routeParams";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Column {
   name: string;
@@ -35,8 +37,9 @@ interface Column {
 const AdminValidationUpdatePage = () => {
   const router = useRouter();
   const params = useParams();
-  const { id } = params;
+  const id = paramId(params);
   const { data: session } = useSession();
+  const { selectedPeriodId } = usePeriod();
 
   const [name, setName] = useState<string>("");
   const [columns, setColumns] = useState<Column[]>([]);
@@ -50,9 +53,10 @@ const AdminValidationUpdatePage = () => {
 
   useEffect(() => {
     const fetchValidation = async () => {
+      if (!id || !selectedPeriodId) return;
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/validators/id`, {
-          params: { id: id }
+          params: { id: id, periodId: selectedPeriodId }
         });
         const { validator } = response.data;
         setName(validator.name);
@@ -65,7 +69,7 @@ const AdminValidationUpdatePage = () => {
     };
 
     fetchValidation();
-  }, [id]);
+  }, [id, selectedPeriodId]);
 
   useEffect(() => {
   }, [columns]);
@@ -150,6 +154,15 @@ const AdminValidationUpdatePage = () => {
       return;
     }
 
+    if (!selectedPeriodId) {
+      showNotification({
+        title: "Periodo requerido",
+        message: "Selecciona un periodo antes de actualizar la validación",
+        color: "orange",
+      });
+      return;
+    }
+
     // Convert values to their respective types before saving
     const columnsToSave = columns.map(column => ({
       ...column,
@@ -162,6 +175,7 @@ const AdminValidationUpdatePage = () => {
         name,
         columns: columnsToSave,
         adminEmail: session?.user?.email,
+        periodId: selectedPeriodId,
       });
       showNotification({
         title: "Validación actualizada",
@@ -261,7 +275,7 @@ const AdminValidationUpdatePage = () => {
           <Text c="dimmed" size="xs" ta={"center"} mt="md" >
             <IconBulb color="#797979" size={20}></IconBulb>
             <br/>
-            Para el nombre de las columnas no uses "-", en su lugar usa "_"
+            Para el nombre de las columnas no uses &quot;-&quot;, en su lugar usa &quot;_&quot;
           </Text>
           <Center mb="md" mt="md">
             <Button onClick={handleAddColumn} leftSection={<IconPlus size={20} />}>

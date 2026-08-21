@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  ActionIcon,
   Container,
   Table,
   Button,
@@ -35,7 +36,7 @@ import { useRouter } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
 
 interface Field {
@@ -65,6 +66,7 @@ interface Template {
   fields: Field[];
   producers: [Dependency]
   active: boolean;
+  validators?: Validator[];
 }
 
 interface Validator {
@@ -102,23 +104,13 @@ const TemplatesWithFiltersPage = () => {
   const { selectedPeriodId } = usePeriod();
   const { data: session } = useSession();
   
-  // Verificar acceso
+  // Verifica acceso
   useEffect(() => {
     if (userRole && !['Administrador', 'Responsable', 'Productor'].includes(userRole)) {
       router.push('/dashboard');
     }
   }, [userRole, router]);
 
-  // Mostrar loading mientras se carga el rol
-  if (!userRole) {
-    return (
-      <Container size="xl">
-        <Center style={{ height: '50vh' }}>
-          <Text>Cargando...</Text>
-        </Center>
-      </Container>
-    );
-  }
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -149,7 +141,7 @@ const TemplatesWithFiltersPage = () => {
         email,
         periodId: selectedPeriodId,
         filterByUserScope: true, // Nuevo parámetro para filtrar por ámbito del usuario
-        userRole: userRole, // Enviar el rol del usuario para filtrado correcto
+        userRole: userRole, // Enviar el rol usuario 
       };
       
       // Add filter parameters
@@ -261,6 +253,17 @@ const TemplatesWithFiltersPage = () => {
     return filters;
   };
 
+  // Mostrar loading mientras se carga el rol
+  if (!userRole) {
+    return (
+      <Container size="xl">
+        <Center style={{ height: '50vh' }}>
+          <Text>Cargando...</Text>
+        </Center>
+      </Container>
+    );
+  }
+
   const openFilterModal = (template: PublishedTemplate) => {
     setSelectedTemplateForFilters(template);
     
@@ -360,25 +363,30 @@ const TemplatesWithFiltersPage = () => {
     }
   };
 
-  const handleDownload = async (
-    publishedTemplate: PublishedTemplate,
-    validators = publishedTemplate.validators
-  ) => {
+  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
     try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
-        {
-          params: {
-            pubTem_id: publishedTemplate._id,
-            email: session?.user?.email,
-            filterByUserScope: true, // Filtrar por ámbito del usuario
-            userRole: userRole, // Enviar el rol del usuario
-          },
-        }
-      );
+      const [dataResponse, freshTemplateResponse] = await Promise.all([
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/dimension/mergedData`,
+          {
+            params: {
+              pubTem_id: publishedTemplate._id,
+              email: session?.user?.email,
+              filterByUserScope: true, // Filtrar por ámbito del usuario
+              userRole: userRole, // Enviar el rol del usuario
+            },
+          }
+        ),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`
+        ),
+      ]);
 
-      const data = response.data.data;
-      const { template } = publishedTemplate;
+      const data = dataResponse.data.data;
+      const template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+      const validators =
+        template?.validators ??
+        publishedTemplate.validators;
 
       // Campos de tipo fecha para formatear correctamente
       const dateFields = new Set(
@@ -390,8 +398,6 @@ const TemplatesWithFiltersPage = () => {
       console.log("Template: ", template);
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
       const headerRow = worksheet.addRow(Object.keys(data[0]));
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFF" } };
@@ -624,9 +630,14 @@ const TemplatesWithFiltersPage = () => {
           <DateConfig/>
           
           <Group justify="space-between" mb="md">
-            <Title ta="center">
-              Gestión de Plantillas con Filtros
-            </Title>
+            <Group gap={8}>
+              <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+                <IconArrowLeft size={20} />
+              </ActionIcon>
+              <Title ta="center">
+                Gestión de Plantillas con Filtros
+              </Title>
+            </Group>
             <Button 
               variant="outline"
               leftSection={<IconFilter size={16} />} 

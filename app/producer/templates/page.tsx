@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Container,
   Table,
@@ -15,37 +15,61 @@ import {
   Text,
   Badge,
   Select,
+  CopyButton,
+  Stack,
+  Divider,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import {
   IconArrowBigDownFilled,
   IconArrowBigUpFilled,
-  IconArrowRight,
   IconArrowsTransferDown,
-  IconBulb,
+  IconArrowLeft,
   IconChecks,
   IconDownload,
-  IconEdit,
+  IconEye,
   IconPencil,
   IconUpload,
+  IconQrcode,
+  IconListDetails,
+  IconUsersGroup,
 } from "@tabler/icons-react";
+import QRCode from "react-qr-code";
 import { useSession } from "next-auth/react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useDisclosure } from "@mantine/hooks";
 import { modals } from "@mantine/modals";
-import { format } from "fecha";
-import DateConfig, { dateNow, dateToGMT } from "@/app/components/DateConfig";
+import DateConfig, { dateToGMT, endOfDayGMT5 } from "@/app/components/DateConfig";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { applyFieldCommentNote, applyValidatorDropdowns, buildStyledHelpWorksheet } from "@/app/utils/templateUtils";
+import { getSemesterFromPeriodName, getYearFromPeriodName } from "@/app/utils/periodUtils";
+import {
+  appendMissingFieldComments,
+  applyFieldCommentNote,
+  applyValidatorDropdowns,
+  applyWorkbookSheetDropdowns,
+  ensureMissingWorkbookSheets,
+  extractWorkbookCommentsFromBase64,
+  fetchValidatorOptionsForFields,
+  formatTemplateDateValue,
+  getExcelCellAddress,
+  injectWorkbookSheetHeaderComments,
+  loadWorkbookFromBase64,
+  mergeFilledDataAcrossDependencies,
+  patchNoteSize,
+  reorderWorkbookSheets,
+  sanitizeSheetName,
+} from "@/app/utils/templateUtils";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
+
+const UNCATEGORIZED_CATEGORY_FILTER = "__uncategorized__";
 
 const DropzoneButton = dynamic(
   () =>
@@ -56,6 +80,7 @@ const DropzoneButton = dynamic(
 );
 
 interface Category {
+  _id?: string;
   name: string;
 }
 
@@ -66,6 +91,10 @@ interface Field {
   validate_with?: string;
   comment?: string;
   multiple:boolean;
+  dropdown_options?: string[];
+  header_row?: number;
+  column?: number;
+  locked?: boolean;
 }
 
 interface Dimension {
@@ -73,10 +102,10 @@ interface Dimension {
   name: string;
 }
 
-interface Category{
-  _id: string,
-  name:string,
-  templateSequence: number
+interface Producer {
+  _id: string;
+  dep_code: string;
+  name: string;
 }
 
 interface Template {
@@ -86,17 +115,41 @@ interface Template {
   dimensions: [Dimension];
   file_description: string;
   fields: Field[];
+  validators?: Validator[];
+  workbook_sheets?: TemplateWorksheet[];
+  original_workbook_base64?: string;
   active: boolean;
-  category: Category
+  category: Category;
+  producers?: Producer[];
+  shared?: boolean;
+  allows_qr?: boolean;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
+}
+
+interface TemplateWorksheet {
+  name: string;
+  fields: Field[];
+  preserveOriginalContent?: boolean;
+  rawRows?: any[][];
+  cellNotes?: { row: number; col: number; note: string }[];
+  columnWidths?: number[];
+  producers?: string[];
+  shared?: boolean;
 }
 
 interface FilledFieldData {
+  sheet_name?: string;
+  sheet?: string;
+  sheetName?: string;
   field_name: string;
   values: any[];
 }
 
 interface ProducerData {
   dependency: string;
+  dependency_code?: string;
   send_by: any;
   loaded_date: Date;
   filled_data: FilledFieldData[];
@@ -123,11 +176,20 @@ interface PublishedTemplate {
   createdAt: string;
   updatedAt: string;
   loaded_data: ProducerData[];
+  qr_draft_data?: ProducerData[];
   validators: Validator[];
   deadline: string | Date;
   isPending: boolean;
   category_name?: string;
-      sequence: number;
+  responsible_producers?: string[];
+  qr_authorized_producers?: string[];
+  final_submitted?: boolean;
+  final_submitted_date?: string;
+  fecha_final_productores?: string | Date;
+  fecha_final_responsables?: string | Date;
+  fecha_final?: string | Date;
+  isEncargado?: boolean;
+  canGenerateQr?: boolean;
 }
 
 const ProducerTemplatesPage = () => {
@@ -138,7 +200,8 @@ const ProducerTemplatesPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
-  const [producerEndDate, setProducerEndDate] = useState<Date | undefined>();
+  const [pageSize, setPageSize] = useState(20); // Nuevo estado para el tamaño de página
+
   const [nextDeadline, setNextDeadline] = useState<Date | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
@@ -146,8 +209,50 @@ const ProducerTemplatesPage = () => {
   );
   const [uploadModalOpen, { open: openUploadModal, close: closeUploadModal }] =
     useDisclosure(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+  const [qrTemplateName, setQrTemplateName] = useState('');
+  const qrRef = useRef<HTMLDivElement>(null);
+  const [statusModalTemplate, setStatusModalTemplate] = useState<PublishedTemplate | null>(null);
+  const [sendingDraftId, setSendingDraftId] = useState<string | null>(null);
+  const uploadedSectionRef = useRef<HTMLDivElement>(null);
+  const [uploadedRefreshKey, setUploadedRefreshKey] = useState(0);
+
+  const getQrBaseUrl = () => {
+    const configuredUrl = process.env.NEXT_PUBLIC_QR_BASE_URL?.trim().replace(/\/+$/, "");
+    const currentOrigin = window.location.origin.replace(/\/+$/, "");
+    if (!configuredUrl) return currentOrigin;
+    try {
+      const host = new URL(configuredUrl).hostname;
+      const isDockerInternalIp = /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+      return isDockerInternalIp ? currentOrigin : configuredUrl;
+    } catch {
+      return currentOrigin;
+    }
+  };
+
+  const downloadQR = () => {
+    const svg = qrRef.current?.querySelector('svg');
+    if (!svg) return;
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, size, size);
+      const link = document.createElement('a');
+      link.download = `QR_${qrTemplateName}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+  };
   const [userDependencies, setUserDependencies] = useState<{value: string, label: string}[]>([]);
-  const [selectedDependency, setSelectedDependency] = useState<string>('');
+  const [categoryOptions, setCategoryOptions] = useState<{ value: string; label: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });
 
   // const fetchPublishedTemplates = async () => {
@@ -165,18 +270,18 @@ const ProducerTemplatesPage = () => {
   //   fetchPublishedTemplates();
   // }, []);
   
-  const fetchTemplates = async (page?: number, search?: string, filterByDependency?: string) => {
+  const fetchTemplates = async (page?: number, search?: string, filterByCategory?: string | null, limit?: number) => {
     try {
       const params: any = {
         email: session?.user?.email,
         page,
-        limit: 20,
+        limit: limit || pageSize, // Usar el pageSize seleccionado
         search,
         periodId: selectedPeriodId,
       };
       
-      if (filterByDependency) {
-        params.filterByDependency = filterByDependency;
+      if (filterByCategory) {
+        params.filterByCategory = filterByCategory;
       }
       
       const response = await axios.get(
@@ -186,7 +291,7 @@ const ProducerTemplatesPage = () => {
       if (response.data) {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
-        setPendingCount(response.data.templates.length || 0);
+        setPendingCount(response.data.total ?? response.data.templates?.length ?? 0);
       }
     } catch (error) {
       setTemplates([]);
@@ -227,6 +332,27 @@ const ProducerTemplatesPage = () => {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories/all`);
+      const categories = (response.data.categories || [])
+        .filter((category: Category) => category._id && category.name)
+        .map((category: Category) => ({
+          value: String(category._id),
+          label: category.name,
+        }))
+        .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+
+      setCategoryOptions([
+        { value: UNCATEGORIZED_CATEGORY_FILTER, label: "Sin categoría" },
+        ...categories,
+      ]);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      setCategoryOptions([{ value: UNCATEGORIZED_CATEGORY_FILTER, label: "Sin categoría" }]);
+    }
+  };
+
   useEffect(() => {
     console.log("Template con categoría:", PublishedTemplatesPage);  // Verifica que category esté poblado correctamente
   }, [PublishedTemplatesPage]);
@@ -235,37 +361,50 @@ const ProducerTemplatesPage = () => {
   useEffect(() => {
     console.log("ID de período seleccionado en la page:", selectedPeriodId);
     if (session?.user?.email && selectedPeriodId) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedCategory, pageSize);
       fetchUserDependencies();
+      fetchCategories();
     }
-  }, [page, search, session, selectedPeriodId, selectedDependency]);  
+  }, [page, search, session, selectedPeriodId, selectedCategory, pageSize]); // Agregar pageSize a las dependencias  
 
-  const refreshTemplates = () => {
+  const refreshTemplates = (options?: { refreshUploaded?: boolean; scrollToUploaded?: boolean }) => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedCategory, pageSize);
+    }
+    if (options?.refreshUploaded) {
+      setUploadedRefreshKey((current) => current + 1);
+    }
+    if (options?.scrollToUploaded) {
+      setTimeout(() => {
+        uploadedSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 350);
+    }
+  };
+  
+  // Función para manejar el cambio de tamaño de página
+  const handlePageSizeChange = (newPageSize: string | null) => {
+    if (newPageSize) {
+      setPageSize(parseInt(newPageSize));
+      setPage(1); // Resetear a la primera página cuando cambie el tamaño
     }
   };
 
-  const getCurrentDependencyTitle = () => {
-    if (!selectedDependency) {
-      // Mostrar la dependencia principal (siempre la primera en la lista)
-      const mainDependency = userDependencies[0];
-      return mainDependency ? mainDependency.label.split(' - ')[1] : 'Cargando...';
-    }
-    const dependency = userDependencies.find(dep => dep.value === selectedDependency);
-    return dependency ? dependency.label.split(' - ')[1] : selectedDependency;
+  const getCurrentCategoryTitle = () => {
+    if (!selectedCategory) return "Todas las categorías";
+    const category = categoryOptions.find((option) => option.value === selectedCategory);
+    return category?.label || "Categoría seleccionada";
   };
 
   useEffect(() => {
     if (session?.user?.email) {
-      fetchTemplates(page, search, selectedDependency);
+      fetchTemplates(page, search, selectedCategory, pageSize);
     }
   }, [page, session]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (session?.user?.email) {
-        fetchTemplates(page, search, selectedDependency);
+        fetchTemplates(page, search, selectedCategory, pageSize);
       }
     }, 500);
 
@@ -279,7 +418,7 @@ const ProducerTemplatesPage = () => {
     }
 
     const deadlines = templates
-      .map((t) => new Date(t.deadline))
+      .map((t) => getEffectiveDeadline(t))
       .filter((date) => !isNaN(date.getTime()));
 
     if (deadlines.length > 0) {
@@ -287,17 +426,432 @@ const ProducerTemplatesPage = () => {
     } else {
       setNextDeadline(null);
     }
-  }, [templates]);
+  }, [templates, selectedCategory]);
   
 
-  const handleDownload = async (publishedTemplate: PublishedTemplate) => {
-    const { template, validators } = publishedTemplate;
+  const handleDownload = async (publishedTemplate: PublishedTemplate, includeAllProducers = false) => {
+    const [freshTemplateResponse, userResp] = await Promise.all([
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
+      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session?.user?.email } }),
+    ]);
+    let template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
+
+    const periodId =
+      (publishedTemplate as any).period?._id ??
+      (publishedTemplate as any).period ??
+      null;
+
+    try {
+      const freshRes = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
+        { params: { withValidators: 'true', ...(periodId ? { periodId } : {}) } }
+      );
+      if (freshRes.data?.validators) {
+        template = { ...template, validators: freshRes.data.validators };
+      }
+    } catch {
+      // si falla, se usan los validators cacheados
+    }
+
+    const validators =
+      template?.validators ??
+      publishedTemplate.validators;
+
+    const allFieldsForValidators = [
+      ...(template?.fields || []),
+      ...((template?.workbook_sheets || []).flatMap((s: any) => s.fields || [])),
+    ];
+    const preloadedValidatorOptions = periodId
+      ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
+      : {};
+
+    // Datos para pre-poblar el Excel: por defecto solo lo que este productor ya
+    // envio; con includeAllProducers, se combina lo cargado por TODAS las
+    // dependencias (boton "Descargar con info de otros productores").
+    const userDepCode: string = userResp.data.dep_code || '';
+    const userFilledData: FilledFieldData[] = includeAllProducers
+      ? mergeFilledDataAcrossDependencies(publishedTemplate.loaded_data || [])
+      : ((publishedTemplate.loaded_data || []).find(
+          (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
+        )?.filled_data || []);
+
+    // Con includeAllProducers, cada fila combinada puede venir de una dependencia
+    // distinta: se arma una columna "Dependencia" por hoja (mismo orden en que
+    // mergeFilledDataAcrossDependencies concatena los valores: entrada por
+    // entrada) para que el encargado vea de dónde vino cada fila, igual que en
+    // la descarga administrativa.
+    const dependencyColumnBySheet: Record<string, string[]> = {};
+    if (includeAllProducers) {
+      const depCodes = Array.from(
+        new Set((publishedTemplate.loaded_data || []).map((entry) => entry.dependency).filter(Boolean))
+      );
+      let depNameByCode: Record<string, string> = {};
+      if (depCodes.length) {
+        try {
+          const namesResp = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/names`, {
+            codes: depCodes,
+          });
+          (namesResp.data || []).forEach((d: { code: string; name: string }) => {
+            depNameByCode[d.code] = d.name;
+          });
+        } catch {
+          // si falla, se usan los codigos de dependencia tal cual
+        }
+      }
+      (publishedTemplate.loaded_data || []).forEach((entry) => {
+        const depLabel = depNameByCode[entry.dependency] || entry.dependency_code || entry.dependency || '';
+        const rowCountBySheet = new Map<string, number>();
+        (entry.filled_data || []).forEach((fd) => {
+          const sheetKey = fd.sheet_name || fd.sheet || fd.sheetName || '';
+          const len = Array.isArray(fd.values) ? fd.values.length : 0;
+          rowCountBySheet.set(sheetKey, Math.max(rowCountBySheet.get(sheetKey) || 0, len));
+        });
+        rowCountBySheet.forEach((count, sheetKey) => {
+          if (!dependencyColumnBySheet[sheetKey]) dependencyColumnBySheet[sheetKey] = [];
+          for (let i = 0; i < count; i++) dependencyColumnBySheet[sheetKey].push(depLabel);
+        });
+      });
+    }
+
+    // Helper: poblar hoja con datos existentes
+    const populateSheetWithData = (ws: ExcelJS.Worksheet, fields: Field[], sheetName?: string) => {
+      const relevant = sheetName
+        ? userFilledData.filter(fd => (fd.sheet_name || fd.sheet || fd.sheetName) === sheetName)
+        : userFilledData;
+      if (!relevant.length) return;
+      const numRows = relevant.reduce(
+        (max, fd) => Math.max(max, Array.isArray(fd.values) ? fd.values.length : 0),
+        0
+      );
+      const dependencyColumn = includeAllProducers ? (dependencyColumnBySheet[sheetName || ''] || []) : [];
+      if (dependencyColumn.length) {
+        const headerRowNumber = ws.lastRow ? ws.lastRow.number : 1;
+        const depCol = fields.length + 1;
+        const depHeaderCell = ws.getCell(headerRowNumber, depCol);
+        depHeaderCell.value = 'Dependencia';
+        depHeaderCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        depHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } };
+        depHeaderCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        ws.getColumn(depCol).width = 24;
+      }
+      for (let i = 0; i < numRows; i++) {
+        const rowValues = fields.map(field => {
+          const fd = relevant.find(d => d.field_name === field.name);
+          const value = fd?.values?.[i] ?? null;
+          return formatTemplateDateValue(value, field.name) ?? value;
+        });
+        if (dependencyColumn.length) {
+          rowValues.push(dependencyColumn[i] ?? '');
+        }
+        ws.addRow(rowValues);
+      }
+    };
+    const workbookSheets = (template.workbook_sheets || []).filter(
+      (sheet) => sheet.preserveOriginalContent || sheet.rawRows?.length || sheet.fields?.length > 0
+    );
+    const templateFieldCommentByName = new Map(
+      (template.fields || [])
+        .filter((field) => field?.name && field.comment)
+        .map((field) => [field.name, field.comment])
+    );
+    const withTemplateFieldComments = (sheet: any) => ({
+      ...sheet,
+      fields: (sheet.fields || []).map((field: any) => ({
+        ...field,
+        comment: field.comment || templateFieldCommentByName.get(field.name) || "",
+      })),
+    });
+
+    // Mapa de ID de productor → dep_code para resolver las hojas
+    const producerIdMap = new Map<string, string>();
+    (template.producers || []).forEach((p) => {
+      if (p._id && p.dep_code) producerIdMap.set(p._id.toString(), p.dep_code);
+    });
+
+    // dep_codes del usuario actual (principal + adicionales)
+    const userDepCodes = new Set((userDependencies || []).map((d) => d.value));
+
+    // El productor encargado puede editar todas las hojas, aunque no este
+    // asignado explicitamente a cada una.
+    const isResponsibleProducerForDownload = isResponsibleForTemplate(publishedTemplate);
+
+    // Hojas editables: solo si tiene productores asignados Y el usuario es uno de ellos
+    // Hojas sin productores (ej. INFO) → siempre bloqueadas
+    const canUserEditSheet = (sheet: TemplateWorksheet): boolean => {
+      if (isResponsibleProducerForDownload) return true;
+      if (!sheet.producers || sheet.producers.length === 0) return false;
+      return sheet.producers.some((producerId) => {
+        const depCode = producerIdMap.get(producerId.toString());
+        return depCode !== undefined && userDepCodes.has(depCode);
+      });
+    };
+
+    const applySheetTabColor = (ws: ExcelJS.Worksheet, editable: boolean) => {
+      ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
+    };
+
+    const periodName = (publishedTemplate as any).period?.name as string | undefined;
+    const prefilledYear = getYearFromPeriodName(periodName) ?? new Date().getFullYear();
+    const prefilledSemester = getSemesterFromPeriodName(periodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
+    const applyPeriodPrefill = (ws: ExcelJS.Worksheet, fields: Field[]) => {
+      fields.forEach((field, idx) => {
+        const col = (Number.isFinite(Number(field.column)) && Number(field.column) > 0) ? Number(field.column) : idx + 1;
+        const dataRow = (Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0) ? Number(field.header_row) + 1 : 2;
+        if (field.name.toUpperCase() === 'AÑO') {
+          const cell = ws.getCell(dataRow, col);
+          if (!cell.value) cell.value = prefilledYear;
+        }
+        if (field.name.toUpperCase() === 'SEMESTRE') {
+          const cell = ws.getCell(dataRow, col);
+          if (!cell.value) cell.value = prefilledSemester;
+        }
+      });
+    };
+
+
+    if (template.original_workbook_base64) {
+      const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
+      const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
+
+      // Crear en el workbook cualquier hoja nueva que no venga del xlsx original
+      ensureMissingWorkbookSheets(workbook, workbookSheets);
+
+      // Eliminar notas de celdas de datos (filas > 1) cargadas desde el xlsx original
+      workbook.worksheets.forEach((ws) => {
+        ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return;
+          row.eachCell({ includeEmpty: false }, (cell) => {
+            const m = (cell as any)._model;
+            if (m && 'note' in m) delete m.note;
+          });
+        });
+      });
+
+      // Re-aplicar solo las notas de fila 1 (encabezados)
+      for (const [sheetName, sheetComments] of originalCommentsBySheet.entries()) {
+        const ws = workbook.getWorksheet(sheetName);
+        if (!ws) continue;
+        for (const [cellRef, noteText] of sheetComments.entries()) {
+          const rowNum = parseInt(cellRef.replace(/[A-Za-z$]/g, ''), 10);
+          if (rowNum !== 1 || !noteText) continue;
+          applyFieldCommentNote(ws.getCell(cellRef), noteText, { preserveText: true });
+        }
+      }
+
+      // cellNotes solo fila 1
+      (template.workbook_sheets || []).forEach((sheet) => {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !sheet.cellNotes?.length) return;
+        sheet.cellNotes.forEach((note) => {
+          if (note?.row === 1 && note?.col && note?.note) {
+            applyFieldCommentNote(ws.getCell(note.row, note.col), note.note, { preserveText: true });
+          }
+        });
+      });
+
+      applyWorkbookSheetDropdowns({
+        workbook,
+        workbookSheets,
+        validators,
+        originalCommentsBySheet,
+        preloadedValidatorOptions,
+      });
+
+      // Encabezados de campos añadidos (solo value + fill + font, sin border para no corromper el workbook cargado)
+      for (const sheet of workbookSheets) {
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !Array.isArray(sheet.fields)) continue;
+        const hasBase = sheet.fields.some((f) => f.locked !== false);
+        if (!hasBase) continue;
+        sheet.fields.forEach((field, index) => {
+          if (field.locked !== false) return;
+          const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+          const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+          const cell = ws.getCell(hRow, col);
+          cell.value = field.name;
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF166534" } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          const colObj = ws.getColumn(col);
+          if (!colObj.width || colObj.width < 20) colObj.width = 20;
+        });
+      }
+
+      // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables.
+      // Con includeAllProducers se pobla toda hoja con datos, sin importar si
+      // este productor puede editarla, y sin prellenar AÑO/SEMESTRE (es una
+      // copia para consultar lo ya cargado, no para diligenciar de nuevo).
+      for (const sheet of workbookSheets) {
+        if (!includeAllProducers && !canUserEditSheet(sheet)) continue;
+        const ws = workbook.getWorksheet(sheet.name);
+        if (!ws || !sheet.fields?.length) continue;
+        populateSheetWithData(ws, sheet.fields, sheet.name);
+        if (!includeAllProducers) applyPeriodPrefill(ws, sheet.fields);
+      }
+
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const ws = workbook.getWorksheet(sheet.name);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
+
+      // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
+      reorderWorkbookSheets(workbook, workbookSheets.map((sheet) => sheet.name));
+
+      let buffer = await workbook.xlsx.writeBuffer();
+      // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
+      const augmentedForInjection = workbookSheets.map((sheet: any) => {
+        const sheetWithFallbackComments = withTemplateFieldComments(sheet);
+        const sheetOrigComments = originalCommentsBySheet.get(sheet.name);
+        if (!sheetOrigComments) return sheetWithFallbackComments;
+        return {
+          ...sheetWithFallbackComments,
+          fields: (sheetWithFallbackComments.fields || []).map((field: any, fi: number) => {
+            if (field.comment) return field;
+            const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : fi + 1;
+            const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+            const orig = sheetOrigComments.get(getExcelCellAddress(hRow, col));
+            return orig ? { ...field, comment: orig } : field;
+          }),
+        };
+      });
+      buffer = await appendMissingFieldComments(buffer, augmentedForInjection);
+      buffer = await patchNoteSize(buffer);
+      const blob = new Blob([buffer], { type: "application/octet-stream" });
+      saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
+      return;
+    }
+
     const workbook = new ExcelJS.Workbook();
+
+    if (workbookSheets.length > 0) {
+      // Mapa de nombre original de hoja → nombre real en el workbook (puede tener sufijo por deduplicación)
+      const sheetNameMap = new Map<string, string>();
+
+      for (let sheetIndex = 0; sheetIndex < workbookSheets.length; sheetIndex++) {
+        const sheet = workbookSheets[sheetIndex];
+        const baseName = sanitizeSheetName(sheet.name || `Hoja_${sheetIndex + 1}`) || `Hoja_${sheetIndex + 1}`;
+        let worksheetName = baseName;
+        let counter = 1;
+        while (workbook.getWorksheet(worksheetName)) {
+          const suffix = `_${counter}`;
+          worksheetName = `${baseName.slice(0, 31 - suffix.length)}${suffix}`;
+          counter += 1;
+        }
+        sheetNameMap.set(sheet.name, worksheetName);
+
+        if (sheet.preserveOriginalContent) {
+          const worksheet = workbook.addWorksheet(worksheetName);
+          (sheet.rawRows || []).forEach((row) => worksheet.addRow(row || []));
+          (sheet.columnWidths || []).forEach((width, index) => {
+            worksheet.getColumn(index + 1).width = width || 20;
+          });
+          (sheet.cellNotes || []).forEach((note) => {
+            if (!note?.row || !note?.col || !note?.note) return;
+            applyFieldCommentNote(worksheet.getCell(note.row, note.col), note.note, { preserveText: true });
+          });
+          applyValidatorDropdowns({
+            workbook,
+            worksheet,
+            fields: sheet.fields,
+            validators,
+            startRow: 2,
+            endRow: 1000,
+            preloadedValidatorOptions,
+          });
+          // Encabezados de campos añadidos por el usuario (color azul claro)
+          const hasBase = sheet.fields.some((f) => f.locked !== false);
+          if (hasBase) {
+            sheet.fields.forEach((field, index) => {
+              if (field.locked !== false) return;
+              const col = Number.isFinite(Number(field.column)) && Number(field.column) > 0 ? Number(field.column) : index + 1;
+              const hRow = Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0 ? Number(field.header_row) : 1;
+              const cell = worksheet.getCell(hRow, col);
+              cell.value = field.name;
+              cell.font = { bold: true, color: { argb: "FFFFFF" } };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "166534" } };
+              cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+              cell.alignment = { vertical: "middle", horizontal: "center" };
+              applyFieldCommentNote(cell, field.comment);
+              const currentWidth = worksheet.getColumn(col).width;
+              if (!currentWidth || currentWidth < 20) worksheet.getColumn(col).width = 20;
+            });
+          }
+          continue;
+        }
+
+        const worksheet = workbook.addWorksheet(worksheetName);
+        const headerRow = worksheet.addRow(sheet.fields.map((field) => field.name));
+        headerRow.eachCell((cell, colNumber) => {
+          const field = sheet.fields[colNumber - 1];
+          const isAdded = field?.locked !== true;
+          cell.font = { bold: true, color: { argb: "FFFFFF" } };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: isAdded ? "166534" : "0f1f39" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          applyFieldCommentNote(cell, field.comment);
+        });
+
+        worksheet.columns.forEach((column) => {
+          column.width = 20;
+        });
+
+        applyValidatorDropdowns({
+          workbook,
+          worksheet,
+          fields: sheet.fields,
+          validators,
+          startRow: 2,
+          endRow: 1000,
+          preloadedValidatorOptions,
+        });
+
+        if (includeAllProducers || canUserEditSheet(sheet)) {
+          populateSheetWithData(worksheet, sheet.fields, sheet.name);
+          if (!includeAllProducers) applyPeriodPrefill(worksheet, sheet.fields);
+        }
+      }
+
+      // Aplicar color de pestaña y proteger hojas según permisos
+      for (const sheet of workbookSheets) {
+        const editable = canUserEditSheet(sheet);
+        const actualName = sheetNameMap.get(sheet.name) || sheet.name;
+        const ws = workbook.getWorksheet(actualName);
+        if (ws) {
+          applySheetTabColor(ws, editable);
+          if (!editable) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true });
+        }
+      }
+
+      let buffer = await workbook.xlsx.writeBuffer();
+      buffer = await injectWorkbookSheetHeaderComments(
+        buffer,
+        workbookSheets.map((sheet) => ({
+          ...withTemplateFieldComments(sheet),
+          name: sheetNameMap.get(sheet.name) || sheet.name,
+        }))
+      );
+      buffer = await patchNoteSize(buffer);
+      const blob = new Blob([buffer], { type: "application/octet-stream" });
+      saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
+      return;
+    }
 
     // Crear la hoja principal basada en el template
     const worksheet = workbook.addWorksheet(template.name);
-    buildStyledHelpWorksheet(workbook, template.fields);
-
     const headerRow = worksheet.addRow(
       template.fields.map((field) => field.name)
     );
@@ -315,7 +869,6 @@ const ProducerTemplatesPage = () => {
         right: { style: "thin" },
       };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-
       const field = template.fields[colNumber - 1];
       applyFieldCommentNote(cell, field.comment);
     });
@@ -352,7 +905,7 @@ if (field.multiple) {
             cell.dataValidation = {
               type: 'decimal',
               operator: 'between',
-              formulae: [0.0, 9999999999999999999999999999999],
+              formulae: [0.0, Number.MAX_SAFE_INTEGER],
               showErrorMessage: true,
               errorTitle: 'Valor no válido',
               error: 'Por favor, introduce un número decimal.'
@@ -428,7 +981,7 @@ if (field.multiple) {
           const normalizedComment = field.comment.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
           const promptBase = normalizedComment.slice(0, 220);
           const promptText = normalizedComment.length > 220
-            ? `${promptBase}... (ver hoja Guía)`
+            ? `${promptBase}...`
             : promptBase;
           cell.dataValidation = {
             ...cell.dataValidation,
@@ -451,11 +1004,19 @@ if (field.multiple) {
       validators,
       startRow: 2,
       endRow: 1000,
+      preloadedValidatorOptions,
     });
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    // Pre-poblar con datos ya enviados
+    populateSheetWithData(worksheet, template.fields);
+
+    let buffer = await workbook.xlsx.writeBuffer();
+    buffer = await injectWorkbookSheetHeaderComments(buffer, [
+      { name: template.name, fields: template.fields },
+    ]);
+    buffer = await patchNoteSize(buffer);
     const blob = new Blob([buffer], { type: "application/octet-stream" });
-    saveAs(blob, `${template.file_name}.xlsx`);
+    saveAs(blob, `${template.file_name}${includeAllProducers ? "_todos_los_productores" : ""}.xlsx`);
   };
 
   const categoryColors = [
@@ -530,7 +1091,7 @@ if (field.multiple) {
           centered: true,
           children: (
             <Text size="sm">
-              ¿Estás seguro de que deseas cargar información en la plantilla <strong>"{publishedTemplate.name}"</strong>?
+              ¿Estás seguro de que deseas cargar información en la plantilla <strong>&quot;{publishedTemplate.name}&quot;</strong>?
               <br /><br />
               Asegúrate de que el archivo Excel tenga el formato correcto y contenga toda la información necesaria.
             </Text>
@@ -656,19 +1217,217 @@ if (field.multiple) {
       }
     }
   }
+
+  // Boton "Enviar" de la lista: confirma el borrador cuando existe. Si no hay
+  // borrador, confirma directamente la informacion existente/compartida de la
+  // plantilla, sin exigir que el usuario la guarde antes.
+  const handleDirectSend = async (publishedTemplate: PublishedTemplate) => {
+    setSendingDraftId(publishedTemplate._id);
+    try {
+      const ownDepCodes = new Set((userDependencies || []).map((d) => d.value));
+      const matchingDraft = (publishedTemplate.qr_draft_data || []).find(
+        (entry) => ownDepCodes.has(entry.dependency) || ownDepCodes.has(entry.dependency_code || '')
+      );
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmDraft`, {
+        pubTemId: publishedTemplate._id,
+        email: session?.user?.email,
+        // Evita confirmar por accidente el borrador de otra dependencia cuando
+        // el usuario pertenece a varias. Si la lista aun no cargo las
+        // dependencias, el backend resuelve de forma segura la que corresponde.
+        ...(matchingDraft ? { dependency: matchingDraft.dependency_code || matchingDraft.dependency } : {}),
+      });
+      showNotification({
+        title: "Información enviada",
+        message: "Se confirmó y envió la información guardada.",
+        color: "teal",
+      });
+      refreshTemplates({ refreshUploaded: true, scrollToUploaded: true });
+    } catch (error) {
+      if (
+        axios.isAxiosError(error) &&
+        [404, 422].includes(error.response?.status || 0)
+      ) {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmExisting`, {
+            pubTemId: publishedTemplate._id,
+            email: session?.user?.email,
+          });
+          showNotification({
+            title: "Información enviada",
+            message: "La información existente se confirmó y envió correctamente.",
+            color: "teal",
+          });
+          refreshTemplates({ refreshUploaded: true, scrollToUploaded: true });
+          return;
+        } catch (confirmationError) {
+          showNotification({
+            title: "Error",
+            message: axios.isAxiosError(confirmationError)
+              ? (confirmationError.response?.data?.status || "No se pudo enviar la información existente.")
+              : "No se pudo enviar la información existente.",
+            color: "red",
+          });
+          return;
+        }
+      }
+      showNotification({
+        title: "Error",
+        message: axios.isAxiosError(error)
+          ? (error.response?.data?.status || "No se pudo enviar la información.")
+          : "No se pudo enviar la información.",
+        color: "red",
+      });
+    } finally {
+      setSendingDraftId(null);
+    }
+  };
+
+  // Verifica si el usuario es productor encargado de una plantilla publicada
+  const isResponsibleForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
+    // Usar el flag calculado en el backend cuando esté disponible
+    if (typeof publishedTemplate.isEncargado === 'boolean') return publishedTemplate.isEncargado;
+    // Fallback local: comparar todas las dependencias del usuario con responsible_producers
+    const responsibleIds = publishedTemplate.responsible_producers || [];
+    if (responsibleIds.length === 0) return false;
+    const userDepCodes = new Set((userDependencies || []).map((dependency) => dependency.value));
+    const depId = publishedTemplate.template?.producers?.find(
+      (p: any) => userDepCodes.has(p.dep_code)
+    )?._id;
+    return depId ? responsibleIds.includes(depId) : false;
+  };
+
+  // Agrupa las dependencias productoras de una plantilla segun si ya enviaron
+  // datos, enviaron en cero, o aun no han enviado nada. Usa lo que ya viene
+  // cargado con la plantilla (template.producers + loaded_data), sin pedir
+  // datos adicionales al backend.
+  const getDependencyStatusGroups = (publishedTemplate: PublishedTemplate) => {
+    const producers = publishedTemplate.template?.producers || [];
+    const loadedByDepCode = new Map(
+      (publishedTemplate.loaded_data || []).map((entry) => [entry.dependency, entry])
+    );
+
+    const sent: Producer[] = [];
+    const empty: Producer[] = [];
+    const pending: Producer[] = [];
+
+    producers.forEach((producer) => {
+      const entry = loadedByDepCode.get(producer.dep_code);
+      if (!entry) {
+        pending.push(producer);
+      } else if (Array.isArray(entry.filled_data) && entry.filled_data.length > 0) {
+        sent.push(producer);
+      } else {
+        empty.push(producer);
+      }
+    });
+
+    return { sent, empty, pending };
+  };
+
+  // Verifica si el usuario puede generar QR: el encargado o alguna dependencia
+  // autorizada explícitamente vía qr_authorized_producers.
+  const isQrAuthorizedForTemplate = (publishedTemplate: PublishedTemplate): boolean => {
+    if (isResponsibleForTemplate(publishedTemplate)) return true;
+    if (typeof publishedTemplate.canGenerateQr === 'boolean') return publishedTemplate.canGenerateQr;
+    // Fallback local: comparar todas las dependencias del usuario con qr_authorized_producers
+    const authorizedIds = publishedTemplate.qr_authorized_producers || [];
+    if (authorizedIds.length === 0) return false;
+    const userDepCodes = new Set((userDependencies || []).map((dependency) => dependency.value));
+    const depId = publishedTemplate.template?.producers?.find(
+      (p: any) => userDepCodes.has(p.dep_code)
+    )?._id;
+    return depId ? authorizedIds.includes(depId) : false;
+  };
+
+  const canGenerateQrForTemplate = (publishedTemplate: PublishedTemplate): boolean => (
+    isQrAuthorizedForTemplate(publishedTemplate) && publishedTemplate.template?.allows_qr === true
+  );
+
+  const handleConfirmFinalSubmit = async (pubTemId: string) => {
+    modals.openConfirmModal({
+      title: "Confirmar envío final al SNIES",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Estás seguro de que deseas realizar el <strong>envío final al módulo SNIES</strong>?
+          <br /><br />
+          Esta acción confirma que toda la información ha sido consolidada y está lista para ser procesada en el SNIES.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar al SNIES", cancel: "Cancelar" },
+      confirmProps: { color: "blue" },
+      onConfirm: async () => {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmFinalSubmit`, {
+            pubTem_id: pubTemId,
+            email: session?.user?.email
+          });
+          showNotification({
+            title: "Enviado al SNIES",
+            message: "El envío final al módulo SNIES se realizó exitosamente",
+            color: "blue",
+          });
+          refreshTemplates();
+        } catch (error: any) {
+          const msg = error?.response?.data?.status || "Hubo un error al realizar el envío final";
+          showNotification({ title: "Error", message: msg, color: "red" });
+        }
+      },
+    });
+  };
+
+  const handleGenerateQR = async (pubTemId: string, templateName: string) => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/qr/generate`,
+        { pubTemId, email: session?.user?.email }
+      );
+      const token = response.data.token;
+      const baseUrl = getQrBaseUrl();
+      const formUrl = `${baseUrl}/public/form/${token}`;
+      setQrUrl(formUrl);
+      setQrTemplateName(templateName);
+      setQrModalOpen(true);
+    } catch (error) {
+      showNotification({
+        title: 'Error',
+        message: 'No se pudo generar el código QR',
+        color: 'red',
+      });
+    }
+  };
+
+  const getEffectiveDeadline = (publishedTemplate: PublishedTemplate): Date => {
+    const isEncargado = isResponsibleForTemplate(publishedTemplate);
+    const raw = isEncargado
+      ? (publishedTemplate.fecha_final_responsables
+          ?? publishedTemplate.template?.fecha_final_responsables
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date)
+      : (publishedTemplate.fecha_final_productores
+          ?? publishedTemplate.template?.fecha_final_productores
+          ?? publishedTemplate.fecha_final
+          ?? publishedTemplate.template?.fecha_final
+          ?? publishedTemplate.deadline
+          ?? publishedTemplate.period.producer_end_date);
+    return endOfDayGMT5(raw);
+  };
+
   const handleDisableUpload = (publishedTemplate: PublishedTemplate) => {
-    const now = new Date();
-    const deadline = new Date(publishedTemplate.deadline);
-    
-    // Establecer la hora del deadline al final del día (23:59:59
-    deadline.setHours(23, 59, 59, 999);
-    
-    return now > deadline;
+    // Una vez el productor encargado hizo el envio final al SNIES, ninguna
+    // dependencia puede seguir cargando, editando o reportando en cero.
+    if (publishedTemplate.final_submitted) return true;
+    return new Date() > getEffectiveDeadline(publishedTemplate);
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
     //console.log("Published Template:", publishedTemplate); // Agregar el log aquí para inspeccionar los datos
     const uploadDisable = handleDisableUpload(publishedTemplate);
+    const disabledReason = publishedTemplate.final_submitted
+      ? "Esta plantilla ya fue enviada al SNIES"
+      : uploadDisable
+        ? "El periodo ya se encuentra cerrado"
+        : null;
     return (
       <Table.Tr key={publishedTemplate._id}>
 <Table.Td>
@@ -677,13 +1436,6 @@ if (field.multiple) {
     variant="light" 
     color={getCategoryColor(publishedTemplate.template.category.name)}
     fullWidth
-    rightSection={
-      publishedTemplate.template.category.templateSequence ? (
-        <Text size="lg" fw={700}>
-          #{publishedTemplate.template.category.templateSequence}
-        </Text>
-      ) : null
-    }
   >
      {publishedTemplate.template.category.name || 'Sin categoría'}
   </Badge>
@@ -699,32 +1451,78 @@ if (field.multiple) {
 
         <Table.Td>{publishedTemplate.template.dimensions.map(dim => dim.name).join(', ')}</Table.Td>
         <Table.Td fw={700}>
-          {dateToGMT(publishedTemplate.deadline ?? publishedTemplate.period.producer_end_date)}
+          {(() => {
+            const isEncargado = isResponsibleForTemplate(publishedTemplate);
+            const fecha = isEncargado
+              ? (publishedTemplate.fecha_final_responsables
+                  ?? publishedTemplate.template?.fecha_final_responsables
+                  ?? publishedTemplate.deadline
+                  ?? publishedTemplate.period.producer_end_date)
+              : (publishedTemplate.fecha_final_productores
+                  ?? publishedTemplate.template?.fecha_final_productores
+                  ?? publishedTemplate.fecha_final
+                  ?? publishedTemplate.template?.fecha_final
+                  ?? publishedTemplate.deadline
+                  ?? publishedTemplate.period.producer_end_date);
+            const isDeadlineToday = dateToGMT(fecha, "YYYY-MM-DD") === dateToGMT(new Date(), "YYYY-MM-DD");
+            return (
+              <Stack gap={2}>
+                <Text size="sm" fw={700} c={isDeadlineToday ? 'red' : 'blue'}>{dateToGMT(fecha)}</Text>
+                {isEncargado && (
+                  <Badge size="xs" color="blue" variant="light">Productor encargado</Badge>
+                )}
+              </Stack>
+            );
+          })()}
         </Table.Td>
         <Table.Td>
           <Center>
-            <Tooltip
-              label="Descargar plantilla"
-              transitionProps={{ transition: "fade-up", duration: 300 }}
-            >
-              <Button
-                variant="outline"
-                onClick={() => handleDownload(publishedTemplate)}
+            <Group gap="xs">
+              <Tooltip
+                label="Descargar plantilla"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
               >
-                <IconDownload size={16} />
-              </Button>
-            </Tooltip>
+                <Button
+                  variant="outline"
+                  onClick={() => handleDownload(publishedTemplate)}
+                >
+                  <IconDownload size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label="Descargar con información ya cargada por otros productores"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="teal"
+                  onClick={() => handleDownload(publishedTemplate, true)}
+                >
+                  <IconUsersGroup size={16} />
+                </Button>
+              </Tooltip>
+              {canGenerateQrForTemplate(publishedTemplate) && (
+                <Tooltip
+                label="Generar código QR"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="violet"
+                  onClick={() => handleGenerateQR(publishedTemplate._id, publishedTemplate.name)}
+                >
+                  <IconQrcode size={16} />
+                </Button>
+                </Tooltip>
+              )}
+            </Group>
           </Center>
         </Table.Td>
         <Table.Td>
           <Center>
             <Group>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Realizar envío en ceros"
-                }
+                label={disabledReason ?? "Realizar envío en ceros"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -737,11 +1535,7 @@ if (field.multiple) {
                 </Button>
               </Tooltip>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Cargar plantilla (Hoja de cálculo)"
-                }
+                label={disabledReason ?? "Cargar plantilla (Hoja de cálculo)"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -754,11 +1548,7 @@ if (field.multiple) {
                 </Button>
               </Tooltip>
               <Tooltip
-                label={
-                  uploadDisable
-                    ? "El periodo ya se encuentra cerrado"
-                    : "Edición en línea"
-                }
+                label={disabledReason ?? "Edición en línea"}
                 transitionProps={{ transition: "fade-up", duration: 300 }}
               >
                 <Button
@@ -774,6 +1564,51 @@ if (field.multiple) {
                   <IconPencil size={16} />
                 </Button>
               </Tooltip>
+              <Tooltip
+                label="Consultar información enviada (con filtros)"
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="outline"
+                  color="blue"
+                  onClick={() =>
+                    router.push(
+                      `/producer/templates/consult/${publishedTemplate._id}?isEncargado=${isResponsibleForTemplate(publishedTemplate)}`
+                    )
+                  }
+                >
+                  <IconEye size={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip
+                label={disabledReason ?? "Enviar información"}
+                transitionProps={{ transition: "fade-up", duration: 300 }}
+              >
+                <Button
+                  variant="filled"
+                  color="green"
+                  onClick={() => handleDirectSend(publishedTemplate)}
+                  disabled={uploadDisable}
+                  loading={sendingDraftId === publishedTemplate._id}
+                  leftSection={<IconUpload size={14} />}
+                >
+                  Enviar
+                </Button>
+              </Tooltip>
+              {isResponsibleForTemplate(publishedTemplate) && (
+                <Tooltip
+                  label="Ver estado de las dependencias"
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant="outline"
+                    color="blue"
+                    onClick={() => setStatusModalTemplate(publishedTemplate)}
+                  >
+                    <IconListDetails size={16} />
+                  </Button>
+                </Tooltip>
+              )}
             </Group>
           </Center>
         </Table.Td>
@@ -784,25 +1619,21 @@ if (field.multiple) {
   return (
     <Container size="xl">
       <DateConfig />
+      <Group mb="sm">
+        <Button variant="subtle" px={6} onClick={() => router.push('/dashboard?view=gestion')}>
+          <IconArrowLeft size={20} />
+        </Button>
+      </Group>
       <Title ta="center" mb={"md"}>
         Plantillas Pendientes
       </Title>
       <Title order={3} ta="center" mb={"md"} c="blue">
-        {getCurrentDependencyTitle()}
+        {getCurrentCategoryTitle()}
       </Title>
       <Text ta="center" mt="sm" mb="md">
     Tienes <strong>{pendingCount}</strong> plantilla
     {pendingCount === 1 ? "" : "s"} pendiente
     {pendingCount === 1 ? "" : "s"}.
-    <br />
-    {nextDeadline ? (
-      <>
-        La fecha de vencimiento es el{" "}
-        <strong>{dayjs(nextDeadline).format("DD/MM/YYYY")}</strong>.
-      </>
-    ) : (
-      <>No hay fecha de vencimiento próxima.</>
-    )}
   </Text>
       <Group mb="md">
         <TextInput
@@ -812,16 +1643,30 @@ if (field.multiple) {
           style={{ flex: 1 }}
         />
         <Select
-          placeholder="Filtrar por dependencia"
-          data={[
-            { value: '', label: 'Todas las dependencias' },
-            ...userDependencies
-          ]}
-          value={selectedDependency}
-          onChange={(value) => setSelectedDependency(value || '')}
+          placeholder="Filtrar por categoría"
+          data={categoryOptions}
+          value={selectedCategory}
+          onChange={(value) => {
+            setSelectedCategory(value);
+            setPage(1);
+          }}
           clearable
           searchable
           style={{ minWidth: 300 }}
+        />
+        <Select
+          label="Plantillas por página"
+          placeholder="Seleccionar cantidad"
+          data={[
+            { value: '10', label: '10 por página' },
+            { value: '15', label: '15 por página' },
+            { value: '20', label: '20 por página' },
+            { value: '25', label: '25 por página' },
+            { value: '50', label: '50 por página' }
+          ]}
+          value={pageSize.toString()}
+          onChange={handlePageSizeChange}
+          style={{ minWidth: 150 }}
         />
       </Group>
       <Table striped withTableBorder mt="md">
@@ -832,7 +1677,7 @@ if (field.multiple) {
   style={{ cursor: "pointer" }}
 >
   <Center inline>
-    Categoría/Secuencia
+    Categoría
     {sortConfig.key === "template.category.name" ? (
       sortConfig.direction === "asc" ? (
         <IconArrowBigUpFilled size={16} style={{ marginLeft: "5px" }} />
@@ -930,14 +1775,18 @@ if (field.multiple) {
         </Table.Tbody>
       </Table>
       <Center>
-        <Pagination
-          mt={15}
-          value={page}
-          onChange={setPage}
-          total={totalPages}
-          siblings={1}
-          boundaries={3}
-        />
+        <Group mt={15} align="center">
+          <Pagination
+            value={page}
+            onChange={setPage}
+            total={totalPages}
+            siblings={1}
+            boundaries={3}
+          />
+          <Text size="sm" c="dimmed">
+            Mostrando {pageSize} plantillas por página
+          </Text>
+        </Group>
       </Center>
 
       <Modal
@@ -955,17 +1804,93 @@ if (field.multiple) {
         {selectedTemplateId && (
           <DropzoneButton
             pubTemId={selectedTemplateId}
-            endDate={producerEndDate}
+            endDate={undefined}
             onClose={closeUploadModal}
-            onUploadSuccess={refreshTemplates}
+            onUploadSuccess={() => refreshTemplates({ refreshUploaded: true, scrollToUploaded: true })}
+            userDependencies={userDependencies}
           />
         )}
       </Modal>
-      <ProducerUploadedTemplatesPage 
-        fetchTemp={fetchTemplates} 
-        selectedDependency={selectedDependency}
-        userDependencies={userDependencies}
-      />
+      <div ref={uploadedSectionRef}>
+        <ProducerUploadedTemplatesPage
+          fetchTemp={refreshTemplates}
+          selectedCategory={selectedCategory}
+          userDependencies={userDependencies}
+          refreshKey={uploadedRefreshKey}
+        />
+      </div>
+
+      <Modal
+        opened={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title={`Código QR — ${qrTemplateName}`}
+        centered
+        size="md"
+      >
+        <Stack align="center" gap="md">
+          <div ref={qrRef}>
+            <QRCode value={qrUrl} size={220} />
+          </div>
+          <Divider w="100%" />
+          <Text size="xs" ta="center" style={{ wordBreak: 'break-all' }}>
+            <a href={qrUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1c7ed6' }}>
+              {qrUrl}
+            </a>
+          </Text>
+          <Group>
+            <Button leftSection={<IconDownload size={16} />} color="blue" onClick={downloadQR}>
+              Descargar QR
+            </Button>
+            <CopyButton value={qrUrl}>
+              {({ copied, copy }) => (
+                <Button color={copied ? 'teal' : 'violet'} onClick={copy}>
+                  {copied ? 'Enlace copiado' : 'Copiar enlace'}
+                </Button>
+              )}
+            </CopyButton>
+            <Button variant="outline" onClick={() => setQrModalOpen(false)}>
+              Cerrar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!statusModalTemplate}
+        onClose={() => setStatusModalTemplate(null)}
+        title={`Estado de dependencias — ${statusModalTemplate?.name || ""}`}
+        centered
+        size="lg"
+      >
+        {statusModalTemplate && (() => {
+          const { sent, empty, pending } = getDependencyStatusGroups(statusModalTemplate);
+          const renderGroup = (title: string, color: string, items: Producer[], emptyText: string) => (
+            <Stack gap={4}>
+              <Group gap={6}>
+                <Text fw={700} size="sm">{title}</Text>
+                <Badge size="sm" color={color} variant="light">{items.length}</Badge>
+              </Group>
+              {items.length === 0 ? (
+                <Text size="sm" c="dimmed">{emptyText}</Text>
+              ) : (
+                items.map((producer) => (
+                  <Text key={producer._id} size="sm">{producer.name}</Text>
+                ))
+              )}
+            </Stack>
+          );
+
+          return (
+            <Stack gap="md">
+              {renderGroup("Enviaron información", "teal", sent, "Ninguna dependencia ha enviado información con datos.")}
+              <Divider />
+              {renderGroup("Enviaron en cero", "yellow", empty, "Ninguna dependencia ha enviado en cero.")}
+              <Divider />
+              {renderGroup("No han enviado", "red", pending, "Todas las dependencias ya enviaron su información.")}
+            </Stack>
+          );
+        })()}
+      </Modal>
     </Container>
   );
 };

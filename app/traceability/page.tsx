@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Container, Table, TextInput, Select, Group, Title, Badge, Text, Pagination, Center, Card } from "@mantine/core";
-import { IconSearch, IconFilter, IconHistory } from "@tabler/icons-react";
+import { useCallback, useEffect, useState } from "react";
+import { ActionIcon, Container, Table, TextInput, Select, Group, Title, Badge, Text, Pagination, Center, Card } from "@mantine/core";
+import { useRouter } from "next/navigation";
+import { IconArrowLeft, IconSearch, IconFilter, IconHistory } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
@@ -19,6 +20,7 @@ interface AuditLog {
 }
 
 const TraceabilityHistoryPage = () => {
+  const router = useRouter();
   const { data: session } = useSession();
   const { userRole } = useRole();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -28,7 +30,7 @@ const TraceabilityHistoryPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const fetchAuditLogs = async (page: number, search: string, entityType?: string) => {
+  const fetchAuditLogs = useCallback(async (page: number, search: string, entityType?: string) => {
     if (!session?.user?.email || userRole === 'Administrador') return;
     
     setLoading(true);
@@ -56,11 +58,11 @@ const TraceabilityHistoryPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, userRole]);
 
   useEffect(() => {
     fetchAuditLogs(page, search, filterType);
-  }, [page, session, userRole]);
+  }, [page, fetchAuditLogs, search, filterType]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -69,7 +71,7 @@ const TraceabilityHistoryPage = () => {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [search, filterType]);
+  }, [search, filterType, fetchAuditLogs]);
 
   const translateAction = (action: string) => {
     switch (action.toLowerCase()) {
@@ -192,6 +194,9 @@ const TraceabilityHistoryPage = () => {
   return (
     <Container size="xl">
       <Group mb="lg" align="center">
+        <ActionIcon variant="subtle" onClick={() => router.push("/reports")}>
+          <IconArrowLeft size={20} />
+        </ActionIcon>
         <IconHistory size={32} color="teal" />
         <div>
           <Title order={2}>Historial de Cambios</Title>

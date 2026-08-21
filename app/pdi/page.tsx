@@ -1,0 +1,2013 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  Container, Title, Text, Paper, Group, Badge, Button, Stack,
+  Loader, Center, Progress, ThemeIcon, Divider, ActionIcon,
+  SimpleGrid, Box, Modal, TextInput, NumberInput, ScrollArea, List, Grid, Select,
+} from "@mantine/core";
+import {
+  IconChartBarPopular, IconArrowLeft, IconChevronRight,
+  IconTarget, IconBulb, IconTrendingUp, IconEdit, IconTrash, IconPlus,
+  IconAlertTriangle, IconCurrencyDollar,
+  IconExternalLink, IconSettings, IconSearch, IconClipboardCheck, IconShieldCheck,
+} from "@tabler/icons-react";
+import { modals } from "@mantine/modals";
+import { showNotification } from "@mantine/notifications";
+import axios from "axios";
+import { useRouter } from "next/navigation";
+import { useRole } from "@/app/context/RoleContext";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen } from "./types";
+import { PDI_ROUTES } from "./api";
+import MacroproyectoModal from "./components/MacroproyectoModal";
+import AccionModal from "./components/AccionModal";
+import IndicadorModal from "./components/IndicadorModal";
+import PdiSidebar from "./components/PdiSidebar";
+import { usePdiConfig } from "./hooks/usePdiConfig";
+import PermissionGate from "@/app/components/PermissionGate";
+import { getAvanceAnioSimple, formatNumeroEs, getSemaforoByAvance } from "./avance-utils";
+
+const formatCOP = (value: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
+
+const formatMetaValue = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || String(value).trim() === "") return "-";
+  const raw = String(value);
+  const parsed = Number(raw.replace("%", "").replace(",", "."));
+  if (!Number.isFinite(parsed)) return raw;
+  const formatted = parsed.toLocaleString("es-CO", { maximumFractionDigits: 2 });
+  return raw.includes("%") ? `${formatted}%` : formatted;
+};
+
+const SEMAFORO_COLOR: Record<string, string> = { verde: "green", amarillo: "yellow", rojo: "red" };
+const SEMAFORO_LABEL: Record<string, string> = {
+  verde: "Cumplimiento adecuado", amarillo: "Requiere atención", rojo: "Crítico",
+};
+const isAdmin = (role: string) => role === "Administrador";
+const PDI_FIXED_NAME = "Proyecto de Desarrollo Institucional (PDI)";
+const formatAnioRange = (anioInicio?: number, anioFin?: number) =>
+  anioInicio && anioFin ? `${anioInicio} - ${anioFin}` : "Sin rango definido";
+
+function getIndicadorAvanceMostrado(ind: Indicador) {
+  return ind.avance_total_real ?? ind.avance;
+}
+
+// El desglose de ejecutado por año (presupuesto_ejecutado_por_anio) no se está
+// poblando desde la importación presupuestal — solo queda el total plano. Para
+// no mostrar $0 en el año en curso mientras eso no se corrija en el origen,
+// se usa el mismo cálculo que la pantalla "Presupuesto PDI" (gasto + inversión,
+// o el total si no vienen desagregados), que hoy corresponde íntegramente al
+// año en curso: el único año del plan que ya transcurrió.
+function ejecutadoAnioDeAccion(accion: Accion, anio: string) {
+  const porAnio = Number(accion.presupuesto_ejecutado_por_anio?.[anio]) || 0;
+  if (porAnio > 0) return porAnio;
+  return (Number(accion.gasto) || 0) + (Number(accion.inversion) || 0) || (Number(accion.presupuesto_ejecutado) || 0);
+}
+
+function SemaforoBadge({ semaforo }: { semaforo: string }) {
+  return <Badge color={SEMAFORO_COLOR[semaforo]} variant="light" size="sm">{SEMAFORO_LABEL[semaforo]}</Badge>;
+}
+function AvanceBar({ avance, semaforo }: { avance: number; semaforo: string }) {
+  return (
+    <Group gap={6} align="center">
+      <Progress value={avance} color={SEMAFORO_COLOR[semaforo]} size="sm" style={{ flex: 1, minWidth: 80 }} />
+      <Text size="xs" fw={600} w={36} ta="right">{formatNumeroEs(avance)}%</Text>
+    </Group>
+  );
+}
+
+function PdiConfigModal({
+  opened,
+  onClose,
+  initialConfig,
+  onSaved,
+}: {
+  opened: boolean;
+  onClose: () => void;
+  initialConfig: {
+    nombre: string;
+    descripcion: string;
+    anio_inicio: number;
+    anio_fin: number;
+    num_macroproyectos: number;
+    proyectos_por_macro: number;
+    acciones_por_proyecto: number;
+    indicadores_por_accion: number;
+  };
+  onSaved: () => Promise<void>;
+}) {
+  const [nombre, setNombre] = useState(initialConfig.nombre);
+  const [anioInicio, setAnioInicio] = useState<number | string>(initialConfig.anio_inicio);
+  const [anioFin, setAnioFin] = useState<number | string>(initialConfig.anio_fin);
+  const [numMacros, setNumMacros] = useState<number | string>(initialConfig.num_macroproyectos);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!opened) return;
+    setNombre(initialConfig.nombre);
+    setAnioInicio(initialConfig.anio_inicio);
+    setAnioFin(initialConfig.anio_fin);
+    setNumMacros(initialConfig.num_macroproyectos);
+  }, [opened, initialConfig]);
+
+  const handleSave = async () => {
+    if (!String(nombre).trim()) {
+      showNotification({ title: "Error", message: "El nombre del PDI es requerido", color: "red" });
+      return;
+    }
+    if (!anioInicio || !anioFin) {
+      showNotification({ title: "Error", message: "Define el año inicial y el año final", color: "red" });
+      return;
+    }
+    if (Number(anioInicio) > Number(anioFin)) {
+      showNotification({ title: "Error", message: "El año inicial no puede ser mayor al final", color: "red" });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await axios.put(PDI_ROUTES.config(), {
+        nombre: String(nombre).trim(),
+        descripcion: String(nombre).trim(),
+        anio_inicio: Number(anioInicio),
+        anio_fin: Number(anioFin),
+        num_macroproyectos: Number(numMacros) || 0,
+      });
+      if (Number(numMacros) > 0) {
+        await axios.post(PDI_ROUTES.configRedistribuir());
+      }
+      await onSaved();
+      showNotification({ title: "Actualizado", message: "Configuración del PDI guardada y pesos redistribuidos", color: "teal" });
+      onClose();
+    } catch (e: any) {
+      showNotification({ title: "Error", message: e.response?.data?.error ?? "No se pudo guardar la configuración", color: "red" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="Editar PDI" centered size="md">
+      <Stack gap="sm">
+        <TextInput label="Nombre del PDI" value={nombre} onChange={(e) => setNombre(e.currentTarget.value)} />
+        <Group grow>
+          <NumberInput label="Año inicial" value={anioInicio} onChange={setAnioInicio} allowDecimal={false} />
+          <NumberInput label="Año final" value={anioFin} onChange={setAnioFin} allowDecimal={false} />
+        </Group>
+
+        <Divider label="Estructura del PDI" labelPosition="center" mt="xs" />
+        <Text size="xs" c="dimmed">
+          El peso de cada macroproyecto se redistribuirá automáticamente
+        </Text>
+        <NumberInput
+          label="Número de macroproyectos"
+          value={numMacros}
+          onChange={setNumMacros}
+          min={0}
+          allowDecimal={false}
+        />
+
+        <Divider mt="xs" />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>Cancelar</Button>
+          <Button color="violet" loading={loading} onClick={handleSave}>Guardar</Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+
+// ── Indicador ──────────────────────────────────────────────────────────────
+function IndicadorCard({ ind, admin, aniosPdi, onEdit, onDelete }: {
+  ind: Indicador; admin: boolean;
+  aniosPdi: number[];
+  onEdit: (i: Indicador) => void;
+  onDelete: (id: string) => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const aniosMostrados = aniosPdi.length
+    ? aniosPdi
+    : Object.keys(ind.avances_por_anio ?? {})
+        .map((anio) => Number(anio))
+        .filter((anio) => !Number.isNaN(anio))
+        .sort((a, b) => a - b);
+  const anioMeta = aniosMostrados[aniosMostrados.length - 1];
+  const avanceMostrado = getIndicadorAvanceMostrado(ind);
+  return (
+    <Paper
+      withBorder
+      radius="sm"
+      p="sm"
+      style={{ backgroundColor: "var(--mantine-color-body)", cursor: "pointer" }}
+      onClick={() => router.push(`/pdi/indicadores/${ind._id}`)}
+    >
+      <Group justify="space-between" mb={4}>
+        <Group gap={6}>
+          <ThemeIcon size={22} radius="xl" color="violet" variant="light"><IconTarget size={13} /></ThemeIcon>
+          <Text size="xs" fw={700} c="dimmed">{ind.codigo}</Text>
+        </Group>
+        <Group gap={4}>
+          <SemaforoBadge semaforo={ind.semaforo} />
+          {admin && <>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={(e) => { e.stopPropagation(); onEdit(ind); }}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); onDelete(ind._id); }}><IconTrash size={13} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+      <Text size="sm" fw={600} mb={4}>{ind.nombre}</Text>
+      {ind.indicador_resultado && <Text size="xs" c="dimmed" mb={4}>{ind.indicador_resultado}</Text>}
+      {admin && (() => {
+        const estados = ind.periodos.map(p => p.estado_reporte).filter(Boolean);
+        const tieneAprobado  = estados.some(e => e === "Aprobado");
+        const tieneEnviado   = estados.some(e => e === "Enviado");
+        const tieneRechazado = estados.some(e => e === "Rechazado");
+        if (!tieneAprobado && !tieneEnviado && !tieneRechazado) return null;
+        return (
+          <Group gap={6} mb={6} wrap="wrap">
+            {tieneAprobado  && <Badge size="xs" color="teal"   variant="filled" radius="xl">✓ Listo para Planeación</Badge>}
+            {tieneEnviado   && <Badge size="xs" color="yellow" variant="filled" radius="xl">⏳ Pendiente evaluación líder</Badge>}
+            {tieneRechazado && <Badge size="xs" color="red"    variant="light"  radius="xl">↩ Devuelto al responsable</Badge>}
+          </Group>
+        );
+      })()}
+      <AvanceBar avance={avanceMostrado} semaforo={ind.semaforo} />
+      <Group gap={12} mt={4} wrap="wrap">
+        <Text size="xs" c="dimmed">Avance total: <b>{formatNumeroEs(avanceMostrado)}%</b></Text>
+        {ind.avance_total_real != null && <Text size="xs" c="dimmed">Avance total real: <b>{formatNumeroEs(ind.avance_total_real)}%</b></Text>}
+      </Group>
+      <Group gap={8} mt={6} wrap="wrap">
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(ind.peso)}%</b></Text>
+        {ind.responsable && <Text size="xs" c="dimmed">Resp: <b>{ind.responsable}</b></Text>}
+        {ind.tipo_seguimiento && <Text size="xs" c="dimmed">Seguimiento: <b>{ind.tipo_seguimiento}</b></Text>}
+        {ind.meta_final_2029 != null && <Text size="xs" c="dimmed">Meta final {anioMeta ?? "final"}: <b>{formatNumeroEs(ind.meta_final_2029)}</b></Text>}
+      </Group>
+      {ind.periodos.length > 0 && <>
+        <Button variant="subtle" size="xs" mt={6} p={0} onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}>
+          {open ? "Ocultar periodos" : `Ver periodos (${ind.periodos.length})`}
+        </Button>
+        {open && (
+          <Paper withBorder radius="xs" p="xs" mt={6} style={{ overflowX: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #dee2e6" }}>
+                  {["Periodo","Meta","Avance","% Año"].map(h => (
+                    <th key={h} style={{ padding: "4px 8px", textAlign: h === "Periodo" ? "left" : "right" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ind.periodos.map((p) => {
+                  const avAnio = ind.avances_por_anio?.[p.periodo.slice(0,4)];
+                  return (
+                    <tr key={p.periodo} style={{ borderBottom: "1px solid #f1f3f5" }}>
+                      <td style={{ padding: "4px 8px" }}>{p.periodo}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.meta != null ? formatNumeroEs(p.meta) : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{p.avance != null ? formatNumeroEs(p.avance) : "—"}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{avAnio != null ? `${formatNumeroEs(avAnio)}%` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {aniosMostrados.length > 0 && (
+              <Group gap={8} mt={6} wrap="wrap">
+                {aniosMostrados.map(a => {
+                  const key = String(a);
+                  const val = ind.avances_por_anio?.[key];
+                  return (
+                    <Badge key={a} size="xs" variant="outline" color={val != null ? "violet" : "gray"}>
+                      {a}: {val != null ? `${val}%` : "—"}
+                    </Badge>
+                  );
+                })}
+              </Group>
+            )}
+          </Paper>
+        )}
+      </>}
+      {ind.observaciones && <Text size="xs" c="dimmed" mt={6}>Observaciones: {ind.observaciones}</Text>}
+    </Paper>
+  );
+}
+
+// ── Acción Estratégica ─────────────────────────────────────────────────────
+function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, onAvanceUpdate }: {
+  accion: Accion; admin: boolean;
+  aniosPdi: number[];
+  onEdit: (a: Accion) => void;
+  onDelete: (id: string) => void;
+  onAvanceUpdate: () => void;  // refresca el proyecto padre
+}) {
+  const [accion, setAccion] = useState(accionInicial);
+  const [indicadores, setIndicadores] = useState<Indicador[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [indModal, setIndModal] = useState(false);
+  const [selectedInd, setSelectedInd] = useState<Indicador | null>(null);
+
+  // Sincronizar si el padre actualiza la acción
+  useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
+  const presupuestoAccion = Number(accion.presupuesto) || 0;
+  const presupuestoEjecutadoAccion = Number(accion.presupuesto_ejecutado) || 0;
+
+  const cargar = async () => {
+    if (loaded) { setOpen(v => !v); return; }
+    setLoading(true);
+    try {
+      const res = await axios.get(PDI_ROUTES.indicadores(), { params: { accion_id: accion._id } });
+      setIndicadores(res.data);
+      setLoaded(true);
+      setOpen(true);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  // Refresca la acción desde el back y notifica al proyecto padre
+  const refrescarAccion = async () => {
+    try {
+      const res = await axios.get(PDI_ROUTES.accion(accion._id));
+      setAccion(res.data);
+      onAvanceUpdate(); // sube al proyecto
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteInd = (id: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar indicador",
+      children: <Text size="sm">¿Seguro que deseas eliminar este indicador?</Text>,
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.indicador(id));
+          setIndicadores(prev => prev.filter(i => i._id !== id));
+          showNotification({ title: "Eliminado", message: "Indicador eliminado", color: "teal" });
+          await refrescarAccion();
+        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+      },
+    });
+  };
+
+  return (
+    <Paper withBorder radius="sm" p="sm" mb={6}>
+      <Group justify="space-between" mb={4}>
+        <Group gap={6}>
+          <ThemeIcon size={22} radius="xl" color="orange" variant="light"><IconBulb size={13} /></ThemeIcon>
+          <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
+        </Group>
+        <Group gap={4}>
+          <SemaforoBadge semaforo={accion.semaforo} />
+          {admin && <>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(accion)}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(accion._id)}><IconTrash size={13} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+      <Text size="sm" fw={600} mb={2}>{accion.nombre}</Text>
+      {accion.alcance && <Text size="xs" c="dimmed" mb={6}>{accion.alcance}</Text>}
+      {accion.responsable && <Text size="xs" c="dimmed" mb={6}>Resp: <b>{accion.responsable}</b></Text>}
+      <AvanceBar avance={accion.avance} semaforo={accion.semaforo} />
+      <Group gap={8} mt={4}>
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(accion.peso)}%</b></Text>
+        {presupuestoAccion > 0 && (
+          <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoAccion)}</b></Text>
+        )}
+        {presupuestoEjecutadoAccion > 0 && (
+          <Text size="xs" c="dimmed">Ejecutado: <b>{formatCOP(presupuestoEjecutadoAccion)}</b></Text>
+        )}
+        <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
+          {open ? "Ocultar indicadores" : "Ver indicadores"}
+        </Button>
+        {admin && open && (
+          <Button size="xs" variant="light" color="violet" leftSection={<IconPlus size={12} />}
+            onClick={() => { setSelectedInd(null); setIndModal(true); }}>
+            Nuevo indicador
+          </Button>
+        )}
+      </Group>
+      {open && (
+        <Stack gap={6} mt={8}>
+          {indicadores.length === 0
+            ? <Text size="xs" c="dimmed">Sin indicadores registrados</Text>
+            : indicadores.map(ind => (
+              <IndicadorCard key={ind._id} ind={ind} admin={admin} aniosPdi={aniosPdi}
+                onEdit={(i) => { setSelectedInd(i); setIndModal(true); }}
+                onDelete={handleDeleteInd}
+              />
+            ))
+          }
+        </Stack>
+      )}
+      <IndicadorModal
+        opened={indModal}
+        onClose={() => setIndModal(false)}
+        selected={selectedInd}
+        defaultAccionId={accion._id}
+        onSaved={async (doc) => {
+          setIndicadores(prev => selectedInd
+            ? prev.map(i => i._id === doc._id ? doc : i)
+            : [...prev, doc]
+          );
+          await refrescarAccion(); // refresca avance de la acción y sube en cascada
+        }}
+      />
+    </Paper>
+  );
+}
+
+// ── Proyecto ───────────────────────────────────────────────────────────────
+function ProyectoCard({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDelete, onAvanceUpdate }: {
+  proyecto: Proyecto; admin: boolean;
+  aniosPdi: number[];
+  onEdit: (p: Proyecto) => void;
+  onDelete: (id: string) => void;
+  onAvanceUpdate: () => void; // refresca el macroproyecto padre
+}) {
+  const [proyecto, setProyecto] = useState(proyectoInicial);
+  const [acciones, setAcciones] = useState<Accion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [accionModal, setAccionModal] = useState(false);
+  const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
+
+  useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
+  const presupuestoProyecto = Number(proyecto.presupuesto) || 0;
+  const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado) || 0;
+
+  const cargar = async () => {
+    if (loaded) { setOpen(v => !v); return; }
+    setLoading(true);
+    try {
+      const res = await axios.get(PDI_ROUTES.acciones(), { params: { proyecto_id: proyecto._id } });
+      setAcciones(res.data);
+      setLoaded(true);
+      setOpen(true);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  // Refresca el proyecto desde el back y notifica al macroproyecto padre
+  const refrescarProyecto = async () => {
+    try {
+      const res = await axios.get(PDI_ROUTES.proyecto(proyecto._id));
+      setProyecto(res.data);
+      onAvanceUpdate(); // sube al macroproyecto
+    } catch (e) { console.error(e); }
+  };
+
+  // Refresca una acción específica en el estado local
+  const refrescarAccion = async (accionId: string) => {
+    try {
+      const res = await axios.get(PDI_ROUTES.accion(accionId));
+      setAcciones(prev => prev.map(a => a._id === accionId ? res.data : a));
+      await refrescarProyecto();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteAccion = (id: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar acción estratégica",
+      children: <Text size="sm">¿Seguro que deseas eliminar esta acción?</Text>,
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.accion(id));
+          setAcciones(prev => prev.filter(a => a._id !== id));
+          showNotification({ title: "Eliminada", message: "Acción eliminada", color: "teal" });
+          await refrescarProyecto();
+        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+      },
+    });
+  };
+
+  return (
+    <Paper withBorder radius="md" p="md" mb={8}>
+      <Group justify="space-between" mb={6}>
+        <Group gap={8}>
+          <ThemeIcon size={26} radius="xl" color="blue" variant="light"><IconTrendingUp size={15} /></ThemeIcon>
+          <div>
+            <Text size="xs" fw={700} c="dimmed">{proyecto.codigo}</Text>
+            <Text size="sm" fw={700}>{proyecto.nombre}</Text>
+          </div>
+        </Group>
+        <Group gap={4}>
+          <SemaforoBadge semaforo={proyecto.semaforo} />
+          {admin && <>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(proyecto)}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(proyecto._id)}><IconTrash size={13} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+      <AvanceBar avance={proyecto.avance} semaforo={proyecto.semaforo} />
+      <Group gap={12} mt={6}>
+        <Text size="xs" c="dimmed">Peso: <b>{formatNumeroEs(proyecto.peso)}%</b></Text>
+        <Text size="xs" c="dimmed">Formulador: <b>{proyecto.formulador}</b></Text>
+        <Text size="xs" c="dimmed">Presupuesto: <b>{formatCOP(presupuestoProyecto)}</b></Text>
+        {presupuestoEjecutadoProyecto > 0 && (
+          <Text size="xs" c="dimmed">Ejecutado: <b>{formatCOP(presupuestoEjecutadoProyecto)}</b></Text>
+        )}
+        <Button variant="subtle" size="xs" p={0} loading={loading} rightSection={<IconChevronRight size={12} />} onClick={cargar}>
+          {open ? "Ocultar acciones" : "Ver acciones estratégicas"}
+        </Button>
+        {admin && open && (
+          <Button size="xs" variant="light" color="orange" leftSection={<IconPlus size={12} />}
+            onClick={() => { setSelectedAccion(null); setAccionModal(true); }}>
+            Nueva acción
+          </Button>
+        )}
+      </Group>
+      {proyecto.descripcion && (
+        <Text size="xs" c="dimmed" mt={8}>
+          Propósito: <b>{proyecto.descripcion}</b>
+        </Text>
+      )}
+      {open && (
+        <Stack gap={4} mt={10}>
+          {acciones.length === 0
+            ? <Text size="xs" c="dimmed">Sin acciones estratégicas registradas</Text>
+            : acciones.map(a => (
+              <AccionCard key={a._id} accion={a} admin={admin} aniosPdi={aniosPdi}
+                onEdit={(ac) => { setSelectedAccion(ac); setAccionModal(true); }}
+                onDelete={handleDeleteAccion}
+                onAvanceUpdate={() => refrescarAccion(a._id)}
+              />
+            ))
+          }
+        </Stack>
+      )}
+      <AccionModal
+        opened={accionModal}
+        onClose={() => setAccionModal(false)}
+        selected={selectedAccion}
+        defaultProyectoId={proyecto._id}
+        onSaved={async (doc) => {
+          setAcciones(prev => selectedAccion
+            ? prev.map(a => a._id === doc._id ? doc : a)
+            : [...prev, doc]
+          );
+          await refrescarProyecto();
+        }}
+      />
+    </Paper>
+  );
+}
+
+// ── Stats cards ───────────────────────────────────────────────────────────
+interface PendienteAprobacion {
+  indicadorId: string;
+  indicadorCodigo: string;
+  indicadorNombre: string;
+  corte: string;
+  tipo: "lider" | "planeacion";
+  respuestaId?: string;
+  formularioId?: string;
+  liderEmail?: string;
+  respondidoPor?: string;
+}
+
+interface PendienteRevisionResponse {
+  _id?: string;
+  respuesta_id?: string;
+  indicador_id_ref?: string;
+  formulario_id_ref?: string;
+  corte?: string;
+  lider_email_aval?: string;
+  respondido_por?: string;
+  indicador_id?: string | {
+    _id?: string;
+    codigo?: string;
+    nombre?: string;
+  } | null;
+  formulario_id?: string | {
+    _id?: string;
+  } | null;
+}
+
+function mapPendienteRevision(item: PendienteRevisionResponse, tipo: PendienteAprobacion["tipo"]): PendienteAprobacion | null {
+  const indicador = item.indicador_id && typeof item.indicador_id === "object"
+    ? item.indicador_id
+    : null;
+  const indicadorId = item.indicador_id_ref
+    || indicador?._id
+    || (typeof item.indicador_id === "string" ? item.indicador_id : "");
+  if (!indicadorId) return null;
+
+  return {
+    indicadorId,
+    indicadorCodigo: indicador?.codigo ?? "Indicador",
+    indicadorNombre: indicador?.nombre ?? "Reporte pendiente de validacion",
+    corte: item.corte ?? "",
+    tipo,
+    respuestaId: item.respuesta_id ?? item._id,
+    formularioId: item.formulario_id_ref
+      || (typeof item.formulario_id === "string" ? item.formulario_id : item.formulario_id?._id),
+    liderEmail: item.lider_email_aval ?? "",
+    respondidoPor: item.respondido_por ?? "",
+  };
+}
+
+interface CorteResumenPeriodo {
+  periodo: string;
+  sin_reporte: number;
+  con_reporte: number;
+  total_indicadores: number;
+  porcentaje_cobertura: number;
+  indicadores_pendientes?: { _id: string; codigo: string; nombre: string; meta?: number | string | null; responsable?: string }[];
+}
+
+type PresupuestoDetalleResumen = {
+  tipo?: string;
+  valor?: number;
+  causado?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+};
+
+type PresupuestoDashboardRow = {
+  presupuesto?: number;
+  presupuestoGasto?: number;
+  presupuestoInversion?: number;
+  comprometidoGasto?: number;
+  comprometidoInversion?: number;
+  causado?: number;
+  causadoGasto?: number;
+  causadoInversion?: number;
+  ejecutado?: number;
+  ejecutadoGasto?: number;
+  ejecutadoInversion?: number;
+  gasto?: number;
+  inversion?: number;
+  presupuestoPorAnio?: Record<string, { gasto?: number; inversion?: number; total?: number }>;
+  detalles?: PresupuestoDetalleResumen[];
+};
+
+type PresupuestoResumen = {
+  total: number;
+  presupuestoGasto: number;
+  presupuestoInversion: number;
+  causado: number;
+  causadoGasto: number;
+  causadoInversion: number;
+  ejecutado: number;
+  ejecutadoGasto: number;
+  ejecutadoInversion: number;
+};
+
+type PresupuestoDashboardResponse = {
+  rows?: PresupuestoDashboardRow[];
+  totals?: {
+    presupuesto?: number;
+    presupuestoGasto?: number;
+    presupuestoInversion?: number;
+    causado?: number;
+    causadoGasto?: number;
+    causadoInversion?: number;
+    ejecutado?: number;
+    ejecutadoGasto?: number;
+    ejecutadoInversion?: number;
+  };
+};
+
+const toBudgetNumber = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isBudgetInversion = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .includes("inversion");
+
+const getPresupuestoCausadoSplit = (row: PresupuestoDashboardRow) => {
+  const directGasto = toBudgetNumber(row.causadoGasto);
+  const directInversion = toBudgetNumber(row.causadoInversion);
+  if (directGasto || directInversion) {
+    return { gasto: directGasto, inversion: directInversion };
+  }
+
+  const detailSplit = (row.detalles ?? []).reduce(
+    (acc, detail) => {
+      const detailGasto = toBudgetNumber(detail.causadoGasto);
+      const detailInversion = toBudgetNumber(detail.causadoInversion);
+      if (detailGasto || detailInversion) {
+        acc.gasto += detailGasto;
+        acc.inversion += detailInversion;
+        return acc;
+      }
+
+      const causado = toBudgetNumber(detail.causado);
+      if (!causado) return acc;
+      if (isBudgetInversion(detail.tipo)) acc.inversion += causado;
+      else acc.gasto += causado;
+      return acc;
+    },
+    { gasto: 0, inversion: 0 }
+  );
+  if (detailSplit.gasto || detailSplit.inversion) return detailSplit;
+
+  const gasto = toBudgetNumber(row.gasto);
+  const inversion = toBudgetNumber(row.inversion);
+  return { gasto, inversion };
+};
+
+const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
+  const directGasto = toBudgetNumber(row.presupuestoGasto);
+  const directInversion = toBudgetNumber(row.presupuestoInversion);
+  if (directGasto || directInversion) {
+    return { gasto: directGasto, inversion: directInversion };
+  }
+
+  const comprometidoGasto = toBudgetNumber(row.comprometidoGasto);
+  const comprometidoInversion = toBudgetNumber(row.comprometidoInversion);
+  const comprometidoSplit = comprometidoGasto + comprometidoInversion;
+  const presupuesto = toBudgetNumber(row.presupuesto);
+  if (presupuesto > 0 && comprometidoSplit > 0) {
+    return {
+      gasto: presupuesto * (comprometidoGasto / comprometidoSplit),
+      inversion: presupuesto * (comprometidoInversion / comprometidoSplit),
+    };
+  }
+
+  const detailSplit = (row.detalles ?? []).reduce(
+    (acc, detail) => {
+      const valor = toBudgetNumber(detail.valor);
+      if (!valor) return acc;
+      if (isBudgetInversion(detail.tipo)) acc.inversion += valor;
+      else acc.gasto += valor;
+      return acc;
+    },
+    { gasto: 0, inversion: 0 }
+  );
+  if (presupuesto > 0 && detailSplit.gasto + detailSplit.inversion > 0) {
+    const detailTotal = detailSplit.gasto + detailSplit.inversion;
+    return {
+      gasto: presupuesto * (detailSplit.gasto / detailTotal),
+      inversion: presupuesto * (detailSplit.inversion / detailTotal),
+    };
+  }
+
+  return { gasto: presupuesto, inversion: 0 };
+};
+
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, resumen, aniosPdi, pendientesLider, pendientesAprobacion }: {
+  macros: Macroproyecto[];
+  proyectosPorMacro: Record<string, Proyecto[]>;
+  accionesPorMacro: Record<string, number>;
+  indicadoresPorMacro: Record<string, number>;
+  resumen: DashboardResumen | null;
+  aniosPdi: number[];
+  pendientesLider: PendienteAprobacion[];
+  pendientesAprobacion: PendienteAprobacion[];
+}) {
+  const router = useRouter();
+  const anioInicial = String(resumen?.anio_actual ?? new Date().getFullYear());
+  const [anioSeleccionado, setAnioSeleccionado] = useState(anioInicial);
+  const [resumenVigencia, setResumenVigencia] = useState<DashboardResumen | null>(resumen);
+  const [corteActual, setCorteActual] = useState<CorteResumenPeriodo | null>(null);
+  const [presupuestosPorAnio, setPresupuestosPorAnio] = useState<Record<string, PresupuestoResumen>>({});
+  const [modalPendientes, setModalPendientes] = useState(false);
+  const [modalPendientesLider, setModalPendientesLider] = useState(false);
+  const [modalAprobaciones, setModalAprobaciones] = useState(false);
+
+  useEffect(() => {
+    const fetchCorte = (nombre: string) =>
+      axios.get<CorteResumenPeriodo>(PDI_ROUTES.dashboardCorte(nombre))
+        .then(r => setCorteActual(r.data))
+        .catch(() => {});
+
+    axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesActivos())
+      .then(({ data: activos }) => {
+        if (activos.length) { fetchCorte(activos[0].nombre); return; }
+        axios.get<{ _id: string; nombre: string }[]>(PDI_ROUTES.cortesVigentes())
+          .then(({ data: vigentes }) => { if (vigentes.length) fetchCorte(vigentes[0].nombre); })
+          .catch(() => {});
+      })
+      .catch(() => {});
+
+    axios.get<PresupuestoDashboardResponse>(PDI_ROUTES.presupuestoData())
+      .then(({ data }) => {
+        const rows = data.rows ?? [];
+        const splitFromTotals = {
+          gasto: toBudgetNumber(data.totals?.causadoGasto),
+          inversion: toBudgetNumber(data.totals?.causadoInversion),
+        };
+        const planFromTotals = {
+          gasto: toBudgetNumber(data.totals?.presupuestoGasto),
+          inversion: toBudgetNumber(data.totals?.presupuestoInversion),
+        };
+        const splitFromRows = rows.reduce<{ gasto: number; inversion: number }>(
+          (acc, row) => {
+            const split = getPresupuestoCausadoSplit(row);
+            acc.gasto += split.gasto;
+            acc.inversion += split.inversion;
+            return acc;
+          },
+          { gasto: 0, inversion: 0 }
+        );
+        const planFromRows = rows.reduce<{ gasto: number; inversion: number }>(
+          (acc, row) => {
+            const split = getPresupuestoPlaneadoSplit(row);
+            acc.gasto += split.gasto;
+            acc.inversion += split.inversion;
+            return acc;
+          },
+          { gasto: 0, inversion: 0 }
+        );
+        const total = toBudgetNumber(data.totals?.presupuesto)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.presupuesto), 0);
+        const causado = toBudgetNumber(data.totals?.causado)
+          || rows.reduce((s, r) => {
+            const rowCausado = toBudgetNumber(r.causado);
+            if (rowCausado) return s + rowCausado;
+            const split = getPresupuestoCausadoSplit(r);
+            return s + split.gasto + split.inversion;
+          }, 0);
+        let presupuestoGasto = planFromTotals.gasto || planFromRows.gasto;
+        let presupuestoInversion = planFromTotals.inversion || planFromRows.inversion;
+        const planSplit = presupuestoGasto + presupuestoInversion;
+        if (total > 0 && planSplit <= 0) presupuestoGasto = total;
+
+        const causadoGasto = splitFromTotals.gasto || splitFromRows.gasto;
+        const causadoInversion = splitFromTotals.inversion || splitFromRows.inversion;
+
+        // "Ejecutado" (pagado) es una etapa distinta de "causado" (obligación
+        // reconocida) en la ejecución presupuestal. El avance financiero del
+        // año debe compararse contra lo EJECUTADO, no lo causado.
+        const ejecutadoGasto = toBudgetNumber(data.totals?.ejecutadoGasto)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutadoGasto), 0);
+        const ejecutadoInversion = toBudgetNumber(data.totals?.ejecutadoInversion)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutadoInversion), 0);
+        const ejecutado = toBudgetNumber(data.totals?.ejecutado)
+          || rows.reduce((s, r) => s + toBudgetNumber(r.ejecutado), 0)
+          || (ejecutadoGasto + ejecutadoInversion);
+
+        const presupuestoBase: PresupuestoResumen = {
+          total,
+          presupuestoGasto,
+          presupuestoInversion,
+          causado,
+          causadoGasto,
+          causadoInversion,
+          ejecutado,
+          ejecutadoGasto,
+          ejecutadoInversion,
+        };
+        const porAnio: Record<string, PresupuestoResumen> = {
+          [anioInicial]: presupuestoBase,
+        };
+        for (const anio of aniosPdi.map(String)) {
+          if (anio === anioInicial) continue;
+          const acumulado = rows.reduce<{ total: number; presupuestoGasto: number; presupuestoInversion: number }>(
+            (acc, row) => {
+              const vigencia = row.presupuestoPorAnio?.[anio];
+              if (!vigencia) return acc;
+              const gasto = toBudgetNumber(vigencia.gasto);
+              const inversion = toBudgetNumber(vigencia.inversion);
+              acc.presupuestoGasto += gasto;
+              acc.presupuestoInversion += inversion;
+              acc.total += toBudgetNumber(vigencia.total) || gasto + inversion;
+              return acc;
+            },
+            { total: 0, presupuestoGasto: 0, presupuestoInversion: 0 }
+          );
+          porAnio[anio] = {
+            ...acumulado,
+            causado: 0,
+            causadoGasto: 0,
+            causadoInversion: 0,
+            ejecutado: 0,
+            ejecutadoGasto: 0,
+            ejecutadoInversion: 0,
+          };
+        }
+        setPresupuestosPorAnio(porAnio);
+      })
+      .catch(() => {});
+  }, [anioInicial, aniosPdi]);
+
+  useEffect(() => {
+    if (!aniosPdi.length || aniosPdi.map(String).includes(anioSeleccionado)) return;
+    setAnioSeleccionado(String(aniosPdi[0]));
+  }, [anioSeleccionado, aniosPdi]);
+
+  useEffect(() => {
+    if (anioSeleccionado === resumen?.anio_actual) {
+      setResumenVigencia(resumen);
+      return;
+    }
+    axios.get<DashboardResumen>(PDI_ROUTES.dashboardResumen(anioSeleccionado))
+      .then(({ data }) => setResumenVigencia(data))
+      .catch(() => setResumenVigencia(null));
+  }, [anioSeleccionado, resumen]);
+
+  const totalProyectos = Object.values(proyectosPorMacro).flat().length;
+  const totalAcciones = Object.values(accionesPorMacro).reduce((s, n) => s + n, 0);
+  const totalIndicadores = Object.values(indicadoresPorMacro).reduce((s, n) => s + n, 0);
+  // Se usa el valor del backend (resumen.avance_global) en vez de recalcularlo
+  // aquí: así MIRÓ siempre muestra exactamente el mismo número que ya calculó
+  // el servidor (y que replica la Memoria técnica en Excel), sin una segunda
+  // implementación del promedio ponderado que se pueda desincronizar.
+  const avancePonderado = resumen?.avance_global ?? 0;
+  const avanceColor = avancePonderado >= 70 ? "green" : avancePonderado >= 40 ? "blue" : avancePonderado >= 20 ? "orange" : "red";
+  const avanceBadge = avancePonderado >= 70 ? "Buen ritmo" : avancePonderado >= 40 ? "En progreso" : avancePonderado >= 20 ? "Atencion" : "Crítico";
+  const presupuestosDisponibles = Object.values(presupuestosPorAnio);
+  const presupuestoTotal = presupuestosDisponibles.length
+    ? presupuestosDisponibles.reduce((s, item) => s + item.total, 0)
+    : (resumen?.presupuesto.total ?? macros.reduce((s, m) => s + (Number(m.presupuesto) || 0), 0));
+  const presupuestoGastoTotal = presupuestosDisponibles.reduce((s, item) => s + item.presupuestoGasto, 0);
+  const presupuestoInversionTotal = presupuestosDisponibles.reduce((s, item) => s + item.presupuestoInversion, 0);
+  const presupuestoEjecutado = presupuestosDisponibles.length
+    ? presupuestosDisponibles.reduce((s, item) => s + item.ejecutado, 0)
+    : (resumen?.presupuesto.ejecutado ?? macros.reduce((s, m) => s + (Number(m.presupuesto_ejecutado) || 0), 0));
+  const presupuestoEjecutadoGastoTotal = presupuestosDisponibles.reduce((s, item) => s + item.ejecutadoGasto, 0);
+  const presupuestoEjecutadoInversionTotal = presupuestosDisponibles.reduce((s, item) => s + item.ejecutadoInversion, 0);
+  const presupuestoCausado = presupuestosDisponibles.reduce((s, item) => s + item.causado, 0);
+  const avanceFinanciero = presupuestoTotal > 0
+    ? Math.min(Math.round((presupuestoCausado / presupuestoTotal) * 100), 100)
+    : 0;
+  const porcentajeEjecucionTotal = presupuestoTotal > 0
+    ? Math.min(Math.round((presupuestoEjecutado / presupuestoTotal) * 100), 100)
+    : 0;
+  const ejecucionColorTotal = porcentajeEjecucionTotal >= 70 ? "teal" : porcentajeEjecucionTotal >= 40 ? "blue" : "orange";
+  const finColor = avanceFinanciero >= 70 ? "green" : avanceFinanciero >= 40 ? "blue" : avanceFinanciero >= 20 ? "orange" : "red";
+  const finBadge = avanceFinanciero >= 70 ? "Buen ritmo" : avanceFinanciero >= 40 ? "En progreso" : avanceFinanciero >= 20 ? "Atención" : "Crítico";
+  const anioActualLabel = anioSeleccionado;
+  const avanceAnioActual = resumenVigencia?.avance_anio_actual ?? 0;
+  const avanceAnioActualColor = avanceAnioActual >= 70 ? "green" : avanceAnioActual >= 40 ? "blue" : avanceAnioActual >= 20 ? "orange" : "red";
+  const avanceAnioActualBadge = avanceAnioActual >= 70 ? "Buen ritmo" : avanceAnioActual >= 40 ? "En progreso" : avanceAnioActual >= 20 ? "Atención" : "Crítico";
+  const presupuestoAnio = presupuestosPorAnio[anioSeleccionado];
+  const presupuestoAnioTotal = presupuestoAnio?.total ?? 0;
+  const presupuestoAnioGasto = presupuestoAnio?.presupuestoGasto ?? 0;
+  const presupuestoAnioInversion = presupuestoAnio?.presupuestoInversion ?? 0;
+  const presupuestoAnioCausado = presupuestoAnio?.causado ?? 0;
+  const presupuestoAnioEjecutado = presupuestoAnio?.ejecutado ?? 0;
+  const presupuestoAnioEjecutadoGasto = presupuestoAnio?.ejecutadoGasto ?? 0;
+  const presupuestoAnioEjecutadoInversion = presupuestoAnio?.ejecutadoInversion ?? 0;
+  const presupuestoAnioSinDesagregar = Math.max(
+    presupuestoAnioEjecutado - presupuestoAnioEjecutadoGasto - presupuestoAnioEjecutadoInversion,
+    0
+  );
+  const presupuestoAnioPlaneadoSinDesagregar = Math.max(
+    presupuestoAnioTotal - presupuestoAnioGasto - presupuestoAnioInversion,
+    0
+  );
+  const avanceFinancieroAnio = presupuestoAnioTotal > 0
+    ? Math.min(Math.round((presupuestoAnioCausado / presupuestoAnioTotal) * 100), 100)
+    : 0;
+  const porcentajeEjecucionAnio = presupuestoAnioTotal > 0
+    ? Math.min(Math.round((presupuestoAnioEjecutado / presupuestoAnioTotal) * 100), 100)
+    : 0;
+  const finColorAnio = avanceFinancieroAnio >= 70 ? "teal" : avanceFinancieroAnio >= 40 ? "blue" : "orange";
+  const ejecucionColorAnio = porcentajeEjecucionAnio >= 70 ? "teal" : porcentajeEjecucionAnio >= 40 ? "blue" : "orange";
+  const corteEsVigencia = Boolean(corteActual?.periodo?.startsWith(anioSeleccionado));
+  const estructuraResumen = [
+    { label: "Macroproyectos", value: macros.length, color: "violet" },
+    { label: "Proyectos", value: totalProyectos, color: "blue" },
+    { label: "Acciones Estratégicas", value: totalAcciones, color: "orange" },
+    { label: "Indicadores", value: totalIndicadores, color: "teal" },
+  ];
+  const totalPendientesLider = pendientesLider.length;
+  const totalPendientesPlaneacion = pendientesAprobacion.length;
+  const abrirPendienteLider = (item: PendienteAprobacion) => {
+    if (!item.indicadorId) return;
+    const params = new URLSearchParams({
+      modo: "evaluar",
+      origen: "bandeja-lider",
+    });
+    if (item.corte) params.set("periodo", item.corte);
+    if (item.respuestaId) params.set("respuesta_id", item.respuestaId);
+    if (item.formularioId) params.set("formulario_id", item.formularioId);
+    router.push(`/pdi/indicadores/${encodeURIComponent(item.indicadorId)}?${params.toString()}`);
+  };
+  const abrirPendientePlaneacion = (item: PendienteAprobacion) => {
+    if (!item.indicadorId) return;
+    const params = new URLSearchParams({
+      modo: "planeacion",
+      origen: "bandeja-planeacion",
+    });
+    if (item.corte) params.set("periodo", item.corte);
+    if (item.respuestaId) params.set("respuesta_id", item.respuestaId);
+    if (item.formularioId) params.set("formulario_id", item.formularioId);
+    router.push(`/pdi/indicadores/${encodeURIComponent(item.indicadorId)}?${params.toString()}`);
+  };
+
+  return (
+    <Stack gap="lg" mb="xl">
+      <Paper
+        withBorder
+        radius="xl"
+        p="xl"
+        shadow="xs"
+        style={{
+          background: "linear-gradient(135deg, rgba(124,58,237,0.08) 0%, rgba(59,130,246,0.05) 55%, rgba(255,255,255,0.95) 100%)",
+        }}
+      >
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-start">
+              <Group gap="md" align="center">
+                <div>
+                  <Title order={2} lh={1.1}>Panorama general</Title>
+                </div>
+              </Group>
+              
+            </Group>
+
+            <Text size="sm" c="dimmed" maw={560}>
+              Avance acumulado y presupuesto del PDI hasta {Math.max(...aniosPdi, Number(anioActualLabel))}
+            </Text>
+
+            <Stack gap="xs" mt={6}>
+              <div>
+                <Text size="xs" c="dimmed">Avance técnico consolidado {Math.max(...aniosPdi, Number(anioActualLabel))}</Text>
+                <Group gap="sm" align="flex-end">
+                  <Text size="2.8rem" fw={900} lh={1}>{formatNumeroEs(avancePonderado, 2, 2)}%</Text>
+                  <Badge size="md" color={avanceColor} variant="light" radius="xl" mb={6}>{avanceBadge}</Badge>
+                </Group>
+                <Progress value={avancePonderado} color={avanceColor} size="md" radius="xl" mt="xs" />
+              </div>
+              <div>
+                <Text size="xs" c="dimmed">Avance financiero hasta {Math.max(...aniosPdi, Number(anioActualLabel))}</Text>
+                <Group gap="sm" align="flex-end">
+                  <Text size="2.8rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
+                  <Badge size="md" color={finColor} variant="light" radius="xl" mb={6}>{finBadge}</Badge>
+                </Group>
+                <Progress value={avanceFinanciero} color={finColor} size="md" radius="xl" mt="xs" />
+                {presupuestoTotal > 0 && (
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {formatCOP(presupuestoCausado)} causado de {formatCOP(presupuestoTotal)}
+                  </Text>
+                )}
+              </div>
+            </Stack>
+
+            <Paper withBorder radius="lg" p="md" style={{ background: "rgba(255,255,255,0.72)" }}>
+              <Box>
+                <Text size="xs" c="dimmed">Ejecutado vs Presupuesto</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{porcentajeEjecucionTotal}%</Text>
+                <Progress value={porcentajeEjecucionTotal} color={ejecucionColorTotal} size="sm" radius="xl" mt={8} />
+                <Text size="xs" c="dimmed" mt={6}>
+                  {formatCOP(presupuestoEjecutado)} ejecutado de {formatCOP(presupuestoTotal)}
+                </Text>
+                <SimpleGrid cols={2} spacing={6} mt={6}>
+                  <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: 8 }}>
+                    <Group gap={4} mb={4}>
+                      <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                      <Text size="10px" fw={700} c="blue.6">Gasto</Text>
+                    </Group>
+                    <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoEjecutadoGastoTotal)}</Text>
+                    <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoGastoTotal)}</Text>
+                  </Box>
+                  <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: 8 }}>
+                    <Group gap={4} mb={4}>
+                      <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
+                      <Text size="10px" fw={700} c="violet.6">Inversión</Text>
+                    </Group>
+                    <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoEjecutadoInversionTotal)}</Text>
+                    <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoInversionTotal)}</Text>
+                  </Box>
+                </SimpleGrid>
+              </Box>
+            </Paper>
+
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mt="sm">
+              {estructuraResumen.map((item) => (
+                <Paper
+                  key={item.label}
+                  withBorder
+                  radius="lg"
+                  p="sm"
+                  style={{
+                    background: "rgba(255,255,255,0.7)",
+                    borderColor: `var(--mantine-color-${item.color}-3)`,
+                  }}
+                >
+                  <Text size="1.2rem" fw={800} lh={1}>{item.value}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.label}</Text>
+                </Paper>
+              ))}
+            </SimpleGrid>
+
+          </Stack>
+
+          <Grid gutter="md">
+            <Grid.Col span={12}>
+              <Group justify="space-between" align="flex-end">
+                <Box>
+                  <Text fw={800}>Detalle por vigencia</Text>
+                  <Text size="xs" c="dimmed">Consulta el avance y el presupuesto de un año específico.</Text>
+                </Box>
+                <Select
+                  label="Año"
+                  value={anioSeleccionado}
+                  onChange={(value) => value && setAnioSeleccionado(value)}
+                  data={aniosPdi.map((anio) => ({ value: String(anio), label: String(anio) }))}
+                  allowDeselect={false}
+                  w={120}
+                  size="xs"
+                />
+              </Group>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={avanceAnioActualColor} variant="light">
+                    <IconTrendingUp size={20} />
+                  </ThemeIcon>
+                  <Badge color={avanceAnioActualColor} variant="light" radius="xl">
+                    {anioSeleccionado}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Avance técnico</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{formatNumeroEs(avanceAnioActual, 2, 2)}%</Text>
+                <Progress value={avanceAnioActual} color={avanceAnioActualColor} size="sm" radius="xl" mt="sm" />
+                <Text size="xs" c="dimmed" mt={6}>{avanceAnioActualBadge}</Text>
+              </Paper>
+            </Grid.Col>
+
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={finColorAnio} variant="light">
+                    <IconCurrencyDollar size={20} />
+                  </ThemeIcon>
+                  <Badge color={finColorAnio} variant="light" radius="xl">
+                    {anioSeleccionado}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Avance financiero</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>{avanceFinancieroAnio}%</Text>
+                <Progress value={avanceFinancieroAnio} color={finColorAnio} size="sm" radius="xl" mt="sm" />
+                <Text size="xs" c="dimmed" mt={6}>
+                  {formatCOP(presupuestoAnioCausado)} causado de {formatCOP(presupuestoAnioTotal)}
+                </Text>
+              </Paper>
+            </Grid.Col>
+
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <Paper withBorder radius="lg" p="lg" h="100%" style={{ position: "relative" }}>
+                {corteEsVigencia && (corteActual?.sin_reporte ?? 0) > 0 && (
+                  <ActionIcon
+                    size="sm" variant="subtle" color="gray"
+                    style={{ position: "absolute", bottom: 10, right: 10 }}
+                    onClick={() => setModalPendientes(true)}
+                    title="Ver indicadores pendientes"
+                  >
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                )}
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={(corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light">
+                    <IconAlertTriangle size={20} />
+                  </ThemeIcon>
+                  <Badge color={corteEsVigencia && (corteActual?.sin_reporte ?? 1) > 0 ? "red" : "teal"} variant="light" radius="xl">
+                    {anioSeleccionado}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Indicadores sin reporte</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                  {corteEsVigencia && corteActual ? corteActual.sin_reporte : "—"}
+                </Text>
+                <Text size="xs" c="dimmed" mt={6}>
+                  {corteEsVigencia && corteActual
+                    ? corteActual.sin_reporte === 0
+                      ? "Todos han reportado"
+                      : `Sin reporte en ${corteActual.periodo}`
+                    : "Sin corte activo para esta vigencia"}
+                </Text>
+              </Paper>
+            </Grid.Col>
+
+            <Modal
+              opened={modalPendientes}
+              onClose={() => setModalPendientes(false)}
+              title={
+                <Group gap="xs">
+                  <ThemeIcon size={28} radius="xl" color="red" variant="light">
+                    <IconAlertTriangle size={16} />
+                  </ThemeIcon>
+                  <Text fw={700} size="sm">
+                    Indicadores sin reporte — {corteActual?.periodo}
+                  </Text>
+                </Group>
+              }
+              size="lg"
+              radius="lg"
+            >
+              {(corteActual?.indicadores_pendientes?.length ?? 0) === 0 ? (
+                <Text size="sm" c="dimmed" ta="center" py="xl">
+                  Todos los indicadores han sido reportados.
+                </Text>
+              ) : (
+                <>
+                  <Text size="xs" c="dimmed" mb="sm">
+                    {corteActual!.indicadores_pendientes!.length} indicador
+                    {corteActual!.indicadores_pendientes!.length !== 1 ? "es" : ""} pendiente
+                    {corteActual!.indicadores_pendientes!.length !== 1 ? "s" : ""} de reporte en <strong>{corteActual!.periodo}</strong>
+                  </Text>
+                  <ScrollArea h={420} offsetScrollbars>
+                    <List spacing={6} size="sm" icon={
+                      <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#fa5252", flexShrink: 0 }} />
+                    }>
+                      {[...corteActual!.indicadores_pendientes!]
+                        .sort((a, b) => String(a.codigo ?? "").localeCompare(String(b.codigo ?? ""), undefined, { numeric: true }))
+                        .map((ind) => (
+                        <List.Item key={ind._id}>
+                          <Box>
+                            <Group gap={6} wrap="wrap" align="center">
+                              <Text size="xs" fw={700} c="red.7" lh={1.2}>{ind.codigo}</Text>
+                              {ind.meta !== undefined && ind.meta !== null && String(ind.meta).trim() !== "" && (
+                                <Badge size="xs" color="red" variant="light" radius="sm">
+                                  Meta: {formatMetaValue(ind.meta)}
+                                </Badge>
+                              )}
+                            </Group>
+                            <Text size="xs" c="dimmed" lh={1.4}>{ind.nombre}</Text>
+                            {ind.responsable && (
+                              <Text size="xs" c="dimmed" lh={1.4}>Responsable: {ind.responsable}</Text>
+                            )}
+                          </Box>
+                        </List.Item>
+                      ))}
+                    </List>
+                  </ScrollArea>
+                </>
+              )}
+            </Modal>
+
+            <Grid.Col span={12}>
+              <Paper withBorder radius="lg" p="lg" h="100%">
+                <Group justify="space-between" align="flex-start" mb="xs">
+                  <ThemeIcon size={42} radius="xl" color={ejecucionColorAnio} variant="light">
+                    <IconCurrencyDollar size={20} />
+                  </ThemeIcon>
+                  <Badge color={ejecucionColorAnio} variant="light" radius="xl">
+                    {anioSeleccionado}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed">Ejecutado vs Presupuesto</Text>
+                <Text size="1.8rem" fw={800} lh={1} mt={4}>
+                  {porcentajeEjecucionAnio}%
+                </Text>
+                <Box style={{ height: 6, background: "#e9ecef", borderRadius: 4, overflow: "hidden", margin: "8px 0" }}>
+                  <Box style={{ width: `${porcentajeEjecucionAnio}%`, height: "100%", borderRadius: 4, transition: "width .4s", background: porcentajeEjecucionAnio >= 70 ? "#20c997" : porcentajeEjecucionAnio >= 40 ? "#228be6" : "#fd7e14" }} />
+                </Box>
+                {presupuestoAnioTotal > 0 ? (
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">
+                      {formatCOP(presupuestoAnioEjecutado)} ejecutado de {formatCOP(presupuestoAnioTotal)}
+                    </Text>
+                    <SimpleGrid cols={2} spacing={6}>
+                      <Box style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 8, padding: "8px" }}>
+                        <Group gap={4} mb={4}>
+                          <Box w={6} h={6} style={{ borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                          <Text size="10px" fw={700} c="blue.6">Gasto</Text>
+                        </Group>
+                        <Text size="11px" fw={800} c="blue.8" lh={1.2}>{formatCOP(presupuestoAnioEjecutadoGasto)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioGasto)}</Text>
+                      </Box>
+                      <Box style={{ border: "1px solid #ddd6fe", background: "#f5f3ff", borderRadius: 8, padding: "8px" }}>
+                        <Group gap={4} mb={4}>
+                          <Box w={6} h={6} style={{ borderRadius: "50%", background: "#7c3aed", flexShrink: 0 }} />
+                          <Text size="10px" fw={700} c="violet.6">Inversión</Text>
+                        </Group>
+                        <Text size="11px" fw={800} c="violet.8" lh={1.2}>{formatCOP(presupuestoAnioEjecutadoInversion)}</Text>
+                        <Text size="10px" c="dimmed" lh={1.2} mt={2}>ejecutado de {formatCOP(presupuestoAnioInversion)}</Text>
+                      </Box>
+                    </SimpleGrid>
+                    {presupuestoAnioSinDesagregar > 0 && (
+                      <Text size="10px" c="dimmed">
+                        Ejecutado sin desagregar: {formatCOP(presupuestoAnioSinDesagregar)}
+                      </Text>
+                    )}
+                    {presupuestoAnioPlaneadoSinDesagregar > 0 && (
+                      <Text size="10px" c="dimmed">
+                        Presupuesto sin desagregar: {formatCOP(presupuestoAnioPlaneadoSinDesagregar)}
+                      </Text>
+                    )}
+                  </Stack>
+                ) : (
+                  <Text size="xs" c="dimmed">Sin datos de presupuesto</Text>
+                )}
+              </Paper>
+            </Grid.Col>
+
+          </Grid>
+        </SimpleGrid>
+
+        {/* Bandejas de revisión — debajo del panorama, ancho completo */}
+        <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
+          <Group justify="space-between" align="center" mb="sm">
+            <Group gap="sm" align="center">
+              <ThemeIcon size={36} radius="xl" color={totalPendientesLider > 0 ? "orange" : "teal"} variant="light">
+                <IconShieldCheck size={18} />
+              </ThemeIcon>
+              <Box>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Bandeja líder macroproyecto</Text>
+                <Text size="sm" fw={700} lh={1.2} mt={2}>Reportes pendientes de evaluación</Text>
+              </Box>
+            </Group>
+            <Group gap={8}>
+              {totalPendientesLider > 0 ? (
+                <>
+                  <Badge color="orange" variant="filled" radius="xl" size="md">
+                    {totalPendientesLider} pendiente{totalPendientesLider !== 1 ? "s" : ""}
+                  </Badge>
+                  <ActionIcon variant="light" color="orange" size="md" onClick={() => setModalPendientesLider(true)} title="Ver todos">
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                </>
+              ) : (
+                <Badge color="teal" variant="light" radius="xl" size="md">Sin pendientes</Badge>
+              )}
+            </Group>
+          </Group>
+
+          {totalPendientesLider === 0 ? (
+            <Text size="sm" c="dimmed">No hay reportes esperando evaluación del líder de macroproyecto.</Text>
+          ) : (
+            <>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
+                {pendientesLider.slice(0, 8).map((item, i) => (
+                  <Box
+                    key={`lider-prev-${item.indicadorId}-${item.corte}-${i}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirPendienteLider(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        abrirPendienteLider(item);
+                      }
+                    }}
+                    style={{
+                      background: "rgba(245,159,0,0.08)",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      borderLeft: "3px solid #f59f00",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Text size="xs" fw={800} c="orange.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                    <Text size="xs" lh={1.4} lineClamp={1}>{item.indicadorNombre}</Text>
+                    <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte}</Text>
+                    {item.liderEmail && <Text size="10px" c="dimmed" lineClamp={1}>Líder: {item.liderEmail}</Text>}
+                  </Box>
+                ))}
+              </SimpleGrid>
+              {totalPendientesLider > 8 && (
+                <Text
+                  size="xs" c="orange.7" fw={600} mt="xs" style={{ cursor: "pointer" }}
+                  onClick={() => setModalPendientesLider(true)}
+                >
+                  + {totalPendientesLider - 8} más — ver todos
+                </Text>
+              )}
+            </>
+          )}
+        </Box>
+
+        {/* Bandeja de planeación */}
+        <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
+          <Group justify="space-between" align="center" mb="sm">
+            <Group gap="sm" align="center">
+              <ThemeIcon size={36} radius="xl" color={totalPendientesPlaneacion > 0 ? "violet" : "teal"} variant="light">
+                <IconClipboardCheck size={18} />
+              </ThemeIcon>
+              <Box>
+                <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Bandeja de planeación</Text>
+                <Text size="sm" fw={700} lh={1.2} mt={2}>Reportes pendientes de validación</Text>
+              </Box>
+            </Group>
+            <Group gap={8}>
+              {totalPendientesPlaneacion > 0 ? (
+                <>
+                  <Badge color="violet" variant="filled" radius="xl" size="md">
+                    {totalPendientesPlaneacion} pendiente{totalPendientesPlaneacion !== 1 ? "s" : ""}
+                  </Badge>
+                  <ActionIcon variant="light" color="violet" size="md" onClick={() => setModalAprobaciones(true)} title="Ver todos">
+                    <IconSearch size={14} />
+                  </ActionIcon>
+                </>
+              ) : (
+                <Badge color="teal" variant="light" radius="xl" size="md">Sin pendientes</Badge>
+              )}
+            </Group>
+          </Group>
+
+          {totalPendientesPlaneacion === 0 ? (
+            <Text size="sm" c="dimmed">No hay reportes esperando validación de planeación.</Text>
+          ) : (
+            <>
+              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
+                {pendientesAprobacion.slice(0, 8).map((item, i) => (
+                  <Box
+                    key={`plan-prev-${item.indicadorId}-${item.corte}-${i}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => abrirPendientePlaneacion(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        abrirPendientePlaneacion(item);
+                      }
+                    }}
+                    style={{
+                      background: "rgba(124,58,237,0.05)",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      borderLeft: "3px solid #7950f2",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                    <Text size="xs" lh={1.4} lineClamp={1}>{item.indicadorNombre}</Text>
+                    <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte}</Text>
+                  </Box>
+                ))}
+              </SimpleGrid>
+              {totalPendientesPlaneacion > 8 && (
+                <Text
+                  size="xs" c="violet.6" fw={600} mt="xs" style={{ cursor: "pointer" }}
+                  onClick={() => setModalAprobaciones(true)}
+                >
+                  + {totalPendientesPlaneacion - 8} más — ver todos
+                </Text>
+              )}
+            </>
+          )}
+        </Box>
+
+        <Modal
+          opened={modalPendientesLider}
+          onClose={() => setModalPendientesLider(false)}
+          title={
+            <Group gap="xs">
+              <ThemeIcon size={28} radius="xl" color="orange" variant="light">
+                <IconShieldCheck size={16} />
+              </ThemeIcon>
+              <div>
+                <Text fw={700} size="sm" lh={1.2}>Reportes pendientes de evaluación</Text>
+                <Text size="xs" c="dimmed">Enviados por responsables · Requieren aval del líder</Text>
+              </div>
+            </Group>
+          }
+          size="lg"
+          radius="lg"
+        >
+          <Text size="xs" c="dimmed" mb="sm">
+            {totalPendientesLider} reporte{totalPendientesLider !== 1 ? "s" : ""} pendiente{totalPendientesLider !== 1 ? "s" : ""} de evaluación por líder de macroproyecto.
+          </Text>
+          <ScrollArea h={440} offsetScrollbars>
+            <List spacing={8} size="sm" icon={
+              <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#f59f00", flexShrink: 0 }} />
+            }>
+              {pendientesLider.map((item, i) => (
+                <List.Item key={`modal-lider-${item.indicadorId}-${item.corte}-${i}`}>
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setModalPendientesLider(false);
+                      abrirPendienteLider(item);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setModalPendientesLider(false);
+                        abrirPendienteLider(item);
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Group gap={6} align="center">
+                      <Text size="xs" fw={800} c="orange.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                      <Badge color="orange" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
+                    </Group>
+                    <Text size="xs" lh={1.4} mt={2}>{item.indicadorNombre}</Text>
+                    <Group gap={10} mt={2} wrap="wrap">
+                      {item.respondidoPor && <Text size="10px" c="dimmed">Responsable: {item.respondidoPor}</Text>}
+                      {item.liderEmail && <Text size="10px" c="dimmed">Líder: {item.liderEmail}</Text>}
+                    </Group>
+                  </Box>
+                </List.Item>
+              ))}
+            </List>
+          </ScrollArea>
+        </Modal>
+
+        <Modal
+          opened={modalAprobaciones}
+          onClose={() => setModalAprobaciones(false)}
+          title={
+            <Group gap="xs">
+              <ThemeIcon size={28} radius="xl" color="violet" variant="light">
+                <IconClipboardCheck size={16} />
+              </ThemeIcon>
+              <div>
+                <Text fw={700} size="sm" lh={1.2}>Reportes pendientes de validación</Text>
+                <Text size="xs" c="dimmed">Aprobados por el líder · Requieren aval de planeación</Text>
+              </div>
+            </Group>
+          }
+          size="lg"
+          radius="lg"
+        >
+          <Text size="xs" c="dimmed" mb="sm">
+            {totalPendientesPlaneacion} reporte{totalPendientesPlaneacion !== 1 ? "s" : ""} aprobado{totalPendientesPlaneacion !== 1 ? "s" : ""} por el líder, pendiente{totalPendientesPlaneacion !== 1 ? "s" : ""} de validación de planeación.
+          </Text>
+          <ScrollArea h={440} offsetScrollbars>
+            <List spacing={8} size="sm" icon={
+              <Box w={8} h={8} mt={5} style={{ borderRadius: "50%", background: "#7950f2", flexShrink: 0 }} />
+            }>
+              {pendientesAprobacion.map((item, i) => (
+                <List.Item key={`modal-plan-${item.indicadorId}-${item.corte}-${i}`}>
+                  <Box
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setModalAprobaciones(false);
+                      abrirPendientePlaneacion(item);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setModalAprobaciones(false);
+                        abrirPendientePlaneacion(item);
+                      }
+                    }}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Group gap={6} align="center">
+                      <Text size="xs" fw={800} c="violet.7" lh={1.2}>{item.indicadorCodigo}</Text>
+                      <Badge color="violet" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
+                    </Group>
+                    <Text size="xs" lh={1.4} mt={2}>{item.indicadorNombre}</Text>
+                  </Box>
+                </List.Item>
+              ))}
+            </List>
+          </ScrollArea>
+        </Modal>
+      </Paper>
+    </Stack>
+  );
+}
+
+// MacroproyectoPortfolioCard ─────────────────────────────────────────────
+type MacroAnnualStats = {
+  avance: number;
+  presupuesto: number;
+  presupuestoEjecutado: number;
+};
+
+function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicadoresCount, anioActual, anioFin, annualStats, admin, onEdit, onDelete }: {
+  macro: Macroproyecto;
+  proyectos: Proyecto[];
+  accionesCount: number;
+  indicadoresCount: number;
+  anioActual: string;
+  anioFin: number;
+  annualStats: MacroAnnualStats;
+  admin: boolean;
+  onEdit: (m: Macroproyecto) => void;
+  onDelete: (id: string) => void;
+}) {
+  const router = useRouter();
+  const statusLabel = macro.semaforo === "verde" ? "Correcto"
+    : macro.semaforo === "amarillo" ? "En riesgo" : "Crítico";
+  const statusColor = macro.semaforo === "verde" ? "green"
+    : macro.semaforo === "amarillo" ? "yellow" : "red";
+
+  const presupuesto = Number(macro.presupuesto) || 0;
+  const presupuestoEjecutado = Number(macro.presupuesto_ejecutado) || 0;
+  const avanceFinanciero = presupuesto > 0 ? Math.round((presupuestoEjecutado / presupuesto) * 100) : 0;
+  const avanceFinancieroAnio = annualStats.presupuesto > 0
+    ? Math.min(Math.round((annualStats.presupuestoEjecutado / annualStats.presupuesto) * 100), 100)
+    : 0;
+
+  // Mismos umbrales de semáforo (verde ≥90, amarillo ≥60, rojo <60) que el
+  // resto de la app, en vez de un umbral distinto por barra.
+  const colorForValue = (value: number) => {
+    const s = getSemaforoByAvance(value);
+    return s === "verde" ? "#40c057" : s === "amarillo" ? "#fab005" : "#fa5252";
+  };
+
+  return (
+    <Paper
+      withBorder radius="xl" p="lg" shadow="xs"
+      style={{ transition: "box-shadow .2s, transform .2s", cursor: "default", height: "100%", display: "flex", flexDirection: "column" }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,0.10)"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
+    >
+      {/* Alto fijo (2 líneas) para que el nombre del macroproyecto no empuje
+          los cuadros morado/azul a distinta posición entre tarjetas. */}
+      <Group justify="space-between" align="flex-start" mb="xs" style={{ minHeight: 52 }}>
+        <Text fw={700} size="lg" lineClamp={2} style={{ flex: 1, lineHeight: 1.3 }}>{macro.nombre}</Text>
+        <Group gap={4} wrap="nowrap">
+          <Badge color={statusColor} variant="light" size="sm" radius="xl">{statusLabel}</Badge>
+          {admin && <>
+            <ActionIcon size="sm" variant="subtle" color="blue" onClick={() => onEdit(macro)}><IconEdit size={13} /></ActionIcon>
+            <ActionIcon size="sm" variant="subtle" color="red" onClick={() => onDelete(macro._id)}><IconTrash size={13} /></ActionIcon>
+          </>}
+        </Group>
+      </Group>
+
+      <Text size="xs" c="dimmed" mb="md">{macro.codigo} · Peso: {formatNumeroEs(macro.peso)}%</Text>
+
+      {/* Meta final del plan (horizonte completo) y año en curso, con el
+          mismo peso visual cada uno — antes el año en curso quedaba como una
+          línea diminuta debajo de la meta final y parecía no tener datos. */}
+      <Stack gap={8} mb="md">
+        <Box
+          style={{
+            background: "var(--mantine-color-violet-light)",
+            border: "1px solid var(--mantine-color-violet-3)",
+            borderRadius: 14,
+            padding: "12px 14px",
+            height: 225,
+            boxSizing: "border-box",
+          }}
+        >
+          <Text size="xs" fw={700} c="violet" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
+            Meta final {anioFin}
+          </Text>
+          <SimpleGrid cols={2} spacing="md">
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance técnico</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(macro.avance)}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(macro.avance, 100)}%`, background: colorForValue(macro.avance), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{avanceFinanciero}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(avanceFinanciero, 100)}%`, background: colorForValue(avanceFinanciero), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+              {presupuesto > 0 && (
+                <Text size="xs" c="dimmed" mt={4} style={{ minHeight: 40 }}>{formatCOP(presupuestoEjecutado)} / {formatCOP(presupuesto)}</Text>
+              )}
+            </div>
+          </SimpleGrid>
+        </Box>
+
+        <Box
+          style={{
+            background: "var(--mantine-color-blue-light)",
+            border: "1px solid var(--mantine-color-blue-3)",
+            borderRadius: 14,
+            padding: "12px 14px",
+            height: 225,
+            boxSizing: "border-box",
+          }}
+        >
+          <Text size="xs" fw={700} c="blue" tt="uppercase" mb={8} style={{ letterSpacing: 0.4 }}>
+            Año en curso {anioActual}
+          </Text>
+          <SimpleGrid cols={2} spacing="md">
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance técnico</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{formatNumeroEs(annualStats.avance)}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(annualStats.avance, 100)}%`, background: colorForValue(annualStats.avance), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <Text size="xs" c="dimmed" fw={600} mb={4}>Avance financiero</Text>
+              <Text size="1.6rem" fw={900} lh={1}>{avanceFinancieroAnio}%</Text>
+              <Box mt={6} style={{ height: 8, borderRadius: 99, background: "var(--mantine-color-default-hover)", overflow: "hidden" }}>
+                <Box style={{ height: "100%", width: `${Math.min(avanceFinancieroAnio, 100)}%`, background: colorForValue(avanceFinancieroAnio), borderRadius: 99, transition: "width .4s" }} />
+              </Box>
+              {annualStats.presupuesto > 0 && (
+                <Text size="xs" c="dimmed" mt={4} style={{ minHeight: 40 }}>{formatCOP(annualStats.presupuestoEjecutado)} / {formatCOP(annualStats.presupuesto)}</Text>
+              )}
+            </div>
+          </SimpleGrid>
+        </Box>
+      </Stack>
+
+      <SimpleGrid cols={3} mb="md" mt="md">
+        {[
+          { label: "Proyectos", value: proyectos.length },
+          { label: "Acciones", value: accionesCount },
+          { label: "Indicadores", value: indicadoresCount },
+        ].map(s => (
+          <Box key={s.label} style={{ textAlign: "center", background: "var(--mantine-color-default-hover)", borderRadius: 14, padding: "14px 4px" }}>
+            <Text fw={900} size="2rem" lh={1}>{s.value}</Text>
+            <Text size="sm" c="dimmed" fw={500} mt={4}>{s.label}</Text>
+          </Box>
+        ))}
+      </SimpleGrid>
+
+      <Button
+        variant="gradient"
+        gradient={{ from: "violet", to: "blue", deg: 135 }}
+        radius="xl" size="md" fullWidth
+        rightSection={<IconExternalLink size={15} />}
+        onClick={() => router.push(`/pdi/${macro._id}`)}
+        style={{ marginTop: "auto" }}
+      >
+        Ver detalle
+      </Button>
+    </Paper>
+  );
+}
+
+// ── Página principal PDI ───────────────────────────────────────────────────
+export default function PdiPage() {
+  const router = useRouter();
+  const { userRole } = useRole();
+  const admin = isAdmin(userRole);
+  const { config, refresh: refreshConfig } = usePdiConfig();
+
+  const [macros, setMacros] = useState<Macroproyecto[]>([]);
+  const [resumen, setResumen] = useState<DashboardResumen | null>(null);
+  const [proyectosPorMacro, setProyectosPorMacro] = useState<Record<string, Proyecto[]>>({});
+  const [accionesPorMacro, setAccionesPorMacro] = useState<Record<string, number>>({});
+  const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
+  const [annualStatsPorMacro, setAnnualStatsPorMacro] = useState<Record<string, MacroAnnualStats>>({});
+  const [pendientesLider, setPendientesLider] = useState<PendienteAprobacion[]>([]);
+  const [pendientesAprobacion, setPendientesAprobacion] = useState<PendienteAprobacion[]>([]);
+  const [loadingMacros, setLoadingMacros] = useState(true);
+  const [macroModal, setMacroModal] = useState(false);
+  const [configModal, setConfigModal] = useState(false);
+  const [selectedMacro, setSelectedMacro] = useState<Macroproyecto | null>(null);
+  // Si la carga inicial falla (p.ej. el backend aun no respondia), sin esto la
+  // pagina se queda pegada en 0 hasta un refresh manual — con backoff se
+  // reintenta sola hasta que la carga sea exitosa.
+  const [failedLoadAttempts, setFailedLoadAttempts] = useState(0);
+  const cargarPortfolio = async () => {
+    try {
+      const [macrosRes, proyectosRes, accionesRes, indicadoresRes, resumenRes, pendientesLiderRes, pendientesPlaneacionRes] = await Promise.all([
+        axios.get(PDI_ROUTES.macroproyectos()),
+        axios.get(PDI_ROUTES.proyectos()),
+        axios.get(PDI_ROUTES.acciones()),
+        axios.get(PDI_ROUTES.indicadores()),
+        axios.get(PDI_ROUTES.dashboardResumen()),
+        axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesLider())
+          .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+        axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
+          .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+      ]);
+      setResumen(resumenRes.data);
+
+      const macrosData: Macroproyecto[] = macrosRes.data;
+      const proyectosData: Proyecto[] = proyectosRes.data;
+      const accionesData: Accion[] = accionesRes.data;
+      const indicadoresData: Indicador[] = indicadoresRes.data;
+
+      const proyectosMap = macrosData.reduce<Record<string, Proyecto[]>>((acc, macro) => {
+        acc[macro._id] = proyectosData.filter((proyecto) => proyecto.macroproyecto_id?._id === macro._id);
+        return acc;
+      }, {});
+
+      const proyectoToMacroMap = proyectosData.reduce<Record<string, string>>((acc, proyecto) => {
+        if (proyecto.macroproyecto_id?._id) {
+          acc[proyecto._id] = proyecto.macroproyecto_id._id;
+        }
+        return acc;
+      }, {});
+
+      const accionToMacroMap = accionesData.reduce<Record<string, string>>((acc, accion) => {
+        const proyectoId = accion.proyecto_id?._id;
+        const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
+        if (macroId) {
+          acc[accion._id] = macroId;
+        }
+        return acc;
+      }, {});
+
+      const accionesCountMap = accionesData.reduce<Record<string, number>>((acc, accion) => {
+        const proyectoId = accion.proyecto_id?._id;
+        const macroId = proyectoId ? proyectoToMacroMap[proyectoId] : undefined;
+        if (macroId) {
+          acc[macroId] = (acc[macroId] ?? 0) + 1;
+        }
+        return acc;
+      }, {});
+
+      const indicadoresCountMap = indicadoresData.reduce<Record<string, number>>((acc, indicador) => {
+        const accionId = indicador.accion_id?._id;
+        const macroId = accionId ? accionToMacroMap[accionId] : undefined;
+        if (macroId) {
+          acc[macroId] = (acc[macroId] ?? 0) + 1;
+        }
+        return acc;
+      }, {});
+
+      const anioActual = String(resumenRes.data?.anio_actual ?? new Date().getFullYear());
+      const annualStatsMap = macrosData.reduce<Record<string, MacroAnnualStats>>((acc, macro) => {
+        const accionesMacro = accionesData.filter((accion) => accionToMacroMap[accion._id] === macro._id);
+        const indicadoresMacro = indicadoresData.filter((indicador) => {
+          const accionId = indicador.accion_id?._id;
+          return Boolean(accionId && accionToMacroMap[accionId] === macro._id);
+        });
+
+        acc[macro._id] = {
+          avance: getAvanceAnioSimple(indicadoresMacro, anioActual),
+          presupuesto: accionesMacro.reduce(
+            (total, accion) => total + (Number(accion.presupuesto_por_anio?.[anioActual]) || 0),
+            0,
+          ),
+          presupuestoEjecutado: accionesMacro.reduce(
+            (total, accion) => total + ejecutadoAnioDeAccion(accion, anioActual),
+            0,
+          ),
+        };
+        return acc;
+      }, {});
+
+      const pendientesLiderMapeados = (pendientesLiderRes.data ?? [])
+        .map((item) => mapPendienteRevision(item, "lider"))
+        .filter((item): item is PendienteAprobacion => Boolean(item));
+
+      // Solo los que el líder ya aprobó y planeación debe validar
+      const pendientes = (pendientesPlaneacionRes.data ?? [])
+        .map((item) => mapPendienteRevision(item, "planeacion"))
+        .filter((item): item is PendienteAprobacion => Boolean(item));
+      setPendientesLider(pendientesLiderMapeados);
+      setPendientesAprobacion(pendientes);
+
+      setMacros(macrosData);
+      setProyectosPorMacro(proyectosMap);
+      setAccionesPorMacro(accionesCountMap);
+      setIndicadoresPorMacro(indicadoresCountMap);
+      setAnnualStatsPorMacro(annualStatsMap);
+      setFailedLoadAttempts(0);
+    } catch (e) {
+      console.error(e);
+      setFailedLoadAttempts((n) => n + 1);
+    } finally {
+      setLoadingMacros(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarPortfolio();
+
+    const recargarBandejas = async () => {
+      try {
+        const [liderRes, planeacionRes] = await Promise.all([
+          axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesLider())
+            .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+          axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesPlaneacion())
+            .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
+        ]);
+        const liderMapeados = (liderRes.data ?? [])
+          .map((item) => mapPendienteRevision(item, "lider"))
+          .filter((item): item is PendienteAprobacion => Boolean(item));
+        const planeacionMapeados = (planeacionRes.data ?? [])
+          .map((item) => mapPendienteRevision(item, "planeacion"))
+          .filter((item): item is PendienteAprobacion => Boolean(item));
+        setPendientesLider(liderMapeados);
+        setPendientesAprobacion(planeacionMapeados);
+      } catch (e) { console.error(e); }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") recargarBandejas();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (failedLoadAttempts === 0) return;
+    const delay = Math.min(3000 * failedLoadAttempts, 15000);
+    const timeout = setTimeout(() => { cargarPortfolio(); }, delay);
+    return () => clearTimeout(timeout);
+  }, [failedLoadAttempts]);
+
+  const refrescarMacro = async (macroId: string) => {
+    try {
+      await cargarPortfolio();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteMacro = (id: string) => {
+    modals.openConfirmModal({
+      title: "Eliminar macroproyecto",
+      children: <Text size="sm">¿Seguro que deseas eliminar este macroproyecto?</Text>,
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await axios.delete(PDI_ROUTES.macroproyecto(id));
+          setMacros(prev => prev.filter(m => m._id !== id));
+          showNotification({ title: "Eliminado", message: "Macroproyecto eliminado", color: "teal" });
+        } catch { showNotification({ title: "Error", message: "No se pudo eliminar", color: "red" }); }
+      },
+    });
+  };
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <PdiSidebar />
+    <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
+    <Container size="xl" py="xl">
+      <Group mb="lg" justify="space-between">
+        <Group gap={10}>
+          <ActionIcon variant="subtle" onClick={() => router.push("/dashboard")}>
+            <IconArrowLeft size={18} />
+          </ActionIcon>
+          <ThemeIcon size={40} radius="xl" color="violet" variant="light">
+            <IconChartBarPopular size={22} />
+          </ThemeIcon>
+          <div>
+            <Title order={3}>{PDI_FIXED_NAME}</Title>
+            <Text size="xs" c="dimmed">{config.nombre} - {formatAnioRange(config.anio_inicio, config.anio_fin)}</Text>
+          </div>
+        </Group>
+        {admin && (
+          <PermissionGate viewKey="pdi">
+          <Group gap="sm">
+            <Button variant="default" leftSection={<IconSettings size={15} />} onClick={() => setConfigModal(true)}>
+              Editar PDI
+            </Button>
+            <Button leftSection={<IconPlus size={15} />} color="violet"
+              onClick={() => { setSelectedMacro(null); setMacroModal(true); }}>
+              Nuevo macroproyecto
+            </Button>
+          </Group>
+          </PermissionGate>
+        )}
+      </Group>
+
+      <Divider mb="lg" />
+
+      <StatsCards
+        macros={macros}
+        proyectosPorMacro={proyectosPorMacro}
+        accionesPorMacro={accionesPorMacro}
+        indicadoresPorMacro={indicadoresPorMacro}
+        resumen={resumen}
+        aniosPdi={config.anios}
+        pendientesLider={pendientesLider}
+        pendientesAprobacion={pendientesAprobacion}
+      />
+
+      <Group justify="space-between" align="center" mb="md">
+        <div>
+          <Text fw={700} size="xl">Macroproyectos</Text>
+          <Text size="xs" c="dimmed">Vista tipo portafolio — Jerarquía del PDI</Text>
+        </div>
+        
+      </Group>
+
+      {loadingMacros ? (
+        <Center py="xl"><Loader /></Center>
+      ) : macros.length === 0 ? (
+        <Center py="xl"><Text c="dimmed">No hay macroproyectos registrados</Text></Center>
+      ) : (
+        <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg" verticalSpacing="lg">
+          {macros.map(macro => (
+            <MacroproyectoPortfolioCard
+              key={macro._id}
+              macro={macro}
+              proyectos={proyectosPorMacro[macro._id] ?? []}
+              accionesCount={accionesPorMacro[macro._id] ?? 0}
+              indicadoresCount={indicadoresPorMacro[macro._id] ?? 0}
+              anioActual={resumen?.anio_actual ?? String(new Date().getFullYear())}
+              anioFin={config.anio_fin}
+              annualStats={annualStatsPorMacro[macro._id] ?? { avance: 0, presupuesto: 0, presupuestoEjecutado: 0 }}
+              admin={admin}
+              onEdit={(m) => { setSelectedMacro(m); setMacroModal(true); }}
+              onDelete={handleDeleteMacro}
+            />
+          ))}
+        </SimpleGrid>
+      )}
+
+      <MacroproyectoModal
+        opened={macroModal}
+        onClose={() => setMacroModal(false)}
+        selected={selectedMacro}
+        onSaved={async (doc) => {
+          setMacros(prev => selectedMacro
+            ? prev.map(m => m._id === doc._id ? doc : m)
+            : [...prev, doc]
+          );
+          await cargarPortfolio();
+        }}
+      />
+
+      <PdiConfigModal
+        opened={configModal}
+        onClose={() => setConfigModal(false)}
+        initialConfig={config}
+        onSaved={refreshConfig}
+      />
+
+    </Container>
+    </div>
+    </div>
+  );
+}

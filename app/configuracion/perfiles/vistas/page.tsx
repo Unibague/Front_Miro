@@ -1,0 +1,1030 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import axios from "axios";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Center,
+  Checkbox,
+  Container,
+  Divider,
+  Group,
+  Loader,
+  MultiSelect,
+  ScrollArea,
+  SimpleGrid,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  ThemeIcon,
+  Title,
+  Tooltip,
+} from "@mantine/core";
+import { showNotification } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
+import {
+  IconAlertCircle,
+  IconApps,
+  IconArrowLeft,
+  IconBriefcase,
+  IconBuilding,
+  IconDeviceFloppy,
+  IconId,
+  IconLock,
+  IconShield,
+  IconTemplate,
+  IconTrash,
+  IconUserPlus,
+  IconUsersGroup,
+} from "@tabler/icons-react";
+import { useRole } from "@/app/context/RoleContext";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+
+interface ViewOption {
+  key: string;
+  label: string;
+  path: string;
+  module?: string;
+  group: string;
+  // Roles que tienen esta vista por defecto HOY en el sistema (fallback de
+  // canSee en app/dashboard/page.tsx) cuando no hay perfil configurado. Es
+  // solo informativo aqui: no cambia lo que se guarda al marcar Ver/Gestionar.
+  roles?: string[];
+}
+
+interface PositionUser {
+  _id: string;
+  identification: number;
+  full_name: string;
+  email: string;
+  position?: string;
+  dep_code?: string;
+  dependencyName?: string;
+  isActive: boolean;
+}
+
+interface PositionPermission {
+  position: string;
+  usersCount: number;
+  users?: PositionUser[];
+  permissions: Record<string, string[]>;
+  allowed_dimensions?: string[];
+  allowed_dependencies?: string[];
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+interface SimpleItem {
+  _id: string;
+  name: string;
+  dep_code?: string;
+}
+
+interface AccessProfile {
+  _id: string;
+  name: string;
+  positions: string[];
+  individualMembers?: number[];
+  excludedMembers?: number[];
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+const DEFAULT_PROFILES = ["Ver", "Gestionar"];
+const MODULE_COLORS = ["blue", "cyan", "green", "red", "violet", "gray", "orange", "teal"];
+const ROLE_ORDER = ["Administrador", "Responsable", "Productor"];
+const ROLE_COLORS: Record<string, string> = { Administrador: "grape", Responsable: "blue", Productor: "teal" };
+
+const countPermissionChecks = (permissions: Record<string, string[]>) =>
+  Object.values(permissions || {}).reduce((total, profiles) => total + profiles.length, 0);
+
+const mergePositionPermissions = (positions: PositionPermission[]) => {
+  return positions.reduce<Record<string, string[]>>((mergedPermissions, position) => {
+    Object.entries(position.permissions || {}).forEach(([viewKey, levels]) => {
+      const currentLevels = mergedPermissions[viewKey] || [];
+      const cleanLevels = Array.isArray(levels) ? levels : [];
+      mergedPermissions[viewKey] = Array.from(new Set([...currentLevels, ...cleanLevels]));
+    });
+
+    return mergedPermissions;
+  }, {});
+};
+
+const serializePermissions = (permissions: Record<string, string[]>) => {
+  const entries = Object.entries(permissions || {})
+    .map(([viewKey, levels]) => [viewKey, [...(levels || [])].sort()])
+    .sort(([firstKey], [secondKey]) => String(firstKey).localeCompare(String(secondKey)));
+
+  return JSON.stringify(entries);
+};
+
+const formatUpdatedAt = (value?: string | null) => {
+  if (!value) return "Sin guardar";
+
+  return new Date(value).toLocaleString("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const apiMessage = error.response?.data?.error || error.response?.data?.message;
+    return apiMessage || fallback;
+  }
+
+  return fallback;
+};
+
+export default function PositionViewsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const { userRole, viewPermissions } = useRole();
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const isAdmin = userRole === "Administrador";
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+  const profilesPermission = viewPermissions["profiles"] || [];
+  const canManage = isAdmin || profilesPermission.includes("Gestionar") || profilesPermission.includes("Administrar");
+  const profileId = searchParams?.get("perfil")?.trim() || "";
+  const position = searchParams?.get("cargo")?.trim() || "";
+  const isProfileMode = Boolean(profileId);
+
+  const [permissionLevels, setPermissionLevels] = useState<string[]>(DEFAULT_PROFILES);
+  const [views, setViews] = useState<ViewOption[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<AccessProfile | null>(null);
+  const [selectedPositions, setSelectedPositions] = useState<PositionPermission[]>([]);
+  const [individualUsers, setIndividualUsers] = useState<PositionUser[]>([]);
+  const [selectedPositionPermissions, setSelectedPositionPermissions] = useState<Record<string, string[]>>({});
+  const [allDimensions, setAllDimensions] = useState<SimpleItem[]>([]);
+  const [allDependencies, setAllDependencies] = useState<SimpleItem[]>([]);
+  const [allowedDimensions, setAllowedDimensions] = useState<string[]>([]);
+  const [allowedDependencies, setAllowedDependencies] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [addingUser, setAddingUser] = useState(false);
+  const [removingIdentification, setRemovingIdentification] = useState<number | null>(null);
+  const [identification, setIdentification] = useState("");
+
+  // Jerarquia dinamica: rol (Administrador/Responsable/Productor) -> modulo
+  // grande (tarjetas del dashboard) -> submodulo -> vistas. El rol de cada
+  // vista viene declarado en el backend (viewPermissionOptions.roles) y
+  // documenta quien la tiene por defecto HOY en el sistema cuando no hay
+  // perfil configurado; una vista nueva aparece sola en el lugar correcto sin
+  // tocar este componente.
+  //
+  // Cada vista se muestra UNA sola vez (bajo su rol principal, el primero en
+  // ROLE_ORDER que la tenga), no una copia por cada rol al que pertenece: el
+  // checkbox Ver/Gestionar es el mismo dato sin importar en que seccion se
+  // vea (el permiso es por vista, no por vista+rol), asi que repetirlo en
+  // varias secciones solo generaba la sensacion de que marcar uno marcaba
+  // "otro" cuando en realidad era la misma casilla dibujada dos veces.
+  const groupedViewsByRole = useMemo(() => {
+    const asignados = new Set<string>();
+    return ROLE_ORDER.map((role) => {
+      const viewsForRole = views.filter((view) => {
+        if (!(view.roles || []).includes(role)) return false;
+        if (asignados.has(view.key)) return false;
+        asignados.add(view.key);
+        return true;
+      });
+      const groupedByModule = viewsForRole.reduce<Record<string, Record<string, ViewOption[]>>>((result, view) => {
+        const moduleName = view.module || "General";
+        const group = view.group || "General";
+        const moduleGroups = result[moduleName] || {};
+        moduleGroups[group] = [...(moduleGroups[group] || []), view];
+        result[moduleName] = moduleGroups;
+        return result;
+      }, {});
+      return { role, groupedByModule, totalViews: viewsForRole.length };
+    });
+  }, [views]);
+
+  const managedPositionNames = useMemo(
+    () => selectedPositions.map((positionItem) => positionItem.position).filter(Boolean),
+    [selectedPositions]
+  );
+
+  const activeUsers = useMemo(() => {
+    const fromLinkedPositions = selectedPositions.flatMap((positionItem) =>
+      (positionItem.users || [])
+        .filter((user) => user.isActive)
+        .map((user) => ({ ...user, position: positionItem.position }))
+    );
+    return [...fromLinkedPositions, ...individualUsers.filter((user) => user.isActive)];
+  }, [selectedPositions, individualUsers]);
+
+  const latestUpdatedAt = useMemo(
+    () =>
+      selectedPositions.reduce<string | null>((latestDate, positionItem) => {
+        if (!positionItem.updatedAt) return latestDate;
+        if (!latestDate) return positionItem.updatedAt;
+
+        return new Date(positionItem.updatedAt).getTime() > new Date(latestDate).getTime()
+          ? positionItem.updatedAt
+          : latestDate;
+      }, null),
+    [selectedPositions]
+  );
+
+  const hasMixedPermissions = useMemo(() => {
+    if (selectedPositions.length <= 1) return false;
+
+    const permissionSnapshots = new Set(
+      selectedPositions.map((positionItem) => serializePermissions(positionItem.permissions || {}))
+    );
+
+    return permissionSnapshots.size > 1;
+  }, [selectedPositions]);
+
+  const managementTitle = isProfileMode
+    ? selectedProfile?.name || "Perfil"
+    : selectedPositions[0]?.position || position;
+
+  const fetchPositionPermissions = useCallback(async () => {
+    if (!apiUrl || (!profileId && !position)) return;
+
+    setLoading(true);
+    try {
+      const response = await axios.get(`${apiUrl}/users/position-view-permissions`, {
+        params: profileId ? { profileId } : { position },
+      });
+      const loadedPositions = (response.data?.positions || []).map((positionItem: PositionPermission) => ({
+        ...positionItem,
+        users: positionItem.users || [],
+        permissions: positionItem.permissions || {},
+      }));
+      const fallbackPositions =
+        loadedPositions.length > 0 || profileId
+          ? loadedPositions
+          : [
+              {
+                position,
+                usersCount: 0,
+                users: [],
+                permissions: {},
+              },
+            ];
+
+      setPermissionLevels(DEFAULT_PROFILES);
+      setViews(response.data?.views || []);
+      setSelectedProfile(response.data?.profile || null);
+      setAllDimensions(response.data?.allDimensions || []);
+      setAllDependencies(response.data?.allDependencies || []);
+      setSelectedPositions(fallbackPositions);
+      setIndividualUsers(response.data?.individualUsers || []);
+      setSelectedPositionPermissions(mergePositionPermissions(fallbackPositions));
+      // Cargar restricciones guardadas del primer cargo
+      const firstPos = fallbackPositions[0];
+      setAllowedDimensions(firstPos?.allowed_dimensions || []);
+      setAllowedDependencies(firstPos?.allowed_dependencies || []);
+    } catch (error) {
+      console.error("Error fetching position permissions:", error);
+      showNotification({
+        title: "Error",
+        message: isProfileMode
+          ? "No fue posible cargar el perfil seleccionado."
+          : "No fue posible cargar el cargo seleccionado.",
+        color: "red",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [apiUrl, isProfileMode, position, profileId]);
+
+  useEffect(() => {
+    fetchPositionPermissions();
+  }, [fetchPositionPermissions]);
+
+  const toggleViewPermission = (viewKey: string, profile: string) => {
+    setHasChanges(true);
+    setSelectedPositionPermissions((current) => {
+      const currentProfiles = current[viewKey] || [];
+      const nextProfiles = currentProfiles.includes(profile)
+        ? currentProfiles.filter((item) => item !== profile)
+        : [...currentProfiles, profile];
+      const nextPermissions = { ...current };
+
+      if (nextProfiles.length === 0) {
+        delete nextPermissions[viewKey];
+      } else {
+        nextPermissions[viewKey] = nextProfiles;
+      }
+
+      return nextPermissions;
+    });
+  };
+
+  const setLevelForViews = (viewsToUpdate: ViewOption[], profile: string, checked: boolean) => {
+    setHasChanges(true);
+    setSelectedPositionPermissions((current) => {
+      const nextPermissions = { ...current };
+
+      viewsToUpdate.forEach((view) => {
+        const currentProfiles = nextPermissions[view.key] || [];
+        const nextProfiles = checked
+          ? Array.from(new Set([...currentProfiles, profile]))
+          : currentProfiles.filter((item) => item !== profile);
+
+        if (nextProfiles.length === 0) {
+          delete nextPermissions[view.key];
+        } else {
+          nextPermissions[view.key] = nextProfiles;
+        }
+      });
+
+      return nextPermissions;
+    });
+  };
+
+  const setLevelForAllViews = (profile: string, checked: boolean) => setLevelForViews(views, profile, checked);
+
+  const handleSavePermissions = async () => {
+    if (managedPositionNames.length === 0 || !session?.user?.email || !apiUrl) return;
+
+    // Validar que al menos un permiso esté seleccionado
+    const totalPermissions = countPermissionChecks(selectedPositionPermissions);
+    if (totalPermissions === 0) {
+      showNotification({
+        title: "Validación requerida",
+        message: "Debe seleccionar al menos un permiso de vista antes de guardar.",
+        color: "yellow",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await axios.put(
+        `${apiUrl}/users/position-view-permissions`,
+        {
+          ...(isProfileMode ? { profileId } : { position: managedPositionNames[0] }),
+          permissions: selectedPositionPermissions,
+          allowed_dimensions: allowedDimensions,
+          allowed_dependencies: allowedDependencies,
+          adminEmail: session.user.email,
+        },
+        {
+          headers: { "user-email": session.user.email },
+        }
+      );
+
+      const updatedPositions: PositionPermission[] = response.data?.positions || [];
+      setSelectedPositions((currentPositions) =>
+        currentPositions.map((currentPosition) => {
+          const updatedPosition = updatedPositions.find(
+            (positionItem) => positionItem.position === currentPosition.position
+          );
+
+          return {
+            ...currentPosition,
+            permissions: response.data?.permissions || selectedPositionPermissions,
+            updatedBy: updatedPosition?.updatedBy || response.data?.updatedBy || currentPosition.updatedBy,
+            updatedAt: updatedPosition?.updatedAt || response.data?.updatedAt || currentPosition.updatedAt,
+          };
+        })
+      );
+      setHasChanges(false);
+      showNotification({
+        title: "Permisos actualizados",
+        message: isProfileMode
+          ? "Los permisos se aplicaron a todos los cargos del perfil."
+          : "Los permisos del cargo se guardaron correctamente.",
+        color: "teal",
+      });
+    } catch (error) {
+      console.error("Error updating position permissions:", error);
+      showNotification({
+        title: "Error",
+        message: getErrorMessage(
+          error,
+          isProfileMode
+            ? "No fue posible actualizar los permisos del perfil."
+            : "No fue posible actualizar los permisos del cargo."
+        ),
+        color: "red",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddUser = async () => {
+    const cedula = identification.trim();
+    if ((!isProfileMode && !managedPositionNames[0]) || !session?.user?.email || !apiUrl || !cedula) return;
+
+    setAddingUser(true);
+    try {
+      await axios.post(
+        `${apiUrl}/users/position-members`,
+        {
+          ...(isProfileMode ? { profileId } : { position: managedPositionNames[0] }),
+          identification: cedula,
+          adminEmail: session.user.email,
+        },
+        {
+          headers: { "user-email": session.user.email },
+        }
+      );
+
+      setIdentification("");
+      await fetchPositionPermissions();
+      showNotification({
+        title: "Usuario agregado",
+        message: isProfileMode
+          ? "La persona fue agregada individualmente al perfil (no se vinculo su cargo completo)."
+          : "La persona activa fue asociada al cargo seleccionado.",
+        color: "teal",
+      });
+    } catch (error) {
+      console.error("Error adding user to position:", error);
+      showNotification({
+        title: "Error",
+        message: getErrorMessage(
+          error,
+          isProfileMode
+            ? "No fue posible agregar la persona al perfil."
+            : "No fue posible agregar la persona al cargo."
+        ),
+        color: "red",
+      });
+    } finally {
+      setAddingUser(false);
+    }
+  };
+
+  const handleRemoveUser = (user: PositionUser) => {
+    const userPosition = user.position || (!isProfileMode ? managedPositionNames[0] : "");
+    const adminEmail = session?.user?.email;
+    if (!userPosition || !adminEmail || !apiUrl) return;
+
+    modals.openConfirmModal({
+      title: "Confirmar acción",
+      centered: true,
+      children: (
+        <Text size="sm">
+          {isProfileMode
+            ? <>¿Quitar a <strong>{user.full_name}</strong> del perfil <strong>{managementTitle}</strong>? Su cargo seguira vinculado para el resto de las personas.</>
+            : <>¿Quitar a <strong>{user.full_name}</strong> del cargo <strong>{userPosition}</strong>?</>}
+        </Text>
+      ),
+      labels: { confirm: "Quitar", cancel: "Cancelar" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        setRemovingIdentification(user.identification);
+        try {
+          await axios.delete(`${apiUrl}/users/position-members`, {
+            data: {
+              ...(isProfileMode ? { profileId } : { position: userPosition }),
+              identification: user.identification,
+              adminEmail,
+            },
+            headers: { "user-email": adminEmail },
+          });
+
+          await fetchPositionPermissions();
+          showNotification({
+            title: "Usuario removido",
+            message: isProfileMode
+              ? "La persona fue retirada del perfil."
+              : "La persona fue retirada del cargo correctamente.",
+            color: "teal",
+          });
+        } catch (error) {
+          console.error("Error removing user from position:", error);
+          showNotification({
+            title: "Error",
+            message: getErrorMessage(
+              error,
+              isProfileMode
+                ? "No fue posible retirar la persona del perfil."
+                : "No fue posible retirar la persona del cargo."
+            ),
+            color: "red",
+          });
+        } finally {
+          setRemovingIdentification(null);
+        }
+      },
+    });
+  };
+
+  if (!profileId && !position) {
+    return (
+      <Container size="xl" py="xl">
+        <Stack gap="md">
+          <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => confirmNavigation(() => router.push("/configuracion/perfiles"))}>
+            Volver a perfiles
+          </Button>
+          <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
+            Selecciona un perfil desde Gestionar perfiles para administrar sus vistas.
+          </Alert>
+        </Stack>
+      </Container>
+    );
+  }
+
+  return (
+    <Container size="xl" py="xl">
+      <Stack gap="lg">
+        <div>
+          <Group gap={6} align="center">
+            <ActionIcon variant="subtle" color="blue" size="md" onClick={() => confirmNavigation(() => router.push("/configuracion/perfiles"))}>
+              <IconArrowLeft size={18} />
+            </ActionIcon>
+            <Title order={2}>Gestionar vistas</Title>
+          </Group>
+            <Text c="dimmed" size="sm">
+              {isProfileMode
+                ? `Permisos y personas activas del perfil ${managementTitle}.`
+                : `Permisos y personas activas del cargo ${managementTitle}.`}
+            </Text>
+        </div>
+
+        {!canManage && (
+          <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
+            Solo los administradores o usuarios con permiso de gestión pueden guardar cambios.
+          </Alert>
+        )}
+
+        {loading && selectedPositions.length === 0 ? (
+          <Center py="xl">
+            <Loader />
+          </Center>
+        ) : (
+          <>
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <Card withBorder radius="md" p="md">
+                <Group justify="space-between">
+                  <div>
+                    <Text size="sm" c="dimmed">{isProfileMode ? "Perfil" : "Cargo"}</Text>
+                    <Title order={4}>{managementTitle}</Title>
+                    {isProfileMode && (
+                      <Text size="xs" c="dimmed">{managedPositionNames.length} cargos vinculados</Text>
+                    )}
+                  </div>
+                  <IconBriefcase size={34} />
+                </Group>
+              </Card>
+              <Card withBorder radius="md" p="md">
+                <Group justify="space-between">
+                  <div>
+                    <Text size="sm" c="dimmed">Personas activas</Text>
+                    <Title order={3}>{activeUsers.length}</Title>
+                  </div>
+                  <IconUsersGroup size={34} />
+                </Group>
+              </Card>
+              <Card withBorder radius="md" p="md">
+                <Group justify="space-between">
+                  <div>
+                    <Text size="sm" c="dimmed">Checks activos</Text>
+                    <Title order={3}>{countPermissionChecks(selectedPositionPermissions)}</Title>
+                    <Text size="xs" c="dimmed">{formatUpdatedAt(latestUpdatedAt)}</Text>
+                  </div>
+                  <IconShield size={34} />
+                </Group>
+              </Card>
+            </SimpleGrid>
+
+            {isProfileMode && (
+              <Card withBorder radius="md" p="md">
+                <Stack gap="sm">
+                  <Group justify="space-between" align="flex-start">
+                    <div>
+                      <Title order={4}>Cargos asociados</Title>
+                      <Text size="sm" c="dimmed">
+                        Cargos que hacen parte de este perfil.
+                      </Text>
+                    </div>
+                    <Badge variant="light" color="blue">{managedPositionNames.length}</Badge>
+                  </Group>
+
+                  {managedPositionNames.length > 0 ? (
+                    <ScrollArea.Autosize mah={150} type="auto" offsetScrollbars>
+                      <Group gap={6}>
+                        {managedPositionNames.map((positionName) => (
+                          <Badge key={positionName} variant="light" color="gray">
+                            {positionName}
+                          </Badge>
+                        ))}
+                      </Group>
+                    </ScrollArea.Autosize>
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      No hay cargos asociados a este perfil.
+                    </Text>
+                  )}
+                </Stack>
+              </Card>
+            )}
+
+            <Card withBorder radius="md" p="md">
+              <Stack gap="md">
+                <Group justify="space-between" align="flex-end">
+                  <div>
+                    <Title order={4}>{isProfileMode ? "Personas activas del perfil" : "Personas activas del cargo"}</Title>
+                    <Text size="sm" c="dimmed">
+                      {isProfileMode
+                        ? "Incluye a las personas de los cargos vinculados y a las agregadas individualmente por cédula."
+                        : "Agrega una persona activa al cargo usando su cédula."}
+                    </Text>
+                  </div>
+                  <Group align="flex-end">
+                    <TextInput
+                      label="Cédula"
+                      placeholder="Número de cédula"
+                      leftSection={<IconId size={16} />}
+                      value={identification}
+                      onChange={(event) => setIdentification(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          handleAddUser();
+                        }
+                      }}
+                      inputMode="numeric"
+                      disabled={!canManage}
+                    />
+                    <Button
+                      leftSection={<IconUserPlus size={16} />}
+                      onClick={handleAddUser}
+                      loading={addingUser}
+                      disabled={!canManage || !identification.trim()}
+                    >
+                      Agregar
+                    </Button>
+                  </Group>
+                </Group>
+
+                <ScrollArea>
+                  <Table striped withTableBorder verticalSpacing="sm" style={{ minWidth: 760 }}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Cédula</Table.Th>
+                        <Table.Th>Persona</Table.Th>
+                        {isProfileMode && <Table.Th>Cargo</Table.Th>}
+                        <Table.Th>Dependencia</Table.Th>
+                        <Table.Th>Estado</Table.Th>
+                        <Table.Th>
+                          <Center>Acción</Center>
+                        </Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {activeUsers.length === 0 ? (
+                        <Table.Tr>
+                          <Table.Td colSpan={isProfileMode ? 6 : 5}>
+                            <Center py="md">
+                              <Text c="dimmed">
+                                {isProfileMode
+                                  ? "No hay personas activas asociadas a los cargos de este perfil."
+                                  : "No hay personas activas asociadas a este cargo."}
+                              </Text>
+                            </Center>
+                          </Table.Td>
+                        </Table.Tr>
+                      ) : (
+                        activeUsers.map((user) => (
+                          <Table.Tr key={`${user._id}-${user.position || ""}`}>
+                            <Table.Td>{user.identification}</Table.Td>
+                            <Table.Td>
+                              <Text fw={600}>{user.full_name}</Text>
+                              <Text size="xs" c="dimmed">{user.email}</Text>
+                            </Table.Td>
+                            {isProfileMode && (
+                              <Table.Td>
+                                <Badge variant="light" color="gray">{user.position}</Badge>
+                              </Table.Td>
+                            )}
+                            <Table.Td>
+                              <Text size="sm">{user.dependencyName || user.dep_code || "Sin dependencia"}</Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge color="teal" variant="light">Activo</Badge>
+                            </Table.Td>
+                            <Table.Td>
+                              <Center>
+                                <Tooltip label={isProfileMode ? "Quitar persona del perfil" : "Quitar del cargo"}>
+                                  <ActionIcon
+                                    variant="light"
+                                    color="red"
+                                    aria-label={`Quitar a ${user.full_name}`}
+                                    onClick={() => handleRemoveUser(user)}
+                                    loading={removingIdentification === user.identification}
+                                    disabled={!canManage}
+                                  >
+                                    <IconTrash size={16} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              </Center>
+                            </Table.Td>
+                          </Table.Tr>
+                        ))
+                      )}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+              </Stack>
+            </Card>
+
+            {/* ── Acceso a ámbitos y dependencias ── */}
+            <Card withBorder radius="md" p="md">
+              <Stack gap="md">
+                <Group gap={8} align="center">
+                  <ThemeIcon size="md" radius="md" color="teal" variant="light">
+                    <IconLock size={16} />
+                  </ThemeIcon>
+                  <div>
+                    <Title order={4}>Acceso a ámbitos y dependencias</Title>
+                    <Text size="sm" c="dimmed">
+                      Selecciona los ámbitos y dependencias a los que este perfil tiene acceso. Si dejas vacío, el perfil accede a todos.
+                    </Text>
+                  </div>
+                </Group>
+
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  <div>
+                    <Group gap={6} mb={6}>
+                      <ThemeIcon size="sm" color="blue" variant="light">
+                        <IconTemplate size={12} />
+                      </ThemeIcon>
+                      <Text size="sm" fw={600}>Ámbitos con acceso</Text>
+                      {allowedDimensions.length > 0 && (
+                        <Badge size="xs" color="blue" variant="filled">{allowedDimensions.length}</Badge>
+                      )}
+                    </Group>
+                    <MultiSelect
+                      placeholder="Todos los ámbitos"
+                      data={allDimensions.map((d) => ({ value: d._id, label: d.name }))}
+                      value={allowedDimensions}
+                      onChange={(v) => { setAllowedDimensions(v); setHasChanges(true); }}
+                      searchable
+                      clearable
+                      disabled={!canManage}
+                      maxDropdownHeight={240}
+                    />
+                  </div>
+
+                  <div>
+                    <Group gap={6} mb={6}>
+                      <ThemeIcon size="sm" color="violet" variant="light">
+                        <IconBuilding size={12} />
+                      </ThemeIcon>
+                      <Text size="sm" fw={600}>Dependencias con acceso</Text>
+                      {allowedDependencies.length > 0 && (
+                        <Badge size="xs" color="violet" variant="filled">{allowedDependencies.length}</Badge>
+                      )}
+                    </Group>
+                    <MultiSelect
+                      placeholder="Todas las dependencias"
+                      data={allDependencies.map((d) => ({ value: d._id, label: d.name }))}
+                      value={allowedDependencies}
+                      onChange={(v) => { setAllowedDependencies(v); setHasChanges(true); }}
+                      searchable
+                      clearable
+                      disabled={!canManage}
+                      maxDropdownHeight={240}
+                    />
+                  </div>
+                </SimpleGrid>
+
+                {(allowedDimensions.length > 0 || allowedDependencies.length > 0) ? (
+                  <Alert color="teal" icon={<IconAlertCircle size={16} />}>
+                    Este perfil tiene acceso habilitado a
+                    {allowedDimensions.length > 0 && ` ${allowedDimensions.length} ámbito(s)`}
+                    {allowedDimensions.length > 0 && allowedDependencies.length > 0 && " y"}
+                    {allowedDependencies.length > 0 && ` ${allowedDependencies.length} dependencia(s)`} específicos.
+                  </Alert>
+                ) : (
+                  <Alert color="blue" icon={<IconAlertCircle size={16} />}>
+                    Este perfil tiene acceso a todos los ámbitos y dependencias disponibles.
+                  </Alert>
+                )}
+              </Stack>
+            </Card>
+
+            <Card withBorder radius="md" p="md">
+              <Stack gap="md">
+                <Group justify="space-between">
+                  <div>
+                    <Title order={4}>Permisos de vistas</Title>
+                    <Text size="sm" c="dimmed">
+                      Ver permite consultar sin modificar nada. Gestionar permite crear, modificar y operar según el rol interno (Administrador, Productor, Responsable).
+                    </Text>
+                  </div>
+                  <Badge variant="light" color="blue">
+                    {countPermissionChecks(selectedPositionPermissions)} checks activos
+                  </Badge>
+                </Group>
+
+                <Alert color="blue" icon={<IconAlertCircle size={18} />}>
+                  {isProfileMode
+                    ? "Marca las acciones permitidas para este perfil. Al guardar, se aplican a todos sus cargos."
+                    : "Marca las acciones permitidas para este cargo y guarda los cambios al finalizar."}
+                </Alert>
+
+                {isProfileMode && hasMixedPermissions && (
+                  <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
+                    Algunos cargos del perfil tienen permisos distintos. Al guardar, todos quedaran con la seleccion actual.
+                  </Alert>
+                )}
+
+                <Group justify="space-between">
+                  <Group gap="xs">
+                    {permissionLevels.map((profile) => {
+                      const checkedViews = views.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length;
+                      const allChecked = views.length > 0 && checkedViews === views.length;
+
+                      return (
+                        <Checkbox
+                          key={`all-${profile}`}
+                          label={`Todo ${profile}`}
+                          checked={allChecked}
+                          indeterminate={checkedViews > 0 && !allChecked}
+                          onChange={(event) => setLevelForAllViews(profile, event.currentTarget.checked)}
+                          disabled={!canManage}
+                        />
+                      );
+                    })}
+                  </Group>
+                  <Button
+                    variant="light"
+                    color="red"
+                    leftSection={<IconTrash size={16} />}
+                    onClick={() => { setSelectedPositionPermissions({}); setHasChanges(true); }}
+                    disabled={!canManage}
+                  >
+                    Limpiar
+                  </Button>
+                </Group>
+
+                <Stack gap="xl">
+                  {groupedViewsByRole.map(({ role, groupedByModule, totalViews }) => {
+                    const roleColor = ROLE_COLORS[role] || "gray";
+                    const roleChecksTotal = permissionLevels.reduce(
+                      (total, profile) =>
+                        total + views.filter((view) =>
+                          (view.roles || []).includes(role) && selectedPositionPermissions[view.key]?.includes(profile)
+                        ).length,
+                      0
+                    );
+
+                    return (
+                      <Card key={role} withBorder radius="lg" p="lg" style={{ borderColor: `var(--mantine-color-${roleColor}-3)` }}>
+                        <Stack gap="md">
+                          <Group gap={8} align="center">
+                            <ThemeIcon size="lg" radius="md" color={roleColor} variant="filled">
+                              <IconUsersGroup size={18} />
+                            </ThemeIcon>
+                            <Title order={3}>{role}</Title>
+                            <Badge size="md" variant="light" color={roleColor}>
+                              {totalViews} vista{totalViews === 1 ? "" : "s"} por defecto
+                            </Badge>
+                            <Badge size="md" variant="filled" color={roleColor}>
+                              {roleChecksTotal} check{roleChecksTotal === 1 ? "" : "s"}
+                            </Badge>
+                          </Group>
+
+                          {totalViews === 0 ? (
+                            <Text size="sm" c="dimmed">Este rol no tiene vistas por defecto declaradas todavía.</Text>
+                          ) : (
+                            <Stack gap="xl">
+                              {Object.entries(groupedByModule).map(([moduleName, moduleGroups], moduleIndex) => {
+                                const moduleColor = MODULE_COLORS[moduleIndex % MODULE_COLORS.length];
+                                const moduleViewsFlat = Object.values(moduleGroups).flat();
+                                const moduleChecksTotal = permissionLevels.reduce(
+                                  (total, profile) =>
+                                    total + moduleViewsFlat.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                                  0
+                                );
+
+                                return (
+                                  <Stack key={`${role}-${moduleName}`} gap="sm">
+                                    <Group gap={8} align="center">
+                                      <ThemeIcon size="md" radius="md" color={moduleColor} variant="light">
+                                        <IconApps size={16} />
+                                      </ThemeIcon>
+                                      <Title order={4}>{moduleName}</Title>
+                                      <Badge size="sm" variant="light" color={moduleColor}>
+                                        {moduleChecksTotal} check{moduleChecksTotal === 1 ? "" : "s"}
+                                      </Badge>
+                                    </Group>
+
+                                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+                                      {Object.entries(moduleGroups).map(([group, groupViews]) => {
+                                        const groupCounts = permissionLevels.map((profile) => ({
+                                          profile,
+                                          count: groupViews.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length,
+                                        }));
+
+                                        return (
+                                          <Card key={`${role}-${group}`} withBorder radius="md" p="md">
+                                            <Stack gap="sm">
+                                              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                                                <Text fw={700}>{group}</Text>
+                                                <Group gap={6}>
+                                                  {groupCounts.map(({ profile, count }) => (
+                                                    <Badge
+                                                      key={profile}
+                                                      size="sm"
+                                                      variant={count > 0 ? "filled" : "light"}
+                                                      color={profile === "Gestionar" ? "orange" : "blue"}
+                                                    >
+                                                      {count}/{groupViews.length} {profile}
+                                                    </Badge>
+                                                  ))}
+                                                </Group>
+                                              </Group>
+
+                                              <Group gap="md">
+                                                {groupCounts.map(({ profile, count }) => {
+                                                  const allChecked = groupViews.length > 0 && count === groupViews.length;
+                                                  return (
+                                                    <Checkbox
+                                                      key={`${role}-${group}-all-${profile}`}
+                                                      size="xs"
+                                                      label={`Todo ${profile}`}
+                                                      checked={allChecked}
+                                                      indeterminate={count > 0 && !allChecked}
+                                                      onChange={(event) => setLevelForViews(groupViews, profile, event.currentTarget.checked)}
+                                                      disabled={!canManage}
+                                                    />
+                                                  );
+                                                })}
+                                              </Group>
+
+                                              <Divider />
+
+                                              <Stack gap={8}>
+                                                {groupViews.map((view) => {
+                                                  const otrosRoles = (view.roles || []).filter((r) => r !== role);
+                                                  return (
+                                                  <Group key={`${role}-${view.key}`} justify="space-between" wrap="nowrap" gap="md">
+                                                    <div style={{ flex: 1 }}>
+                                                      <Text size="sm">{view.label}</Text>
+                                                      {otrosRoles.length > 0 && (
+                                                        <Text size="xs" c="dimmed">
+                                                          También por defecto: {otrosRoles.join(", ")}
+                                                        </Text>
+                                                      )}
+                                                    </div>
+                                                    <Group gap="md" wrap="nowrap">
+                                                      {permissionLevels.map((profile) => (
+                                                        <Checkbox
+                                                          key={`${role}-${view.key}-${profile}`}
+                                                          label={profile}
+                                                          size="sm"
+                                                          checked={selectedPositionPermissions[view.key]?.includes(profile) || false}
+                                                          onChange={() => toggleViewPermission(view.key, profile)}
+                                                          disabled={!canManage}
+                                                        />
+                                                      ))}
+                                                    </Group>
+                                                  </Group>
+                                                  );
+                                                })}
+                                              </Stack>
+                                            </Stack>
+                                          </Card>
+                                        );
+                                      })}
+                                    </SimpleGrid>
+                                  </Stack>
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Stack>
+                      </Card>
+                    );
+                  })}
+                </Stack>
+
+                <Group justify="flex-end">
+                  <Button
+                    leftSection={<IconDeviceFloppy size={16} />}
+                    onClick={handleSavePermissions}
+                    loading={saving}
+                    disabled={!canManage || managedPositionNames.length === 0}
+                  >
+                    Guardar permisos
+                  </Button>
+                </Group>
+              </Stack>
+            </Card>
+          </>
+        )}
+      </Stack>
+    </Container>
+  );
+}

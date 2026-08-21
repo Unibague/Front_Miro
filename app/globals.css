@@ -9,6 +9,16 @@ a{
   text-decoration: none;
 }
 
+/* PDI: aumentar tipografía +2px sin tocar el diseño */
+.pdi-scope {
+  --mantine-font-size-xs: 0.975rem;
+  --mantine-font-size-sm: 1rem;
+  --mantine-font-size-md: 1.155rem;
+  --mantine-font-size-lg: 1.35rem;
+  --mantine-font-size-xl: 1.385rem;
+  --mantine-font-size-xxl: 1.75rem;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -8,6 +8,8 @@ import { showNotification } from "@mantine/notifications";
 import { IconCancel, IconCirclePlus, IconGripVertical, IconDeviceFloppy } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import { usePeriod } from "@/app/context/PeriodContext";
 
 interface Template {
   _id: string;
@@ -17,31 +19,36 @@ interface Template {
 const CreateCategoryPage = () => {
   const [categoryName, setCategoryName] = useState<string>('');
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [fields, setFields] = useState<any[]>([{ templateId: "", sequence: 1 }]);
+  const [fields, setFields] = useState<any[]>([{ templateId: "" }]);
   const { data: session } = useSession();
   const router = useRouter();
+  const { setHasChanges, confirmNavigation } = useUnsavedChanges();
+  const { selectedPeriodId } = usePeriod();
 
   useEffect(() => {
-    // Fetch templates for the category
     const fetchTemplates = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination`);
+        const qs = selectedPeriodId
+          ? `?periodId=${selectedPeriodId}&onlyPublishedInPeriod=true`
+          : "";
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination${qs}`);
         setTemplates(response.data.templates);
       } catch (error) {
         console.error("Error fetching templates:", error);
       }
     };
     fetchTemplates();
-  }, []);
+  }, [selectedPeriodId]);
 
   const handleFieldChange = (index: number, field: string, value: any) => {
+    setHasChanges(true);
     const updatedFields = [...fields];
     updatedFields[index] = { ...updatedFields[index], [field]: value };
     setFields(updatedFields);
   };
 
   const addField = () => {
-    setFields([...fields, { templateId: "", sequence: 1 }]);
+    setFields([...fields, { templateId: "" }]);
   };
 
   const removeField = (index: number) => {
@@ -72,6 +79,7 @@ const CreateCategoryPage = () => {
         color: "teal",
       });
 
+      setHasChanges(false);
       router.push("/templates/categories"); // Redirigir después de guardar
     } catch (error) {
       console.error("Error saving category:", error);
@@ -89,7 +97,7 @@ const CreateCategoryPage = () => {
       <TextInput
         label="Nombre de la Categoría"
         value={categoryName}
-        onChange={(e) => setCategoryName(e.currentTarget.value)}
+        onChange={(e) => { setCategoryName(e.currentTarget.value); setHasChanges(true); }}
         placeholder="Ingrese el nombre de la categoría"
         mb="md"
         required
@@ -99,12 +107,11 @@ const CreateCategoryPage = () => {
           {(provided) => (
             <Table stickyHeader withTableBorder {...provided.droppableProps} ref={provided.innerRef}>
               <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Arrastrar</Table.Th>
-                  <Table.Th>Nombre de la Plantilla</Table.Th>
-                  <Table.Th>Secuencia</Table.Th>
-                  <Table.Th>Acciones</Table.Th>
-                </Table.Tr>
+                  <Table.Tr>
+                    <Table.Th>Arrastrar</Table.Th>
+                    <Table.Th>Nombre de la Plantilla</Table.Th>
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {fields.map((field, index) => (
@@ -127,15 +134,6 @@ const CreateCategoryPage = () => {
                             searchable
                             clearable
                             placeholder="Buscar y seleccionar plantilla"
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <TextInput
-                            type="number"
-                            value={field.sequence}
-                            onChange={(e) => handleFieldChange(index, "sequence", parseInt(e.currentTarget.value))}
-                            min={1}
-                            placeholder="Secuencia"
                           />
                         </Table.Td>
                         <Table.Td>
@@ -163,7 +161,7 @@ const CreateCategoryPage = () => {
         <Button
           variant="light"
           leftSection={<IconCancel />}
-          onClick={() => router.back()}
+          onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
           color="red"
         >
           Cancelar
