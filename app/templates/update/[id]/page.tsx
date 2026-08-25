@@ -577,16 +577,6 @@ const UpdateTemplatePage = () => {
       return;
     }
 
-    // Validar que el nombre sea único
-    if (workbookSheets.some((sheet) => sheet.name.toLowerCase() === newSheetName.toLowerCase())) {
-      showNotification({
-        title: "Error",
-        message: "Ya existe una hoja con ese nombre",
-        color: "red",
-      });
-      return;
-    }
-
     // Crear la nueva hoja con campos vacíos
     const newSheet: TemplateWorksheet = {
       name: newSheetName,
@@ -596,7 +586,41 @@ const UpdateTemplatePage = () => {
       shared: false,
     };
 
-    setWorkbookSheets([...workbookSheets, newSheet]);
+    // Plantillas que aún no tienen hojas (el caso normal de una plantilla
+    // "simple", no-SNIES): antes de agregar la hoja pedida, se conserva la
+    // lista de campos y productores actuales como la primera hoja, para no
+    // perder nada de lo ya configurado.
+    if (!hasWorkbookSheets) {
+      const firstSheetName = sanitizeSheetName(fileName || name) || "Hoja 1";
+      if (firstSheetName.toLowerCase() === newSheetName.trim().toLowerCase()) {
+        showNotification({
+          title: "Error",
+          message: "Ya existe una hoja con ese nombre",
+          color: "red",
+        });
+        return;
+      }
+      const firstSheet: TemplateWorksheet = {
+        name: firstSheetName,
+        fields: fields.length > 0 ? fields : [createEmptyField()],
+        preserveOriginalContent: false,
+        producers: selectedDependencies,
+        shared,
+      };
+      setWorkbookSheets([firstSheet, newSheet]);
+    } else {
+      // Validar que el nombre sea único
+      if (workbookSheets.some((sheet) => sheet.name.toLowerCase() === newSheetName.toLowerCase())) {
+        showNotification({
+          title: "Error",
+          message: "Ya existe una hoja con ese nombre",
+          color: "red",
+        });
+        return;
+      }
+      setWorkbookSheets([...workbookSheets, newSheet]);
+    }
+
     setActiveSheet(newSheetName);
     setNewSheetName("");
     setShowNewSheetModal(false);
@@ -1453,6 +1477,25 @@ router.back();
         searchable
         clearable
       />
+      {!hasWorkbookSheets && (
+        <Group justify="flex-end" mb="md">
+          <Tooltip
+            label="Convierte esta plantilla en una de varias hojas: tus campos y productores actuales quedan como la primera hoja, y podrás agregar más."
+            multiline
+            w={260}
+          >
+            <Button
+              size="compact-sm"
+              variant="light"
+              color="blue"
+              leftSection={<IconPlus size={16} />}
+              onClick={() => setShowNewSheetModal(true)}
+            >
+              Agregar Hoja
+            </Button>
+          </Tooltip>
+        </Group>
+      )}
       {hasWorkbookSheets && (
         <>
           <Group justify="space-between" align="center" mt="md" mb="xs">
@@ -1944,6 +1987,12 @@ router.back();
         centered
       >
         <Stack gap="md">
+          {!hasWorkbookSheets && (
+            <Text size="sm" c="dimmed">
+              Esta plantilla todavía no tiene hojas: tus campos y productores actuales se
+              guardarán como la primera hoja, y esta será la segunda.
+            </Text>
+          )}
           <TextInput
             label="Nombre de la hoja"
             placeholder="Ej: Datos Docentes, Información Adicional"

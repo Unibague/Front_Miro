@@ -611,7 +611,6 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [connectedDataModalOpened, { open: openConnectedDataModal, close: closeConnectedDataModal }] = useDisclosure(false);
   const [connectedDataResponse, setConnectedDataResponse] = useState<any>(null);
   const [connectedDataLoading, setConnectedDataLoading] = useState(false);
-  const [connectedDataDownloading, setConnectedDataDownloading] = useState(false);
   const [equivalenceOpened, { open: openEquivalence, close: closeEquivalence }] = useDisclosure(false);
   const [equivalenceTemplate, setEquivalenceTemplate] = useState<SniesTemplate | null>(null);
   const [cnaFieldOptions, setCnaFieldOptions] = useState<CnaFieldOption[]>([]);
@@ -1444,15 +1443,32 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     router.push(`${moduleBasePath}/${template._id}${query}`);
   };
 
-  const handleDownloadSnisFilled = (sniesTemplate: SniesTemplate, pubTemId?: string) => {
+  const handleDownloadSnisFilled = async (sniesTemplate: SniesTemplate, pubTemId?: string, displayName?: string) => {
     if (!session?.user?.email) return;
-    const params = new URLSearchParams({ email: session.user.email });
-    if (pubTemId) params.set('pubTemId', pubTemId);
-    window.open(
-      `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/download-connected-data?${params.toString()}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
+    try {
+      const params: Record<string, string> = { email: session.user.email };
+      if (pubTemId) params.pubTemId = pubTemId;
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${sniesTemplate._id}/download-connected-data`,
+        { params, responseType: "blob" }
+      );
+      // El nombre que se muestra en la lista (pt.name) es el que el usuario
+      // reconoce; no usar sniesTemplate.file_name porque es el nombre del
+      // archivo original que se subio al configurar la plantilla SNIES, que
+      // puede no coincidir con el nombre de esta plantilla publicada.
+      const baseName = (displayName || sniesTemplate.file_name || "plantilla_snies").trim();
+      const fileName = /\.xlsx$/i.test(baseName) ? baseName : `${baseName}.xlsx`;
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo descargar el archivo.", color: "red" });
+    }
   };
 
   // Igual que handleOpenConnectedData, pero en vez de redirigir a otra pagina
@@ -1476,30 +1492,6 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
       closeConnectedDataModal();
     } finally {
       setConnectedDataLoading(false);
-    }
-  };
-
-  const handleDownloadConnectedDataModal = async () => {
-    if (!session?.user?.email || !connectedDataResponse?.template?._id) return;
-    setConnectedDataDownloading(true);
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${connectedDataResponse.template._id}/download-connected-data`,
-        { params: { email: session.user.email }, responseType: "blob" }
-      );
-      const fileName = connectedDataResponse.template?.file_name || connectedDataResponse.template?.name || "plantilla_snies.xlsx";
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo descargar el archivo.", color: "red" });
-    } finally {
-      setConnectedDataDownloading(false);
     }
   };
 
@@ -1630,7 +1622,11 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer], { type: "application/octet-stream" }), `${template?.file_name || name}.xlsx`);
+        const downloadName = String(template?.file_name || name).trim();
+        saveAs(
+          new Blob([buffer], { type: "application/octet-stream" }),
+          /\.xlsx$/i.test(downloadName) ? downloadName : `${downloadName}.xlsx`
+        );
         return;
       }
     } catch (e) {
@@ -1966,12 +1962,12 @@ const activeMiroTemplateId =
                                     leftSection={<IconDownload size={14} />}
                                     loading={downloadingDirectId === pt._id}
                                     onClick={async () => {
-                                      if (linkedSnies) {
-                                        handleDownloadSnisFilled(linkedSnies, pt._id);
-                                        return;
-                                      }
                                       setDownloadingDirectId(pt._id);
                                       try {
+                                        if (linkedSnies) {
+                                          await handleDownloadSnisFilled(linkedSnies, pt._id, pt.name || pt.template?.name);
+                                          return;
+                                        }
                                         await downloadPublishedTemplateExcel(pt);
                                       } finally {
                                         setDownloadingDirectId(null);
@@ -2568,18 +2564,6 @@ const activeMiroTemplateId =
           <Center py="xl"><Text c="dimmed">No hay información disponible para esta plantilla.</Text></Center>
         ) : (
           <Stack gap="sm">
-            <Group justify="flex-end">
-              <Button
-                leftSection={<IconDownload size={16} />}
-                color="teal"
-                size="xs"
-                loading={connectedDataDownloading}
-                onClick={handleDownloadConnectedDataModal}
-              >
-                Descargar plantilla {moduleUpper} llena
-              </Button>
-            </Group>
-
             <Tabs defaultValue={connectedDataResponse.sheets?.[0]?.worksheetName || "sin-hojas"}>
               <Tabs.List>
                 {connectedDataResponse.sheets.map((sheet: any) => (

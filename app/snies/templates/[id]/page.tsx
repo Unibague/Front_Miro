@@ -16,7 +16,7 @@ import {
   Title,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { IconAlertTriangle, IconArrowLeft, IconDownload } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft } from "@tabler/icons-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
 import { useSession } from "next-auth/react";
@@ -50,7 +50,6 @@ export default function SniesTemplateDetailPage() {
   const { data: session } = useSession();
   const [data, setData] = useState<ConnectedDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
 
   const templateId = paramId(params);
   const pubTemId = searchParams?.get("pubTemId") ?? null;
@@ -96,32 +95,6 @@ export default function SniesTemplateDetailPage() {
     router.push("/snies/templates/published");
   };
 
-  const handleDownload = async () => {
-    if (!session?.user?.email || !templateId) return;
-    setDownloading(true);
-    try {
-      const params: Record<string, string> = { email: session.user.email };
-      if (pubTemId) params.pubTemId = pubTemId;
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/snies/templates/${templateId}/download-connected-data`,
-        { params, responseType: "blob" }
-      );
-      const fileName = data?.template?.file_name || data?.template?.name || "plantilla_snies.xlsx";
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      showNotification({ title: "Error", message: "No se pudo descargar el archivo.", color: "red" });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   return (
     <Container size="xl" py="xl">
       <Group justify="space-between" mb="md">
@@ -133,16 +106,6 @@ export default function SniesTemplateDetailPage() {
       <Group mb="md">
         <Button variant="outline" leftSection={<IconArrowLeft size={16} />} onClick={handleGoBack}>
           Volver
-        </Button>
-        <Button
-          variant="filled"
-          color="teal"
-          leftSection={<IconDownload size={16} />}
-          onClick={handleDownload}
-          disabled={!data || downloading}
-          loading={downloading}
-        >
-          Descargar plantilla SNIES llena
         </Button>
       </Group>
 

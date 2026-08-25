@@ -51,8 +51,8 @@ export default function AmbitoDetailPage() {
               <IconFolders size={22} />
             </ThemeIcon>
             <div>
-              <Title order={3}>Consulta de Información</Title>
-              <Text size="xs" c="dimmed">{dimensionName || "Ámbito"} — sube y consulta sus Plantillas o Informes</Text>
+              <Title order={3}>{dimensionName || "Ámbito"}</Title>
+              <Text size="xs" c="dimmed">Consulta de Información — sube y consulta sus Plantillas o Informes</Text>
             </div>
           </Group>
 

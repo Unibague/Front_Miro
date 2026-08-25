@@ -23,7 +23,8 @@ interface Dependency {
   members: string[];
   responsible: string;
   dep_father: string;
-  visualizers: string[]
+  visualizers: string[];
+  active?: boolean;
 }
 
 interface MemberOption {
@@ -274,7 +275,7 @@ const AdminDependenciesPage = () => {
       
       showNotification({
         title: "Sincronizado",
-        message: `${syncResult.count ?? 0} dependencias sincronizadas, ${syncResult.deletedCount ?? 0} eliminadas y ${syncResult.leadersAssigned ?? 0} líderes asignados.`,
+        message: `${syncResult.count ?? 0} dependencias sincronizadas, ${syncResult.deactivatedCount ?? 0} desactivadas (se conservan para históricos) y ${syncResult.leadersAssigned ?? 0} líderes asignados.`,
         color: "teal",
       });
     } catch (error) {
@@ -561,7 +562,14 @@ const AdminDependenciesPage = () => {
  const rows = sortedDependencies.map((dependency) => (
     <Table.Tr key={dependency._id}>
       <Table.Td>{dependency.dep_code}</Table.Td>
-      <Table.Td>{dependency.name}</Table.Td>
+      <Table.Td>
+        <Group gap={6}>
+          <Text>{dependency.name}</Text>
+          {dependency.active === false && (
+            <Badge color="gray" size="sm">Inactiva</Badge>
+          )}
+        </Group>
+      </Table.Td>
       <Table.Td>
         {dependency.responsible ? (
           <Text>{dependency.responsible}</Text>

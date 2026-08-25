@@ -17,24 +17,29 @@ import {
   Divider,
   Stack,
   Tooltip,
-  RingProgress,
   ScrollArea,
   Table,
+  Accordion,
+  Badge,
+  Progress,
 } from "@mantine/core";
 import {
   IconArrowLeft,
   IconLayoutDashboard,
   IconBuildingCommunity,
   IconChartBar,
-  IconChartDonut,
   IconCalendarEvent,
   IconUsers,
   IconHeartHandshake,
   IconTarget,
+  IconRoute,
+  IconAward,
+  IconBriefcase,
+  IconFileSpreadsheet,
 } from "@tabler/icons-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip as ReTooltip,
+  Tooltip as ReTooltip, PieChart, Pie, Cell, LineChart, Line,
 } from "recharts";
 import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -46,21 +51,31 @@ interface DistributionEntry {
   count: number;
 }
 
-interface NumericAggField {
+interface PlantillaNumericField {
   name: string;
   total: number;
   average: number;
   count: number;
-  plantilla: string;
 }
 
-interface CategoricalAggField {
+interface PlantillaCategoricalField {
   name: string;
   distribution: DistributionEntry[];
   topValue: string;
   topCount: number;
   totalValues: number;
-  plantilla: string;
+}
+
+// Desglose GENERICO de una plantilla dentro de su ámbito: sus propios
+// totales/promedios numéricos y su propia distribución de valores, sin
+// mezclarse con las demás plantillas del ámbito.
+interface PlantillaStats {
+  templateId: string;
+  name: string;
+  totalRegistros: number;
+  numeric: PlantillaNumericField[];
+  categorical: PlantillaCategoricalField[];
+  timeline: TimelinePoint[];
 }
 
 interface TimelinePoint {
@@ -82,22 +97,81 @@ interface DependenciaCurada {
 interface CuradoBienestar {
   totalActividades: number;
   totalParticipantes: number;
+  totalRecursoHumano: number;
   totalBeneficiarios: number;
   totalPersonasImpactadas: number;
   actividades: ActividadCurada[];
   porDependencia: DependenciaCurada[];
 }
 
+interface RutaAprendizaje {
+  ruta: string;
+  matriculados: number;
+  insignias: number;
+}
+
+// Resumen a la medida de la plantilla RUTAS_DE_APRENDIZAJE (Estructura y
+// Procesos Académicos).
+interface CuradoRutasAprendizaje {
+  totalMatriculados: number;
+  totalRutas: number;
+  totalInsigniasEntregadas: number;
+  rutas: RutaAprendizaje[];
+}
+
+interface EmpresaPractica {
+  empresa: string;
+  estudiantes: number;
+}
+
+interface ModalidadPractica {
+  modalidad: string;
+  estudiantes: number;
+}
+
+// Resumen a la medida de Prácticas Académicas (Estructura y Procesos
+// Académicos).
+interface CuradoPracticas {
+  totalEstudiantes: number;
+  totalEmpresas: number;
+  porEmpresa: EmpresaPractica[];
+  porModalidad: ModalidadPractica[];
+}
+
+interface NamedValue {
+  name: string;
+  value: number;
+}
+
+interface ActividadBienestarAnalytics {
+  fileId: string;
+  fileName: string;
+  nature: string;
+  totalActivities: number;
+  registeredBeneficiaries: number;
+  totalParticipations: number;
+  groupedBeneficiaries: number;
+  externalBeneficiaries: number;
+  humanResourceRecords: number;
+  activitiesByUnit: NamedValue[];
+  activitiesByCategory: NamedValue[];
+  activitiesByMonth: NamedValue[];
+  beneficiariesByType: NamedValue[];
+  beneficiariesByUnit: NamedValue[];
+  humanResourcesByUnit: NamedValue[];
+  humanResourcesByCategory: NamedValue[];
+}
+
 interface DimensionStats {
   _id: string;
   name: string;
   totalRegistrosReportados: number;
-  resumen: {
-    numeric: NumericAggField[];
-    categorical: CategoricalAggField[];
-  };
+  plantillas: PlantillaStats[];
   timeline: TimelinePoint[];
   curado: CuradoBienestar | null;
+  rutasAprendizaje: CuradoRutasAprendizaje | null;
+  practicas: CuradoPracticas | null;
+  actividadBienestar: ActividadBienestarAnalytics | null;
 }
 
 const BLUE = "#228be6";
@@ -108,11 +182,234 @@ const formatNumber = (value: number, maxDecimals = 0) =>
 
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
 
-// Tablero de estadisticas POR ÁMBITO: agrupa el contenido real reportado por
-// TODAS las plantillas de cada ámbito y lo presenta como si fuera del ámbito
-// mismo — nada de conteos de plantillas/informes/dependencias, solo lo que
-// efectivamente se reportó (totales/promedios numéricos y distribución de
-// valores categóricos), con barras, línea de evolución y donas por ámbito.
+// Las categorias se entienden mejor como proporcion del total; por eso se
+// presentan como dona y se acompanan con una leyenda compacta y accesible.
+function CategoricalFieldDonut({ field }: { field: PlantillaCategoricalField }) {
+  const visibleTotal = field.distribution.reduce((sum, entry) => sum + entry.count, 0);
+  const otherCount = Math.max(0, field.totalValues - visibleTotal);
+  const data = [
+    ...field.distribution.map((entry) => ({ name: entry.value, value: entry.count })),
+    ...(otherCount > 0 ? [{ name: "Otros", value: otherCount }] : []),
+  ];
+
+  return (
+    <Paper withBorder radius="md" p="sm">
+      <Tooltip label={field.name} disabled={field.name.length <= 46} multiline w={300}>
+        <Text size="sm" fw={600} lineClamp={1} mb={6}>{field.name}</Text>
+      </Tooltip>
+      <Group wrap="nowrap" align="center" gap="sm">
+        <Box w={150} h={130} style={{ flexShrink: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" innerRadius={34} outerRadius={55} paddingAngle={2}>
+                {data.map((entry, idx) => (
+                  <Cell key={entry.name} fill={entry.name === "Otros" ? "#adb5bd" : DONUT_COLORS[idx % DONUT_COLORS.length]} />
+                ))}
+              </Pie>
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
+            </PieChart>
+          </ResponsiveContainer>
+        </Box>
+        <Stack gap={5} style={{ minWidth: 0, flex: 1 }}>
+          {data.slice(0, 6).map((entry, idx) => {
+            const pct = field.totalValues > 0 ? Math.round((entry.value / field.totalValues) * 100) : 0;
+            return (
+              <Group key={entry.name} gap={6} wrap="nowrap" justify="space-between">
+                <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                  <Box w={8} h={8} style={{ borderRadius: "50%", flexShrink: 0, background: entry.name === "Otros" ? "#adb5bd" : DONUT_COLORS[idx % DONUT_COLORS.length] }} />
+                  <Text size="xs" lineClamp={1}>{entry.name}</Text>
+                </Group>
+                <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>{entry.value} · {pct}%</Text>
+              </Group>
+            );
+          })}
+        </Stack>
+      </Group>
+    </Paper>
+  );
+}
+
+// Tarjeta de una plantilla dentro del acordeón "Desglose por plantilla": sus
+// totales/promedios numéricos y su distribución de valores categóricos.
+function PlantillaPanel({ plantilla }: { plantilla: PlantillaStats }) {
+  if (plantilla.numeric.length === 0 && plantilla.categorical.length === 0) {
+    return <Text size="sm" c="dimmed" ta="center" py="sm">Sin campos relevantes para resumir todavía.</Text>;
+  }
+
+  const numericChartData = plantilla.numeric.map((f) => ({
+    name: truncate(f.name, 26),
+    fullName: f.name,
+    total: f.total,
+    average: f.average,
+  }));
+
+  return (
+    <Stack gap="md">
+      {numericChartData.length > 0 && (
+        <Box>
+          <Text size="xs" fw={600} c="dimmed" mb={4}>Totales reportados</Text>
+          <ResponsiveContainer width="100%" height={Math.max(60, numericChartData.length * 34)}>
+            <BarChart data={numericChartData} layout="vertical" margin={{ top: 4, right: 20, left: 4, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11 }} />
+              <ReTooltip
+                formatter={(value: any, _name: any, entry: any) => [
+                  `Total ${formatNumber(Number(value), 1)} · promedio ${formatNumber(entry?.payload?.average ?? 0, 1)}`,
+                  "",
+                ]}
+                labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
+              />
+              <Bar dataKey="total" fill={BLUE} radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      )}
+
+      {plantilla.categorical.length > 0 && (
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+          {plantilla.categorical.map((field) => (
+            <CategoricalFieldDonut key={field.name} field={field} />
+          ))}
+        </SimpleGrid>
+      )}
+
+      {plantilla.timeline.length > 1 && (
+        <Box>
+          <Text size="xs" fw={600} c="dimmed" mb={4}>Evolución de registros cargados</Text>
+          <ResponsiveContainer width="100%" height={190}>
+            <LineChart data={plantilla.timeline} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
+              <Line type="monotone" dataKey="totalRegistros" stroke="#7048e8" strokeWidth={3} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </Box>
+      )}
+    </Stack>
+  );
+}
+
+function MetricCard({ label, value, color = "violet" }: { label: string; value: number; color?: string }) {
+  return (
+    <Paper withBorder radius="md" p="sm">
+      <Text size="xs" c="dimmed" fw={600}>{label}</Text>
+      <Text fw={800} size="xl" c={color}>{formatNumber(value)}</Text>
+    </Paper>
+  );
+}
+
+function NamedDonut({ title, data }: { title: string; data: NamedValue[] }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  return (
+    <CategoricalFieldDonut
+      field={{
+        name: title,
+        distribution: data.map((item) => ({ value: item.name, count: item.value })),
+        topValue: data[0]?.name || "",
+        topCount: data[0]?.value || 0,
+        totalValues: total,
+      }}
+    />
+  );
+}
+
+function ActividadBienestarReport({ report }: { report: ActividadBienestarAnalytics }) {
+  const categoryChartData = report.activitiesByCategory.map((item) => ({
+    ...item,
+    shortName: truncate(item.name, 30),
+  }));
+  const humanCategoryData = report.humanResourcesByCategory.map((item) => ({
+    ...item,
+    shortName: truncate(item.name, 30),
+  }));
+
+  return (
+    <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
+      <Group justify="space-between" mb="md" align="flex-start">
+        <Box>
+          <Group gap="xs">
+            <IconFileSpreadsheet size={20} color="#7048e8" />
+            <Text fw={800}>{report.fileName}</Text>
+            <Badge color="violet" variant="light">{report.nature}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mt={3}>Análisis funcional de las cuatro hojas relacionadas</Text>
+        </Box>
+      </Group>
+
+      <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="sm" mb="lg">
+        <MetricCard label="Actividades únicas" value={report.totalActivities} />
+        <MetricCard label="Beneficiarios registrados" value={report.registeredBeneficiaries} color="blue" />
+        <MetricCard label="Participaciones" value={report.totalParticipations} color="cyan" />
+        <MetricCard label="Beneficiarios agrupados" value={report.groupedBeneficiaries} color="teal" />
+        <MetricCard label="Beneficiarios externos" value={report.externalBeneficiaries} color="orange" />
+        <MetricCard label="Registros de recurso humano" value={report.humanResourceRecords} color="indigo" />
+      </SimpleGrid>
+      <Text size="xs" c="dimmed" mb="lg">
+        Los beneficiarios registrados y los beneficiarios agrupados provienen de hojas distintas; se muestran separados para evitar duplicarlos.
+      </Text>
+
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mb="lg">
+        <NamedDonut title="Actividades por unidad responsable" data={report.activitiesByUnit} />
+        <Box>
+          <Text size="sm" fw={700} mb={4}>Actividades por categoría</Text>
+          <ResponsiveContainer width="100%" height={Math.max(210, categoryChartData.length * 34)}>
+            <BarChart data={categoryChartData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="shortName" width={180} tick={{ fontSize: 11 }} />
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Actividades"]} />
+              <Bar dataKey="value" fill="#228be6" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      </SimpleGrid>
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" my="lg">
+        <NamedDonut title="Beneficiarios por tipo" data={report.beneficiariesByType} />
+        <NamedDonut title="Beneficiarios por unidad" data={report.beneficiariesByUnit} />
+      </SimpleGrid>
+
+      <Divider label="Recurso humano" labelPosition="left" my="lg" />
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mb="lg">
+        <NamedDonut title="Recurso humano por unidad" data={report.humanResourcesByUnit} />
+        <Box>
+          <Text size="sm" fw={700} mb={4}>Recurso humano por categoría de actividad</Text>
+          <ResponsiveContainer width="100%" height={Math.max(210, humanCategoryData.length * 34)}>
+            <BarChart data={humanCategoryData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="shortName" width={180} tick={{ fontSize: 11 }} />
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
+              <Bar dataKey="value" fill="#15aabf" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      </SimpleGrid>
+
+      {report.activitiesByMonth.length > 1 && (
+        <Box mt="lg">
+          <Text size="sm" fw={700} mb={4}>Actividades iniciadas por mes</Text>
+          <ResponsiveContainer width="100%" height={210}>
+            <LineChart data={report.activitiesByMonth} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Actividades"]} />
+              <Line type="monotone" dataKey="value" stroke="#e64980" strokeWidth={3} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </Box>
+      )}
+    </Paper>
+  );
+}
+
+// Tablero de estadisticas POR ÁMBITO: dentro de cada ámbito, desglosa el
+// contenido real reportado por CADA PLANTILLA por separado (no todo
+// mezclado), y destaca con resúmenes a la medida (stat cards + gráficas) los
+// procesos que lo ameritan (Bienestar, Rutas de Aprendizaje, Prácticas).
 export default function TableroPorAmbitoPage() {
   const router = useRouter();
   const { selectedPeriodId } = usePeriod();
@@ -150,20 +447,6 @@ export default function TableroPorAmbitoPage() {
     })),
     [stats]
   );
-
-  // Bienestar Institucional tiene un resumen a la medida (ver backend); el
-  // resto de ámbitos usa el resumen genérico automático.
-  const bienestarDim = stats.find((s) => s.curado);
-  const otherDims = stats.filter((s) => !s.curado);
-
-  const dependenciaChartData = useMemo(() => {
-    if (!bienestarDim?.curado) return [];
-    return bienestarDim.curado.porDependencia.slice(0, 10).map((d) => ({
-      name: d.dependencia.length > 26 ? `${d.dependencia.slice(0, 26)}…` : d.dependencia,
-      fullName: d.dependencia,
-      total: d.totalActividades,
-    }));
-  }, [bienestarDim]);
 
   return (
     <Box style={{ display: "flex", minHeight: "100vh" }}>
@@ -208,231 +491,314 @@ export default function TableroPorAmbitoPage() {
                 </ResponsiveContainer>
               </Paper>
 
-              {bienestarDim?.curado && (
-                <Paper withBorder radius="md" p="md" mb="lg">
-                  <Group justify="space-between" align="center" mb="md">
-                    <Text fw={700} size="lg">{bienestarDim.name}</Text>
-                    <Text fw={800} size="lg" c="violet">
-                      {bienestarDim.totalRegistrosReportados.toLocaleString("es-CO")} reg.
-                    </Text>
-                  </Group>
+              <Stack gap="md">
+                {stats.map((dimension) => {
+                  const dependenciaChartData = dimension.curado
+                    ? dimension.curado.porDependencia.slice(0, 10).map((d) => ({
+                      name: d.dependencia.length > 26 ? `${d.dependencia.slice(0, 26)}…` : d.dependencia,
+                      fullName: d.dependencia,
+                      total: d.totalActividades,
+                    }))
+                    : [];
 
-                  <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md" mb="lg">
-                    <Paper withBorder radius="md" p="sm">
-                      <Group gap="xs">
-                        <ThemeIcon color="violet" variant="light" size={32} radius="xl"><IconCalendarEvent size={16} /></ThemeIcon>
-                        <Box>
-                          <Text size="xs" c="dimmed" fw={600}>Actividades</Text>
-                          <Text fw={800} size="lg">{bienestarDim.curado.totalActividades.toLocaleString("es-CO")}</Text>
-                        </Box>
-                      </Group>
-                    </Paper>
-                    <Paper withBorder radius="md" p="sm">
-                      <Group gap="xs">
-                        <ThemeIcon color="blue" variant="light" size={32} radius="xl"><IconUsers size={16} /></ThemeIcon>
-                        <Box>
-                          <Text size="xs" c="dimmed" fw={600}>Participantes</Text>
-                          <Text fw={800} size="lg">{bienestarDim.curado.totalParticipantes.toLocaleString("es-CO")}</Text>
-                        </Box>
-                      </Group>
-                    </Paper>
-                    <Paper withBorder radius="md" p="sm">
-                      <Group gap="xs">
-                        <ThemeIcon color="teal" variant="light" size={32} radius="xl"><IconHeartHandshake size={16} /></ThemeIcon>
-                        <Box>
-                          <Text size="xs" c="dimmed" fw={600}>Beneficiarios</Text>
-                          <Text fw={800} size="lg">{bienestarDim.curado.totalBeneficiarios.toLocaleString("es-CO")}</Text>
-                        </Box>
-                      </Group>
-                    </Paper>
-                    <Paper withBorder radius="md" p="sm">
-                      <Group gap="xs">
-                        <ThemeIcon color="orange" variant="light" size={32} radius="xl"><IconTarget size={16} /></ThemeIcon>
-                        <Box>
-                          <Text size="xs" c="dimmed" fw={600}>Personas impactadas</Text>
-                          <Text fw={800} size="lg">{bienestarDim.curado.totalPersonasImpactadas.toLocaleString("es-CO")}</Text>
-                        </Box>
-                      </Group>
-                    </Paper>
-                  </SimpleGrid>
+                  const rutasChartData = dimension.rutasAprendizaje
+                    ? dimension.rutasAprendizaje.rutas.map((r) => ({
+                      name: r.ruta.length > 26 ? `${r.ruta.slice(0, 26)}…` : r.ruta,
+                      fullName: r.ruta,
+                      matriculados: r.matriculados,
+                      insignias: r.insignias,
+                    }))
+                    : [];
 
-                  <Box mb="lg">
-                    <Text size="xs" fw={600} c="dimmed" mb={4}>Actividades por dependencia</Text>
-                    <ResponsiveContainer width="100%" height={Math.max(140, dependenciaChartData.length * 32)}>
-                      <BarChart
-                        data={dependenciaChartData}
-                        layout="vertical"
-                        margin={{ top: 4, right: 20, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="name" width={190} tick={{ fontSize: 11 }} />
-                        <ReTooltip
-                          formatter={(value: any) => [value, "Actividades"]}
-                          labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
-                        />
-                        <Bar dataKey="total" fill="#7048e8" radius={[0, 6, 6, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
+                  const empresasChartData = dimension.practicas
+                    ? dimension.practicas.porEmpresa.map((e) => ({
+                      name: e.empresa,
+                      estudiantes: e.estudiantes,
+                    }))
+                    : [];
 
-                  <Box>
-                    <Text size="xs" fw={600} c="dimmed" mb={4}>
-                      Actividades registradas ({bienestarDim.curado.actividades.length})
-                    </Text>
-                    <ScrollArea h={320} type="auto">
-                      <Table striped withTableBorder stickyHeader>
-                        <Table.Thead>
-                          <Table.Tr>
-                            <Table.Th style={{ width: 140 }}>Código</Table.Th>
-                            <Table.Th>Descripción</Table.Th>
-                          </Table.Tr>
-                        </Table.Thead>
-                        <Table.Tbody>
-                          {bienestarDim.curado.actividades.map((actividad) => (
-                            <Table.Tr key={actividad.codigo}>
-                              <Table.Td style={{ whiteSpace: "nowrap" }}>{actividad.codigo}</Table.Td>
-                              <Table.Td>{actividad.descripcion}</Table.Td>
-                            </Table.Tr>
-                          ))}
-                        </Table.Tbody>
-                      </Table>
-                    </ScrollArea>
-                  </Box>
+                  const visiblePlantillas = dimension.actividadBienestar
+                    ? []
+                    : dimension.plantillas;
 
-                  <Divider my="sm" />
-                  <Button
-                    variant="subtle"
-                    size="xs"
-                    leftSection={<IconBuildingCommunity size={14} />}
-                    onClick={() => router.push(`/historico-docentes/ambito/${bienestarDim._id}?tab=plantillas`)}
-                  >
-                    Ver ámbito
-                  </Button>
-                </Paper>
-              )}
-
-              <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">
-                {otherDims.map((dimension) => {
-                  const numericChartData = dimension.resumen.numeric.map((f) => ({
-                    name: truncate(f.name, 22),
-                    fullName: f.name,
-                    plantilla: f.plantilla,
-                    total: f.total,
-                    average: f.average,
-                  }));
+                  const hasNothingToShow = !dimension.actividadBienestar
+                    && !dimension.curado
+                    && !dimension.rutasAprendizaje
+                    && !dimension.practicas
+                    && visiblePlantillas.length === 0;
 
                   return (
                     <Paper key={dimension._id} withBorder radius="md" p="md">
-                      <Group justify="space-between" align="center" mb="sm">
-                        <Text fw={700} lineClamp={1}>{dimension.name}</Text>
+                      <Group justify="space-between" align="center" mb="md">
+                        <Text fw={700} size="lg">{dimension.name}</Text>
                         <Text fw={800} size="lg" c="violet" style={{ whiteSpace: "nowrap" }}>
-                          {dimension.totalRegistrosReportados.toLocaleString("es-CO")} reg.
+                          {dimension.actividadBienestar
+                            ? `${dimension.actividadBienestar.totalActivities.toLocaleString("es-CO")} actividades`
+                            : `${dimension.totalRegistrosReportados.toLocaleString("es-CO")} reg.`}
                         </Text>
                       </Group>
 
-                      {dimension.resumen.numeric.length === 0 && dimension.resumen.categorical.length === 0 ? (
+                      {hasNothingToShow && (
                         <Text size="sm" c="dimmed" ta="center" py="md">
-                          Sin campos relevantes para resumir todavía.
+                          Sin información reportada todavía.
                         </Text>
-                      ) : (
-                        <Stack gap="sm">
-                          {numericChartData.length > 0 && (
+                      )}
+
+                      {dimension.actividadBienestar && (
+                        <ActividadBienestarReport report={dimension.actividadBienestar} />
+                      )}
+
+                      {dimension.curado && !dimension.actividadBienestar && (
+                        <Box mb="lg">
+                          <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="md" mb="lg">
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="violet" variant="light" size={32} radius="xl"><IconCalendarEvent size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Actividades</Text>
+                                  <Text fw={800} size="lg">{dimension.curado.totalActividades.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="indigo" variant="light" size={32} radius="xl"><IconUsers size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Recurso humano</Text>
+                                  <Text fw={800} size="lg">{dimension.curado.totalRecursoHumano.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="blue" variant="light" size={32} radius="xl"><IconUsers size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Participantes</Text>
+                                  <Text fw={800} size="lg">{dimension.curado.totalParticipantes.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="teal" variant="light" size={32} radius="xl"><IconHeartHandshake size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Beneficiarios</Text>
+                                  <Text fw={800} size="lg">{dimension.curado.totalBeneficiarios.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="orange" variant="light" size={32} radius="xl"><IconTarget size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Personas impactadas</Text>
+                                  <Text fw={800} size="lg">{dimension.curado.totalPersonasImpactadas.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                          </SimpleGrid>
+
+                          <Box mb="lg">
+                            <Text size="xs" fw={600} c="dimmed" mb={4}>Actividades por dependencia</Text>
+                            <ResponsiveContainer width="100%" height={Math.max(140, dependenciaChartData.length * 32)}>
+                              <BarChart data={dependenciaChartData} layout="vertical" margin={{ top: 4, right: 20, left: 4, bottom: 4 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                                <YAxis type="category" dataKey="name" width={190} tick={{ fontSize: 11 }} />
+                                <ReTooltip
+                                  formatter={(value: any) => [value, "Actividades"]}
+                                  labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
+                                />
+                                <Bar dataKey="total" fill="#7048e8" radius={[0, 6, 6, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Box>
+
+                          <Box>
+                            <Text size="xs" fw={600} c="dimmed" mb={4}>
+                              Actividades registradas ({dimension.curado.actividades.length})
+                            </Text>
+                            <ScrollArea h={320} type="auto">
+                              <Table striped withTableBorder stickyHeader>
+                                <Table.Thead>
+                                  <Table.Tr>
+                                    <Table.Th style={{ width: 140 }}>Código</Table.Th>
+                                    <Table.Th>Descripción</Table.Th>
+                                  </Table.Tr>
+                                </Table.Thead>
+                                <Table.Tbody>
+                                  {dimension.curado.actividades.map((actividad) => (
+                                    <Table.Tr key={actividad.codigo}>
+                                      <Table.Td style={{ whiteSpace: "nowrap" }}>{actividad.codigo}</Table.Td>
+                                      <Table.Td>{actividad.descripcion}</Table.Td>
+                                    </Table.Tr>
+                                  ))}
+                                </Table.Tbody>
+                              </Table>
+                            </ScrollArea>
+                          </Box>
+                        </Box>
+                      )}
+
+                      {dimension.rutasAprendizaje && !dimension.actividadBienestar && (
+                        <Box mb="lg">
+                          <Group gap={6} mb="sm">
+                            <ThemeIcon color="grape" variant="light" size={24} radius="xl"><IconRoute size={13} /></ThemeIcon>
+                            <Text fw={700} size="sm">Rutas de aprendizaje</Text>
+                          </Group>
+                          <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md" mb="md">
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="grape" variant="light" size={32} radius="xl"><IconUsers size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Matriculados</Text>
+                                  <Text fw={800} size="lg">{dimension.rutasAprendizaje.totalMatriculados.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="teal" variant="light" size={32} radius="xl"><IconRoute size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Rutas activas</Text>
+                                  <Text fw={800} size="lg">{dimension.rutasAprendizaje.totalRutas.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="orange" variant="light" size={32} radius="xl"><IconAward size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Insignias entregadas</Text>
+                                  <Text fw={800} size="lg">{dimension.rutasAprendizaje.totalInsigniasEntregadas.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                          </SimpleGrid>
+                          <Text size="xs" fw={600} c="dimmed" mb={4}>Matriculados por ruta</Text>
+                          <ResponsiveContainer width="100%" height={Math.max(100, rutasChartData.length * 36)}>
+                            <BarChart data={rutasChartData} layout="vertical" margin={{ top: 4, right: 20, left: 4, bottom: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                              <YAxis type="category" dataKey="name" width={190} tick={{ fontSize: 11 }} />
+                              <ReTooltip
+                                formatter={(value: any, name: any) => [value, name === "matriculados" ? "Matriculados" : "Insignias"]}
+                                labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
+                              />
+                              <Bar dataKey="matriculados" fill="#7048e8" radius={[0, 6, 6, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Box>
+                      )}
+
+                      {dimension.practicas && !dimension.actividadBienestar && (
+                        <Box mb="lg">
+                          <Group gap={6} mb="sm">
+                            <ThemeIcon color="cyan" variant="light" size={24} radius="xl"><IconBriefcase size={13} /></ThemeIcon>
+                            <Text fw={700} size="sm">Prácticas académicas</Text>
+                          </Group>
+                          <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="md" mb="md">
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="cyan" variant="light" size={32} radius="xl"><IconUsers size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Estudiantes en práctica</Text>
+                                  <Text fw={800} size="lg">{dimension.practicas.totalEstudiantes.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                            <Paper withBorder radius="md" p="sm">
+                              <Group gap="xs">
+                                <ThemeIcon color="indigo" variant="light" size={32} radius="xl"><IconBriefcase size={16} /></ThemeIcon>
+                                <Box>
+                                  <Text size="xs" c="dimmed" fw={600}>Empresas vinculadas</Text>
+                                  <Text fw={800} size="lg">{dimension.practicas.totalEmpresas.toLocaleString("es-CO")}</Text>
+                                </Box>
+                              </Group>
+                            </Paper>
+                          </SimpleGrid>
+                          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                             <Box>
-                              <Text size="xs" fw={600} c="dimmed" mb={4}>Totales reportados</Text>
-                              <ResponsiveContainer width="100%" height={Math.max(90, numericChartData.length * 34)}>
-                                <BarChart
-                                  data={numericChartData}
-                                  layout="vertical"
-                                  margin={{ top: 4, right: 20, left: 4, bottom: 4 }}
-                                >
+                              <Text size="xs" fw={600} c="dimmed" mb={4}>Estudiantes por empresa (top 10)</Text>
+                              <ResponsiveContainer width="100%" height={Math.max(100, empresasChartData.length * 30)}>
+                                <BarChart data={empresasChartData} layout="vertical" margin={{ top: 4, right: 20, left: 4, bottom: 4 }}>
                                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                                  <YAxis
-                                    type="category"
-                                    dataKey="name"
-                                    width={140}
-                                    tick={{ fontSize: 11 }}
-                                  />
-                                  <ReTooltip
-                                    formatter={(value: any, _name: any, entry: any) => [
-                                      `Total ${formatNumber(Number(value), 1)} · promedio ${formatNumber(entry?.payload?.average ?? 0, 1)}`,
-                                      entry?.payload?.plantilla,
-                                    ]}
-                                    labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
-                                  />
-                                  <Bar dataKey="total" fill={BLUE} radius={[0, 6, 6, 0]} />
+                                  <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
+                                  <ReTooltip formatter={(value: any) => [value, "Estudiantes"]} />
+                                  <Bar dataKey="estudiantes" fill="#15aabf" radius={[0, 6, 6, 0]} />
                                 </BarChart>
                               </ResponsiveContainer>
                             </Box>
-                          )}
+                            {dimension.practicas.porModalidad.length > 0 && (
+                              <Box>
+                                <Text size="xs" fw={600} c="dimmed" mb={4}>Por modalidad</Text>
+                                <Stack gap={6}>
+                                  {dimension.practicas.porModalidad.map((m, idx) => {
+                                    const pct = dimension.practicas!.totalEstudiantes > 0
+                                      ? Math.round((m.estudiantes / dimension.practicas!.totalEstudiantes) * 100)
+                                      : 0;
+                                    return (
+                                      <Box key={m.modalidad}>
+                                        <Group justify="space-between" gap="xs" mb={2}>
+                                          <Text size="xs" lineClamp={1}>{m.modalidad}</Text>
+                                          <Text size="xs" c="dimmed">{m.estudiantes} · {pct}%</Text>
+                                        </Group>
+                                        <Progress value={pct} color={DONUT_COLORS[idx % DONUT_COLORS.length]} size="sm" radius="xl" />
+                                      </Box>
+                                    );
+                                  })}
+                                </Stack>
+                              </Box>
+                            )}
+                          </SimpleGrid>
+                        </Box>
+                      )}
 
-                          {dimension.resumen.categorical.length > 0 && (
-                            <Box>
-                              <Group gap={6} mb={4}>
-                                <IconChartDonut size={13} color="var(--mantine-color-grape-6)" />
-                                <Text size="xs" fw={600} c="dimmed">Distribución de valores reportados</Text>
-                              </Group>
-                              <Stack gap="xs">
-                                {dimension.resumen.categorical.map((field) => {
-                                  const otherCount = field.totalValues
-                                    - field.distribution.reduce((s, d) => s + d.count, 0);
-                                  const pieData = [
-                                    ...field.distribution.map((d) => ({ name: d.value, value: d.count })),
-                                    ...(otherCount > 0 ? [{ name: "Otros", value: otherCount }] : []),
-                                  ];
-                                  const topPct = field.totalValues > 0
-                                    ? Math.round((field.topCount / field.totalValues) * 100)
-                                    : 0;
-                                  const ringSections = pieData
-                                    .map((entry, idx) => ({
-                                      value: field.totalValues > 0 ? (entry.value / field.totalValues) * 100 : 0,
-                                      color: entry.name === "Otros" ? "var(--mantine-color-gray-4)" : DONUT_COLORS[idx % DONUT_COLORS.length],
-                                    }))
-                                    .filter((section) => section.value > 0);
-                                  return (
-                                    <Paper key={field.name} withBorder radius="sm" p="sm">
-                                      <Tooltip label={field.name} disabled={field.name.length <= 40} multiline w={280}>
-                                        <Text size="sm" fw={600} lineClamp={1} mb={6}>{field.name}</Text>
-                                      </Tooltip>
-                                      <Group gap="md" wrap="nowrap" align="center">
-                                        <RingProgress
-                                          size={84}
-                                          thickness={10}
-                                          roundCaps
-                                          sections={ringSections}
-                                          label={<Text ta="center" fw={800} size="sm">{topPct}%</Text>}
-                                          style={{ flexShrink: 0 }}
-                                        />
-                                        <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
-                                          {pieData.slice(0, 4).map((entry, idx) => {
-                                            const entryPct = field.totalValues > 0
-                                              ? Math.round((entry.value / field.totalValues) * 100)
-                                              : 0;
-                                            return (
-                                              <Group key={entry.name} gap={6} wrap="nowrap" align="flex-start">
-                                                <Box
-                                                  mt={4}
-                                                  style={{
-                                                    width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                                                    background: entry.name === "Otros" ? "var(--mantine-color-gray-4)" : DONUT_COLORS[idx % DONUT_COLORS.length],
-                                                  }}
-                                                />
-                                                <Text size="sm" style={{ minWidth: 0, whiteSpace: "normal" }}>
-                                                  {entry.name} <Text span c="dimmed" size="xs">({entry.value} · {entryPct}%)</Text>
-                                                </Text>
-                                              </Group>
-                                            );
-                                          })}
-                                        </Stack>
-                                      </Group>
-                                    </Paper>
-                                  );
-                                })}
-                              </Stack>
-                            </Box>
-                          )}
-                        </Stack>
+                      {visiblePlantillas.length > 0 && (
+                        <Box>
+                          <Group gap={6} mb="xs">
+                            <IconFileSpreadsheet size={14} color="var(--mantine-color-gray-6)" />
+                            <Text size="xs" fw={600} c="dimmed">Desglose por plantilla</Text>
+                          </Group>
+                          <Accordion
+                            multiple
+                            defaultValue={dimension.actividadBienestar ? [] : visiblePlantillas.slice(0, 2).map((plantilla) => plantilla.templateId)}
+                            variant="separated"
+                            radius="md"
+                          >
+                            {visiblePlantillas.map((plantilla) => (
+                              <Accordion.Item key={plantilla.templateId} value={plantilla.templateId}>
+                                <Accordion.Control>
+                                  <Group justify="space-between" wrap="nowrap" pr="sm">
+                                    <Text size="sm" fw={600} lineClamp={1}>{plantilla.name}</Text>
+                                    <Badge variant="light" color="blue" style={{ flexShrink: 0 }}>
+                                      {plantilla.totalRegistros.toLocaleString("es-CO")} reg.
+                                    </Badge>
+                                  </Group>
+                                </Accordion.Control>
+                                <Accordion.Panel>
+                                  <PlantillaPanel plantilla={plantilla} />
+                                </Accordion.Panel>
+                              </Accordion.Item>
+                            ))}
+                          </Accordion>
+                        </Box>
+                      )}
+
+                      {!dimension.actividadBienestar && dimension.timeline.length > 1 && (
+                        <Box mt="lg">
+                          <Text size="xs" fw={600} c="dimmed" mb={4}>Evolución del ámbito</Text>
+                          <ResponsiveContainer width="100%" height={210}>
+                            <LineChart data={dimension.timeline} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
+                              <Line type="monotone" dataKey="totalRegistros" stroke="#228be6" strokeWidth={3} dot={{ r: 4 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Box>
                       )}
 
                       <Divider my="sm" />
@@ -447,7 +813,7 @@ export default function TableroPorAmbitoPage() {
                     </Paper>
                   );
                 })}
-              </SimpleGrid>
+              </Stack>
             </>
           )}
         </Container>
