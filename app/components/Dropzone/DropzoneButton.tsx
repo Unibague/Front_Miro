@@ -638,7 +638,8 @@ export function DropzoneButton({
             return isNaN(floatVal) ? String(parsedValue) : floatVal;
           }
 
-          case 'Fecha': {
+          case 'Fecha':
+          case 'Fecha Inicial / Fecha Final': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
               parsedValue = normalizeExcelCellValue(parsedValue);
             const dateValue = new Date(String(parsedValue));
@@ -656,18 +657,6 @@ export function DropzoneButton({
           case 'Texto Corto':
           case 'Texto Largo': {
             return String(normalizeExcelCellValue(parsedValue) ?? '');
-          }
-
-          case 'Fecha Inicial / Fecha Final': {
-            if (typeof parsedValue === 'object' && parsedValue !== null)
-              parsedValue = normalizeExcelCellValue(parsedValue);
-            try {
-              const parsed = JSON.parse(String(parsedValue));
-              if (!Array.isArray(parsed) || parsed.length !== 2) throw new Error();
-              return parsed;
-            } catch {
-              return String(parsedValue);
-            }
           }
 
           default: {

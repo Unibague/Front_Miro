@@ -1772,6 +1772,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         );
   
       case "Fecha":
+      case "Fecha Inicial / Fecha Final":
         const dateDisplayValue = field.validate_with && storedDisplayValue
           ? new Date(storedDisplayValue)
           : (fieldValue ? new Date(fieldValue) : null);

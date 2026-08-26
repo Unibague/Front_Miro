@@ -326,6 +326,7 @@ const handleFileDrop = async (files: File[]) => {
                   break;
 
                 case "Fecha":
+                case "Fecha Inicial / Fecha Final":
                   if (typeof parsedValue === 'object' && parsedValue !== null) {
                     parsedValue = normalizeExcelCellValue(parsedValue);
                   } else {
@@ -345,19 +346,6 @@ const handleFileDrop = async (files: File[]) => {
                 case "Texto Corto":
                 case "Texto Largo":
                   parsedValue = String(normalizeExcelCellValue(parsedValue) ?? "");
-                  break;
-
-                case "Fecha Inicial / Fecha Final":
-                  if (typeof parsedValue === 'object' && parsedValue !== null) {
-                    parsedValue = normalizeExcelCellValue(parsedValue);
-                  } else {
-                    try {
-                      parsedValue = JSON.parse(String(parsedValue));
-                      if (!Array.isArray(parsedValue) || parsedValue.length !== 2) throw new Error();
-                    } catch {
-                      parsedValue = String(parsedValue);
-                    }
-                  }
                   break;
 
                 default:

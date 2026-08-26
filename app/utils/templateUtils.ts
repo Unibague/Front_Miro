@@ -411,7 +411,8 @@ export const populateWorksheetWithMergedRows = (
       const { col } = positions[colIdx];
       const cell = worksheet.getCell(dataRow, col);
       copyCellPresentation(cell, templateRow.getCell(col));
-      cell.value = toExcelCellValue(findRowValueByFieldName(row, field.name));
+      const rawValue = findRowValueByFieldName(row, field.name);
+      cell.value = toExcelCellValue(formatTemplateDateValue(rawValue, field.name) ?? rawValue);
     });
     extraColumns.forEach((key, extraIdx) => {
       const col = maxCol + 1 + extraIdx;

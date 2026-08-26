@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent, ReactNode } from "react";
 import { useRouter, useParams } from "next/navigation";
 import {
   Container,
@@ -17,10 +17,35 @@ import {
   ScrollArea,
   Stack,
   Tooltip,
-  Text
+  Text,
+  ActionIcon
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
-import { IconPlus, IconTrash, IconSettings, IconBulb } from "@tabler/icons-react";
+import {
+  IconBulb,
+  IconGripVertical,
+  IconPlus,
+  IconSettings,
+  IconTrash,
+} from "@tabler/icons-react";
+import {
+  closestCenter,
+  DndContext,
+  DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import styles from "./AdminValidationUpdatePage.module.css";
@@ -32,7 +57,108 @@ interface Column {
   is_validator: boolean;
   type: string;
   values: (string | number)[];
+  uiId: string;
 }
+
+let uiIdSequence = 0;
+const createUiId = (prefix: "column" | "row") => `${prefix}-${Date.now()}-${uiIdSequence++}`;
+
+interface SortableColumnProps {
+  id: string;
+  className?: string;
+  children: ReactNode;
+}
+
+const SortableColumn = ({ id, className, children }: SortableColumnProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  return (
+    <Box
+      ref={setNodeRef}
+      mb="md"
+      m={5}
+      className={className}
+      style={{
+        minWidth: 200,
+        maxWidth: 250,
+        position: "relative",
+        zIndex: isDragging ? 2 : undefined,
+        opacity: isDragging ? 0.75 : 1,
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    >
+      <Center pt="xs">
+        <Tooltip label="Arrastrar columna" withArrow>
+          <ActionIcon
+            type="button"
+            variant="subtle"
+            color="gray"
+            size="lg"
+            aria-label="Arrastrar columna"
+            style={{ cursor: isDragging ? "grabbing" : "grab", touchAction: "none" }}
+            {...attributes}
+            {...listeners}
+          >
+            <IconGripVertical size={22} />
+          </ActionIcon>
+        </Tooltip>
+      </Center>
+      {children}
+    </Box>
+  );
+};
+
+interface SortableRowActionsProps {
+  id: string;
+  rowIndex: number;
+  onRemove: () => void;
+}
+
+const SortableRowActions = ({ id, rowIndex, onRemove }: SortableRowActionsProps) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  return (
+    <Center
+      ref={setNodeRef}
+      mb={20}
+      style={{
+        zIndex: isDragging ? 3 : undefined,
+        opacity: isDragging ? 0.75 : 1,
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    >
+      <Group gap="xs" wrap="nowrap">
+        <Tooltip label="Arrastrar fila" withArrow>
+          <ActionIcon
+            type="button"
+            variant="outline"
+            size="lg"
+            aria-label={`Arrastrar fila ${rowIndex + 1}`}
+            style={{ cursor: isDragging ? "grabbing" : "grab", touchAction: "none" }}
+            {...attributes}
+            {...listeners}
+          >
+            <IconGripVertical size={20} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Eliminar fila" withArrow>
+          <ActionIcon
+            type="button"
+            color="red"
+            variant="outline"
+            size="lg"
+            aria-label={`Eliminar fila ${rowIndex + 1}`}
+            onClick={onRemove}
+          >
+            <IconTrash size={20} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
+    </Center>
+  );
+};
 
 const AdminValidationUpdatePage = () => {
   const router = useRouter();
@@ -43,6 +169,7 @@ const AdminValidationUpdatePage = () => {
 
   const [name, setName] = useState<string>("");
   const [columns, setColumns] = useState<Column[]>([]);
+  const [rowIds, setRowIds] = useState<string[]>([]);
   const [newValues, setNewValues] = useState<(string | number)[]>([]);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [currentColumnIndex, setCurrentColumnIndex] = useState<number | null>(null);
@@ -50,6 +177,10 @@ const AdminValidationUpdatePage = () => {
   const [tooltipContent, setTooltipContent] = useState<string>("");
   const [isFormValid, setIsFormValid] = useState<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     const fetchValidation = async () => {
@@ -60,7 +191,15 @@ const AdminValidationUpdatePage = () => {
         });
         const { validator } = response.data;
         setName(validator.name);
-        setColumns(validator.columns);
+        const loadedColumns: Column[] = validator.columns.map((column: Omit<Column, "uiId">) => ({
+          ...column,
+          uiId: createUiId("column"),
+        }));
+        setColumns(loadedColumns);
+        setRowIds(Array.from(
+          { length: loadedColumns[0]?.values.length ?? 0 },
+          () => createUiId("row")
+        ));
         setNewValues(validator.columns.map(() => ""));
         setShowTooltip(validator.columns.length > 4);
       } catch (error) {
@@ -75,15 +214,16 @@ const AdminValidationUpdatePage = () => {
   }, [columns]);
 
   const handleAddColumn = () => {
-    const newColumns = [...columns, { name: "", is_validator: false, type: "", values: [] }];
+    const rowCount = columns[0]?.values.length ?? rowIds.length;
+    const newColumns = [...columns, {
+      name: "",
+      is_validator: false,
+      type: "",
+      values: Array(rowCount).fill(""),
+      uiId: createUiId("column"),
+    }];
     setColumns(newColumns);
     setNewValues([...newValues, ""]);
-
-    newColumns.forEach(column => {
-      while (column.values.length < newColumns[0].values.length) {
-        column.values.push("");
-      }
-    });
 
     setShowTooltip(newColumns.length > 4);
   };
@@ -96,6 +236,16 @@ const AdminValidationUpdatePage = () => {
     newValuesArray.splice(index, 1);
     setNewValues(newValuesArray);
     setShowTooltip(newColumns.length > 4);
+  };
+
+  const handleColumnDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const oldIndex = columns.findIndex(column => column.uiId === active.id);
+    const newIndex = columns.findIndex(column => column.uiId === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    setColumns(arrayMove(columns, oldIndex, newIndex));
+    setNewValues(arrayMove(newValues, oldIndex, newIndex));
   };
 
   const handleChangeColumn = (index: number, field: string, value: string | boolean) => {
@@ -131,6 +281,7 @@ const AdminValidationUpdatePage = () => {
       values: [...column.values, ""],
     }));
     setColumns(newColumns);
+    setRowIds([...rowIds, createUiId("row")]);
     setNewValues(Array(newColumns.length).fill(""));
   };
 
@@ -140,6 +291,20 @@ const AdminValidationUpdatePage = () => {
       values: column.values.filter((_, i) => i !== valIndex),
     }));
     setColumns(newColumns);
+    setRowIds(rowIds.filter((_, index) => index !== valIndex));
+  };
+
+  const handleRowDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const oldIndex = rowIds.indexOf(String(active.id));
+    const newIndex = rowIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    setRowIds(arrayMove(rowIds, oldIndex, newIndex));
+    setColumns(columns.map(column => ({
+      ...column,
+      values: arrayMove(column.values, oldIndex, newIndex),
+    })));
   };
 
   const handleOpenModal = (index: number) => {
@@ -164,7 +329,7 @@ const AdminValidationUpdatePage = () => {
     }
 
     // Convert values to their respective types before saving
-    const columnsToSave = columns.map(column => ({
+    const columnsToSave = columns.map(({ uiId: _uiId, ...column }) => ({
       ...column,
       values: column.values.map(value => column.type === 'Número' ? Number(value) : String(value))
     }));
@@ -278,10 +443,14 @@ const AdminValidationUpdatePage = () => {
             Para el nombre de las columnas no uses &quot;-&quot;, en su lugar usa &quot;_&quot;
           </Text>
           <Center mb="md" mt="md">
-            <Button onClick={handleAddColumn} leftSection={<IconPlus size={20} />}>
+            <Button type="button" onClick={handleAddColumn} leftSection={<IconPlus size={20} />}>
               Agregar Columna
             </Button>
           </Center>
+          <Text c="dimmed" size="sm" ta="center" mb="sm">
+            Arrastra las columnas desde el control superior y las filas desde el control
+            lateral. Los valores de cada fila se desplazan siempre juntos.
+          </Text>
           <Tooltip
             label="Desplázate horizontalmente para ver todas las columnas"
             position="bottom"
@@ -293,63 +462,98 @@ const AdminValidationUpdatePage = () => {
               style={{ maxWidth: '100%', overflowX: 'auto' }}
               viewportRef={scrollAreaRef}
             >
-              <Group wrap="nowrap" align="start">
-                {columns.map((column, colIndex) => (
-                  <Box
-                    mb="md"
-                    m={5}
-                    key={colIndex}
-                    className={column.is_validator ? styles.validatorColumn : ""}
-                    style={{ minWidth: 200, maxWidth: 250 }}
-                  >
-                    <Stack p="xs" gap="xs">
-                      <TextInput
-                        placeholder="Nombre de la columna"
-                        value={column.name}
-                        onChange={(event) => handleChangeColumn(colIndex, 'name', event.currentTarget.value)}
-                        required
-                      />
-                      <Center>
-                        <Group>
-                          <Button variant="outline" onClick={() => handleOpenModal(colIndex)}>
-                            <IconSettings size={20} />
-                          </Button>
-                          <Button color="red" variant="outline" onClick={() => handleRemoveColumn(colIndex)}>
-                            <IconTrash size={20} />
-                          </Button>
-                        </Group>
-                      </Center>
-                      {column.values.map((value, valIndex) => (
-                        <Group grow key={valIndex} mb="xs">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleColumnDragEnd}
+              >
+                <SortableContext
+                  items={columns.map(column => column.uiId)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  <Group wrap="nowrap" align="start">
+                    {columns.map((column, colIndex) => (
+                      <SortableColumn
+                        id={column.uiId}
+                        key={column.uiId}
+                        className={column.is_validator ? styles.validatorColumn : ""}
+                      >
+                        <Stack p="xs" gap="xs">
                           <TextInput
-                            value={String(value)}
-                            placeholder="Ingresa un valor"
-                            onChange={(event) => {
-                              const newColumns = columns.slice();
-                              const newValue = column.type === 'Número' ? Number(event.currentTarget.value) : event.currentTarget.value;
-                              newColumns[colIndex].values[valIndex] = newValue;
-                              setColumns(newColumns);
-                            }}
+                            placeholder="Nombre de la columna"
+                            value={column.name}
+                            onChange={(event) => handleChangeColumn(colIndex, 'name', event.currentTarget.value)}
+                            required
                           />
-                        </Group>
-                      ))}
-                    </Stack>
-                  </Box>
-                ))}
-                <Box mt={107} style={{ minWidth: 50, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  {columns.length > 0 && columns[0].values.map((_, valIndex) => (
-                    <Center mb={20} key={valIndex}>
-                      <Button color="red" variant="outline" onClick={() => handleRemoveValue(valIndex)}>
-                        <IconTrash size={20} />
-                      </Button>
-                    </Center>
-                  ))}
-                </Box>
-              </Group>
+                          <Center>
+                            <Group gap="xs" wrap="nowrap">
+                              <Tooltip label="Configurar columna" withArrow>
+                                <ActionIcon
+                                  type="button"
+                                  variant="outline"
+                                  size="lg"
+                                  aria-label={`Configurar columna ${column.name || colIndex + 1}`}
+                                  onClick={() => handleOpenModal(colIndex)}
+                                >
+                                  <IconSettings size={20} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Eliminar columna" withArrow>
+                                <ActionIcon
+                                  type="button"
+                                  color="red"
+                                  variant="outline"
+                                  size="lg"
+                                  aria-label={`Eliminar columna ${column.name || colIndex + 1}`}
+                                  onClick={() => handleRemoveColumn(colIndex)}
+                                >
+                                  <IconTrash size={20} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Group>
+                          </Center>
+                          {column.values.map((value, valIndex) => (
+                            <Group grow key={rowIds[valIndex] ?? valIndex} mb="xs">
+                              <TextInput
+                                value={String(value)}
+                                placeholder="Ingresa un valor"
+                                onChange={(event) => {
+                                  const newColumns = columns.slice();
+                                  const newValue = column.type === 'Número' ? Number(event.currentTarget.value) : event.currentTarget.value;
+                                  newColumns[colIndex].values[valIndex] = newValue;
+                                  setColumns(newColumns);
+                                }}
+                              />
+                            </Group>
+                          ))}
+                        </Stack>
+                      </SortableColumn>
+                    ))}
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleRowDragEnd}
+                    >
+                      <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                        <Box mt={151} style={{ minWidth: 90, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          {rowIds.map((rowId, valIndex) => (
+                            <SortableRowActions
+                              id={rowId}
+                              key={rowId}
+                              rowIndex={valIndex}
+                              onRemove={() => handleRemoveValue(valIndex)}
+                            />
+                          ))}
+                        </Box>
+                      </SortableContext>
+                    </DndContext>
+                  </Group>
+                </SortableContext>
+              </DndContext>
             </ScrollArea>
           </Tooltip>
           <Center mt={45}>
-            <Button onClick={handleAddValue} leftSection={<IconPlus size={20} />}>
+            <Button type="button" onClick={handleAddValue} leftSection={<IconPlus size={20} />}>
               Agregar Fila
             </Button>
           </Center>

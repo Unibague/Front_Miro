@@ -700,6 +700,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           />
         );
       case "Fecha":
+      case "Fecha Inicial / Fecha Final":
         let dateValue = null;
         if (row[field.name]) {
           const tempDate = new Date(row[field.name]);
