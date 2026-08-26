@@ -16,9 +16,7 @@ import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 
-// Llaves de permiso que viven dentro de cada modulo grande del dashboard.
-// Se usan para decidir si la tarjeta de ENTRADA a ese modulo debe verse:
-// basta con tener acceso a cualquiera de sus vistas hijas, no a una llave fija.
+
 const GESTION_REPORTES_KEYS = [
   "adminTemplates", "publishedTemplates", "publishedTemplatesResponsable", "producerTemplates",
   "adminReports", "publishedReports", "producerReportsConfig", "producerReportsManagement", "producerReportsManagementResponsable",
