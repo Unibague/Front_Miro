@@ -50,6 +50,7 @@ const ROLE_KEY_VARIANTS: Record<string, Partial<Record<string, string>>> = {
   templatesWithFilters:      { Productor: "templatesWithFiltersProductor" },
   producerReportsManagement: { Responsable: "producerReportsManagementResponsable" },
   snies:                     { Productor: "sniesProductor" },
+  cna:                       { Productor: "cnaProductor" },
   pdi:                       { Responsable: "pdiResponsable" },
   pdiMine:                   { Responsable: "pdiMineResponsable" },
   pdiDashboard:              { Responsable: "pdiDashboardResponsable" },

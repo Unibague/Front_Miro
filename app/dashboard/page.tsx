@@ -24,7 +24,7 @@ const GESTION_REPORTES_KEYS = [
   "templatesLogs", "reminders", "audit", "templatesManagement", "dependenciesHierarchy",
   "traceability", "traceabilityProductor", "validationsView",
   "historicoDocentes", "historicoDocentesResponsable", "historicoDocentesProductor",
-  "snies", "sniesProductor", "cna",
+  "snies", "sniesProductor", "cna", "cnaProductor",
 ];
 const PDI_KEYS = [
   "pdi", "pdiResponsable", "pdiMineResponsable",
@@ -60,6 +60,8 @@ const DashboardPage = () => {
   // Un Productor solo debe ver el módulo SNIES si su dependencia es la
   // "productora encargada" del envío final en al menos una plantilla SNIES.
   const [tieneSniesEncargado, setTieneSniesEncargado] = useState<boolean>(false);
+  // Mismo criterio que SNIES, pero para el módulo CNA.
+  const [tieneCnaEncargado, setTieneCnaEncargado] = useState<boolean>(false);
   const [nextReportDeadline, setNextReportDeadline] = useState<string | null>(null);
   const [nextTemplateDeadline, setNextTemplateDeadline] = useState<string | null>(null);
   const [nextEncargadoDeadline, setNextEncargadoDeadline] = useState<string | null>(null);
@@ -322,6 +324,26 @@ const DashboardPage = () => {
     })
       .then((res) => setTieneSniesEncargado((res.data?.total ?? 0) > 0))
       .catch(() => setTieneSniesEncargado(false));
+  }, [session, status, userRole]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || userRole !== "Productor" || !session?.user?.email) {
+      setTieneCnaEncargado(false);
+      return;
+    }
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/published`, {
+      params: {
+        email: session.user.email,
+        page: 1,
+        limit: 1,
+        summary: true,
+        filterByUserScope: "true",
+        userRole: "Productor",
+        cnaResponsableOnly: "true",
+      },
+    })
+      .then((res) => setTieneCnaEncargado((res.data?.total ?? 0) > 0))
+      .catch(() => setTieneCnaEncargado(false));
   }, [session, status, userRole]);
 
   useEffect(() => {
@@ -1454,7 +1476,7 @@ const DashboardPage = () => {
                       </Grid.Col>
                   )}
 
-                  {canSee("cna", ["Administrador"]) && (
+                  {(canSee("cna", ["Administrador"]) || (canSee("cnaProductor", ["Productor"]) && tieneCnaEncargado)) && (
                       <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                         <Card
                           radius="xl"

@@ -121,6 +121,7 @@ const UpdateTemplatePage = () => {
   const [qrAuthorizedProducers, setQrAuthorizedProducers] = useState<string[]>([]);
   const [notifyProducers, setNotifyProducers] = useState(false);
   const [isSnies, setIsSnies] = useState(false);
+  const [isCna, setIsCna] = useState(false);
   const [skipCommentValidation, setSkipCommentValidation] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
@@ -390,6 +391,7 @@ const UpdateTemplatePage = () => {
             setSkipCommentValidation(response.data.skip_comment_validation ?? false);
             const categoryName: string = response.data.category?.name ?? "";
             setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
+            setIsCna((response.data.is_cna ?? false) || categoryName.toUpperCase().includes("CNA"));
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -824,6 +826,7 @@ const UpdateTemplatePage = () => {
       allows_qr: allowsQr,
       notify_producers: notifyProducers,
       is_snies: isSnies,
+      is_cna: isCna,
       skip_comment_validation: skipCommentValidation,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
@@ -1315,13 +1318,22 @@ router.back();
         <ActionIcon variant="subtle" color="blue" size="lg" onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}>
           <IconArrowLeft size={20} />
         </ActionIcon>
-        <Switch
-          label="SNIES"
-          checked={isSnies}
-          onChange={(e) => { setIsSnies(e.currentTarget.checked); setHasChanges(true); }}
-          color="blue"
-          size="md"
-        />
+        <Group gap="lg">
+          <Switch
+            label="SNIES"
+            checked={isSnies}
+            onChange={(e) => { setIsSnies(e.currentTarget.checked); setHasChanges(true); }}
+            color="blue"
+            size="md"
+          />
+          <Switch
+            label="CNA"
+            checked={isCna}
+            onChange={(e) => { setIsCna(e.currentTarget.checked); setHasChanges(true); }}
+            color="orange"
+            size="md"
+          />
+        </Group>
       </Group>
       <TextInput
         label="Nombre"
@@ -1357,6 +1369,10 @@ router.back();
             (dim) => v.includes(dim._id) && dim.name.toUpperCase().includes("SNIES")
           );
           if (sniesSelected) setIsSnies(true);
+          const cnaSelected = dimensions.some(
+            (dim) => v.includes(dim._id) && dim.name.toUpperCase().includes("CNA")
+          );
+          if (cnaSelected) setIsCna(true);
         }}
         value={selectedDimensions}
         searchable
