@@ -10,7 +10,7 @@ import { showNotification } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
-import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconCancel, IconCirclePlus, IconDeviceFloppy, IconGripVertical, IconArrowLeft, IconPlus, IconTrash, IconPencil } from "@tabler/icons-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { logTemplateChange, logFieldChange, logProducerChange, logDimensionChange, compareTemplateChanges } from "@/app/utils/auditUtils";
 import ExcelJS from "exceljs";
@@ -133,6 +133,9 @@ const UpdateTemplatePage = () => {
   const [newSheetName, setNewSheetName] = useState("");
   const [showDeleteSheetModal, setShowDeleteSheetModal] = useState(false);
   const [sheetToDelete, setSheetToDelete] = useState<string | null>(null);
+  const [showRenameSheetModal, setShowRenameSheetModal] = useState(false);
+  const [sheetToRename, setSheetToRename] = useState<string | null>(null);
+  const [renameSheetValue, setRenameSheetValue] = useState("");
   const router = useRouter();
   const params = useParams();
   const id = paramId(params);
@@ -637,6 +640,53 @@ const UpdateTemplatePage = () => {
   // subido: es decir, si fue creada dentro del editor (en esta sesión o en
   // una anterior ya guardada), y no si vino incluida en el archivo cargado.
   const isDeletableSheet = (sheetName: string) => !originalSheetNames.has(sheetName);
+
+  const openRenameSheet = (sheetName: string) => {
+    setSheetToRename(sheetName);
+    setRenameSheetValue(sheetName);
+    setShowRenameSheetModal(true);
+  };
+
+  const handleRenameSheet = () => {
+    if (!sheetToRename) return;
+
+    const nextName = sanitizeSheetName(renameSheetValue.trim());
+    if (!nextName) {
+      showNotification({
+        title: "Error",
+        message: "El nombre de la hoja es requerido",
+        color: "red",
+      });
+      return;
+    }
+
+    if (
+      nextName.toLowerCase() !== sheetToRename.toLowerCase()
+      && workbookSheets.some((sheet) => sheet.name.toLowerCase() === nextName.toLowerCase())
+    ) {
+      showNotification({
+        title: "Error",
+        message: "Ya existe una hoja con ese nombre",
+        color: "red",
+      });
+      return;
+    }
+
+    setWorkbookSheets((currentSheets) =>
+      currentSheets.map((sheet) => (sheet.name === sheetToRename ? { ...sheet, name: nextName } : sheet))
+    );
+    if (activeSheet === sheetToRename) setActiveSheet(nextName);
+    setHasChanges(true);
+    setShowRenameSheetModal(false);
+    setSheetToRename(null);
+    setRenameSheetValue("");
+
+    showNotification({
+      title: "Éxito",
+      message: `Hoja renombrada a "${nextName}"`,
+      color: "teal",
+    });
+  };
 
   const handleDeleteSheet = (sheetName: string) => {
     // Validación 1: Solo se pueden eliminar hojas creadas por el usuario, no las originales del Excel
@@ -1541,15 +1591,25 @@ router.back();
                               {sheet.name}
                             </Tabs.Tab>
                             {isDeletableSheet(sheet.name) && (
-                              <ActionIcon
-                                size="xs"
-                                variant="subtle"
-                                color="red"
-                                onClick={() => handleDeleteSheet(sheet.name)}
-                                style={{ marginRight: 4 }}
-                              >
-                                <IconTrash size={14} />
-                              </ActionIcon>
+                              <>
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="blue"
+                                  onClick={() => openRenameSheet(sheet.name)}
+                                >
+                                  <IconPencil size={14} />
+                                </ActionIcon>
+                                <ActionIcon
+                                  size="xs"
+                                  variant="subtle"
+                                  color="red"
+                                  onClick={() => handleDeleteSheet(sheet.name)}
+                                  style={{ marginRight: 4 }}
+                                >
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </>
                             )}
                           </Group>
                         )}
@@ -2017,6 +2077,47 @@ router.back();
             </Button>
             <Button onClick={handleCreateNewSheet} color="blue">
               Crear Hoja
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={showRenameSheetModal}
+        onClose={() => {
+          setShowRenameSheetModal(false);
+          setSheetToRename(null);
+          setRenameSheetValue("");
+        }}
+        title="Renombrar Hoja"
+        centered
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Nombre de la hoja"
+            placeholder="Ej: Datos Docentes, Información Adicional"
+            value={renameSheetValue}
+            onChange={(e) => setRenameSheetValue(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                handleRenameSheet();
+              }
+            }}
+            autoFocus
+          />
+          <Group justify="flex-end" gap="sm">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRenameSheetModal(false);
+                setSheetToRename(null);
+                setRenameSheetValue("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleRenameSheet} color="blue">
+              Guardar Nombre
             </Button>
           </Group>
         </Stack>
