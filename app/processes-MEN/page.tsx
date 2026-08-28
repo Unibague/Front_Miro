@@ -5,13 +5,14 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Flex,
   Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea, Collapse,
-  ActionIcon, Tooltip, Table,
+  ActionIcon, Tooltip, Table, ThemeIcon, NavLink,
 } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import axios from "axios";
 import {
   IconChartBar,
+  IconArrowLeft,
   IconBellRinging,
   IconHistory,
   IconChevronLeft,
@@ -349,7 +350,7 @@ const ProcessesMenPage = () => {
   };
 
   /* ── Vista administrador: estadísticas / alertas / historial ── */
-  type AdminSection = "main" | "alertas" | "historial";
+  type AdminSection = "main" | "alertas" | "historial" | "informacion";
   const [activeSection, setActiveSection] = useState<AdminSection>("main");
 
   const [remFacultad, setRemFacultad]             = useState<string>("Todos");
@@ -597,18 +598,9 @@ const ProcessesMenPage = () => {
     setPrograma("Todos");
   };
 
-  /** Desde filtros del tablero: ir a la ficha del programa (no a la vista de procesos en esta página). */
-  const navegarAFichaProgramaDesdeFiltro = (programaFiltro: string | null) => {
-    const id = programaFiltro ?? "Todos";
-    if (id === "Todos") {
-      setPrograma("Todos");
-      return;
-    }
-    const p = programaDesdeFiltroId(programas, id);
-    if (!p) return;
-    const fac = facultades.find((f) => f.dep_code === p.dep_code_facultad);
-    if (fac) setFacultad(fac.name);
-    router.push(processesMenRoutes.program(p._id));
+  /** La ficha es una sección explícita del sidebar; el selector solo filtra estadísticas. */
+  const irAInformacionPrograma = () => {
+    setActiveSection("informacion");
   };
 
   const handleRemFacultadChange = (val: string | null) => {
@@ -1227,7 +1219,7 @@ const ProcessesMenPage = () => {
   const sidebarTopPx = 56;
 
   return (
-    <div style={{ display: "flex", marginTop: "-50px" }}>
+    <div style={{ display: "flex", minHeight: "100vh", marginTop: "-50px", background: "var(--mantine-color-body)" }}>
 
       {/* ── SIDEBAR ── */}
       <Box style={{
@@ -1236,19 +1228,21 @@ const ProcessesMenPage = () => {
         bottom: 0,
         left: 0,
         width: `${sidebarW}px`,
-        borderRight: "1px solid #dee2e6",
+        borderRight: "1px solid var(--mantine-color-default-border)",
         boxSizing: "border-box",
-        padding: sidebarCollapsed ? "10px 6px 16px" : "12px 10px 20px",
+        padding: sidebarCollapsed ? "10px 6px 16px" : "16px 10px 20px",
         display: "flex",
         flexDirection: "column",
         backgroundColor: "var(--mantine-color-body)",
         zIndex: 50,
       }}>
         <Group justify="flex-end" mb={6} wrap="nowrap" gap={4} style={{ flexShrink: 0 }}>
-          <Tooltip label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"} withArrow>
+          <Tooltip label={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"} withArrow>
             <ActionIcon
-              variant="default"
-              size="sm"
+              variant="light"
+              color="green"
+              radius="xl"
+              size="lg"
               onClick={() => setSidebarCollapsed((c) => !c)}
               aria-label={sidebarCollapsed ? "Expandir menú lateral" : "Contraer menú lateral"}
             >
@@ -1261,110 +1255,66 @@ const ProcessesMenPage = () => {
             {!sidebarCollapsed ? (
               <>
                 {processesMenModulo === "procesos" && (
-                  <Stack gap={12} pt={8} mt={2}>
-                    <Text size="xs" fw={700} c="blue" tt="uppercase" ta="center" style={{ letterSpacing: 0.4 }}>
-                      Procesos de calidad MEN
-                    </Text>
-                    <Stack gap={12}>
-                      <Button
-                        variant="default"
-                        size="md"
-                        fullWidth
-                        onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
-                        styles={navBtnStyles(activeSection === "main")}
-                      >
-                        Estadisticas<br />generales
-                      </Button>
-                      <Button
-                        variant="default"
-                        size="md"
-                        fullWidth
-                        onClick={() => setActiveSection("alertas")}
-                        styles={navBtnStyles(activeSection === "alertas")}
-                      >
-                        Alerta<br />procesos
-                      </Button>
-                      <Button
-                        variant="default"
-                        size="md"
-                        fullWidth
-                        onClick={() => setActiveSection("historial")}
-                        styles={navBtnStyles(activeSection === "historial")}
-                      >
-                        Historial<br />procesos
-                      </Button>
-                    </Stack>
-                    <Button
-                      variant="subtle"
-                      color="teal"
-                      size="xs"
-                      fullWidth
-                      mt={4}
+                  <Stack gap={0} pt={8} mt={2}>
+                    <Group gap={8} px={8} pb={8}>
+                      <ThemeIcon size={32} radius="xl" color="green" variant="light">
+                        <IconChartBar size={18} />
+                      </ThemeIcon>
+                      <Text size="xs" fw={700} c="green" tt="uppercase">Panel MEN</Text>
+                    </Group>
+                    <Divider />
+                    <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>PROCESOS</Text>
+                    <NavLink label="Estadísticas generales" leftSection={<IconChartBar size={16} />} color="green"
+                      active={activeSection === "main"}
+                      onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                      style={{ borderRadius: 8 }} />
+                    <NavLink label="Alertas de procesos" leftSection={<IconBellRinging size={16} />} color="blue"
+                      active={activeSection === "alertas"} onClick={() => setActiveSection("alertas")}
+                      style={{ borderRadius: 8 }} />
+                    <NavLink label="Historial de procesos" leftSection={<IconHistory size={16} />} color="blue"
+                      active={activeSection === "historial"} onClick={() => setActiveSection("historial")}
+                      style={{ borderRadius: 8 }} />
+                    <Divider mt={8} />
+                    <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>MÓDULOS</Text>
+                    <NavLink label="Comunicaciones MEN" leftSection={<IconMessageCircle size={16} />} color="teal"
                       onClick={() => { irAModuloMen("comunicaciones"); setPqrSeccion("activos"); }}
-                    >
-                      Comunicaciones MEN
-                    </Button>
-                    <Button
-                      variant="subtle"
-                      color="violet"
-                      size="xs"
-                      fullWidth
-                      mt={2}
-                      onClick={() => router.push("/processes-MEN/tasks")}
-                    >
-                      Tareas asignadas
-                    </Button>
+                      style={{ borderRadius: 8 }} />
+                    <NavLink label="Tareas asignadas" leftSection={<IconList size={16} />} color="violet"
+                      onClick={() => router.push("/processes-MEN/tasks")} style={{ borderRadius: 8 }} />
+                    <NavLink label="Información" leftSection={<IconArchive size={16} />} color="blue"
+                      active={activeSection === "informacion"}
+                      onClick={irAInformacionPrograma} style={{ borderRadius: 8 }} />
                   </Stack>
                 )}
 
                 {processesMenModulo === "comunicaciones" && (
-                  <Stack gap={10} pt={8} mt={2} pb={8}>
-                    <Text size="xs" fw={700} c="teal" tt="uppercase" ta="center" style={{ letterSpacing: 0.6 }}>
-                      Comunicaciones MEN
-                    </Text>
-                    <Button
-                      variant="default"
-                      color="teal"
-                      fullWidth
-                      onClick={() => setPqrSeccion("agregar")}
-                      styles={pqrNavBtnStyles(pqrSeccion === "agregar")}
-                    >
-                      + Agregar PQR
-                    </Button>
-                    <Button
-                      variant="default"
-                      color="teal"
-                      fullWidth
-                      onClick={() => setPqrSeccion("activos")}
-                      styles={pqrNavBtnStyles(pqrSeccion === "activos")}
-                    >
-                      PQRs activos
+                  <Stack gap={0} pt={8} mt={2} pb={8}>
+                    <Group gap={8} px={8} pb={8}>
+                      <ThemeIcon size={32} radius="xl" color="teal" variant="light">
+                        <IconMessageCircle size={18} />
+                      </ThemeIcon>
+                      <Text size="xs" fw={700} c="teal" tt="uppercase">Comunicaciones MEN</Text>
+                    </Group>
+                    <Divider />
+                    <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>PQR</Text>
+                    <NavLink label="Agregar PQR" leftSection={<IconPlus size={16} />} color="teal"
+                      active={pqrSeccion === "agregar"} onClick={() => setPqrSeccion("agregar")}
+                      style={{ borderRadius: 8 }} />
+                    <NavLink label="PQRs activos" leftSection={<IconList size={16} />} color="teal"
+                      active={pqrSeccion === "activos"} onClick={() => setPqrSeccion("activos")}
+                      style={{ borderRadius: 8 }}>
                       {pqrs.filter((p) => !p.cerrado).length > 0 && (
                         <Badge size="xs" color="teal" variant="filled" ml={6}>
                           {pqrs.filter((p) => !p.cerrado).length}
                         </Badge>
                       )}
-                    </Button>
-                    <Button
-                      variant="default"
-                      color="teal"
-                      fullWidth
-                      onClick={() => setPqrSeccion("historial")}
-                      styles={pqrNavBtnStyles(pqrSeccion === "historial")}
-                    >
-                      Historial PQR
-                    </Button>
-                    <Button
-                      variant="subtle"
-                      color="blue"
-                      size="xs"
-                      fullWidth
-                      mt={6}
-                      onClick={() => irAModuloMen("procesos")}
-                      styles={{ label: { whiteSpace: "normal", lineHeight: 1.3, textAlign: "center" } }}
-                    >
-                      Gestión de procesos MEN
-                    </Button>
+                    </NavLink>
+                    <NavLink label="Historial PQR" leftSection={<IconArchive size={16} />} color="teal"
+                      active={pqrSeccion === "historial"} onClick={() => setPqrSeccion("historial")}
+                      style={{ borderRadius: 8 }} />
+                    <Divider mt={8} />
+                    <NavLink label="Gestión de procesos MEN" leftSection={<IconChartBar size={16} />} color="blue"
+                      onClick={() => irAModuloMen("procesos")} style={{ borderRadius: 8 }} />
                   </Stack>
                 )}
               </>
@@ -1411,6 +1361,16 @@ const ProcessesMenPage = () => {
                         onClick={() => setActiveSection("historial")}
                       >
                         <IconHistory size={20} stroke={1.5} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Información del programa" position="right" withArrow>
+                      <ActionIcon
+                        size="xl"
+                        variant={activeSection === "informacion" ? "filled" : "default"}
+                        color="blue"
+                        onClick={irAInformacionPrograma}
+                      >
+                        <IconArchive size={20} stroke={1.5} />
                       </ActionIcon>
                     </Tooltip>
                     <Tooltip label="Comunicaciones MEN (PQR)" position="right" withArrow>
@@ -1482,17 +1442,17 @@ const ProcessesMenPage = () => {
                         <Select label="Programa" data={opcionesPrograma} value={programa}
                           onChange={(v) => {
                             const n = v ?? "Todos";
-                            if (n === "Todos") setPrograma("Todos");
-                            else {
-                              setNivelAcademico("Todos");
-                              navegarAFichaProgramaDesdeFiltro(n);
-                            }
+                            setPrograma(n);
+                            if (n !== "Todos") setNivelAcademico("Todos");
                           }}
                           searchable={false} styles={selectorStyle} />
                         {programa === "Todos" && (
                           <Select label="Nivel académico" data={opcionesNivelAcademico} value={nivelAcademico}
                             onChange={(v) => setNivelAcademico(v ?? "Todos")} searchable={false} styles={selectorStyle} />
                         )}
+                        <NavLink label="Información" leftSection={<IconArchive size={16} />} color="blue"
+                          active={activeSection === "informacion"}
+                          onClick={irAInformacionPrograma} style={{ borderRadius: 8, marginTop: 8 }} />
                       </>
                     )}
                   </>
@@ -1586,7 +1546,27 @@ const ProcessesMenPage = () => {
       </Modal>
 
       {/* ── CONTENIDO PRINCIPAL ── */}
-      <div style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, padding: "20px", paddingTop: "28px", minHeight: "calc(100vh - 194px)" }}>
+      <div style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0, overflow: "auto", padding: "24px", paddingTop: "30px", minHeight: "calc(100vh - 56px)" }}>
+        <Group justify="space-between" align="center" mb="xl" wrap="wrap" gap="md">
+          <Group gap={10}>
+            <Tooltip label="Volver al panel de gestión de procesos" withArrow>
+              <ActionIcon
+                variant="subtle"
+                onClick={() => router.push("/dashboard?gestionProcesos=1")}
+                aria-label="Volver al panel de gestión de procesos"
+              >
+                <IconArrowLeft size={18} />
+              </ActionIcon>
+            </Tooltip>
+            <ThemeIcon size={42} radius="xl" color={processesMenModulo === "comunicaciones" ? "teal" : "green"} variant="light">
+              {processesMenModulo === "comunicaciones" ? <IconMessageCircle size={22} /> : <IconChartBar size={22} />}
+            </ThemeIcon>
+            <Box>
+              <Title order={3}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
+              <Text size="sm" c="dimmed">Gestión y seguimiento de procesos institucionales</Text>
+            </Box>
+          </Group>
+        </Group>
         {userRole === "Administrador" && (
           <>
             {processesMenModulo === "comunicaciones" && (
@@ -1616,14 +1596,19 @@ const ProcessesMenPage = () => {
 
             {processesMenModulo === "procesos" && (
             <>
-            {activeSection === "main" && !loadingFilters && programa === "Todos" && (
+            {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
               <Paper withBorder radius="md" p="sm" mb="md">
                 <Flex
                   gap={8}
                   align="flex-end"
                   wrap="nowrap"
                   w="100%"
-                  style={{ minWidth: 0, overflowX: "auto", paddingBottom: 2 }}
+                  style={{
+                    minWidth: 0,
+                    overflowX: "auto",
+                    paddingBottom: 2,
+                    justifyContent: activeSection === "informacion" ? "center" : undefined,
+                  }}
                 >
                   <Select
                     label="Facultad"
@@ -1642,44 +1627,45 @@ const ProcessesMenPage = () => {
                     searchable
                     onChange={(v) => {
                       const n = v ?? "Todos";
-                      if (n === "Todos") setPrograma("Todos");
-                      else {
-                        setNivelAcademico("Todos");
-                        navegarAFichaProgramaDesdeFiltro(n);
-                      }
+                      setPrograma(n);
+                      if (n !== "Todos") setNivelAcademico("Todos");
                     }}
                     styles={selectorStyleFilters}
                   />
-                  <Select
-                    label="Nivel académico"
-                    data={opcionesNivelAcademico}
-                    value={nivelAcademico}
-                    style={{ flex: "0.9 1 108px", minWidth: 0, maxWidth: 185 }}
-                    onChange={(v) => setNivelAcademico(v ?? "Todos")}
-                    searchable={false}
-                    styles={selectorStyleFilters}
-                  />
-                  <Select
-                    label="Tipo de proceso"
-                    data={opcionesTipoProceso}
-                    value={tipoProceso}
-                    style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 235 }}
-                    onChange={(v) => {
-                      setTipoProceso(v ?? "Todos");
-                      setSubtipoFiltro("Todos");
-                    }}
-                    searchable={false}
-                    styles={selectorStyleFilters}
-                  />
-                  <Select
-                    label="Subtipo"
-                    data={opcionesSubtipoFiltroData}
-                    value={subtipoFiltro}
-                    style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
-                    onChange={(v) => setSubtipoFiltro(v ?? "Todos")}
-                    searchable={false}
-                    styles={selectorStyleFiltersSubtipo}
-                  />
+                  {activeSection === "main" && (
+                    <>
+                      <Select
+                        label="Nivel académico"
+                        data={opcionesNivelAcademico}
+                        value={nivelAcademico}
+                        style={{ flex: "0.9 1 108px", minWidth: 0, maxWidth: 185 }}
+                        onChange={(v) => setNivelAcademico(v ?? "Todos")}
+                        searchable={false}
+                        styles={selectorStyleFilters}
+                      />
+                      <Select
+                        label="Tipo de proceso"
+                        data={opcionesTipoProceso}
+                        value={tipoProceso}
+                        style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 235 }}
+                        onChange={(v) => {
+                          setTipoProceso(v ?? "Todos");
+                          setSubtipoFiltro("Todos");
+                        }}
+                        searchable={false}
+                        styles={selectorStyleFilters}
+                      />
+                      <Select
+                        label="Subtipo"
+                        data={opcionesSubtipoFiltroData}
+                        value={subtipoFiltro}
+                        style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
+                        onChange={(v) => setSubtipoFiltro(v ?? "Todos")}
+                        searchable={false}
+                        styles={selectorStyleFiltersSubtipo}
+                      />
+                    </>
+                  )}
                 </Flex>
               </Paper>
             )}
@@ -1688,11 +1674,11 @@ const ProcessesMenPage = () => {
               <Loader size="sm" mx="auto" display="block" my="xl" />
             )}
 
-            {activeSection === "main" && !loadingFilters && (
+            {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
             <>
-            {programa === "Todos" && <Title ta="center" mb="lg">Estadísticas generales</Title>}
+            {activeSection === "main" && <Title ta="center" mb="lg">Estadísticas generales</Title>}
 
-            {programa === "Todos" && (
+            {activeSection === "main" && (
               <Stack gap="lg" mb="lg">
                 <Paper
                   radius="xl"
@@ -1817,7 +1803,12 @@ const ProcessesMenPage = () => {
             )}
 
             {/* Vista por programa */}
-            {programa !== "Todos" && (() => {
+            {activeSection === "informacion" && programa === "Todos" && (
+              <Paper withBorder radius="md" p="xl" shadow="xs">
+                <Text c="dimmed" ta="center">Selecciona un programa en los filtros para consultar su información.</Text>
+              </Paper>
+            )}
+            {activeSection === "informacion" && programa !== "Todos" && (() => {
               const progObj = programaDesdeFiltroId(programas, programa);
               if (!progObj) return null;
               const progCode = programCodeKey(progObj);
@@ -1830,12 +1821,12 @@ const ProcessesMenPage = () => {
               return (
                 <>
                   <Box mb="lg">
-                    <Tooltip label="Volver a alertas" withArrow>
+                    <Tooltip label="Volver a estadísticas" withArrow>
                       <ActionIcon
                         variant="default"
                         size="sm"
-                        onClick={() => { setActiveSection("alertas"); }}
-                        aria-label="Volver a alertas"
+                        onClick={() => { setActiveSection("main"); }}
+                        aria-label="Volver a estadísticas"
                       >
                         <IconChevronLeft size={16} />
                       </ActionIcon>
@@ -1971,7 +1962,7 @@ const ProcessesMenPage = () => {
             ))}
 
             {/* Vista general: barras */}
-            {facultad === "Todos" && <>
+            {activeSection === "main" && facultad === "Todos" && <>
               {(tipoProceso === "Todos" || tipoProceso === "Registro calificado") && (
                 <BarTable
                   title="Estado general de fases — Registro calificado"
@@ -2390,7 +2381,7 @@ const ProcessesMenPage = () => {
             {activeSection === "historial" && (
               <>
                 <Title order={3} mb="md">Historial de procesos</Title>
-                <Paper withBorder radius="md" p="sm" mb="md">
+                <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
                   <Group gap="sm" wrap="wrap" align="flex-end">
                     <Select placeholder="Todas las facultades" data={historialOpcionesFacultad}
                       value={historialFiltroFacultad} onChange={setHistorialFiltroFacultad} clearable size="xs" w={220}
@@ -2544,7 +2535,9 @@ const ProcessesMenPage = () => {
       </div>
 
       {/* ── Modal detalle historial ── */}
-      <Modal opened={historialDetalle !== null} onClose={() => setHistorialDetalle(null)}
+      <Modal
+        opened={historialDetalle !== null}
+        onClose={() => setHistorialDetalle(null)}
         title={historialDetalle ? `${historialDetalle.nombre_programa} — ${LABEL_PROCESO[historialDetalle.tipo_proceso]}` : ""}
         size="calc(100vw - 2rem)"
         centered

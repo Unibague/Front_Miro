@@ -23,8 +23,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { isProcessesMenOrLegacyPath } from "@/app/processes-MEN/config/routes";
+import { usePathname } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { showNotification } from "@mantine/notifications";
 import { useRole } from "@/app/context/RoleContext";
@@ -32,7 +31,7 @@ import { usePeriod } from "@/app/context/PeriodContext";
 import ThemeChanger from "../ThemeChanger/ThemeChanger";
 import ThemeChangerMobile from "../ThemeChanger/ThemeChangerMobile";
 import classes from "./Navbar.module.css";
-import { IconCalendarStats, IconChevronLeft, IconDoorExit, IconHome, IconSubtask, IconSwitch3, IconHelp } from "@tabler/icons-react";
+import { IconCalendarStats, IconDoorExit, IconHome, IconSubtask, IconSwitch3, IconHelp } from "@tabler/icons-react";
 import axios from "axios";
 import MiroEye from "../MiroEye";
 
@@ -93,9 +92,7 @@ const home = [{ link: "/dashboard", label: "Inicio" }];
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { data: session } = useSession();
-  const showProcessesMenVolver = isProcessesMenOrLegacyPath(pathname);
   const user = session?.user as ImpersonatedUser | undefined;
 
   const [opened, { toggle }] = useDisclosure(false);
@@ -299,19 +296,6 @@ export default function Navbar() {
         <Container size="xl" className={classes.inner}>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            {showProcessesMenVolver && (
-              <Tooltip label="Volver" withArrow>
-                <ActionIcon
-                  variant="default"
-                  size="sm"
-                  onClick={() => router.push("/dashboard?gestionProcesos=1")}
-                  style={{ flexShrink: 0 }}
-                  aria-label="Volver al panel de gestión de procesos"
-                >
-                  <IconChevronLeft size={16} />
-                </ActionIcon>
-              </Tooltip>
-            )}
             <Group gap="xs" wrap="nowrap">
               {titleButton}
             </Group>
@@ -477,21 +461,6 @@ export default function Navbar() {
             closeOnEscape={false}
           >
             <Stack align="stretch" justify="center" gap="md">
-              {showProcessesMenVolver && (
-                <Tooltip label="Volver" withArrow>
-                  <ActionIcon
-                    variant="default"
-                    size="sm"
-                    onClick={() => {
-                      router.push("/dashboard?gestionProcesos=1");
-                      toggle();
-                    }}
-                    aria-label="Volver al panel de gestión de procesos"
-                  >
-                    <IconChevronLeft size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              )}
               {itemsDrawer}
               <Link href="/ayudas" passHref>
                 <Button fullWidth variant="light" size="sm" style={{ fontWeight: 500, marginBottom: "8px" }}>
