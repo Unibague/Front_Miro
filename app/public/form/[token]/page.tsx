@@ -463,12 +463,26 @@ export default function PublicFormPage() {
       return (
         <NumberInput label={label} placeholder={field.name}
           value={value ?? ""} onChange={onChange}
+          allowNegative={false}
           decimalSeparator="," radius="md" />
       );
     }
+    const maxLength = field.datatype === "Texto Corto" ? 60 : field.datatype === "Texto Largo" ? 800 : undefined;
     return (
       <TextInput label={label} placeholder={field.name}
-        value={value ?? ""} onChange={e => onChange(e.currentTarget.value)}
+        value={value ?? ""} maxLength={maxLength}
+        onChange={e => {
+          const nextValue = e.currentTarget.value;
+          if (maxLength && nextValue.length >= maxLength) {
+            showNotification({
+              id: `char-limit-${field.name}`,
+              title: "Límite de caracteres alcanzado",
+              message: `El campo "${field.name}" admite máximo ${maxLength} caracteres.`,
+              color: "yellow",
+            });
+          }
+          onChange(nextValue);
+        }}
         radius="md" />
     );
   }

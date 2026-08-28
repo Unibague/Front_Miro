@@ -101,6 +101,19 @@ const splitValidateWithReference = (validateWith: FieldWithValidator["validate_w
 const findValidatorByName = (validators: ValidatorOptionSource[], name = "") =>
   validators.find((item) => normalizeToken(item.name) === normalizeToken(name));
 
+// Nombre de columna EXACTAMENTE "DESCRIPCION"/"NOMBRE": la columna compañera
+// genérica que casi toda tabla de validación tiene junto a su columna de
+// código. Emparejar un campo contra ella por solo coincidir el nombre daba
+// falsos positivos (ej. un campo de texto libre llamado "Descripción"
+// enganchándose con la primera tabla que tuviera esa columna). Debe ser
+// coincidencia EXACTA, no "contiene": nombres compuestos como
+// "NOMBRE_PROGRAMA" o "DESCRIPCION_DERECHO_PECUNIARIO" son columnas
+// específicas y válidas para el auto-match, no la genérica.
+const isGenericDescriptionColumnName = (name: string): boolean => {
+  const normalized = normalizeToken(name);
+  return normalized === "DESCRIPCION" || normalized === "NOMBRE";
+};
+
 const findValidatorForField = (
   field: FieldWithValidator,
   validators: ValidatorOptionSource[]
@@ -115,9 +128,9 @@ const findValidatorForField = (
   const fieldNorm = normalizeToken(field.name);
   for (const validator of validators) {
     const columnMatch =
-      (validator.columns?.some((column) => normalizeToken(column.name) === fieldNorm)) ||
+      (validator.columns?.some((column) => !isGenericDescriptionColumnName(column.name) && normalizeToken(column.name) === fieldNorm)) ||
       (validator.values.length > 0 &&
-        Object.keys(validator.values[0]).some((key) => normalizeToken(key) === fieldNorm));
+        Object.keys(validator.values[0]).some((key) => !isGenericDescriptionColumnName(key) && normalizeToken(key) === fieldNorm));
 
     if (columnMatch) return { validator, columnName: field.name };
   }
@@ -176,6 +189,22 @@ export const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
 export const loadWorkbookFromBase64 = async (base64: string): Promise<ExcelJS.Workbook> => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(base64ToArrayBuffer(base64));
+
+  // Bug de ExcelJS: si el .xlsx original no trae su propia parte "theme"
+  // (algunos archivos no la incluyen), el workbook queda con `themes: {}`
+  // (objeto vacío, no undefined). Al reescribir con writeBuffer(), el XML
+  // writer de ExcelJS de todas formas declara la relación/Content-Type hacia
+  // "xl/theme/theme1.xml" (fallback solo aplica cuando `themes` es falsy),
+  // pero como el objeto está vacío nunca escribe ese archivo → queda una
+  // referencia rota en el paquete .xlsx. Excel detecta esto al abrirlo y
+  // dispara su reparación automática, que de paso descarta validaciones de
+  // datos y otras partes del archivo. clearThemes() deja `themes` en
+  // `undefined`, activando el fallback real de ExcelJS (su tema por
+  // defecto), que sí se escribe completo.
+  if (!workbook.model.themes || Object.keys(workbook.model.themes).length === 0) {
+    workbook.clearThemes();
+  }
+
   return workbook;
 };
 
@@ -1253,6 +1282,82 @@ const extractOptionsFromCommentValidators = (comment: string): string[] => {
   return normalizeDropdownOptionTexts(options);
 };
 
+// Convención usada en las plantillas oficiales SNIES: el comentario del campo
+// indica el tipo real de dato y el largo máximo entre paréntesis (ej.
+// "Obligatorio, numérico (10)." o "Alfabético (50)."), independientemente de
+// field.datatype (en estas plantillas casi siempre es "Texto Largo" para
+// todo). Sin esto, el Excel no bloqueaba letras en campos numéricos ni
+// respetaba el límite de caracteres indicado en el comentario.
+interface CommentTypeHint {
+  kind: "numerico" | "alfabetico" | "alfanumerico";
+  maxLength: number;
+}
+
+const parseCommentTypeHint = (comment?: string): CommentTypeHint | null => {
+  if (!comment) return null;
+  const normalized = comment.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const match = /(alfanumeric[oa]|alfabetic[oa]|numeric[oa])\s*\(\s*(\d+)\s*\)/i.exec(normalized);
+  if (!match) return null;
+
+  const maxLength = parseInt(match[2], 10);
+  if (!Number.isFinite(maxLength) || maxLength <= 0) return null;
+
+  const rawKind = match[1].toLowerCase();
+  const kind: CommentTypeHint["kind"] = rawKind.startsWith("alfanumeric")
+    ? "alfanumerico"
+    : rawKind.startsWith("alfabetic")
+      ? "alfabetico"
+      : "numerico";
+
+  return { kind, maxLength };
+};
+
+const buildTypeHintValidation = (hint: CommentTypeHint, anchorCell: string): ExcelJS.DataValidation => {
+  if (hint.kind === "numerico") {
+    // Se valida como texto numérico (LEN + coerción con *1) en vez del tipo
+    // "whole" nativo de Excel: muchos de estos códigos (DIVIPOLA, ISO de
+    // país, etc.) necesitan conservar ceros a la izquierda, que Excel
+    // eliminaría si tratara la celda como un número real.
+    return {
+      type: "custom",
+      allowBlank: true,
+      formulae: [`AND(LEN(${anchorCell})<=${hint.maxLength},IFERROR(ISNUMBER(${anchorCell}*1),FALSE))`],
+      showErrorMessage: true,
+      errorStyle: "stop",
+      errorTitle: "Valor no válido",
+      error: `Este campo debe ser numérico y de máximo ${hint.maxLength} caracteres.`,
+    };
+  }
+
+  if (hint.kind === "alfabetico") {
+    const allowedLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÜÑáéíóúüñ ";
+    return {
+      type: "custom",
+      allowBlank: true,
+      formulae: [
+        `AND(LEN(${anchorCell})<=${hint.maxLength},SUMPRODUCT(--ISNUMBER(FIND(MID(${anchorCell},ROW(INDIRECT("1:"&LEN(${anchorCell}))),1),"${allowedLetters}")))=LEN(${anchorCell}))`,
+      ],
+      showErrorMessage: true,
+      errorStyle: "stop",
+      errorTitle: "Valor no válido",
+      error: `Este campo debe contener solo letras y un máximo de ${hint.maxLength} caracteres.`,
+    };
+  }
+
+  const allowedAlphanumeric = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÜÑáéíóúüñ 0123456789";
+  return {
+    type: "custom",
+    allowBlank: true,
+    formulae: [
+      `AND(LEN(${anchorCell})<=${hint.maxLength},SUMPRODUCT(--ISNUMBER(FIND(MID(${anchorCell},ROW(INDIRECT("1:"&LEN(${anchorCell}))),1),"${allowedAlphanumeric}")))=LEN(${anchorCell}))`,
+    ],
+    showErrorMessage: true,
+    errorStyle: "stop",
+    errorTitle: "Valor no válido",
+    error: `Este campo debe ser alfanumérico y de máximo ${hint.maxLength} caracteres.`,
+  };
+};
+
 // Muchos comentarios de campo son preguntas de si/no terminadas en "(S/N)"
 // o "(S/N)?" (ej. "¿Incluye actividades administrativas (S/N)?"), sin la
 // sección "Valores válidos son:" que detecta extractOptionsFromCommentValidators.
@@ -1359,14 +1464,17 @@ export const applyValidatorDropdowns = ({
       options = preloadedValidatorOptions[field.name];
     }
 
-    // 5. Auto-detección: buscar en validadores cuya columna coincida con el nombre del campo
+    // 5. Auto-detección: buscar en validadores cuya columna coincida con el
+    // nombre del campo, excluyendo columnas de descripción genéricas (ver
+    // isGenericDescriptionColumnName) para no enganchar campos de texto libre
+    // sin relación real con la tabla.
     if (options.length === 0 && validators.length > 0) {
       const fieldNorm = normalizeToken(field.name);
       for (const validator of validators) {
         const columnMatch =
-          (validator.columns?.some((c) => normalizeToken(c.name) === fieldNorm)) ||
+          (validator.columns?.some((c) => !isGenericDescriptionColumnName(c.name) && normalizeToken(c.name) === fieldNorm)) ||
           (validator.values.length > 0 &&
-            Object.keys(validator.values[0]).some((k) => normalizeToken(k) === fieldNorm));
+            Object.keys(validator.values[0]).some((k) => !isGenericDescriptionColumnName(k) && normalizeToken(k) === fieldNorm));
         if (!columnMatch) continue;
         const matched = getValidatorOptions(validator, field.name);
         if (matched.length > 0) {
@@ -1377,7 +1485,34 @@ export const applyValidatorDropdowns = ({
     }
 
     options = normalizeDropdownOptionTexts(options);
-    if (options.length === 0) return;
+
+    if (options.length === 0) {
+      // Sin lista de opciones: si el comentario trae la convención SNIES
+      // "numérico/alfabético/alfanumérico (N)", igual se aplica una
+      // validación real (tipo de caracter + largo máximo) en vez de dejar
+      // la celda totalmente libre.
+      const hint = parseCommentTypeHint(field.comment);
+      if (!hint) return;
+
+      const { col: hintCol, headerRow: hintHeaderRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
+      const hintFirstDataRow = Math.max(startRow, hintHeaderRow + 1);
+      const anchorCell = `${toColumnLetter(hintCol)}${hintFirstDataRow}`;
+      const hintRangeAddress = `${anchorCell}:${toColumnLetter(hintCol)}${endRow}`;
+
+      const hintComment = field.comment
+        ? String(field.comment).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+        : "";
+      const hintPromptText = hintComment.length > 220 ? `${hintComment.slice(0, 217)}...` : hintComment;
+
+      const hintValidation = buildTypeHintValidation(hint, anchorCell);
+      if (hintPromptText) {
+        hintValidation.showInputMessage = true;
+        hintValidation.promptTitle = field.name.slice(0, 32);
+        hintValidation.prompt = hintPromptText;
+      }
+      (worksheet as any).dataValidations.add(hintRangeAddress, hintValidation);
+      return;
+    }
 
     const { col: templateCol, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
     const firstDataRow = Math.max(startRow, headerRow + 1);
@@ -1412,6 +1547,7 @@ export const applyValidatorDropdowns = ({
       allowBlank: true,
       formulae: [rangeRef],
       showErrorMessage: !field.multiple,
+      errorStyle: "stop",
       errorTitle: "Valor no valido",
       error: "Selecciona un valor de la lista desplegable.",
     };
@@ -1498,8 +1634,13 @@ export const fetchValidatorOptionsForFields = async (
       try {
         let validatorId = '';
         if (typeof field.validate_with === 'string') {
+          // validate_with tiene el formato "NombreValidador - NombreColumna":
+          // el backend (/validators/id) busca por nombre/_id del VALIDADOR,
+          // no de la columna, así que se usa la primera parte (antes se
+          // mandaba la última = el nombre de columna, ej. "ID_PROGRAMA" en
+          // vez de "PROGRAMAS", y el endpoint respondía 404 siempre).
           const parts = field.validate_with.split(' - ');
-          validatorId = parts.length >= 2 ? parts[parts.length - 1].trim() : field.validate_with.trim();
+          validatorId = parts.length >= 2 ? parts[0].trim() : field.validate_with.trim();
         } else {
           validatorId = (field.validate_with as any).id ?? '';
         }

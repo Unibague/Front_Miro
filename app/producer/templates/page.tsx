@@ -446,11 +446,15 @@ const ProducerTemplatesPage = () => {
         `${process.env.NEXT_PUBLIC_API_URL}/templates/${template._id}`,
         { params: { withValidators: 'true', ...(periodId ? { periodId } : {}) } }
       );
-      if (freshRes.data?.validators) {
-        template = { ...template, validators: freshRes.data.validators };
+      if (freshRes.data) {
+        // Usar la plantilla administrativa completa y actualizada, no solo sus
+        // validadores. El snapshot publicado puede conservar un workbook o
+        // comentarios anteriores y, en ese caso, el productor termina
+        // descargando un Excel distinto al que descarga el administrador.
+        template = { ...template, ...freshRes.data };
       }
     } catch {
-      // si falla, se usan los validators cacheados
+      // Si falla, se conserva el snapshot publicado como respaldo.
     }
 
     const validators =

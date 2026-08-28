@@ -122,6 +122,7 @@ const UpdateTemplatePage = () => {
   const [notifyProducers, setNotifyProducers] = useState(false);
   const [isSnies, setIsSnies] = useState(false);
   const [isCna, setIsCna] = useState(false);
+  const [isOtra, setIsOtra] = useState(false);
   const [skipCommentValidation, setSkipCommentValidation] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
@@ -392,6 +393,7 @@ const UpdateTemplatePage = () => {
             const categoryName: string = response.data.category?.name ?? "";
             setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
             setIsCna((response.data.is_cna ?? false) || categoryName.toUpperCase().includes("CNA"));
+            setIsOtra((response.data.is_otra ?? false) || categoryName.trim().toUpperCase() === "OTRA");
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -827,6 +829,7 @@ const UpdateTemplatePage = () => {
       notify_producers: notifyProducers,
       is_snies: isSnies,
       is_cna: isCna,
+      is_otra: isOtra,
       skip_comment_validation: skipCommentValidation,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
@@ -861,8 +864,6 @@ if (response.data.warning) {
     color: "teal",
   });
 }
-
-router.back();
 
 } catch (error: any) {
   console.error("Error guardando plantilla:", error);
@@ -1331,6 +1332,13 @@ router.back();
             checked={isCna}
             onChange={(e) => { setIsCna(e.currentTarget.checked); setHasChanges(true); }}
             color="orange"
+            size="md"
+          />
+          <Switch
+            label="Otra"
+            checked={isOtra}
+            onChange={(e) => { setIsOtra(e.currentTarget.checked); setHasChanges(true); }}
+            color="grape"
             size="md"
           />
         </Group>

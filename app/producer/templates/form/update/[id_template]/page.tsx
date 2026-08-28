@@ -670,26 +670,52 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
             error={fieldError ? fieldError : undefined}
           />
         );
-      case "Texto Largo":
+      case "Texto Largo": {
+        const textareaMaxLength = 800;
         return (
           <Textarea
             {...commonProps}
             resize="vertical"
+            maxLength={textareaMaxLength}
             value={row[field.name] === null ? "" : row[field.name]}
-            onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
+            onChange={(e) => {
+              if (e.target.value.length >= textareaMaxLength) {
+                showNotification({
+                  id: `char-limit-${field.name}-${rowIndex}`,
+                  title: "Límite de caracteres alcanzado",
+                  message: `El campo "${field.name}" admite máximo ${textareaMaxLength} caracteres.`,
+                  color: "yellow",
+                });
+              }
+              handleInputChange(rowIndex, field.name, e.target.value);
+            }}
             error={fieldError ? fieldError : undefined}
           />
         );
+      }
       case "Texto Corto":
-      case "Link":
+      case "Link": {
+        const textInputMaxLength = field.datatype === "Texto Corto" ? 60 : undefined;
         return (
           <TextInput
             {...commonProps}
+            maxLength={textInputMaxLength}
             value={row[field.name] === null ? "" : row[field.name]}
-            onChange={(e) => handleInputChange(rowIndex, field.name, e.target.value)}
+            onChange={(e) => {
+              if (textInputMaxLength && e.target.value.length >= textInputMaxLength) {
+                showNotification({
+                  id: `char-limit-${field.name}-${rowIndex}`,
+                  title: "Límite de caracteres alcanzado",
+                  message: `El campo "${field.name}" admite máximo ${textInputMaxLength} caracteres.`,
+                  color: "yellow",
+                });
+              }
+              handleInputChange(rowIndex, field.name, e.target.value);
+            }}
             error={fieldError ? fieldError : undefined}
           />
         );
+      }
       case "True/False":
         return (
           <Switch

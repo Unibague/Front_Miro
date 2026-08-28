@@ -1697,62 +1697,93 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     switch (field.datatype) {
       case "Entero":
       case "Decimal":
-      case "Porcentaje":
+      case "Porcentaje": {
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const numericDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
           : (typeof fieldValue === 'number' ? fieldValue : "");
-          
+
+        // NumberInput bloquea a nivel de teclado cualquier caracter no
+        // numerico (antes era un TextInput con parseFloat, que dejaba
+        // escribir letras y las descartaba en silencio).
         return wrapWithTooltip(
-          <TextInput
+          <NumberInput
             {...commonProps}
-            value={String(numericDisplayValue)}
-            onChange={(e) => {
+            value={numericDisplayValue === "" ? "" : Number(numericDisplayValue)}
+            allowDecimal={field.datatype !== "Entero"}
+            allowNegative={false}
+            min={field.datatype === "Porcentaje" ? 0 : undefined}
+            max={field.datatype === "Porcentaje" ? 100 : undefined}
+            clampBehavior="strict"
+            hideControls
+            onChange={(value) => {
               // Si el usuario edita manualmente, limpiar la descripción guardada
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
-              const numValue = parseFloat(e.target.value);
-              inputChange(rowIndex, field.name, isNaN(numValue) ? null : numValue);
+              inputChange(rowIndex, field.name, value === "" ? null : Number(value));
             }}
           />
         );
-  
-      case "Texto Largo":
+      }
+
+      case "Texto Largo": {
+        const textareaMaxLength = 800;
         const textareaDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
           : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
-          
+
         return wrapWithTooltip(
           <Textarea
             {...commonProps}
             autosize
             minRows={2}
             maxRows={6}
+            maxLength={textareaMaxLength}
             value={textareaDisplayValue}
             onChange={(e) => {
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
+              if (e.target.value.length >= textareaMaxLength) {
+                showNotification({
+                  id: `char-limit-${scopedFieldKey}-${rowIndex}`,
+                  title: "Límite de caracteres alcanzado",
+                  message: `El campo "${field.name}" admite máximo ${textareaMaxLength} caracteres.`,
+                  color: "yellow",
+                });
+              }
               inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
+      }
 
       case "Texto Corto":
-      case "Link":
+      case "Link": {
+        const textInputMaxLength = field.datatype === "Texto Corto" ? 60 : undefined;
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const displayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
           : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
-          
+
         return wrapWithTooltip(
           <TextInput
             {...commonProps}
+            maxLength={textInputMaxLength}
             value={displayValue}
             onChange={(e) => {
               // Si el usuario edita manualmente, limpiar la descripción guardada
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
+              if (textInputMaxLength && e.target.value.length >= textInputMaxLength) {
+                showNotification({
+                  id: `char-limit-${scopedFieldKey}-${rowIndex}`,
+                  title: "Límite de caracteres alcanzado",
+                  message: `El campo "${field.name}" admite máximo ${textInputMaxLength} caracteres.`,
+                  color: "yellow",
+                });
+              }
               inputChange(rowIndex, field.name, e.target.value);
             }}
           />
         );
+      }
 
       case "True/False":
         const switchDisplayValue = field.validate_with && storedDisplayValue
