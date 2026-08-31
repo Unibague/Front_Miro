@@ -144,6 +144,22 @@ interface NamedValue {
   value: number;
 }
 
+interface HojaBreakdown {
+  label: string;
+  type: "donut" | "bar";
+  data: NamedValue[];
+}
+interface HojaDetalle {
+  nombre: string;
+  totalRegistros: number;
+  desgloses: HojaBreakdown[];
+}
+interface DependenciaBienestarDetalle {
+  dependencia: string;
+  actividades: number;
+  beneficiarios: number;
+  recursoHumano: number;
+}
 interface ActividadBienestarAnalytics {
   fileId: string;
   fileName: string;
@@ -161,6 +177,9 @@ interface ActividadBienestarAnalytics {
   beneficiariesByUnit: NamedValue[];
   humanResourcesByUnit: NamedValue[];
   humanResourcesByCategory: NamedValue[];
+  hojas: HojaDetalle[];
+  porDependencia: DependenciaBienestarDetalle[];
+  hojasPorDependencia: Record<string, HojaDetalle[]>;
 }
 
 // Resumen a la medida del archivo de Representación Estudiantil, presente
@@ -177,6 +196,7 @@ interface RepresentacionEstudiantilAnalytics {
   porCandidato: NamedValue[];
   porInstancia: NamedValue[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida del archivo de Publicaciones y Autores, presente SOLO
@@ -192,6 +212,7 @@ interface PublicacionesAutoresAnalytics {
   porOrigenAutor: NamedValue[];
   porPrograma: NamedValue[];
   publicacionesPorMes: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida del archivo Docentes Histórico SNIES, presente SOLO en
@@ -210,6 +231,7 @@ interface DocentesHistoricoSniesAnalytics {
   escalafonPeriodoActual: NamedValue[];
   dependenciaPeriodoActual: NamedValue[];
   nivelFormacionPeriodoActual: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Rutas de Aprendizaje (Estructura y Procesos
@@ -229,6 +251,7 @@ interface RutasAprendizajeHistoricoAnalytics {
   totalInsigniasEntregadas: number;
   rutas: RutaAprendizajeHistorico[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Prácticas Académicas (Estructura y Procesos
@@ -243,6 +266,7 @@ interface PracticasAcademicasHistoricoAnalytics {
   porPrograma: NamedValue[];
   porEmpresa: NamedValue[];
   porSectorEmpresasRegistradas: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Estrategias Curriculares (Estructura y Procesos
@@ -258,6 +282,7 @@ interface EstrategiasCurricularesHistoricoAnalytics {
   porFuncionSustantiva: NamedValue[];
   porDimensionFormacion: NamedValue[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Capacitación y Formación de Funcionarios (Gestión
@@ -272,6 +297,7 @@ interface CapacitacionFuncionariosAnalytics {
   porTipoCurso: NamedValue[];
   porPrograma: NamedValue[];
   topCursos: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Convenios de Cooperación (Gestión Institucional).
@@ -288,6 +314,7 @@ interface ConveniosCooperacionAnalytics {
   porAcademicoNoAcademico: NamedValue[];
   porAlcance: NamedValue[];
   porAreaResponsable: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Estímulos a Funcionarios (Gestión Institucional).
@@ -299,6 +326,7 @@ interface EstimulosFuncionariosAnalytics {
   porTipoEstimulo: NamedValue[];
   porDependenciaQueReporta: NamedValue[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Otras Estrategias (Gestión Institucional).
@@ -315,6 +343,7 @@ interface OtrasEstrategiasAnalytics {
   porComunidadSectorExterno: NamedValue[];
   porPoblacionImpactada: NamedValue[];
   topEstrategiasPorParticipantes: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Paz y Región (Interacción con el Entorno).
@@ -334,6 +363,7 @@ interface PazYRegionAnalytics {
   porTipoEntidad: NamedValue[];
   porPrograma: NamedValue[];
   topMunicipios: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Grupos de Investigación (Investigación e Indagación).
@@ -343,6 +373,7 @@ interface GruposInvestigacionAnalytics {
   totalGrupos: number;
   porClasificacion: NamedValue[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Líneas de Investigación (Investigación e Indagación).
@@ -352,6 +383,7 @@ interface LineasInvestigacionAnalytics {
   totalLineas: number;
   totalGrupos: number;
   porGrupo: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Redes de Investigación (Investigación e Indagación).
@@ -364,6 +396,7 @@ interface RedesInvestigacionAnalytics {
   porRed: NamedValue[];
   porPrograma: NamedValue[];
   topInstituciones: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Semilleros y sus Participantes (Investigación e
@@ -377,6 +410,7 @@ interface SemillerosParticipantesAnalytics {
   totalParticipantesUnicos: number;
   porPrograma: NamedValue[];
   topSemilleros: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Trabajos de Grado (Investigación e Indagación).
@@ -391,6 +425,7 @@ interface TrabajoGradoAnalytics {
   porMencion: NamedValue[];
   porGrupo: NamedValue[];
   porPrograma: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 // Resumen a la medida de Movilidad (Visibilidad Regional, Nacional e
@@ -408,6 +443,7 @@ interface MovilidadAnalytics {
   porPais: NamedValue[];
   porPrograma: NamedValue[];
   topInstituciones: NamedValue[];
+  hojas: HojaDetalle[];
 }
 
 interface DimensionStats {
@@ -584,15 +620,85 @@ function NamedDonut({ title, data }: { title: string; data: NamedValue[] }) {
   );
 }
 
+function BoxedBar({ title, data, color = "#228be6" }: { title: string; data: NamedValue[]; color?: string }) {
+  const chartData = data.map((item) => ({ ...item, shortName: truncate(item.name, 34) }));
+  return (
+    <Paper withBorder radius="md" p="sm">
+      <Text size="sm" fw={600} mb={6}>{title}</Text>
+      <ResponsiveContainer width="100%" height={Math.max(180, chartData.length * 34)}>
+        <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+          <YAxis type="category" dataKey="shortName" width={180} tick={{ fontSize: 11 }} />
+          <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
+          <Bar dataKey="value" fill={color} radius={[0, 6, 6, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Paper>
+  );
+}
+
+const sortOtroLast = (data: NamedValue[]) => [...data].sort((a, b) => {
+  const aOtro = a.name.trim().toLowerCase() === "otro";
+  const bOtro = b.name.trim().toLowerCase() === "otro";
+  if (aOtro !== bOtro) return aOtro ? 1 : -1;
+  return b.value - a.value;
+});
+
+const BAR_COLORS = ["#228be6", "#7048e8", "#12b886", "#f76707", "#e64980", "#15aabf"];
+
+function HojaAnalisisDetalle({ hoja }: { hoja: HojaDetalle }) {
+  return (
+    <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+      {hoja.desgloses.map((desglose, idx) => (
+        desglose.type === "donut"
+          ? <NamedDonut key={desglose.label} title={desglose.label} data={desglose.data} />
+          : (
+            <BoxedBar
+              key={desglose.label}
+              title={desglose.label}
+              data={sortOtroLast(desglose.data)}
+              color={BAR_COLORS[idx % BAR_COLORS.length]}
+            />
+          )
+      ))}
+    </SimpleGrid>
+  );
+}
+
+// Seccion "Detalle por hoja" reutilizable: cada plantilla curada (Bienestar,
+// Representacion Estudiantil, Publicaciones, SNIES, etc.) le pasa su propio
+// arreglo de hojas y esta seccion arma el mismo Divider + tarjetas con
+// desgloses, sin repetir el layout en cada Report.
+function DetalleHojaSection({ hojas, titulo }: { hojas: HojaDetalle[]; titulo?: string }) {
+  const visibles = hojas.filter((hoja) => hoja.totalRegistros > 0);
+  if (visibles.length === 0) return null;
+  return (
+    <>
+      <Divider label={titulo || "Detalle por hoja"} labelPosition="left" mt="xl" mb="md" />
+      <Stack gap="lg">
+        {visibles.map((hoja) => (
+          <Paper key={hoja.nombre} withBorder radius="md" p="md">
+            <Group gap="xs" mb="md">
+              <Text fw={600} size="sm">{hoja.nombre}</Text>
+              <Badge size="sm" variant="light" color="violet">
+                {hoja.totalRegistros.toLocaleString("es-CO")} registros
+              </Badge>
+            </Group>
+            <HojaAnalisisDetalle hoja={hoja} />
+          </Paper>
+        ))}
+      </Stack>
+    </>
+  );
+}
+
 function ActividadBienestarReport({ report }: { report: ActividadBienestarAnalytics }) {
-  const categoryChartData = report.activitiesByCategory.map((item) => ({
-    ...item,
-    shortName: truncate(item.name, 30),
-  }));
-  const humanCategoryData = report.humanResourcesByCategory.map((item) => ({
-    ...item,
-    shortName: truncate(item.name, 30),
-  }));
+  const [dependenciaFiltro, setDependenciaFiltro] = useState<string | null>(null);
+  const dependenciaOptions = report.porDependencia.map((d) => d.dependencia);
+  const dependenciaSeleccionada = dependenciaFiltro
+    ? report.porDependencia.find((d) => d.dependencia === dependenciaFiltro)
+    : null;
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -619,46 +725,9 @@ function ActividadBienestarReport({ report }: { report: ActividadBienestarAnalyt
         Los beneficiarios registrados y los beneficiarios agrupados provienen de hojas distintas; se muestran separados para evitar duplicarlos.
       </Text>
 
-      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mb="lg">
-        <NamedDonut title="Actividades por unidad responsable" data={report.activitiesByUnit} />
-        <Box>
-          <Text size="sm" fw={700} mb={4}>Actividades por categoría</Text>
-          <ResponsiveContainer width="100%" height={Math.max(210, categoryChartData.length * 34)}>
-            <BarChart data={categoryChartData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="shortName" width={180} tick={{ fontSize: 11 }} />
-              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Actividades"]} />
-              <Bar dataKey="value" fill="#228be6" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Box>
-      </SimpleGrid>
-      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" my="lg">
-        <NamedDonut title="Beneficiarios por tipo" data={report.beneficiariesByType} />
-        <NamedDonut title="Beneficiarios por unidad" data={report.beneficiariesByUnit} />
-      </SimpleGrid>
-
-      <Divider label="Recurso humano" labelPosition="left" my="lg" />
-      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mb="lg">
-        <NamedDonut title="Recurso humano por unidad" data={report.humanResourcesByUnit} />
-        <Box>
-          <Text size="sm" fw={700} mb={4}>Recurso humano por categoría de actividad</Text>
-          <ResponsiveContainer width="100%" height={Math.max(210, humanCategoryData.length * 34)}>
-            <BarChart data={humanCategoryData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="shortName" width={180} tick={{ fontSize: 11 }} />
-              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Registros"]} />
-              <Bar dataKey="value" fill="#15aabf" radius={[0, 6, 6, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Box>
-      </SimpleGrid>
-
       {report.activitiesByMonth.length > 1 && (
-        <Box mt="lg">
-          <Text size="sm" fw={700} mb={4}>Actividades iniciadas por mes</Text>
+        <Paper withBorder radius="md" p="sm" mb="lg">
+          <Text size="sm" fw={600} mb={6}>Actividades por mes (todas las hojas)</Text>
           <ResponsiveContainer width="100%" height={210}>
             <LineChart data={report.activitiesByMonth} margin={{ top: 10, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -668,8 +737,36 @@ function ActividadBienestarReport({ report }: { report: ActividadBienestarAnalyt
               <Line type="monotone" dataKey="value" stroke="#e64980" strokeWidth={3} dot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
-        </Box>
+        </Paper>
       )}
+
+      {dependenciaOptions.length > 0 && (
+        <>
+          <Divider label="Filtrar por dependencia" labelPosition="left" mb="md" />
+          <Select
+            placeholder="Todas las dependencias"
+            data={dependenciaOptions}
+            value={dependenciaFiltro}
+            onChange={setDependenciaFiltro}
+            clearable
+            searchable
+            w={280}
+            mb="md"
+          />
+          {dependenciaSeleccionada && (
+            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" mb="lg">
+              <MetricCard label="Actividades" value={dependenciaSeleccionada.actividades} />
+              <MetricCard label="Beneficiarios" value={dependenciaSeleccionada.beneficiarios} color="blue" />
+              <MetricCard label="Recurso humano" value={dependenciaSeleccionada.recursoHumano} color="indigo" />
+            </SimpleGrid>
+          )}
+        </>
+      )}
+
+      <DetalleHojaSection
+        hojas={dependenciaFiltro ? report.hojasPorDependencia[dependenciaFiltro] || [] : report.hojas}
+        titulo={dependenciaFiltro ? `Detalle por hoja — ${dependenciaFiltro}` : "Detalle por hoja"}
+      />
     </Paper>
   );
 }
@@ -929,6 +1026,8 @@ function PracticasAcademicasHistoricoReport({ report }: { report: PracticasAcade
     ...item,
     shortName: truncate(item.name, 30),
   }));
+  const sectorData = report.hojas.find((h) => h.nombre === "Empresas registradas")
+    ?.desgloses.find((d) => d.label === "Por sector")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -978,6 +1077,12 @@ function PracticasAcademicasHistoricoReport({ report }: { report: PracticasAcade
           </BarChart>
         </ResponsiveContainer>
       </Box>
+
+      {sectorData.length > 0 && (
+        <Box mt="lg">
+          <NamedDonut title="Empresas registradas por sector" data={sectorData} />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -987,6 +1092,7 @@ function EstrategiasCurricularesHistoricoReport({ report }: { report: Estrategia
     ...item,
     shortName: truncate(item.name, 34),
   }));
+  const enfoqueData = report.hojas[0]?.desgloses.find((d) => d.label === "Enfoques y contribuciones")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -1064,6 +1170,12 @@ function EstrategiasCurricularesHistoricoReport({ report }: { report: Estrategia
           </ResponsiveContainer>
         </Box>
       </SimpleGrid>
+
+      {enfoqueData.length > 0 && (
+        <Box mt="lg">
+          <BoxedBar title="Enfoques y contribuciones" data={enfoqueData} color="#7048e8" />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -1136,6 +1248,7 @@ function ConveniosCooperacionReport({ report }: { report: ConveniosCooperacionAn
     ...item,
     shortName: truncate(item.name, 30),
   }));
+  const actividadData = report.hojas[0]?.desgloses.find((d) => d.label === "Actividades que cubre")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -1198,6 +1311,12 @@ function ConveniosCooperacionReport({ report }: { report: ConveniosCooperacionAn
           </ResponsiveContainer>
         </Box>
       </SimpleGrid>
+
+      {actividadData.length > 0 && (
+        <Box mt="lg">
+          <NamedDonut title="Actividades que cubre" data={actividadData} />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -1252,6 +1371,7 @@ function OtrasEstrategiasReport({ report }: { report: OtrasEstrategiasAnalytics 
     fullName: item.name,
     value: item.value,
   }));
+  const enfoqueData = report.hojas[0]?.desgloses.find((d) => d.label === "Enfoques y contribuciones")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -1297,6 +1417,12 @@ function OtrasEstrategiasReport({ report }: { report: OtrasEstrategiasAnalytics 
           </BarChart>
         </ResponsiveContainer>
       </Box>
+
+      {enfoqueData.length > 0 && (
+        <Box mt="lg">
+          <BoxedBar title="Enfoques y contribuciones" data={enfoqueData} color="#12b886" />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -1307,6 +1433,7 @@ function PazYRegionReport({ report }: { report: PazYRegionAnalytics }) {
     shortName: truncate(item.name, 30),
   }));
   const municipioChartData = report.topMunicipios.map((item) => ({ name: item.name, value: item.value }));
+  const enfoqueData = report.hojas[0]?.desgloses.find((d) => d.label === "Enfoques y contribuciones")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -1383,6 +1510,12 @@ function PazYRegionReport({ report }: { report: PazYRegionAnalytics }) {
       </SimpleGrid>
 
       <NamedDonut title="Tipo de entidad" data={report.porTipoEntidad} />
+
+      {enfoqueData.length > 0 && (
+        <Box mt="lg">
+          <BoxedBar title="Enfoques y contribuciones" data={enfoqueData} color="#e64980" />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -1636,6 +1769,7 @@ function MovilidadReport({ report, titulo }: { report: MovilidadAnalytics; titul
     ...item,
     shortName: truncate(item.name, 34),
   }));
+  const enfoqueData = report.hojas[0]?.desgloses.find((d) => d.label === "Enfoques y contribuciones")?.data || [];
 
   return (
     <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-violet-3)" }}>
@@ -1723,6 +1857,12 @@ function MovilidadReport({ report, titulo }: { report: MovilidadAnalytics; titul
           </ResponsiveContainer>
         </Box>
       </SimpleGrid>
+
+      {enfoqueData.length > 0 && (
+        <Box mt="lg">
+          <BoxedBar title="Enfoques y contribuciones" data={enfoqueData} color="#f76707" />
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -1824,6 +1964,8 @@ export default function TableroPorAmbitoPage() {
                 clearable
                 searchable
                 w={260}
+                maxDropdownHeight={400}
+                comboboxProps={{ withinPortal: true }}
               />
             )}
           </Group>
@@ -1834,24 +1976,26 @@ export default function TableroPorAmbitoPage() {
             <Text c="dimmed" ta="center" py="xl">No hay ámbitos configurados todavía.</Text>
           ) : (
             <>
-              <Paper withBorder radius="md" p="md" mb="lg">
-                <Group gap="xs" mb="sm">
-                  <ThemeIcon color="blue" variant="light" size={26} radius="xl"><IconChartBar size={14} /></ThemeIcon>
-                  <Text fw={700} size="sm">Registros reportados por ámbito</Text>
-                </Group>
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={barDataByAmbito} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={70} tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <ReTooltip
-                      formatter={(value: any) => [Number(value).toLocaleString("es-CO"), "Registros"]}
-                      labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
-                    />
-                    <Bar dataKey="registros" fill={BLUE} radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Paper>
+              {!selectedAmbitoId && (
+                <Paper withBorder radius="md" p="md" mb="lg">
+                  <Group gap="xs" mb="sm">
+                    <ThemeIcon color="blue" variant="light" size={26} radius="xl"><IconChartBar size={14} /></ThemeIcon>
+                    <Text fw={700} size="sm">Registros reportados por ámbito</Text>
+                  </Group>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={barDataByAmbito} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={70} tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <ReTooltip
+                        formatter={(value: any) => [Number(value).toLocaleString("es-CO"), "Registros"]}
+                        labelFormatter={(_label, payload) => payload?.[0]?.payload?.fullName ?? _label}
+                      />
+                      <Bar dataKey="registros" fill={BLUE} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Paper>
+              )}
 
               <Stack gap="md">
                 {visibleStats.map((dimension) => {
