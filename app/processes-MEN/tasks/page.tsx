@@ -5,8 +5,9 @@ import {
   Title, Text, Paper, Stack, Group, Button, TextInput, Textarea,
   Select, Badge, Modal, ActionIcon, Loader, Divider, Box,
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle, IconArrowLeft } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 import type { Dependency } from "../types";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
@@ -37,6 +38,7 @@ const EMPTY_FORM = {
 };
 
 export default function TasksAdminPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const base = process.env.NEXT_PUBLIC_API_URL ?? "";
   const { setHasChanges } = useUnsavedChanges();
@@ -168,10 +170,15 @@ export default function TasksAdminPage() {
   return (
     <Stack p="md" gap="lg">
       <Group justify="space-between" wrap="wrap">
-        <div>
-          <Title order={3}>Tareas asignadas</Title>
-          <Text size="sm" c="dimmed">Crea y asigna tareas/checklist a líderes de dependencia o responsables.</Text>
-        </div>
+        <Group gap="xs" align="center">
+          <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push("/processes-MEN")}>
+            <IconArrowLeft size={18} />
+          </ActionIcon>
+          <div>
+            <Title order={3}>Tareas asignadas</Title>
+            <Text size="sm" c="dimmed">Crea y asigna tareas/checklist a líderes de dependencia o responsables.</Text>
+          </div>
+        </Group>
         <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
           Asignar tarea
         </Button>

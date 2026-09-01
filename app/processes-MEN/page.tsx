@@ -1281,7 +1281,7 @@ const ProcessesMenPage = () => {
                       style={{ borderRadius: 8 }} />
                     <NavLink label="Tareas asignadas" leftSection={<IconList size={16} />} color="violet"
                       onClick={() => router.push("/processes-MEN/tasks")} style={{ borderRadius: 8 }} />
-                    <NavLink label="Información" leftSection={<IconArchive size={16} />} color="blue"
+                    <NavLink label="Información del programa" leftSection={<IconArchive size={16} />} color="blue"
                       active={activeSection === "informacion"}
                       onClick={irAInformacionPrograma} style={{ borderRadius: 8 }} />
                   </Stack>
@@ -1442,6 +1442,10 @@ const ProcessesMenPage = () => {
                         <Select label="Programa" data={opcionesPrograma} value={programa}
                           onChange={(v) => {
                             const n = v ?? "Todos";
+                            if (activeSection === "informacion" && n !== "Todos") {
+                              router.push(processesMenRoutes.program(n));
+                              return;
+                            }
                             setPrograma(n);
                             if (n !== "Todos") setNivelAcademico("Todos");
                           }}
@@ -1450,7 +1454,7 @@ const ProcessesMenPage = () => {
                           <Select label="Nivel académico" data={opcionesNivelAcademico} value={nivelAcademico}
                             onChange={(v) => setNivelAcademico(v ?? "Todos")} searchable={false} styles={selectorStyle} />
                         )}
-                        <NavLink label="Información" leftSection={<IconArchive size={16} />} color="blue"
+                        <NavLink label="Información del programa" leftSection={<IconArchive size={16} />} color="blue"
                           active={activeSection === "informacion"}
                           onClick={irAInformacionPrograma} style={{ borderRadius: 8, marginTop: 8 }} />
                       </>
@@ -1627,6 +1631,10 @@ const ProcessesMenPage = () => {
                     searchable
                     onChange={(v) => {
                       const n = v ?? "Todos";
+                      if (activeSection === "informacion" && n !== "Todos") {
+                        router.push(processesMenRoutes.program(n));
+                        return;
+                      }
                       setPrograma(n);
                       if (n !== "Todos") setNivelAcademico("Todos");
                     }}
@@ -1802,160 +1810,267 @@ const ProcessesMenPage = () => {
               </Stack>
             )}
 
-            {/* Vista por programa */}
-            {activeSection === "informacion" && programa === "Todos" && (
-              <Paper withBorder radius="md" p="xl" shadow="xs">
-                <Text c="dimmed" ta="center">Selecciona un programa en los filtros para consultar su información.</Text>
-              </Paper>
-            )}
-            {activeSection === "informacion" && programa !== "Todos" && (() => {
-              const progObj = programaDesdeFiltroId(programas, programa);
-              if (!progObj) return null;
-              const progCode = programCodeKey(progObj);
-              const procesosDelProg = procesos.filter(p => p.program_code === progCode);
-              const rcActivoEncabezado =
-                (tipoProceso === "Todos" || tipoProceso === "Registro calificado")
-                  ? procesoRcActivoDePrograma(procesosDelProg, progCode)
-                  : undefined;
-              if (loadingFases) return <Loader size="sm" mx="auto" display="block" my="lg" />;
-              return (
-                <>
-                  <Box mb="lg">
-                    <Tooltip label="Volver a estadísticas" withArrow>
-                      <ActionIcon
-                        variant="default"
-                        size="sm"
-                        onClick={() => { setActiveSection("main"); }}
-                        aria-label="Volver a estadísticas"
-                      >
-                        <IconChevronLeft size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Group justify="space-between" align="flex-start" wrap="wrap" gap="md" mt="xs">
-                      <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
-                        <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
-                          <Anchor
-                            href={processesMenRoutes.program(progObj._id)}
-                            underline="always"
-                            c="dark"
-                            style={{ flex: "1 1 10rem", minWidth: 0, lineHeight: 1.25 }}
-                          >
-                            <Title order={2} component="span" style={{ margin: 0, lineHeight: 1.25 }}>
-                              {progObj.nombre}
-                            </Title>
-                          </Anchor>
-                          <Group gap={6} align="flex-start" wrap="nowrap" style={{ flexShrink: 0, maxWidth: "min(100%, 22rem)" }}>
-                            {rcActivoEncabezado ? (
-                              <Badge size="sm" color="blue" variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
-                                {rcActivoEncabezado.tipo_proceso}
-                              </Badge>
-                            ) : null}
-                            <Badge size="lg" color={progObj.estado === "Activo" ? "teal" : "gray"} variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
-                              {progObj.estado === "Activo" ? "ACTIVO MEN" : "INACTIVO MEN"}
-                            </Badge>
-                            {rcActivoEncabezado?.subtipo ? (
-                              <Badge
-                                size="sm"
-                                variant="outline"
-                                color="gray"
-                                styles={stylesSubtipoBadgeTabla(rcActivoEncabezado.subtipo)}
-                                style={{ flexShrink: 0, alignSelf: "center" }}
-                              >
-                                {etiquetaSubtipoCompacta(rcActivoEncabezado.subtipo)}
-                              </Badge>
-                            ) : null}
-                          </Group>
-                        </Group>
-                        {lineasAuxPrograma(progObj).map((ln, i) => (
-                          <Text key={i} size="sm" c="dimmed" fw={500}>{ln}</Text>
-                        ))}
-                      </Stack>
+            {/* Vista de información del programa */}
+            {activeSection === "informacion" && (
+              <>
+                {facultad === "Todos" && programa === "Todos" && (
+                  <Paper withBorder radius="md" p="xl" shadow="xs">
+                    <Group justify="space-between" align="center" mb="md" wrap="wrap">
+                      <Title order={3} m={0}>Seleccione una facultad</Title>
+                      <Badge size="sm" variant="light" color="blue">{facultades.length} facultades</Badge>
                     </Group>
-                    <Divider my="md" />
-                  </Box>
-                  {(() => {
-                    const mostrarRc = tipoProceso === "Todos" || tipoProceso === "Registro calificado";
-                    const mostrarAv = tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria";
-                    const mostrarAe = tipoProceso === "Todos" || tipoProceso === "Autoevaluación";
-                    const rc = mostrarRc
+
+                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                      {facultades.map((fac) => {
+                        const count = programasDelModulo.filter((p) => p.dep_code_facultad === fac.dep_code).length;
+                        return (
+                          <Button
+                            key={fac.dep_code}
+                            variant="light"
+                            color="blue"
+                            justify="space-between"
+                            style={{
+                              minHeight: 72,
+                              padding: "14px 16px",
+                              textAlign: "left",
+                              whiteSpace: "normal",
+                              height: "auto",
+                            }}
+                            onClick={() => {
+                              setFacultad(fac.name);
+                              setPrograma("Todos");
+                              setNivelAcademico("Todos");
+                            }}
+                          >
+                            <Stack gap={2} align="flex-start" style={{ width: "100%" }}>
+                              <Text fw={600} size="sm" lineClamp={2}>{fac.name}</Text>
+                              <Text size="xs" c="dimmed">{count} programas</Text>
+                            </Stack>
+                          </Button>
+                        );
+                      })}
+                    </SimpleGrid>
+                  </Paper>
+                )}
+
+                {facultad !== "Todos" && programa === "Todos" && (
+                  <Paper withBorder radius="md" p="xl" shadow="xs">
+                    <Group justify="space-between" align="center" mb="md" wrap="wrap">
+                      <Group gap="sm" align="center">
+                        <ActionIcon
+                          variant="subtle"
+                          aria-label="Cambiar facultad"
+                          onClick={() => {
+                            setFacultad("Todos");
+                            setPrograma("Todos");
+                            setNivelAcademico("Todos");
+                          }}
+                        >
+                          <IconChevronLeft size={16} />
+                        </ActionIcon>
+                        <Title order={3} m={0}>Programas de {facultad}</Title>
+                      </Group>
+                      <Badge size="sm" variant="light" color="blue">{programasFiltrados.length} programas</Badge>
+                    </Group>
+
+                    {programasFiltrados.length === 0 ? (
+                      <Text c="dimmed">No hay programas para esta facultad con el filtro actual.</Text>
+                    ) : (
+                      <Table striped highlightOnHover withTableBorder>
+                        <Table.Thead>
+                          <Table.Tr>
+                            <Table.Th>Programa</Table.Th>
+                            <Table.Th w={150}>Estado MEN</Table.Th>
+                            <Table.Th w={140} />
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {programasFiltrados.map((p) => (
+                            <Table.Tr key={p._id}>
+                              <Table.Td>
+                                <Anchor
+                                  href={processesMenRoutes.program(p._id)}
+                                  fw={600}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    router.push(processesMenRoutes.program(p._id));
+                                  }}
+                                >
+                                  {p.nombre}
+                                </Anchor>
+                                {lineasAuxPrograma(p).map((ln, idx) => (
+                                  <Text key={idx} size="xs" c="dimmed">{ln}</Text>
+                                ))}
+                              </Table.Td>
+                              <Table.Td>
+                                <Text size="sm">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
+                              </Table.Td>
+                              <Table.Td>
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  onClick={() => router.push(processesMenRoutes.program(p._id))}
+                                >
+                                  Hoja de vida
+                                </Button>
+                              </Table.Td>
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    )}
+                  </Paper>
+                )}
+
+                {programa !== "Todos" && (() => {
+                  const progObj = programaDesdeFiltroId(programas, programa);
+                  if (!progObj) return null;
+                  const progCode = programCodeKey(progObj);
+                  const procesosDelProg = procesos.filter(p => p.program_code === progCode);
+                  const rcActivoEncabezado =
+                    (tipoProceso === "Todos" || tipoProceso === "Registro calificado")
                       ? procesoRcActivoDePrograma(procesosDelProg, progCode)
                       : undefined;
-                    const av = mostrarAv ? procesosDelProg.find((p) => p.tipo_proceso === "AV") : undefined;
-                    const ae = mostrarAe ? procesosDelProg.find((p) => p.tipo_proceso === "AE") : undefined;
-                    const cardProps = (proc: (typeof procesosDelProg)[number]) => ({
-                      proceso: proc,
-                      programa: progObj,
-                      fases: fases.filter((f) => mismoId(f.proceso_id, proc._id)),
-                      todosProgramas: programas,
-                      onUpdateProceso: (updated: (typeof procesos)[number]) =>
-                        setProcesos((prev) => prev.map((p) => (p._id === updated._id ? updated : p))),
-                      onUpdateFases: (updated: Phase[]) =>
-                        setFases((prev) => [...prev.filter((f) => !mismoId(f.proceso_id, proc._id)), ...updated]),
-                      onUpdatePrograma: (updated: Program) => {
-                        setProgramas((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
-                      },
-                      onRefreshProcesos: async (programCode: string) => {
-                        const res = await axios.get(
-                          `${process.env.NEXT_PUBLIC_API_URL}/processes?program_code=${programCode}`,
-                        );
-                        const nuevos: Process[] = Array.isArray(res.data) ? res.data : [];
-                        setProcesos((prev) => [...prev.filter((p) => p.program_code !== programCode), ...nuevos]);
-                      },
-                    });
-                    return (
-                      <>
-                        {rc ? (
-                          <Box key={rc._id} id={`proceso-detalle-${rc._id}`} style={{ scrollMarginTop: 96 }}>
-                            <ProcesoDetalleCard {...cardProps(rc)} />
-                          </Box>
-                        ) : null}
-                        {av ? (
-                          <Box key={av._id} id={`proceso-detalle-${av._id}`} style={{ scrollMarginTop: 96 }}>
-                            <ProcesoDetalleCard {...cardProps(av)} />
-                          </Box>
-                        ) : null}
-                        {ae ? (
-                          <Box key={ae._id} id={`proceso-detalle-${ae._id}`} style={{ scrollMarginTop: 96 }}>
-                            <ProcesoDetalleCard {...cardProps(ae)} />
-                          </Box>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                  {/* Planes de Mejoramiento activos — siempre visibles debajo de RC/AV/AE */}
-                  {procesosDelProg
-                    .filter(p => p.tipo_proceso === "PM")
-                    .map(proc => (
-                      <Box key={proc._id} id={`proceso-detalle-${proc._id}`} style={{ scrollMarginTop: 96 }}>
-                        <ProcesoDetalleCard
-                          proceso={proc}
-                          programa={progObj}
-                          fases={fases.filter((f) => mismoId(f.proceso_id, proc._id))}
-                          todosProgramas={programas}
-                          onUpdateProceso={updated => setProcesos(prev => prev.map(p => p._id === updated._id ? updated : p))}
-                          onUpdateFases={updated =>
-                            setFases((prev) => [...prev.filter((f) => !mismoId(f.proceso_id, proc._id)), ...updated])
-                          }
-                          onUpdatePrograma={updated => {
-                            setProgramas(prev => prev.map(p => p._id === updated._id ? updated : p));
-                          }}
-                          onRefreshProcesos={async (programCode) => {
-                            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes?program_code=${programCode}`);
-                            const nuevos: Process[] = Array.isArray(res.data) ? res.data : [];
-                            setProcesos(prev => [
-                              ...prev.filter(p => p.program_code !== programCode),
-                              ...nuevos,
-                            ]);
-                          }}
-                        />
+                  if (loadingFases) return <Loader size="sm" mx="auto" display="block" my="lg" />;
+                  return (
+                    <>
+                      <Box mb="lg">
+                        <Tooltip label="Volver a estadísticas" withArrow>
+                          <ActionIcon
+                            variant="default"
+                            size="sm"
+                            onClick={() => { setActiveSection("main"); }}
+                            aria-label="Volver a estadísticas"
+                          >
+                            <IconChevronLeft size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md" mt="xs">
+                          <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
+                            <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
+                              <Anchor
+                                href={processesMenRoutes.program(progObj._id)}
+                                underline="always"
+                                c="dark"
+                                style={{ flex: "1 1 10rem", minWidth: 0, lineHeight: 1.25 }}
+                              >
+                                <Title order={2} component="span" style={{ margin: 0, lineHeight: 1.25 }}>
+                                  {progObj.nombre}
+                                </Title>
+                              </Anchor>
+                              <Group gap={6} align="flex-start" wrap="nowrap" style={{ flexShrink: 0, maxWidth: "min(100%, 22rem)" }}>
+                                {rcActivoEncabezado ? (
+                                  <Badge size="sm" color="blue" variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
+                                    {rcActivoEncabezado.tipo_proceso}
+                                  </Badge>
+                                ) : null}
+                                <Badge size="lg" color={progObj.estado === "Activo" ? "teal" : "gray"} variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
+                                  {progObj.estado === "Activo" ? "ACTIVO MEN" : "INACTIVO MEN"}
+                                </Badge>
+                                {rcActivoEncabezado?.subtipo ? (
+                                  <Badge
+                                    size="sm"
+                                    variant="outline"
+                                    color="gray"
+                                    styles={stylesSubtipoBadgeTabla(rcActivoEncabezado.subtipo)}
+                                    style={{ flexShrink: 0, alignSelf: "center" }}
+                                  >
+                                    {etiquetaSubtipoCompacta(rcActivoEncabezado.subtipo)}
+                                  </Badge>
+                                ) : null}
+                              </Group>
+                            </Group>
+                            {lineasAuxPrograma(progObj).map((ln, i) => (
+                              <Text key={i} size="sm" c="dimmed" fw={500}>{ln}</Text>
+                            ))}
+                          </Stack>
+                        </Group>
+                        <Divider my="md" />
                       </Box>
-                    ))}
-                </>
-              );
-            })()}
+                      {(() => {
+                        const mostrarRc = tipoProceso === "Todos" || tipoProceso === "Registro calificado";
+                        const mostrarAv = tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria";
+                        const mostrarAe = tipoProceso === "Todos" || tipoProceso === "Autoevaluación";
+                        const rc = mostrarRc
+                          ? procesoRcActivoDePrograma(procesosDelProg, progCode)
+                          : undefined;
+                        const av = mostrarAv ? procesosDelProg.find((p) => p.tipo_proceso === "AV") : undefined;
+                        const ae = mostrarAe ? procesosDelProg.find((p) => p.tipo_proceso === "AE") : undefined;
+                        const cardProps = (proc: (typeof procesosDelProg)[number]) => ({
+                          proceso: proc,
+                          programa: progObj,
+                          fases: fases.filter((f) => mismoId(f.proceso_id, proc._id)),
+                          todosProgramas: programas,
+                          onUpdateProceso: (updated: (typeof procesos)[number]) =>
+                            setProcesos((prev) => prev.map((p) => (p._id === updated._id ? updated : p))),
+                          onUpdateFases: (updated: Phase[]) =>
+                            setFases((prev) => [...prev.filter((f) => !mismoId(f.proceso_id, proc._id)), ...updated]),
+                          onUpdatePrograma: (updated: Program) => {
+                            setProgramas((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
+                          },
+                          onRefreshProcesos: async (programCode: string) => {
+                            const res = await axios.get(
+                              `${process.env.NEXT_PUBLIC_API_URL}/processes?program_code=${programCode}`,
+                            );
+                            const nuevos: Process[] = Array.isArray(res.data) ? res.data : [];
+                            setProcesos((prev) => [...prev.filter((p) => p.program_code !== programCode), ...nuevos]);
+                          },
+                        });
+                        return (
+                          <>
+                            {rc ? (
+                              <Box key={rc._id} id={`proceso-detalle-${rc._id}`} style={{ scrollMarginTop: 96 }}>
+                                <ProcesoDetalleCard {...cardProps(rc)} />
+                              </Box>
+                            ) : null}
+                            {av ? (
+                              <Box key={av._id} id={`proceso-detalle-${av._id}`} style={{ scrollMarginTop: 96 }}>
+                                <ProcesoDetalleCard {...cardProps(av)} />
+                              </Box>
+                            ) : null}
+                            {ae ? (
+                              <Box key={ae._id} id={`proceso-detalle-${ae._id}`} style={{ scrollMarginTop: 96 }}>
+                                <ProcesoDetalleCard {...cardProps(ae)} />
+                              </Box>
+                            ) : null}
+                          </>
+                        );
+                      })()}
+                      {procesosDelProg
+                        .filter(p => p.tipo_proceso === "PM")
+                        .map(proc => (
+                          <Box key={proc._id} id={`proceso-detalle-${proc._id}`} style={{ scrollMarginTop: 96 }}>
+                            <ProcesoDetalleCard
+                              proceso={proc}
+                              programa={progObj}
+                              fases={fases.filter((f) => mismoId(f.proceso_id, proc._id))}
+                              todosProgramas={programas}
+                              onUpdateProceso={updated => setProcesos(prev => prev.map(p => p._id === updated._id ? updated : p))}
+                              onUpdateFases={updated =>
+                                setFases((prev) => [...prev.filter((f) => !mismoId(f.proceso_id, proc._id)), ...updated])
+                              }
+                              onUpdatePrograma={updated => {
+                                setProgramas(prev => prev.map(p => p._id === updated._id ? updated : p));
+                              }}
+                              onRefreshProcesos={async (programCode) => {
+                                const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes?program_code=${programCode}`);
+                                const nuevos: Process[] = Array.isArray(res.data) ? res.data : [];
+                                setProcesos(prev => [
+                                  ...prev.filter(p => p.program_code !== programCode),
+                                  ...nuevos,
+                                ]);
+                              }}
+                            />
+                          </Box>
+                        ))}
+                    </>
+                  );
+                })()}
+              </>
+            )}
 
             {/* Vista por facultad */}
-            {programa === "Todos" && facultad !== "Todos" && (loadingProgramas || loadingTablePhases ? (
+            {activeSection !== "informacion" && programa === "Todos" && facultad !== "Todos" && (loadingProgramas || loadingTablePhases ? (
               <Loader size="sm" mx="auto" display="block" my="lg" />
             ) : (
               <ProcesoTable title={tituloTabla} rows={procesoRows} tipoProceso={tipoProceso} programaFiltro={programa} />
