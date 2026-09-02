@@ -50,6 +50,7 @@ import {
   IconDownload,
   IconEdit,
   IconEye,
+  IconRestore,
   IconTable,
   IconTrash,
   IconUpload,
@@ -608,6 +609,9 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [dataModalColumns, setDataModalColumns] = useState<string[]>([]);
   const [dataModalLoading, setDataModalLoading] = useState(false);
   const [downloadingDirectId, setDownloadingDirectId] = useState<string | null>(null);
+  const [undoModalOpened, { open: openUndoModal, close: closeUndoModal }] = useDisclosure(false);
+  const [pubTemToUndo, setPubTemToUndo] = useState<any>(null);
+  const [undoingFinalSubmit, setUndoingFinalSubmit] = useState(false);
   const [connectedDataModalOpened, { open: openConnectedDataModal, close: closeConnectedDataModal }] = useDisclosure(false);
   const [connectedDataResponse, setConnectedDataResponse] = useState<any>(null);
   const [connectedDataLoading, setConnectedDataLoading] = useState(false);
@@ -1733,6 +1737,50 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     }
   };
 
+  const openUndoConfirmation = (pt: any) => {
+    setPubTemToUndo(pt);
+    openUndoModal();
+  };
+
+  const closeUndoConfirmation = () => {
+    if (undoingFinalSubmit) return;
+    setPubTemToUndo(null);
+    closeUndoModal();
+  };
+
+  // Deshace el envío final a SNIES: la plantilla vuelve a "Pendiente" para
+  // que el productor responsable pueda corregirla y reenviarla, pero la
+  // información ya cargada (loaded_data) NO se borra en ningún momento.
+  const handleUndoFinalSubmit = async () => {
+    if (!session?.user?.email || !pubTemToUndo) return;
+
+    setUndoingFinalSubmit(true);
+    try {
+      await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/undoFinalSubmit`, {
+        pubTem_id: pubTemToUndo._id,
+        email: session.user.email,
+      });
+
+      showNotification({
+        title: "Envío deshecho",
+        message: `${pubTemToUndo.name || pubTemToUndo.template?.name || "La plantilla"} volvió a estado Pendiente. La información cargada se mantuvo.`,
+        color: "teal",
+      });
+
+      closeUndoModal();
+      setPubTemToUndo(null);
+      fetchPublishedTemplates();
+    } catch (error: any) {
+      showNotification({
+        title: "Error",
+        message: error?.response?.data?.status || "No fue posible deshacer el envío a SNIES.",
+        color: "red",
+      });
+    } finally {
+      setUndoingFinalSubmit(false);
+    }
+  };
+
   const selectedCnaField = cnaFieldOptions.find((field) => field.key === selectedCnaFieldKey);
   const selectedCnaHierarchy = selectedCnaField ? getCnaFieldHierarchy(selectedCnaField) : null;
   const selectedMiroValues = new Set(equivalenceSelections[selectedCnaFieldKey] || []);
@@ -1975,6 +2023,17 @@ const activeMiroTemplateId =
                                     }}
                                   >
                                     Descargar
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip label="Deshacer envío a SNIES (la información cargada no se borra)">
+                                  <Button
+                                    variant="outline"
+                                    color="orange"
+                                    size="xs"
+                                    leftSection={<IconRestore size={14} />}
+                                    onClick={() => openUndoConfirmation(pt)}
+                                  >
+                                    Deshacer envío
                                   </Button>
                                 </Tooltip>
                               </Group>
@@ -2443,6 +2502,27 @@ const activeMiroTemplateId =
           </Button>
           <Button color="red" onClick={handleDelete} loading={deleting}>
             Eliminar
+          </Button>
+        </Group>
+      </Modal>
+
+      <Modal
+        opened={undoModalOpened}
+        onClose={closeUndoConfirmation}
+        title="Deshacer envío a SNIES"
+        overlayProps={{ backgroundOpacity: 0.55, blur: 3 }}
+      >
+        <Text>
+          {/* eslint-disable-next-line react/no-unescaped-entities */}
+          ¿Deseas deshacer el envío a SNIES de "{pubTemToUndo?.name || pubTemToUndo?.template?.name}"?
+          La plantilla volverá a estado Pendiente, pero la información ya cargada no se elimina.
+        </Text>
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={closeUndoConfirmation} disabled={undoingFinalSubmit}>
+            Cancelar
+          </Button>
+          <Button color="orange" onClick={handleUndoFinalSubmit} loading={undoingFinalSubmit}>
+            Deshacer envío
           </Button>
         </Group>
       </Modal>
