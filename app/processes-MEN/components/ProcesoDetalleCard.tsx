@@ -3,13 +3,14 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
-  Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader,
-  ActionIcon, Switch, Tooltip, Alert, Textarea,
+  Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader, Progress,
+  ActionIcon, Switch, Tooltip, Alert, Textarea, ThemeIcon,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { IconChevronDown, IconChevronUp, IconGripVertical, IconPlus, IconTrash, IconEdit, IconFile, IconMessageCircle, IconChevronLeft, IconChevronRight, IconHistory, IconCalendar, IconCheck, IconX, IconAlertTriangle, IconUpload, IconExternalLink, IconLink, IconUnlink, IconChecklist } from "@tabler/icons-react";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import {
   DndContext,
@@ -211,7 +212,7 @@ const SortableActividad = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <Paper withBorder radius="sm" p="sm">
+      <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#ffffff" }}>
         {/* Fila principal de la actividad */}
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Group gap="sm" align="flex-start" style={{ flex: 1 }}>
@@ -3572,8 +3573,8 @@ const ProcesoDetalleCard = ({
             <>
               <Group gap="xs" mt={6} align="center">
                 <Text size="xs" c="#555">Actividad actual: <strong>{ultimaActiva.nombre}</strong></Text>
-                <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                  Ver actividades
+                <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                  Ver actividades ({faseActual.actividades.length})
                 </Button>
               </Group>
               {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
@@ -3602,8 +3603,8 @@ const ProcesoDetalleCard = ({
           {!ultimaActiva && faseActual && (
             <Group gap="xs" mt={6}>
               <Text size="xs" c="green" fw={600}>✓ Todas las actividades completadas</Text>
-              <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                Ver actividades
+              <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                Ver actividades ({faseActual.actividades.length})
               </Button>
             </Group>
           )}
@@ -3920,12 +3921,46 @@ const ProcesoDetalleCard = ({
 
       <Modal opened={checklistOpen}
         onClose={() => { setChecklistOpen(false); setEditActividadId(null); setNuevaActividad(""); }}
-        title={faseActual ? `${faseActual.nombre} — Fase ${proceso.fase_actual}` : "Actividades"}
-        centered size="lg" radius="md">
+        title={
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon color="blue" variant="light" size="lg" radius="md">
+              <IconChecklist size={20} />
+            </ThemeIcon>
+            <Box>
+              <Text fw={700} size="sm">Actividades de la fase</Text>
+              <Text size="xs" c="dimmed">{faseActual ? `${faseActual.nombre} · Fase ${proceso.fase_actual}` : "Actividades"}</Text>
+            </Box>
+          </Group>
+        }
+        centered size="min(96vw, 1120px)" radius="lg"
+        styles={{
+          content: { width: "100%" },
+          header: { padding: "18px 24px", borderBottom: "1px solid #e9ecef" },
+          body: { backgroundColor: "#f3f6fa", padding: "20px 24px 24px" },
+        }}>
         {faseActual && (
           <Stack gap="sm">
+            {(() => {
+              const totalActividades = faseActual.actividades.length;
+              const completadas = faseActual.actividades.filter(actividadResuelta).length;
+              const porcentaje = totalActividades > 0 ? Math.round((completadas / totalActividades) * 100) : 0;
+              return (
+                <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
+                  <Group justify="space-between" align="flex-start" mb={6}>
+                    <Box>
+                      <Text size="sm" fw={700}>{faseActual.nombre}</Text>
+                      <Text size="xs" c="dimmed">Seguimiento de actividades y subactividades</Text>
+                    </Box>
+                    <Badge color={porcentaje === 100 ? "teal" : "blue"} variant="light">
+                      {completadas}/{totalActividades} completadas
+                    </Badge>
+                  </Group>
+                  <Progress value={porcentaje} color={porcentaje === 100 ? "teal" : "blue"} size="sm" radius="xl" />
+                </Paper>
+              );
+            })()}
             {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
-              <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "#fff9db" }}>
+              <Paper withBorder p="sm" radius="md" style={{ backgroundColor: "#fff9db" }}>
                 <Text size="xs" fw={600} mb={4}>
                   {etiquetaFactorCondicion} en revisión — reuniones parciales de avance
                 </Text>
@@ -3941,8 +3976,10 @@ const ProcesoDetalleCard = ({
                 />
               </Paper>
             )}
+            <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, faseActual)}>
               <SortableContext items={faseActual.actividades.map(a => a._id)} strategy={verticalListSortingStrategy}>
+                <Stack gap="sm">
                 {faseActual.actividades.map((act, index) => {
                   const firstIncompleteIndex = faseActual.actividades.findIndex(a => !actividadResuelta(a));
                   const isFirstIncomplete    = !actividadResuelta(act) && index === firstIncompleteIndex;
@@ -3993,10 +4030,12 @@ const ProcesoDetalleCard = ({
                     />
                   );
                 })}
+                </Stack>
               </SortableContext>
             </DndContext>
+            </Paper>
             <Group justify="flex-end" mt="xs" wrap="wrap">
-              {proceso.fase_actual > 0 && (
+              {proceso.fase_actual > (esProcesoPm ? 1 : 0) && (
                 <Button
                   size="xs"
                   color="orange"

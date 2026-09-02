@@ -303,6 +303,7 @@ type PqrSeccion = "agregar" | "activos" | "historial";
 
 const ProcessesMenPage = () => {
   const { userRole } = useRole();
+  const puedeGestionarProcesosMen = ["Administrador", "Responsable", "Productor"].includes(userRole);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -497,7 +498,7 @@ const ProcessesMenPage = () => {
     setPrograma(pr._id);
     setNivelAcademico("Todos");
     setSubtipoFiltro("Todos");
-    setActiveSection("main");
+    setActiveSection("informacion");
     setProcessesMenModulo("procesos");
     router.replace(processesMenRoutes.home, { scroll: false });
   }, [
@@ -522,7 +523,7 @@ const ProcessesMenPage = () => {
   }, [remTipoProceso, remSubtipo]);
 
   useEffect(() => {
-    if (userRole !== "Administrador" || activeSection !== "alertas") return;
+    if (!puedeGestionarProcesosMen || activeSection !== "alertas") return;
     setLoadingReminders(true);
     const fac = remFacultad !== "Todos" ? facultades.find((f) => f.name === remFacultad) : null;
     const prog = programaDesdeFiltroId(programas, remPrograma);
@@ -535,13 +536,13 @@ const ProcessesMenPage = () => {
       .then((r) => setReminders(Array.isArray(r.data) ? r.data : []))
       .catch((e) => console.error("Error cargando recordatorios:", e))
       .finally(() => setLoadingReminders(false));
-  }, [userRole, activeSection, remFacultad, remPrograma, remNivel, facultades, programas]);
+  }, [puedeGestionarProcesosMen, activeSection, remFacultad, remPrograma, remNivel, facultades, programas]);
 
   useEffect(() => {
-    if (userRole !== "Administrador" || activeSection !== "historial") return;
+    if (!puedeGestionarProcesosMen || activeSection !== "historial") return;
     void cargarHistorial();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al entrar a la sección
-  }, [userRole, activeSection]);
+  }, [puedeGestionarProcesosMen, activeSection]);
 
   /** Solo cambia si cambia el conjunto de procesos del programa (alta/baja), no en cada PUT de fecha —
    *  evita `loadingFases` → Loader que desmonta ProcesoDetalleCard y borra los borradores de la ficha en reforma. */
@@ -1008,7 +1009,7 @@ const ProcessesMenPage = () => {
   }, [programasFiltradosCompleto, procesosDelModulo, tablePhases]);
 
   useEffect(() => {
-    if (userRole !== "Administrador" || activeSection !== "main") return;
+    if (!puedeGestionarProcesosMen || activeSection !== "main") return;
     if (programa !== "Todos" || facultad === "Todos") {
       setTablePhases([]);
       return;
@@ -1050,7 +1051,7 @@ const ProcessesMenPage = () => {
     )
       .then((results) => setTablePhases(results.flat()))
       .finally(() => setLoadingTablePhases(false));
-  }, [userRole, activeSection, programa, facultad, procesosDelModulo, facultades, programasFiltradosCompleto]);
+  }, [puedeGestionarProcesosMen, activeSection, programa, facultad, procesosDelModulo, facultades, programasFiltradosCompleto]);
 
   const tituloTabla = `Fase de procesos de programas de ${facultad}`;
 
@@ -1073,7 +1074,7 @@ const ProcessesMenPage = () => {
     setAgregarProcesoOpen(false);
     setAgregarProcesoPrefill(null);
     setProcessesMenModulo("procesos");
-    setActiveSection("main");
+    setActiveSection("informacion");
 
     const [resProg, resProc] = await Promise.all([
       axios.get(`${process.env.NEXT_PUBLIC_API_URL}/programs`),
@@ -1126,7 +1127,7 @@ const ProcessesMenPage = () => {
     setSubtipoFiltro("Todos");
   };
 
-  const sidebarW = userRole === "Administrador"
+  const sidebarW = puedeGestionarProcesosMen
     ? (sidebarCollapsed ? 56 : 208)
     : (sidebarCollapsed ? 48 : 200);
 
@@ -1250,7 +1251,7 @@ const ProcessesMenPage = () => {
             </ActionIcon>
           </Tooltip>
         </Group>
-        {userRole === "Administrador" ? (
+        {puedeGestionarProcesosMen ? (
           <Stack gap={8} style={{ flex: 1, minHeight: 0, overflow: "auto" }} align="stretch">
             {!sidebarCollapsed ? (
               <>
@@ -1571,7 +1572,7 @@ const ProcessesMenPage = () => {
             </Box>
           </Group>
         </Group>
-        {userRole === "Administrador" && (
+        {puedeGestionarProcesosMen && (
           <>
             {processesMenModulo === "comunicaciones" && (
               <Stack gap="md">
