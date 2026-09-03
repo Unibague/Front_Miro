@@ -191,7 +191,8 @@ const AuditPage = () => {
       
       // Manejo para plantillas
       if (parsed.templateId && parsed.templateName) {
-        return `Eliminó la plantilla "${parsed.templateName}"`;
+        const actionText = action?.toLowerCase() === 'create' ? 'Creó' : action?.toLowerCase() === 'delete' ? 'Eliminó' : 'Actualizó';
+        return `${actionText} la plantilla "${parsed.templateName}"`;
       }
       
       // Manejo para cambios de campos

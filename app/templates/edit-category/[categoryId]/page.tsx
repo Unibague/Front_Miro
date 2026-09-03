@@ -32,7 +32,9 @@ const EditCategoryPage = () => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination`, {
+          params: { minimal: true },
+        });
         setTemplates(response.data.templates);
       } catch (error) {
         console.error("Error fetching templates:", error);

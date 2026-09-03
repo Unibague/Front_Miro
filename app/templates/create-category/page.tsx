@@ -29,8 +29,8 @@ const CreateCategoryPage = () => {
     const fetchTemplates = async () => {
       try {
         const qs = selectedPeriodId
-          ? `?periodId=${selectedPeriodId}&onlyPublishedInPeriod=true`
-          : "";
+          ? `?periodId=${selectedPeriodId}&onlyPublishedInPeriod=true&minimal=true`
+          : "?minimal=true";
         const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all/no-pagination${qs}`);
         setTemplates(response.data.templates);
       } catch (error) {

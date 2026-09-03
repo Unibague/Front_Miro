@@ -210,7 +210,8 @@ const CreateTemplatePage = () => {
       email: userEmail,
       full_name: session?.user?.name,
       dimensions: selectedDimensions?.map((dim) => dim._id),
-      producers: selectedDependencies
+      producers: selectedDependencies,
+      period: selectedPeriodId
     };
 
     try {
