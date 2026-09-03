@@ -303,7 +303,7 @@ type PqrSeccion = "agregar" | "activos" | "historial";
 
 const ProcessesMenPage = () => {
   const { userRole } = useRole();
-  const puedeGestionarProcesosMen = ["Administrador", "Responsable", "Productor"].includes(userRole);
+  const puedeGestionarProcesosMen = ["Administrador"].includes(userRole);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
