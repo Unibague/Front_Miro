@@ -851,14 +851,16 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
     const template = templateToDelete;
     setDeleting(true);
     try {
-      await axios.delete(`${apiBasePath}/${template._id}`, {
+      const response = await axios.delete(`${apiBasePath}/${template._id}`, {
         params: { email: session.user.email },
       });
 
       showNotification({
         title: "Plantilla eliminada",
-        message: `${template.name} fue eliminada correctamente.`,
-        color: "red",
+        message: response.data?.driveCleanupPending
+          ? `${template.name} fue eliminada y su origen fue restablecido. Quedó pendiente limpiar el archivo de Drive.`
+          : `${template.name} fue eliminada y la plantilla de origen volvió a estado pendiente.`,
+        color: response.data?.driveCleanupPending ? "yellow" : "teal",
       });
 
       closeDeleteModal();
@@ -2495,6 +2497,9 @@ const activeMiroTemplateId =
         <Text>
           {/* eslint-disable-next-line react/no-unescaped-entities */}
           ¿Estás seguro de que deseas eliminar la plantilla "{templateToDelete?.name}"?
+        </Text>
+        <Text size="sm" c="dimmed" mt="xs">
+          La plantilla publicada de origen volverá a estado pendiente y se conservarán sus datos cargados y el historial de auditoría.
         </Text>
         <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={closeDeleteConfirmation} disabled={deleting}>

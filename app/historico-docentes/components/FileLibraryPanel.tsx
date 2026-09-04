@@ -102,11 +102,30 @@ const displayHeader = (h: string) => {
 };
 
 // En Consulta de Información no se debe mostrar el número de documento
-// (dato personal) de quienes aparecen reportados en la plantilla.
-const HIDDEN_COLUMN_PATTERNS = [/^NUM(ERO)?[_ ]?DOCUMENTO$/];
+// (dato personal) de quienes aparecen reportados en la plantilla, salvo
+// para el rol Administrador (ver uso de isAdmin en renderDataTable). Se
+// compara colapsando espacios/guiones bajos/tildes para cubrir variantes
+// reales de encabezado ("Documento", "ID_DOCUMENTO", "Número de Documento",
+// "Cédula", "Identificación", etc.) sin afectar columnas de TIPO de
+// documento (esas no son el dato personal en sí, solo indican CC/CE/TI).
+const HIDDEN_COLUMN_NAMES = new Set([
+  "DOCUMENTO", "NUMDOCUMENTO", "NERODOCUMENTO", "NUMERODOCUMENTO",
+  "NERODEDOCUMENTO", "NUMERODEDOCUMENTO", "NRODOCUMENTO", "NODOCUMENTO",
+  "IDDOCUMENTO", "NDOCUMENTO",
+  "IDENTIFICACION", "NUMEROIDENTIFICACION", "NUMERODEIDENTIFICACION",
+  "NROIDENTIFICACION", "NOIDENTIFICACION", "IDIDENTIFICACION",
+  "IDENTIFICACIONBENEFICIARIO", "IDENTIFICATION",
+  "CEDULA", "NUMEROCEDULA", "CEDULACIUDADANIA", "CEDULADECIUDADANIA",
+  "DOCIDENTIDAD",
+]);
 const isHiddenColumnHeader = (h: string) => {
-  const normalized = h.trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  return HIDDEN_COLUMN_PATTERNS.some((pattern) => pattern.test(normalized));
+  const collapsed = h
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Z]/g, "");
+  return HIDDEN_COLUMN_NAMES.has(collapsed);
 };
 
 // Algunos archivos cargados antes de esta corrección guardaron las fechas
@@ -414,7 +433,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   const renderDataTable = (data: HistoricoData, loading: boolean) => {
     const visibleColumnIndexes = data.currentSheet.headers
       .map((header, index) => ({ header, index }))
-      .filter(({ header }) => !isHiddenColumnHeader(header))
+      .filter(({ header }) => isAdmin || !isHiddenColumnHeader(header))
       .map(({ index }) => index);
 
     return (

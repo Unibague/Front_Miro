@@ -40,6 +40,7 @@ import {
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../utils/periodUtils";
 import { formatTemplateDateValue } from "../../../../utils/templateUtils";
+import { getFieldMaxLength } from "../../../../utils/fieldConstraints";
 
 interface Field {
   name: string;
@@ -51,6 +52,12 @@ interface Field {
   multiple?: boolean;
   dropdown_options?: string[];
   excel_validation_options?: string[];
+  content_type?: "" | "alphabetic" | "numeric" | "alphanumeric";
+  max_length?: number;
+  min_value?: number;
+  max_value?: number;
+  integer_only?: boolean;
+  percentage_group?: string;
 }
 
 interface WorkbookSheet {
@@ -1710,10 +1717,10 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           <NumberInput
             {...commonProps}
             value={numericDisplayValue === "" ? "" : Number(numericDisplayValue)}
-            allowDecimal={field.datatype !== "Entero"}
-            allowNegative={false}
-            min={field.datatype === "Porcentaje" ? 0 : undefined}
-            max={field.datatype === "Porcentaje" ? 100 : undefined}
+            allowDecimal={field.datatype !== "Entero" && !field.integer_only}
+            allowNegative={(field.min_value ?? 0) < 0}
+            min={field.min_value ?? (field.datatype === "Porcentaje" ? 0 : undefined)}
+            max={field.max_value ?? (field.datatype === "Porcentaje" ? 100 : undefined)}
             clampBehavior="strict"
             hideControls
             onChange={(value) => {
@@ -1726,7 +1733,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       }
 
       case "Texto Largo": {
-        const textareaMaxLength = 800;
+        const textareaMaxLength = getFieldMaxLength(field);
         const textareaDisplayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue
           : (formattedDateDisplay ?? (fieldValue === null ? "" : fieldValue));
@@ -1741,7 +1748,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             value={textareaDisplayValue}
             onChange={(e) => {
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
-              if (e.target.value.length >= textareaMaxLength) {
+              if (textareaMaxLength && e.target.value.length >= textareaMaxLength) {
                 showNotification({
                   id: `char-limit-${scopedFieldKey}-${rowIndex}`,
                   title: "Límite de caracteres alcanzado",
@@ -1757,7 +1764,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
 
       case "Texto Corto":
       case "Link": {
-        const textInputMaxLength = field.datatype === "Texto Corto" ? 60 : undefined;
+        const textInputMaxLength = getFieldMaxLength(field);
         // Si el campo tiene validador y hay una descripción guardada, mostrarla
         const displayValue = field.validate_with && storedDisplayValue
           ? storedDisplayValue

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, TextInput, Button, Group, Switch, Table, Checkbox, Select, MultiSelect, Center, Textarea, Tooltip, rem } from "@mantine/core";
+import { Container, TextInput, NumberInput, Button, Group, Switch, Table, Checkbox, Select, MultiSelect, Center, Textarea, Tooltip, rem } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
@@ -19,10 +19,16 @@ interface Field {
   required: boolean;
   validate_with?: string;
   comment?: string;
+  content_type?: "" | "alphabetic" | "numeric" | "alphanumeric";
+  max_length?: number;
+  min_value?: number;
+  max_value?: number;
+  integer_only?: boolean;
+  percentage_group?: string;
   multiple: boolean
 }
 
-type FieldKey = "name" | "datatype" | "required" | "validate_with" | "comment" | "multiple";
+type FieldKey = keyof Field;
 
 const allowedDataTypes = [
   "Entero",
@@ -55,7 +61,7 @@ const CreateTemplatePage = () => {
   const [fileName, setFileName] = useState("");
   const [fileDescription, setFileDescription] = useState("");
   const [fields, setFields] = useState<Field[]>([
-    { name: "", datatype: "", required: true, validate_with: "", comment: "", multiple: false },
+    { name: "", datatype: "", required: true, validate_with: "", comment: "", content_type: "", multiple: false },
   ]);
   const [active, setActive] = useState(true);
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>();
@@ -165,6 +171,7 @@ const CreateTemplatePage = () => {
         required: true,
         validate_with: "",
         comment: "",
+        content_type: "",
         multiple: false
       },
     ]);
@@ -350,6 +357,9 @@ const CreateTemplatePage = () => {
                   <Table.Th>Arrastrar</Table.Th>
                   <Table.Th>Nombre Campo</Table.Th>
                   <Table.Th>Tipo de Campo</Table.Th>
+                  <Table.Th>Contenido</Table.Th>
+                  <Table.Th>Máx. caracteres</Table.Th>
+                  <Table.Th>Reglas numéricas</Table.Th>
                   <Table.Th>¿Obligatorio?</Table.Th>
                   <Table.Th>Validar con Base de Datos</Table.Th>
                   <Table.Th w={rem(70)}>Múltiple Respuesta</Table.Th>
@@ -397,20 +407,39 @@ const CreateTemplatePage = () => {
                             readOnly={!!field.validate_with}
                           />
                         </Table.Td>
+                        <Table.Td w={rem(170)}>
+                          <Select
+                            placeholder="Sin restricción"
+                            data={[
+                              { value: "alphabetic", label: "Alfabético" },
+                              { value: "numeric", label: "Numérico" },
+                              { value: "alphanumeric", label: "Alfanumérico" },
+                            ]}
+                            value={field.content_type || null}
+                            onChange={(value) => handleFieldChange(index, "content_type", value || "")}
+                            clearable
+                          />
+                        </Table.Td>
+                        <Table.Td w={rem(130)}>
+                          <NumberInput
+                            placeholder="Sin límite"
+                            min={1}
+                            allowDecimal={false}
+                            value={field.max_length}
+                            onChange={(value) => handleFieldChange(index, "max_length", value || undefined)}
+                          />
+                        </Table.Td>
+                        <Table.Td w={rem(210)}>
+                          <Group gap="xs" wrap="nowrap">
+                            <NumberInput aria-label="Valor mínimo" placeholder="Mín." value={field.min_value} onChange={(value) => handleFieldChange(index, "min_value", value === "" ? undefined : Number(value))} />
+                            <NumberInput aria-label="Valor máximo" placeholder="Máx." value={field.max_value} onChange={(value) => handleFieldChange(index, "max_value", value === "" ? undefined : Number(value))} />
+                          </Group>
+                          <Checkbox mt="xs" label="Solo enteros" checked={field.integer_only || false} onChange={(event) => handleFieldChange(index, "integer_only", event.currentTarget.checked)} />
+                          {field.datatype === "Porcentaje" && (
+                            <TextInput mt="xs" placeholder="Grupo de suma (opcional)" value={field.percentage_group || ""} onChange={(event) => handleFieldChange(index, "percentage_group", event.currentTarget.value)} />
+                          )}
+                        </Table.Td>
                         <Table.Td>
-                          <Center>
-                            <Checkbox
-                              label=""
-                              checked={field.required}
-                              onChange={(event) =>
-                                handleFieldChange(
-                                  index,
-                                  "required",
-                                  event.currentTarget.checked
-                                )
-                              }
-                            />
-                          </Center>
                           <Center>
                             <Checkbox
                               label=""

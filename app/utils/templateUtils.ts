@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
+import { getFieldMaxLength } from "./fieldConstraints";
 
 export const sanitizeSheetName = (name: string): string => {
   return name.replace(/[/\\?*[\]]/g, '').substring(0, 31);
@@ -1715,6 +1716,11 @@ export const applyFieldCommentNote = (
 interface DownloadableField extends FieldWithValidator {
   datatype?: string;
   locked?: boolean;
+  content_type?: "" | "alphabetic" | "numeric" | "alphanumeric";
+  max_length?: number;
+  min_value?: number;
+  max_value?: number;
+  integer_only?: boolean;
 }
 
 interface DownloadableWorksheet {
@@ -1756,6 +1762,43 @@ export const applyDatatypeValidation = (cell: ExcelJS.Cell, field: DownloadableF
       break;
     default:
       break;
+  }
+
+  if ((field.min_value !== undefined || field.max_value !== undefined || field.integer_only) && ["Entero", "Decimal", "Porcentaje"].includes(field.datatype || "")) {
+    const defaultMin = field.datatype === "Porcentaje" ? 0 : -Number.MAX_SAFE_INTEGER;
+    const defaultMax = field.datatype === "Porcentaje" ? 100 : Number.MAX_SAFE_INTEGER;
+    cell.dataValidation = {
+      type: field.datatype === "Entero" || field.integer_only ? "whole" : "decimal",
+      operator: "between",
+      formulae: [field.min_value ?? defaultMin, field.max_value ?? defaultMax],
+      showErrorMessage: true,
+      errorTitle: "Valor no válido",
+      error: `Ingrese un valor${field.integer_only ? " entero" : ""} entre ${field.min_value ?? defaultMin} y ${field.max_value ?? defaultMax}.`,
+    };
+  }
+
+  const configuredMaxLength = getFieldMaxLength(field);
+  if (configuredMaxLength && ["Texto Corto", "Texto Largo"].includes(field.datatype || "")) {
+    cell.dataValidation = {
+      type: "textLength",
+      operator: "lessThanOrEqual",
+      formulae: [configuredMaxLength],
+      showErrorMessage: true,
+      errorTitle: "Longitud no válida",
+      error: `Este campo admite máximo ${configuredMaxLength} caracteres.`,
+    };
+  }
+
+  if (field.content_type === "numeric") {
+    const lengthRule = configuredMaxLength ? `,LEN(${cell.address})<=${configuredMaxLength}` : "";
+    cell.dataValidation = {
+      type: "custom",
+      formulae: [`AND(${cell.address}<>"",ISNUMBER(--${cell.address})${lengthRule})`],
+      showErrorMessage: true,
+      errorTitle: "Contenido no válido",
+      error: `Este campo solo admite dígitos${configuredMaxLength ? ` y máximo ${configuredMaxLength} caracteres` : ""}.`,
+    };
+    cell.numFmt = "@";
   }
 
   if (field.comment && cell.dataValidation) {

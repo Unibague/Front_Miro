@@ -37,6 +37,7 @@ import {
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../../utils/periodUtils";
 import "dayjs/locale/es";
+import { getFieldMaxLength } from "../../../../../utils/fieldConstraints";
 
 interface Field {
   name: string;
@@ -47,6 +48,12 @@ interface Field {
   multiple?: boolean;
   dropdown_options?: string[];
   excel_validation_options?: string[];
+  content_type?: "" | "alphabetic" | "numeric" | "alphanumeric";
+  max_length?: number;
+  min_value?: number;
+  max_value?: number;
+  integer_only?: boolean;
+  percentage_group?: string;
 }
 
 interface Template {
@@ -663,7 +670,9 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           <NumberInput
             {...commonProps}
             value={numericValue}
-            min={0}
+            allowDecimal={field.datatype !== "Entero" && !field.integer_only}
+            min={field.min_value ?? (field.datatype === "Porcentaje" ? 0 : undefined)}
+            max={field.max_value ?? (field.datatype === "Porcentaje" ? 100 : undefined)}
             step={field.datatype === "Porcentaje" ? 1 : 1}
             hideControls
             onChange={(value) => handleInputChange(rowIndex, field.name, value)}
@@ -671,7 +680,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           />
         );
       case "Texto Largo": {
-        const textareaMaxLength = 800;
+        const textareaMaxLength = getFieldMaxLength(field);
         return (
           <Textarea
             {...commonProps}
@@ -679,7 +688,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
             maxLength={textareaMaxLength}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => {
-              if (e.target.value.length >= textareaMaxLength) {
+              if (textareaMaxLength && e.target.value.length >= textareaMaxLength) {
                 showNotification({
                   id: `char-limit-${field.name}-${rowIndex}`,
                   title: "Límite de caracteres alcanzado",
@@ -695,7 +704,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
       }
       case "Texto Corto":
       case "Link": {
-        const textInputMaxLength = field.datatype === "Texto Corto" ? 60 : undefined;
+        const textInputMaxLength = getFieldMaxLength(field);
         return (
           <TextInput
             {...commonProps}
