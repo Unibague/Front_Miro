@@ -1691,6 +1691,12 @@ const handleSelectMiroTemplate = (templateId: string | null) => {
     return cleaned;
   };
 
+  const formatSniesCellForDisplay = (value: any, fieldName: string) => {
+    const formattedDate = formatTemplateDateValue(value, fieldName);
+    if (formattedDate !== null) return formattedDate;
+    return String(value ?? "") || "-";
+  };
+
   const normalizeKeyForMatch = (value: string): string =>
     value.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 
@@ -2685,7 +2691,7 @@ const activeMiroTemplateId =
                             <Table.Tr key={rowIndex}>
                               {sheet.headers.map((header: string) => (
                                 <Table.Td key={header} style={{ whiteSpace: 'nowrap' }}>
-                                  {String(row[header] ?? '') || '-'}
+                                  {formatSniesCellForDisplay(row[header], header)}
                                 </Table.Td>
                               ))}
                             </Table.Tr>
