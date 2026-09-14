@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import axios from "axios";
 import {
@@ -42,8 +42,9 @@ import {
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { usePeriod } from "@/app/context/PeriodContext";
+import FilterSidebar from "@/app/components/FilterSidebar";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
 
 interface SheetInfo {
@@ -94,6 +95,11 @@ interface Anexo {
   uploaded_by: { full_name?: string; email?: string };
   createdAt: string;
 }
+
+// Solo para mostrar en pantalla: se oculta la extensión (.xlsx, .xlsm, .pdf)
+// del nombre del archivo, sin tocar el nombre real usado para descargar o
+// renombrar.
+const displayFileName = (name: string) => name.replace(/\.(xlsx|xlsm|pdf)$/i, "");
 
 const displayHeader = (h: string) => {
   const normalized = h.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -181,6 +187,11 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   const [fileYear, setFileYear] = useState<string | null>(null);
   const [fileSearch, setFileSearch] = useState("");
 
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
+  const [allRows, setAllRows] = useState<Record<string, string>[]>([]);
+  const [allRowsLoading, setAllRowsLoading] = useState(false);
+
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
@@ -247,6 +258,31 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     [session?.user?.email]
   );
 
+  // Carga todos los datos del archivo (sin paginar) para alimentar el sidebar de filtros.
+  // `visibleIndexes` referencia posiciones dentro de `headers` (el listado completo de
+  // columnas de la hoja) para mantener la correspondencia índice-a-índice con las filas
+  // crudas devueltas por la API; solo esas columnas quedan disponibles como filtro.
+  const fetchAllRows = useCallback(
+    async (fileId: string, sheetIndex: number, headers: string[], visibleIndexes: number[]) => {
+      if (!session?.user?.email || headers.length === 0) return;
+      setAllRowsLoading(true);
+      try {
+        const res = await axios.get(`${API_BASE}/data`, {
+          params: { email: session.user.email, id: fileId, sheet: sheetIndex, page: 1, limit: 99999 },
+        });
+        const rawRows: string[][] = res.data?.currentSheet?.rows || [];
+        setAllRows(
+          rawRows.map((row) => Object.fromEntries(visibleIndexes.map((i) => [headers[i], row[i] ?? ""])))
+        );
+      } catch {
+        setAllRows([]);
+      } finally {
+        setAllRowsLoading(false);
+      }
+    },
+    [session?.user?.email]
+  );
+
   const fetchAnexos = useCallback(async (fileId: string) => {
     setAnexosLoading(true);
     try {
@@ -263,6 +299,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     setSelectedFile(null);
     setFileData(null);
     setListSearch("");
+    setActiveFilters({});
+    setAllRows([]);
+    setFilterVisible(false);
     fetchFileList();
   }, [fetchFileList]);
 
@@ -273,6 +312,68 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileSheet, filePage, fileYear, fileSearch, selectedFile]);
 
+  // Carga todos los datos para el sidebar de filtros cuando cambia el archivo/hoja seleccionada.
+  // Los encabezados ocultos (documento de identidad) se excluyen para que no aparezcan
+  // como opción de filtro para usuarios no administradores.
+  useEffect(() => {
+    if (selectedFile && selectedFile.file_type !== "pdf" && fileData?.currentSheet?.headers?.length) {
+      const headers = fileData.currentSheet.headers;
+      const visibleIndexes = headers
+        .map((h, i) => ({ h, i }))
+        .filter(({ h }) => isAdmin || !isHiddenColumnHeader(h))
+        .map(({ i }) => i);
+      fetchAllRows(selectedFile._id, fileSheet, headers, visibleIndexes);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFile?._id, fileSheet, fileData?.currentSheet?.headers?.length, isAdmin]);
+
+  // Filas filtradas client-side usando el dataset completo (allRows), no solo la página actual.
+  const filteredRows = useMemo(() => {
+    if (!fileData) return [];
+    const hasFilters = Object.values(activeFilters).some((v) => v.length > 0);
+    if (!hasFilters) return fileData.currentSheet.rows;
+
+    const headers = fileData.currentSheet.headers;
+
+    const exactFilters: Record<string, string[]> = {};
+    const rangeFrom: Record<string, string> = {};
+    const rangeTo: Record<string, string> = {};
+
+    Object.entries(activeFilters).forEach(([key, values]) => {
+      if (!values.length) return;
+      if (key.endsWith("__from")) rangeFrom[key.slice(0, -6)] = values[0];
+      else if (key.endsWith("__to")) rangeTo[key.slice(0, -4)] = values[0];
+      else exactFilters[key] = values;
+    });
+
+    const findHeader = (filterName: string) =>
+      headers.find((h) => h.toLowerCase().replace(/[^a-z0-9]/g, "_") === filterName || h === filterName);
+
+    const sourceObjects: Record<string, string>[] =
+      allRows.length > 0
+        ? allRows
+        : fileData.currentSheet.rows.map((row) => Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""])));
+
+    const filtered = sourceObjects.filter((rowObj) => {
+      for (const [filterName, values] of Object.entries(exactFilters)) {
+        if (!values.length) continue;
+        const header = findHeader(filterName);
+        if (!header) continue;
+        if (!values.includes(String(rowObj[header] ?? ""))) return false;
+      }
+      for (const baseKey of new Set([...Object.keys(rangeFrom), ...Object.keys(rangeTo)])) {
+        const header = findHeader(baseKey);
+        if (!header) continue;
+        const val = String(rowObj[header] ?? "").trim();
+        if (rangeFrom[baseKey] && val < rangeFrom[baseKey]) return false;
+        if (rangeTo[baseKey] && val > rangeTo[baseKey]) return false;
+      }
+      return true;
+    });
+
+    return filtered.map((rowObj) => headers.map((h) => String(rowObj[h] ?? "")));
+  }, [fileData, allRows, activeFilters]);
+
   const handleSelectFile = (item: FileItem) => {
     setSelectedFile(item);
     setFileData(null);
@@ -281,6 +382,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     setFileYear(null);
     setFileSearch("");
     setAnexos([]);
+    setActiveFilters({});
+    setAllRows([]);
+    setFilterVisible(false);
     if (item.file_type === "pdf") {
       fetchAnexos(item._id);
     } else {
@@ -436,8 +540,20 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       .filter(({ header }) => isAdmin || !isHiddenColumnHeader(header))
       .map(({ index }) => index);
 
+    const hasActiveFilters = Object.values(activeFilters).some((v) => v.length > 0);
+    const canFilter = allRows.length > 0;
+    const displayRows = hasActiveFilters ? filteredRows : data.currentSheet.rows;
+
     return (
     <>
+      {canFilter && (
+        <FilterSidebar
+          isVisible={filterVisible}
+          onToggle={() => setFilterVisible((v) => !v)}
+          onFiltersChange={setActiveFilters}
+          templateData={allRows}
+        />
+      )}
       <Group mb="md" align="flex-end">
         <Box style={{ flex: 1, maxWidth: 340 }}>
           <TextInput
@@ -448,6 +564,18 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
             leftSection={<IconSearch size={16} />}
           />
         </Box>
+        {canFilter && (
+          <Button
+            variant={hasActiveFilters ? "filled" : "light"}
+            color="blue"
+            leftSection={<IconSearch size={16} />}
+            onClick={() => setFilterVisible((v) => !v)}
+            loading={allRowsLoading}
+            size="sm"
+          >
+            Filtros {hasActiveFilters && `(${Object.values(activeFilters).flat().length})`}
+          </Button>
+        )}
       </Group>
 
       <Tabs value={String(fileSheet)} onChange={(v) => { setFileSheet(parseInt(v ?? "0", 10)); setFilePage(1); }} variant="outline">
@@ -484,14 +612,14 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {data.currentSheet.rows.length === 0 ? (
+                        {displayRows.length === 0 ? (
                           <Table.Tr>
                             <Table.Td colSpan={visibleColumnIndexes.length + 1}>
-                              <Center py="md"><Text c="dimmed">No hay datos.</Text></Center>
+                              <Center py="md"><Text c="dimmed">No hay datos para los filtros seleccionados.</Text></Center>
                             </Table.Td>
                           </Table.Tr>
                         ) : (
-                          data.currentSheet.rows.map((row, rowIndex) => {
+                          displayRows.map((row, rowIndex) => {
                             const num = (data.currentSheet.page - 1) * PAGE_SIZE + rowIndex + 1;
                             return (
                               <Table.Tr key={rowIndex}>
@@ -506,15 +634,15 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                       </Table.Tbody>
                     </Table>
                   </ScrollArea>
-                  {data.currentSheet.totalPages > 1 && (
+                  {!hasActiveFilters && data.currentSheet.totalPages > 1 && (
                     <Center mt="md">
                       <Pagination value={filePage} onChange={setFilePage} total={data.currentSheet.totalPages} siblings={1} boundaries={2} />
                     </Center>
                   )}
                   <Text size="xs" c="dimmed" ta="right" mt="xs">
-                    Mostrando {(data.currentSheet.page - 1) * PAGE_SIZE + 1}–
-                    {Math.min(data.currentSheet.page * PAGE_SIZE, data.currentSheet.totalRows)} de{" "}
-                    {data.currentSheet.totalRows.toLocaleString("es-CO")} registros
+                    {hasActiveFilters
+                      ? `${displayRows.length.toLocaleString("es-CO")} registros filtrados`
+                      : `Mostrando ${(data.currentSheet.page - 1) * PAGE_SIZE + 1}–${Math.min(data.currentSheet.page * PAGE_SIZE, data.currentSheet.totalRows)} de ${data.currentSheet.totalRows.toLocaleString("es-CO")} registros`}
                   </Text>
                 </>
               )
@@ -582,7 +710,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                       </Group>
                     ) : (
                       <Group gap={4} wrap="nowrap">
-                        <Text size="xs" fw={500} truncate style={{ flex: 1 }}>{a.file_name}</Text>
+                        <Text size="xs" fw={500} truncate style={{ flex: 1 }}>{displayFileName(a.file_name)}</Text>
                         {isAdmin && (
                           <ActionIcon {...ANEXO_ACTION_PROPS} color="gray" onClick={() => { setEditingAnexoId(a._id); setEditingAnexoName(a.file_name); }}>
                             <IconPencil size={ANEXO_ACTION_ICON_SIZE} />
@@ -632,7 +760,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       <Modal
         opened={!!xlsxModal}
         onClose={() => setXlsxModal(null)}
-        title={<Text fw={600} size="sm" truncate>{xlsxModal?.name}</Text>}
+        title={<Text fw={600} size="sm" truncate>{xlsxModal ? displayFileName(xlsxModal.name) : ""}</Text>}
         size="90%"
         styles={{ body: { padding: 0 } }}
       >
@@ -675,7 +803,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
         )}
       </Modal>
 
-      {(tabs || isAdmin) && (
+      {!selectedFile && (tabs || isAdmin) && (
         <Group mb="md" justify="space-between" align="flex-end" wrap="wrap" gap="xs">
           {tabs || <div />}
           {isAdmin && (
@@ -703,40 +831,39 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
           if (isPdf || fileData) {
             return (
               <>
-                <Group mb="md" justify="space-between" wrap="nowrap">
-                  <Group gap="sm" style={{ minWidth: 0, flex: 1 }}>
-                    <ActionIcon variant="subtle" style={{ flexShrink: 0 }} onClick={() => { setSelectedFile(null); setFileData(null); setAnexos([]); }}>
-                      <IconChevronLeft size={20} />
-                    </ActionIcon>
-                    <div style={{ minWidth: 0 }}>
-                      <Group gap={6} wrap="nowrap">
-                        {isPdf ? <IconFileTypePdf size={18} color="#e03131" style={{ flexShrink: 0 }} /> : <IconFileSpreadsheet size={18} color="#7c3aed" style={{ flexShrink: 0 }} />}
-                        <Text fw={600} truncate>{selectedFile.file_name}</Text>
-                      </Group>
-                    </div>
-                  </Group>
-                  {isPdf ? (
-                    <Group gap="xs" style={{ flexShrink: 0 }}>
-                      <Button size="xs" variant="light" color="red" leftSection={<IconEye size={14} />} component="a" href={`${API_BASE}/${selectedFile._id}/pdf`} target="_blank">
-                        Ver PDF
-                      </Button>
-                      <Button size="xs" variant="subtle" color="red" leftSection={<IconDownload size={14} />} component="a" href={`${API_BASE}/${selectedFile._id}/pdf`} download={selectedFile.file_name}>
-                        Descargar
-                      </Button>
+                <Group mb="md" gap="sm" wrap="nowrap" align="flex-start">
+                  <ActionIcon variant="subtle" style={{ flexShrink: 0 }} onClick={() => { setSelectedFile(null); setFileData(null); setAnexos([]); }}>
+                    <IconChevronLeft size={20} />
+                  </ActionIcon>
+                  <div style={{ minWidth: 0 }}>
+                    <Group gap={6} wrap="nowrap">
+                      {isPdf ? <IconFileTypePdf size={18} color="#e03131" style={{ flexShrink: 0 }} /> : <IconFileSpreadsheet size={18} color="#7c3aed" style={{ flexShrink: 0 }} />}
+                      <Text fw={600} truncate>{displayFileName(selectedFile.file_name)}</Text>
                     </Group>
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      color="violet"
-                      leftSection={<IconDownload size={14} />}
-                      component="a"
-                      href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${selectedFile._id}`}
-                      download={selectedFile.file_name}
-                    >
-                      Descargar Excel
-                    </Button>
-                  )}
+                    {isPdf ? (
+                      <Group gap="xs" mt={6}>
+                        <Button size="xs" variant="light" color="red" leftSection={<IconEye size={14} />} component="a" href={`${API_BASE}/${selectedFile._id}/pdf`} target="_blank">
+                          Ver PDF
+                        </Button>
+                        <Button size="xs" variant="subtle" color="red" leftSection={<IconDownload size={14} />} component="a" href={`${API_BASE}/${selectedFile._id}/pdf`} download={selectedFile.file_name}>
+                          Descargar
+                        </Button>
+                      </Group>
+                    ) : (
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="violet"
+                        leftSection={<IconDownload size={14} />}
+                        component="a"
+                        href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${selectedFile._id}`}
+                        download={selectedFile.file_name}
+                        mt={6}
+                      >
+                        Descargar Excel
+                      </Button>
+                    )}
+                  </div>
                 </Group>
 
                 {isPdf ? null : fileData ? renderDataTable(fileData, fileDataLoading) : <Center h={200}><Loader /></Center>}
@@ -801,7 +928,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                           </Group>
                         ) : (
                           <Group gap={4} wrap="nowrap">
-                            <Text fw={500} truncate style={{ flex: 1 }}>{item.file_name}</Text>
+                            <Text fw={500} truncate style={{ flex: 1 }}>{displayFileName(item.file_name)}</Text>
                             {isAdmin && (
                               <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => { setEditingId(item._id); setEditingName(item.file_name); }}>
                                 <IconPencil size={13} />

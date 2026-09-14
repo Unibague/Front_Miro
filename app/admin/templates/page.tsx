@@ -1887,29 +1887,6 @@ const AdminTemplatesPage = () => {
           </Group>
         </Center>
       </Table.Td>
-      <Table.Td>
-        <Center>
-          <Tooltip
-                  label={template.published ? "Plantilla ya asignada en el periodo" :
-                    "Asignar plantilla a periodo"}
-                  transitionProps={{ transition: 'fade-up', duration: 300 }}
-          >
-            <Button 
-              disabled={template.published}
-              variant="outline" 
-              onClick={() => { 
-              setSelectedTemplate(template);
-              setPublicationName(template.name)
-              setSelectedPeriod('')
-              setDeadline(null)
-              open(); 
-              console.log("Modal open state:", modalOpen);
-            }}>
-              <IconUser size={16} />
-            </Button>
-          </Tooltip>
-        </Center>
-      </Table.Td>
     </Table.Tr>
   ));
 
@@ -2020,10 +1997,6 @@ const AdminTemplatesPage = () => {
           </Table.Th>
           <Table.Th>
             <Center>Acciones</Center>
-          </Table.Th>
-
-          <Table.Th>
-            <Center>Asignar</Center>
           </Table.Th>
         </Table.Tr>
       </Table.Thead>

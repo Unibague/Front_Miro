@@ -52,7 +52,7 @@ export default function AmbitoDetailPage() {
             </ThemeIcon>
             <div>
               <Title order={3}>{dimensionName || "Ámbito"}</Title>
-              <Text size="xs" c="dimmed">Consulta de Información — sube y consulta sus Plantillas o Informes</Text>
+              <Text size="xs" c="dimmed">Consulta de Información</Text>
             </div>
           </Group>
 

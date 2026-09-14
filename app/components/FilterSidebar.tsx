@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput, SegmentedControl } from "@mantine/core";
+import { Paper, Stack, Title, Group, Button, MultiSelect, Text, ActionIcon, Box, Badge, Divider, ScrollArea, Tooltip, Select, Radio, Autocomplete, Combobox, useCombobox, InputBase, Input, TextInput, SegmentedControl, Portal } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { IconFilter, IconX, IconBuilding, IconSchool, IconWorld, IconUser, IconSearch, IconTrash, IconChevronDown, IconCalendar } from "@tabler/icons-react";
 import axios from "axios";
@@ -190,8 +190,14 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
     // También verificar que el nombre del campo sugiera que es un validador
     const fieldLower = fieldName.toLowerCase();
     
-    // Excluir campos que claramente NO son validadores (excepto beneficiarios)
-    const isExcludedField = (fieldLower.includes('dias') ||
+    // Excluir campos que claramente NO son validadores (son cantidades/valores numéricos,
+    // no códigos categóricos). Antes esta exclusión se anulaba para cualquier campo que
+    // mencionara "beneficiarios" (pensando en IDs/tipos de beneficiario), pero eso hacía
+    // que campos de CONTEO como "CANTIDAD_BENEFICIARIOS_EXTERNOS" se trataran como si
+    // fueran códigos de un validador, mostrando descripciones incorrectas para algunos
+    // valores (los que coincidían por casualidad con IDs de otra tabla) y dejando el
+    // resto como números sueltos.
+    const isExcludedField = fieldLower.includes('dias') ||
                            fieldLower.includes('valor') ||
                            fieldLower.includes('numero') ||
                            fieldLower.includes('num') ||
@@ -204,8 +210,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
                            fieldLower.includes('semestre') ||
                            fieldLower.includes('credito') ||
                            fieldLower.includes('nota') ||
-                           fieldLower.includes('porcentaje')) &&
-                           !fieldLower.includes('beneficiarios');
+                           fieldLower.includes('porcentaje');
     
     const fieldSuggestsValidator = !isExcludedField && (
                                   fieldLower.includes('id') || 
@@ -815,7 +820,9 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
 
   if (!isVisible) {
     return (
+      <Portal>
       <ActionIcon
+        aria-label="Abrir filtros"
         variant="filled"
         color="blue"
         size="lg"
@@ -831,17 +838,26 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
       >
         <IconFilter size={20} />
       </ActionIcon>
+      </Portal>
     );
   }
 
   return (
+    <Portal>
     <Box
       style={{
+        // El navbar de la app no es fixed/sticky (se desplaza con la página), así
+        // que este panel no debe reservarle espacio arriba: al hacer scroll hacia
+        // abajo el navbar desaparece pero dejaba un hueco en blanco sobre el panel.
+        // Como es un overlay (zIndex alto, en Portal), cubre desde el borde real
+        // superior de la ventana.
         position: 'fixed',
         left: 0,
-        top: 56,
-        bottom: 0,
-        width: '300px',
+        top: 0,
+        height: '100dvh',
+        width: 'min(340px, 100%)',
+        maxWidth: '100vw',
+        boxSizing: 'border-box',
         zIndex: 300,
         backgroundColor: '#f8f9fa',
         borderRight: '2px solid #e9ecef',
@@ -867,8 +883,8 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             flexShrink: 0,
           }}
         >
-          <Group justify="space-between" align="center" mb="sm">
-            <Group>
+          <Group justify="space-between" align="center" mb="sm" wrap="nowrap">
+            <Group gap="xs">
               <IconFilter size={24} />
               <Title order={3} c="white">Filtros</Title>
               {getActiveFilterCount() > 0 && (
@@ -884,6 +900,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
             </Group>
             <Tooltip label="Cerrar filtros">
               <ActionIcon 
+                aria-label="Cerrar filtros"
                 variant="subtle" 
                 onClick={onToggle}
                 c="white"
@@ -914,13 +931,20 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
         </Box>
         
         {/* Filters Content */}
+        {/* Barra de scroll siempre visible: como cada columna de la plantilla genera
+            su propia tarjeta de filtro, la lista suele ser más larga que la pantalla.
+            "always" deja claro que hay más contenido debajo, en vez de que la última
+            tarjeta visible se vea simplemente cortada por el borde de la ventana. */}
         <ScrollArea
           style={{ flex: 1, minHeight: 0 }}
+          styles={{ viewport: { minWidth: 0, maxWidth: '100%' } }}
           p="md"
-          scrollbarSize={6}
-          type="hover"
+          scrollbarSize={8}
+          type="always"
+          scrollbars="y"
+          offsetScrollbars
         >
-          <Stack gap="sm">
+          <Stack gap="sm" pb="md">
             {activeFilters.length === 0 ? (
               <Box ta="center" py="xl">
                 <IconSearch size={48} color="#adb5bd" />
@@ -1250,6 +1274,7 @@ const FilterSidebar = ({ onFiltersChange, isVisible, onToggle, templateId, templ
 
       </Paper>
     </Box>
+    </Portal>
   );
 };
 

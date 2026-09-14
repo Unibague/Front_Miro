@@ -76,8 +76,8 @@ export default function AmbitosCarpetasPage() {
               <IconFolders size={22} />
             </ThemeIcon>
             <div>
-              <Title order={3}>Consulta de Información</Title>
-              <Text size="xs" c="dimmed">Información enviada por Ámbitos — selecciona uno para ver sus Plantillas o Informes</Text>
+              <Title order={3}>Información consolidada por ámbitos</Title>
+              <Text size="xs" c="dimmed">Consulta de Información — selecciona un ámbito para ver sus Plantillas o Informes</Text>
             </div>
           </Group>
 
