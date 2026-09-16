@@ -32,6 +32,7 @@ import { ClasificacionCineNbcSection } from "../../components/ClasificacionCineN
 import { FichaCampoLectura } from "../../components/FichaCampoLectura";
 import HistoricoProgramaModal from "../../components/HistoricoProgramaModal";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import ModuleHeader from "../../components/ModuleHeader";
 
 function primeraActividadEnFase(fase: Phase | undefined): string | null {
   if (!fase?.actividades?.length) return null;
@@ -430,15 +431,18 @@ export default function ProgramaProcessesMenPage() {
               variant="default"
               size="sm"
               mb={8}
-              onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
+              onClick={() => confirmNavigation(() => {
+                router.push(processesMenRoutes.homeWithQuery({ vista: "informacion" }));
+              }, { isBackNavigation: true })}
               aria-label="Volver"
             >
               <IconChevronLeft size={16} />
             </ActionIcon>
           </Tooltip>
-          <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
-            <Title order={2} style={{ flex: "1 1 10rem", minWidth: 0 }}>{programa.nombre}</Title>
-            <Group gap={6} style={{ flexShrink: 0, alignSelf: "center" }}>
+          <ModuleHeader
+            title={programa.nombre}
+            description="Consulta la información académica, administrativa y el estado de los procesos de calidad del programa."
+            actions={<Group gap={6}>
               <Badge color={estadoMenActivo ? "green" : "red"} variant="light">
                 {estadoMenActivo ? "Activo ante MEN" : "Inactivo ante MEN"}
               </Badge>
@@ -448,17 +452,8 @@ export default function ProgramaProcessesMenPage() {
               <Badge color={esAcreditable ? "blue" : "gray"} variant="light">
                 {esAcreditable ? "Acreditable" : "No acreditable"}
               </Badge>
-            </Group>
-          </Group>
-          <Text size="sm" c="dimmed" mt={4}>
-            <strong>Código del programa:</strong> {programa.dep_code_programa?.trim() || "—"}
-            {programa.codigo_snies ? (
-              <>
-                {" · "}
-                <strong>SNIES:</strong> {programa.codigo_snies}
-              </>
-            ) : null}
-          </Text>
+            </Group>}
+          />
         </div>
 
         <Group justify="space-between" align="center" wrap="nowrap">

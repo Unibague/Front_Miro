@@ -16,6 +16,7 @@ import type { Dependency } from "../types";
 import { processesMenRoutes } from "../config/routes";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
+import ModuleHeader from "../components/ModuleHeader";
 
 type Task = {
   _id: string;
@@ -240,20 +241,20 @@ export default function TasksAdminPage() {
       </Box>
 
       <Stack p="md" gap="lg" style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0 }}>
-        <Group justify="space-between" wrap="wrap">
-          <Group gap="xs" align="center">
-            <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push(processesMenRoutes.home)}>
-              <IconArrowLeft size={18} />
-            </ActionIcon>
-            <div>
-              <Title order={3}>Tareas asignadas</Title>
-              <Text size="sm" c="dimmed">Crea y asigna tareas/checklist a líderes de dependencia o responsables.</Text>
-            </div>
-          </Group>
-          <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
-            Asignar tarea
-          </Button>
-        </Group>
+        <ModuleHeader
+          title="Tareas asignadas"
+          description="Crea y asigna tareas/checklist a líderes de dependencia o responsables."
+          actions={
+            <>
+              <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push(processesMenRoutes.home)}>
+                <IconArrowLeft size={18} />
+              </ActionIcon>
+              <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
+                Asignar tarea
+              </Button>
+            </>
+          }
+        />
 
       <Select
         placeholder="Filtrar por dependencia"

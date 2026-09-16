@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import {
   Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Flex,
   Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea, Collapse,
@@ -97,6 +97,45 @@ function normSubtipoStats(s: string | null | undefined): string {
 function esSubtipoReformaProceso(subtipo: string | null | undefined): boolean {
   const s = normSubtipoStats(subtipo);
   return s === "reforma curricular" || s === "renovacion + reforma";
+}
+
+function normalizarNivelPrograma(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+function agruparProgramasPorNivel(programas: Program[]): Array<{ titulo: string; lista: Program[] }> {
+  const pregrado: Program[] = [];
+  const especializacion: Program[] = [];
+  const maestria: Program[] = [];
+  const otrosPosgrados: Program[] = [];
+
+  for (const programa of programas) {
+    const nivel = normalizarNivelPrograma(programa.nivel_academico);
+    const formacion = normalizarNivelPrograma(programa.nivel_formacion);
+    const esPosgrado = nivel === "posgrado" || nivel === "postgrado"
+      || ["especializacion", "maestria", "doctorado"].includes(formacion);
+
+    if (!esPosgrado) {
+      pregrado.push(programa);
+    } else if (formacion === "especializacion") {
+      especializacion.push(programa);
+    } else if (formacion === "maestria") {
+      maestria.push(programa);
+    } else {
+      otrosPosgrados.push(programa);
+    }
+  }
+
+  return [
+    { titulo: "Pregrado", lista: pregrado },
+    { titulo: "Posgrado — Especialización", lista: especializacion },
+    { titulo: "Posgrado — Maestría", lista: maestria },
+    { titulo: "Posgrado — Otros niveles", lista: otrosPosgrados },
+  ].filter((grupo) => grupo.lista.length > 0);
 }
 
 /* ── Helper: renderiza la fecha subida de un doc ── */
@@ -404,6 +443,14 @@ const ProcessesMenPage = () => {
   useEffect(() => {
     if (!searchParams) return;
     setProcessesMenModulo(searchParams.get("modulo") === "comunicaciones" ? "comunicaciones" : "procesos");
+    if (searchParams.get("vista") === "informacion") {
+      setActiveSection("informacion");
+      setFacultad("Todos");
+      setPrograma("Todos");
+      setNivelAcademico("Todos");
+      setTipoProceso("Todos");
+      setSubtipoFiltro("Todos");
+    }
   }, [searchParams]);
 
   /* ── Carga inicial de datos ── */
@@ -633,6 +680,11 @@ const ProcessesMenPage = () => {
     if (!fac) return [];
     return programasDelModulo.filter((p) => p.dep_code_facultad === fac.dep_code);
   }, [facultad, programasDelModulo, facultades]);
+
+  const programasOrganizadosFacultad = useMemo(
+    () => agruparProgramasPorNivel(programasFiltrados),
+    [programasFiltrados],
+  );
 
   const getProceso = (prog: Program, tipo: "RC" | "AV" | "AE" | "PM"): Process | undefined => {
     const code = programCodeKey(prog);
@@ -1557,8 +1609,8 @@ const ProcessesMenPage = () => {
               {processesMenModulo === "comunicaciones" ? <IconMessageCircle size={22} /> : <IconChartBar size={22} />}
             </ThemeIcon>
             <Box>
-              <Title order={3}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
-              <Text size="sm" c="dimmed">Gestión y seguimiento de procesos institucionales</Text>
+              <Title order={2} lh={1.2}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
+              <Text size="sm" fw={600} c="dimmed" mt={4}>Gestión y seguimiento de procesos institucionales</Text>
             </Box>
           </Group>
         </Group>
@@ -1567,8 +1619,8 @@ const ProcessesMenPage = () => {
             {processesMenModulo === "comunicaciones" && (
               <Stack gap="md">
                 <Box>
-                  <Title order={3}>Comunicaciones MEN</Title>
-                  <Text size="sm" c="dimmed" mt={4}>Gestión ante el MEN.</Text>
+                  <Title order={2} lh={1.2}>Comunicaciones MEN</Title>
+                  <Text size="sm" fw={600} c="dimmed" mt={4}>Gestión ante el MEN.</Text>
                 </Box>
                 <Paper withBorder radius="md" p="md" style={{ overflow: "auto" }}>
                   {pqrSeccion === "agregar" && (
@@ -1591,6 +1643,22 @@ const ProcessesMenPage = () => {
 
             {processesMenModulo === "procesos" && (
             <>
+            {activeSection === "main" && (
+              <Box mb="md">
+                <Title order={2} lh={1.2}>Estadísticas generales</Title>
+                <Text size="sm" c="dimmed" mt={4}>
+                  Consulta el estado general de los procesos de calidad y sus programas asociados.
+                </Text>
+              </Box>
+            )}
+            {activeSection === "informacion" && (
+              <Box mb="md">
+                <Title order={2} lh={1.2}>Información del programa</Title>
+                <Text size="sm" c="dimmed" mt={4}>
+                  Consulta la información y el estado de los procesos de cada programa.
+                </Text>
+              </Box>
+            )}
             {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
               <Paper withBorder radius="md" p="sm" mb="md">
                 <Flex
@@ -1675,8 +1743,6 @@ const ProcessesMenPage = () => {
 
             {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
             <>
-            {activeSection === "main" && <Title ta="center" mb="lg">Estadísticas generales</Title>}
-
             {activeSection === "main" && (
               <Stack gap="lg" mb="lg">
                 <Paper
@@ -1876,36 +1942,45 @@ const ProcessesMenPage = () => {
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
-                          {programasFiltrados.map((p) => (
-                            <Table.Tr key={p._id}>
-                              <Table.Td>
-                                <Anchor
-                                  href={processesMenRoutes.program(p._id)}
-                                  fw={600}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    router.push(processesMenRoutes.program(p._id));
-                                  }}
-                                >
-                                  {p.nombre}
-                                </Anchor>
-                                {lineasAuxPrograma(p).map((ln, idx) => (
-                                  <Text key={idx} size="xs" c="dimmed">{ln}</Text>
-                                ))}
-                              </Table.Td>
-                              <Table.Td>
-                                <Text size="sm">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
-                              </Table.Td>
-                              <Table.Td>
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  onClick={() => router.push(processesMenRoutes.program(p._id))}
-                                >
-                                  Hoja de vida
-                                </Button>
-                              </Table.Td>
-                            </Table.Tr>
+                          {programasOrganizadosFacultad.map((grupo) => (
+                            <Fragment key={grupo.titulo}>
+                              <Table.Tr style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
+                                <Table.Td colSpan={3}>
+                                  <Text size="sm" fw={700} c="blue.9">{grupo.titulo}</Text>
+                                </Table.Td>
+                              </Table.Tr>
+                              {grupo.lista.map((p) => (
+                                <Table.Tr key={p._id}>
+                                  <Table.Td>
+                                    <Anchor
+                                      href={processesMenRoutes.program(p._id)}
+                                      fw={600}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        router.push(processesMenRoutes.program(p._id));
+                                      }}
+                                    >
+                                      {p.nombre}
+                                    </Anchor>
+                                    {lineasAuxPrograma(p).map((ln, idx) => (
+                                      <Text key={idx} size="xs" c="dimmed">{ln}</Text>
+                                    ))}
+                                  </Table.Td>
+                                  <Table.Td>
+                                    <Text size="sm">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
+                                  </Table.Td>
+                                  <Table.Td>
+                                    <Button
+                                      size="xs"
+                                      variant="light"
+                                      onClick={() => router.push(processesMenRoutes.program(p._id))}
+                                    >
+                                      Ver
+                                    </Button>
+                                  </Table.Td>
+                                </Table.Tr>
+                              ))}
+                            </Fragment>
                           ))}
                         </Table.Tbody>
                       </Table>
@@ -2110,7 +2185,7 @@ const ProcessesMenPage = () => {
             {activeSection === "alertas" && (
               <Stack gap="md">
                 <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                  <Title order={3} mb={0}>Alertas de procesos</Title>
+                  <Title order={2} mb={0}>Alertas de procesos</Title>
                   <Group gap="xs" wrap="wrap" justify="flex-end">
                     <Button
                       size="sm"
@@ -2505,7 +2580,7 @@ const ProcessesMenPage = () => {
 
             {activeSection === "historial" && (
               <>
-                <Title order={3} mb="md">Historial de procesos</Title>
+                <Title order={2} mb="md">Historial de procesos</Title>
                 <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
                   <Group gap="sm" wrap="wrap" align="flex-end">
                     <Select placeholder="Todas las facultades" data={historialOpcionesFacultad}

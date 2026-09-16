@@ -20,6 +20,7 @@ import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import { procesoRcActivoDePrograma } from "../utils/procesoRcUnico";
 import { programCodeKey } from "../utils/programCode";
 import { processesMenRoutes } from "../config/routes";
+import ModuleHeader from "../components/ModuleHeader";
 
 type Task = {
   _id: string;
@@ -529,15 +530,17 @@ export default function ProcessesMenResponsiblePage() {
       </Box>
       <Container size="xl" py="xl" style={{ marginLeft: sidebarWidth, width: `calc(100% - ${sidebarWidth}px)` }}>
       <Stack gap="lg">
-        <div>
-          <Title order={2}>Procesos de calidad MEN</Title>
-          <Text size="sm" c="dimmed" mt={4}>
-            Estado de fases y actividades de los programas de tu facultad/dependencia.
-            {userRole === "Responsable" || userRole === "Productor"
-              ? " Solo lectura — no puedes crear ni cerrar procesos."
-              : ""}
-          </Text>
-        </div>
+        <ModuleHeader
+          title="Procesos de calidad MEN"
+          description={
+            <>
+              Estado de fases y actividades de los programas de tu facultad/dependencia.
+              {userRole === "Responsable" || userRole === "Productor"
+                ? " Solo lectura — no puedes crear ni cerrar procesos."
+                : ""}
+            </>
+          }
+        />
 
         {/* Tareas asignadas */}
         {tasks.length > 0 && (
