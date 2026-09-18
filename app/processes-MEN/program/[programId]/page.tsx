@@ -441,7 +441,7 @@ export default function ProgramaProcessesMenPage() {
           </Tooltip>
           <ModuleHeader
             title={programa.nombre}
-            description="Consulta la información académica, administrativa y el estado de los procesos de calidad del programa."
+            description="Consulta la información académica y administrativa, y el estado de los procesos de calidad del programa."
             actions={<Group gap={6}>
               <Badge color={estadoMenActivo ? "green" : "red"} variant="light">
                 {estadoMenActivo ? "Activo ante MEN" : "Inactivo ante MEN"}

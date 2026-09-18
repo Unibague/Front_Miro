@@ -534,7 +534,7 @@ export default function ProcessesMenResponsiblePage() {
           title="Procesos de calidad MEN"
           description={
             <>
-              Estado de fases y actividades de los programas de tu facultad/dependencia.
+              Consulta el estado de las fases y actividades de los programas de tu facultad o dependencia.
               {userRole === "Responsable" || userRole === "Productor"
                 ? " Solo lectura — no puedes crear ni cerrar procesos."
                 : ""}

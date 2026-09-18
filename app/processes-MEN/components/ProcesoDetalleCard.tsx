@@ -2071,13 +2071,22 @@ const ProcesoDetalleCard = ({
       const isEditing = editingCasoDateKey === field;
       const dateVal   = fecha ? new Date(fecha + "T12:00:00") : null;
       const isApelacion = field === "fecha_resolucion_apelacion" || field === "fecha_respuesta_men";
+      const actividadMapeada = findActividadByCasoKey(fases, field);
+      const subactividadMapeada = findSubactividadByCasoKey(fases, field);
+      const esNoAplica = Boolean(
+        actividadMapeada?.act.no_aplica
+        || subactividadMapeada?.sub.no_aplica
+        || subactividadMapeada?.act.no_aplica
+      );
       const nDocs = casoFechaDocCounts[field] ?? 0;
       const obsK = `obs_${field}` as keyof Caso;
       const tieneObs = !!String((caso[obsK] as string | undefined) ?? "").trim();
       return (
         <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 108, maxWidth: 132, padding: "8px 6px", ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
           <Stack gap={2} align="center">
-            {isEditing ? (
+            {esNoAplica ? (
+              <Text fw={600} ta="center" style={{ ...cellFont, color: "#e67700" }}>N/A</Text>
+            ) : isEditing ? (
               <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
                 valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
                 style={{ width: 118 }} clearable disabled={savingCaso}

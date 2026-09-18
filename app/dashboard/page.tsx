@@ -556,7 +556,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconFileAnalytics size={80} />,
         title: "Configurar Plantillas",
-        description: "Crea, edita, elimina o asigna plantillas a los productores.",
+        description: "Crea, actualiza, elimina y asigna plantillas a los productores.",
         route: "/admin/templates",
         buttonLabel: "Ir a Configurar Plantillas",
       },
@@ -566,7 +566,7 @@ const DashboardPage = () => {
         roles: ["Administrador", "Responsable"],
         icon: <IconChecklist size={80} />,
         title: "Consultar Plantillas ",
-        description: "Consulta las plantillas cargadas por los productores asociados al ámbito.",
+        description: "Consulta las plantillas diligenciadas por los productores de tu ámbito.",
         route: "/templates/published",
         buttonLabel: "Ir a Consulta de Plantillas",
       },
@@ -575,7 +575,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconClipboardData size={80} />,
         title: "Configurar Informes de Gestión de Productores",
-        description: "Crea, edita y asigna los informes que generarán los productores.",
+        description: "Crea y asigna los informes que deben diligenciar los productores.",
         route: "/admin/reports/producers",
         buttonLabel: "Ir a Configuración de Informes",
       },
@@ -585,7 +585,7 @@ const DashboardPage = () => {
         roles: ["Administrador", "Responsable"],
         icon: <IconReportSearch size={80} />,
         title: "Consultar Informes de Gestión de Productores",
-        description: "Consulta los informes cargados por parte de los productores asociados al ámbito.",
+        description: "Consulta los informes diligenciados por los productores de tu ámbito.",
         route: "/reportproducers",
         buttonLabel: "Ir a Consulta de Informes",
       },
@@ -599,7 +599,7 @@ const DashboardPage = () => {
           </Center>
         ),
         title: "Configurar Informes de Ámbitos",
-        description: "Crea, edita y asigna los informes que generarán los Ámbitos.",
+        description: "Crea y asigna los informes que deben diligenciar los ámbitos.",
         route: "/admin/reports/ambitos",
         buttonLabel: "Ir a Configuración de Informes",
       },
@@ -608,7 +608,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconReportSearch size={80} />,
         title: "Gestionar Informes Ámbitos",
-        description: "Gestiona el proceso de cargue de los informes por parte de las Ámbitos.",
+        description: "Revisa y gestiona los informes enviados por los ámbitos.",
         route: "/admin/reports/ambitos/uploaded",
         buttonLabel: "Ir a Gestión de Informes",
       },
@@ -617,7 +617,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconChartBarPopular size={80} />,
         title: "Configurar Informes de Gestión de Responsables",
-        description: "Crea, edita y asigna los informes de gestión de responsables.",
+        description: "Crea y asigna los informes que deben diligenciar los responsables.",
         route: "/admin/reports",
         buttonLabel: "Ir a Configuración de Informes.",
       },
@@ -626,7 +626,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconReportSearch size={80} />,
         title: "Gestionar informes Responsables",
-        description: "Adminsitra el proceso de cargue de los informes de gestión.",
+        description: "Revisa y gestiona los informes enviados por los responsables.",
         route: "/admin/reports/uploaded",
         buttonLabel: "Ir a administración de Informes",
       },
@@ -635,7 +635,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconCalendarMonth size={80} />,
         title: "Gestionar Periodos",
-        description: "Administra todos los periodos de la plataforma Miró.",
+        description: "Crea y administra los periodos usados en la plataforma MIRÓ.",
         route: "/admin/periods",
         buttonLabel: "Ir a Gestión de Periodos",
       },
@@ -644,7 +644,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconHexagon3d size={80} />,
         title: "Gestionar Ámbitos",
-        description: "Administra los Ámbitos y sus responsables.",
+        description: "Crea y administra los ámbitos y las personas responsables.",
         route: "/admin/dimensions",
         buttonLabel: "Ir a Gestión de Ámbitos",
       },
@@ -653,7 +653,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconBuilding size={80} />,
         title: "Gestionar Dependencias",
-        description: "Administra las dependencias y sus responsables.",
+        description: "Crea y administra las dependencias y las personas responsables.",
         route: "/admin/dependencies",
         buttonLabel: "Ir a Gestión de Dependencias",
       },
@@ -662,7 +662,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconZoomCheck size={80} />,
         title: "Gestionar Validaciones",
-        description: "Administra todas las validaciones para asignarlas en las plantillas.",
+        description: "Crea y administra las validaciones que se aplican a las plantillas.",
         route: "/admin/validations",
         buttonLabel: "Ir a Gestión de Validaciones",
       },
@@ -671,7 +671,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconFilesOff size={80} />,
         title: "Valida los Registros de Error",
-        description: "Verifica los registros de error de las plantillas cargadas.",
+        description: "Consulta y revisa los errores detectados en las plantillas cargadas.",
         route: "/admin/logs",
         buttonLabel: "Ir a los registros de error",
       },
@@ -680,7 +680,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconMail size={80} />,
         title: "Recordatorios por correo",
-        description: "Ajusta cuándo se deben enviar recordatorios por email para plantillas e informes pendientes.",
+        description: "Define cuándo enviar recordatorios de plantillas e informes pendientes.",
         route: "/admin/reminders",
         buttonLabel: "Ir a Recordatorios",
       },
@@ -689,7 +689,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconChartHistogram size={80} />,
         title: "Historial de Trazabilidad",
-        description: "Consulta el historial de cambios en plantillas y Ámbitos",
+        description: "Consulta quién realizó cambios en plantillas y ámbitos.",
         route: "/admin/audit",
         buttonLabel: "Ir a Historial",
       },
@@ -698,7 +698,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconFilter size={80} />,
         title: "Gestión de Plantillas con Filtros",
-        description: "Gestiona plantillas con filtros avanzados y configuraciones administrativas",
+        description: "Configura filtros avanzados para consultar y administrar plantillas.",
         route: "/admin/templates-management",
         buttonLabel: "Ir a Plantillas con Filtros",
       },
@@ -707,7 +707,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconHierarchy2 size={80} />,
         title: "Jerarquía de Dependencias",
-        description: "Administra la estructura jerárquica de dependencias padre-hijo con vista de árbol.",
+        description: "Organiza las dependencias padre e hijo en una estructura de árbol.",
         route: "/admin/dependencies-hierarchy",
         buttonLabel: "Ir a Jerarquía de Dependencias",
       },
@@ -716,7 +716,7 @@ const DashboardPage = () => {
         roles: ["Responsable"],
         icon: <IconChartBarPopular size={80} />,
         title: "Gestionar Informe de Ámbito",
-        description: "Revisa el informe sugerido y complementa para su debida gestión.",
+        description: "Revisa el informe sugerido, complétalo y envíalo para su gestión.",
         route: "/responsible/reports",
         buttonLabel: "Ir a Gestión de Informe de Ámbito",
       },
@@ -725,7 +725,7 @@ const DashboardPage = () => {
         roles: ["Productor"],
         icon: <IconFileAnalytics size={80} />,
         title: "Gestionar Plantillas",
-        description: "Consulta las plantillas que debes llenar, carga y edita los datos solicitados.",
+        description: "Consulta las plantillas asignadas y diligencia la información solicitada.",
         route: "/producer/templates",
         buttonLabel: "Ir a Gestionar Plantillas",
       },
@@ -734,7 +734,7 @@ const DashboardPage = () => {
         roles: ["Productor"],
         icon: <IconClipboardData size={80} />,
         title: "Informe de gestión de productor",
-        description: "Consulta los informes que debes diligenciar de acuerdo a las instrucciones establecidas.",
+        description: "Consulta y diligencia los informes según las instrucciones establecidas.",
         route: "/producer/reports",
         buttonLabel: "Ir a Informes de Productores",
       },
@@ -743,7 +743,7 @@ const DashboardPage = () => {
         roles: ["Responsable"],
         icon: <IconCheckbox size={80} />,
         title: "Validaciones",
-        description: "Conoce las validaciones que deben cumplir los datos de tus plantillas.",
+        description: "Consulta las validaciones que deben cumplir los datos de tus plantillas.",
         route: "/validations",
         buttonLabel: "Ir a Validaciones",
       },
@@ -753,7 +753,7 @@ const DashboardPage = () => {
         roles: ["Responsable", "Productor"],
         icon: <IconChartHistogram size={80} />,
         title: "Historial de Cambios",
-        description: "Consulta los cambios realizados en plantillas e informes.",
+        description: "Consulta los cambios realizados en tus plantillas e informes.",
         route: "/traceability",
         buttonLabel: "Ir a Historial de Cambios",
       },
@@ -855,7 +855,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconUserHexagon size={80} />,
         title: "Gestionar Usuarios",
-        description: "Administra los roles y permisos de los usuarios.",
+        description: "Crea usuarios y administra sus roles y permisos de acceso.",
         route: "/admin/users",
         buttonLabel: "Ir a Gestión de Usuarios",
       }),
@@ -864,7 +864,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconShield size={80} />,
         title: "Gestionar perfiles",
-        description: "Define qué vistas puede consultar o administrar cada perfil del sistema.",
+        description: "Define las vistas que puede consultar o administrar cada perfil.",
         route: "/configuracion/perfiles",
         buttonLabel: "Ir a Gestion de Perfiles",
       }),
@@ -873,7 +873,7 @@ const DashboardPage = () => {
         roles: ["Administrador"],
         icon: <IconHomeCog size={80} />,
         title: "Ajustes Pagina Inicial",
-        description: "Ajusta la información de la pagina de inicio.",
+        description: "Actualiza el contenido informativo de la página de inicio.",
         route: "/admin/homeSettings",
         buttonLabel: "Ir a los ajustes de inicio",
       }),
@@ -891,7 +891,7 @@ const DashboardPage = () => {
         roles: ["Responsable"],
         icon: <IconTarget size={80} />,
         title: "Proyectos PDI",
-        description: "Consulta y actualiza el avance de los proyectos PDI asignados a ti.",
+        description: "Registra y actualiza el avance de los proyectos PDI asignados.",
         route: "/pdi/mis-indicadores",
         buttonLabel: "Ir a Mis Proyectos PDI",
       }),
@@ -908,7 +908,7 @@ const DashboardPage = () => {
         roles: ["Responsable", "Administrador"],
         icon: <IconUserStar size={80} />,
         title: "Ver Mi Dependencia",
-        description: "Selecciona que miembros de tu equipo tendran acceso a Miro.",
+        description: "Define qué integrantes de tu equipo pueden acceder a MIRÓ.",
         route: "/dependency",
         buttonLabel: "Ir a Gestion de Dependencia",
       }),
@@ -917,8 +917,8 @@ const DashboardPage = () => {
         roleKeyMap: { Administrador: "childDependenciesTemplatesAdmin" },
         roles: ["Responsable", "Administrador"],
         icon: <IconHierarchy2 size={80} />,
-        title: "Visualizar plantillas de dependencias hijo",
-        description: "Observa el progreso de carga de las plantillas de tus dependencias hijo.",
+        title: "Visualizar plantillas de dependencias hijas",
+        description: "Consulta el avance de las plantillas de tus dependencias hijas.",
         route: "/dependency/children-dependencies/templates",
         buttonLabel: "Ir a visualizador",
       }),
@@ -927,8 +927,8 @@ const DashboardPage = () => {
         roleKeyMap: { Administrador: "childDependenciesReportsAdmin" },
         roles: ["Responsable", "Administrador"],
         icon: <IconClipboardData size={80} />,
-        title: "Visualizar reportes de dependencias hijo",
-        description: "Observa los reportes generados por las dependencias hijo y su estado de cumplimiento.",
+        title: "Visualizar reportes de dependencias hijas",
+        description: "Consulta los reportes de tus dependencias hijas y su cumplimiento.",
         route: "/dependency/children-dependencies/reports",
         buttonLabel: "Ir a visualizador de reportes",
       }),
@@ -958,7 +958,7 @@ const DashboardPage = () => {
                 <Text ta={"center"} w={500}>Gestión de procesos MEN</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Registro calificado, Acreditación voluntaria y Plan de mejoramiento.
+                Gestiona el registro calificado, la acreditación voluntaria y los planes de mejoramiento ante el MEN.
               </Text>
               <Button variant="light" fullWidth mt="md" radius="md" onClick={() => router.push(processesMenRoutes.home)}>
                 Ir a gestión de procesos MEN
@@ -975,7 +975,7 @@ const DashboardPage = () => {
                 <Text ta={"center"} w={500}>Estado de procesos MEN</Text>
               </Group>
               <Text ta={"center"} size="sm" color="dimmed">
-                Consulta el estado de fases y actividades de los programas de tu facultad.
+                Consulta el estado de las fases y actividades de los programas de tu facultad.
               </Text>
               <Button
                 variant="light"
@@ -1192,8 +1192,8 @@ const DashboardPage = () => {
                       </Title>
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                         {userRole === "Responsable"
-                          ? "Seguimiento de tus proyectos, acciones e indicadores PDI."
-                          : "Proyecto de Desarrollo Institucional."}
+                          ? "Registra el avance de tus proyectos, acciones e indicadores del PDI."
+                          : "Administra proyectos, acciones e indicadores del Plan de Desarrollo Institucional."}
                       </Text>
                     </Stack>
                     <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1233,7 +1233,7 @@ const DashboardPage = () => {
                         Administración
                       </Title>
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                        Dependencia y visualizadores de dependencias hijo.
+                        Administra tu dependencia y consulta la información de las dependencias hijas.
                       </Text>
                     </Stack>
                     <Button variant="white" color="gray" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1273,7 +1273,7 @@ const DashboardPage = () => {
                       Configuración
                       </Title>
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                        Perfiles y permisos de vistas.
+                        Administra perfiles, permisos y vistas disponibles en MIRÓ.
                       </Text>
                     </Stack>
                     <Button variant="white" color="gray" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1312,7 +1312,7 @@ const DashboardPage = () => {
                         Consulta de Información
                       </Title>
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                        Consulta plantillas, informes e histórico docentes (SNIES).
+                        Consulta plantillas, informes e información histórica de docentes.
                       </Text>
                     </Stack>
                     <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1383,8 +1383,8 @@ const DashboardPage = () => {
                           </Title>
                           <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
                             {userRole === "Administrador"
-                              ? "Gestión plantillas y reportes."
-                              : "Plantillas, informes, filtros, validaciones e historial."}
+                              ? "Administra plantillas, informes, filtros, validaciones e historial."
+                              : "Consulta plantillas, informes, filtros, validaciones e historial."}
                           </Text>
                         </Stack>
                         <Button variant="white" color="blue" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1422,7 +1422,7 @@ const DashboardPage = () => {
                                 SNIES
                               </Title>
                               <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                                Gestión SNIES.
+                                Administra la información y las plantillas requeridas por el SNIES.
                               </Text>
                             </Stack>
                             <Button variant="white" color="teal" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1461,7 +1461,7 @@ const DashboardPage = () => {
                                 CNA
                               </Title>
                               <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                                Gestión CNA.
+                                Administra las plantillas y la información requerida por el CNA.
                               </Text>
                             </Stack>
                             <Button variant="white" color="orange" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
@@ -1500,7 +1500,7 @@ const DashboardPage = () => {
                               Consulta de Información
                             </Title>
                             <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                              Consulta plantillas, informes e histórico docentes (SNIES).
+                              Consulta plantillas, informes e información histórica de docentes.
                             </Text>
                           </Stack>
                           <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>

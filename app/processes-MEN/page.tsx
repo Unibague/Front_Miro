@@ -254,7 +254,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                               {act.nombre}
                             </Text>
                             {actNa && (
-                              <Badge size="xs" color="orange" variant="light">No aplica</Badge>
+                              <Badge size="xs" color="orange" variant="light">N/A</Badge>
                             )}
                           </Group>
                           {act.fecha_completado && !actNa && (
@@ -297,7 +297,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                                       </Text>
                                       {subNa && (
                                         <Badge size="xs" color="orange" variant="light">
-                                          {actNa && !sub.no_aplica ? "N/A (actividad)" : "No aplica"}
+                                          {actNa && !sub.no_aplica ? "N/A (actividad)" : "N/A"}
                                         </Badge>
                                       )}
                                     </Group>
@@ -1610,7 +1610,7 @@ const ProcessesMenPage = () => {
             </ThemeIcon>
             <Box>
               <Title order={2} lh={1.2}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
-              <Text size="sm" fw={600} c="dimmed" mt={4}>Gestión y seguimiento de procesos institucionales</Text>
+              <Text size="sm" fw={600} c="dimmed" mt={4}>Gestiona y da seguimiento a los procesos de calidad ante el Ministerio de Educación.</Text>
             </Box>
           </Group>
         </Group>
@@ -1620,7 +1620,7 @@ const ProcessesMenPage = () => {
               <Stack gap="md">
                 <Box>
                   <Title order={2} lh={1.2}>Comunicaciones MEN</Title>
-                  <Text size="sm" fw={600} c="dimmed" mt={4}>Gestión ante el MEN.</Text>
+                  <Text size="sm" fw={600} c="dimmed" mt={4}>Registra y consulta las comunicaciones relacionadas con el Ministerio de Educación.</Text>
                 </Box>
                 <Paper withBorder radius="md" p="md" style={{ overflow: "auto" }}>
                   {pqrSeccion === "agregar" && (
@@ -2581,6 +2581,9 @@ const ProcessesMenPage = () => {
             {activeSection === "historial" && (
               <>
                 <Title order={2} mb="md">Historial de procesos</Title>
+                <Text size="sm" c="dimmed" mb="md">
+                  Consulta los procesos cerrados, sus fechas, resultados y documentos asociados.
+                </Text>
                 <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
                   <Group gap="sm" wrap="wrap" align="flex-end">
                     <Select placeholder="Todas las facultades" data={historialOpcionesFacultad}

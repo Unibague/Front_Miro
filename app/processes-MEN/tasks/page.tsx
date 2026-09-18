@@ -243,7 +243,7 @@ export default function TasksAdminPage() {
       <Stack p="md" gap="lg" style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0 }}>
         <ModuleHeader
           title="Tareas asignadas"
-          description="Crea y asigna tareas/checklist a líderes de dependencia o responsables."
+          description="Crea y asigna tareas de seguimiento a líderes de dependencia y responsables."
           actions={
             <>
               <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push(processesMenRoutes.home)}>
