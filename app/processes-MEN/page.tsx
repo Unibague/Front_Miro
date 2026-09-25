@@ -20,6 +20,7 @@ import {
   IconList,
   IconArchive,
   IconMessageCircle,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcessReminderRecord, ProcesoRow, BarRow, PQR } from "./types";
@@ -79,6 +80,7 @@ import AgregarProcesoModal, { type AgregarProcesoPrefill } from "./components/Ag
 import PQRAgregarForm from "./components/PQRAgregarForm";
 import PQRActivosView from "./components/PQRActivosView";
 import PQRHistorialView from "./components/PQRHistorialView";
+import PQRImportModal from "./components/PQRImportModal";
 import {
   processesMenRoutes,
   PROCESSES_MEN_RESET_EVENT,
@@ -320,6 +322,10 @@ const ProcessesMenPage = () => {
   const [facultades, setFacultades]   = useState<Dependency[]>([]);
   const [programas, setProgramas]     = useState<Program[]>([]);
   const [procesos, setProcesos]       = useState<Process[]>([]);
+  const [procesoAEliminar, setProcesoAEliminar] = useState<{ proceso: Process; nombrePrograma: string } | null>(null);
+  const [eliminandoProceso, setEliminandoProceso] = useState(false);
+  const [errorEliminarProceso, setErrorEliminarProceso] = useState<string | null>(null);
+  const [alertaAEliminar, setAlertaAEliminar] = useState<ProcessReminderRecord | null>(null);
   const [fases, setFases]             = useState<Phase[]>([]);
   const [loadingFacultades, setLoadingFacultades] = useState(true);
   const [loadingProgramas, setLoadingProgramas]   = useState(true);
@@ -370,6 +376,7 @@ const ProcessesMenPage = () => {
   const [processesMenModulo, setProcessesMenModulo] = useState<ProcessesMenModulo>("procesos");
   const [pqrSeccion, setPqrSeccion]         = useState<PqrSeccion>("activos");
   const [pqrs, setPqrs]                     = useState<PQR[]>([]);
+  const [importarPqrOpen, setImportarPqrOpen] = useState(false);
 
   const loadingFilters = loadingFacultades || loadingProgramas || loadingProcesos;
 
@@ -1071,6 +1078,45 @@ const ProcessesMenPage = () => {
     setProcesos(Array.isArray(resProc.data) ? resProc.data : []);
   };
 
+  const eliminarProcesoDesdeAlertas = async () => {
+    if (!procesoAEliminar || eliminandoProceso || userRole !== "Administrador") return;
+    const id = procesoAEliminar.proceso._id;
+    setEliminandoProceso(true);
+    setErrorEliminarProceso(null);
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}`);
+      setProcesos(previous => previous.filter(proceso => proceso._id !== id));
+      setTablePhases(previous => previous.filter(fase => fase.proceso_id !== id));
+      setFases(previous => previous.filter(fase => fase.proceso_id !== id));
+      setProcesoAEliminar(null);
+    } catch (error) {
+      setErrorEliminarProceso(axios.isAxiosError(error)
+        ? error.response?.data?.error || "No se pudo eliminar el proceso. Intenta de nuevo."
+        : "No se pudo eliminar el proceso. Intenta de nuevo.");
+    } finally {
+      setEliminandoProceso(false);
+    }
+  };
+
+  const eliminarAlerta = async () => {
+    if (!alertaAEliminar || eliminandoProceso || userRole !== "Administrador") return;
+    const id = alertaAEliminar._id;
+    setEliminandoProceso(true);
+    setErrorEliminarProceso(null);
+    try {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-reminders/${id}`);
+      setReminders(previous => previous.filter(reminder => reminder._id !== id));
+      setProcesos(previous => previous.filter(proceso => proceso._id !== id));
+      setAlertaAEliminar(null);
+    } catch (error) {
+      setErrorEliminarProceso(axios.isAxiosError(error)
+        ? error.response?.data?.error || "No se pudo eliminar la alerta. Intenta de nuevo."
+        : "No se pudo eliminar la alerta. Intenta de nuevo.");
+    } finally {
+      setEliminandoProceso(false);
+    }
+  };
+
   const irAGestionarProcesoDesdeModal = async (args: {
     programId?: string;
     nombrePrograma: string;
@@ -1228,6 +1274,50 @@ const ProcessesMenPage = () => {
 
   return (
     <div style={{ display: "flex", marginTop: "-50px" }}>
+
+      <Modal
+        opened={procesoAEliminar !== null}
+        onClose={() => { if (!eliminandoProceso) setProcesoAEliminar(null); }}
+        title="Eliminar proceso"
+        centered size="sm" radius="md"
+        closeOnClickOutside={!eliminandoProceso}
+        closeOnEscape={!eliminandoProceso}
+        withCloseButton={!eliminandoProceso}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            ¿Eliminar el proceso <strong>{procesoAEliminar?.proceso.tipo_proceso}</strong> de <strong>{procesoAEliminar?.nombrePrograma}</strong>?
+            Se eliminarán el proceso y sus fases. Esta acción no se puede deshacer.
+          </Text>
+          {errorEliminarProceso && <Text size="sm" c="red" role="alert">{errorEliminarProceso}</Text>}
+          <Group justify="flex-end">
+            <Button variant="default" disabled={eliminandoProceso} onClick={() => setProcesoAEliminar(null)}>Cancelar</Button>
+            <Button color="red" loading={eliminandoProceso} onClick={() => void eliminarProcesoDesdeAlertas()}>Eliminar proceso</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={alertaAEliminar !== null}
+        onClose={() => { if (!eliminandoProceso) setAlertaAEliminar(null); }}
+        title="Eliminar alerta"
+        centered size="sm" radius="md"
+        closeOnClickOutside={!eliminandoProceso}
+        closeOnEscape={!eliminandoProceso}
+        withCloseButton={!eliminandoProceso}
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            ¿Eliminar la alerta <strong>{alertaAEliminar?.tipo_proceso}</strong> de <strong>{alertaAEliminar?.nombre_programa}</strong>?
+            Esta acción no se puede deshacer.
+          </Text>
+          {errorEliminarProceso && <Text size="sm" c="red" role="alert">{errorEliminarProceso}</Text>}
+          <Group justify="flex-end">
+            <Button variant="default" disabled={eliminandoProceso} onClick={() => setAlertaAEliminar(null)}>Cancelar</Button>
+            <Button color="red" loading={eliminandoProceso} onClick={() => void eliminarAlerta()}>Eliminar alerta</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* ── SIDEBAR ── */}
       <Box style={{
@@ -1594,7 +1684,18 @@ const ProcessesMenPage = () => {
                 <Box>
                   <Title order={3}>Comunicaciones MEN</Title>
                   <Text size="sm" c="dimmed" mt={4}>Gestión ante el MEN.</Text>
+                  <Button mt="sm" variant="light" color="teal" onClick={() => setImportarPqrOpen(true)}>Importar PQR desde Excel</Button>
                 </Box>
+                {importarPqrOpen && <PQRImportModal
+                  opened={importarPqrOpen}
+                  onClose={() => setImportarPqrOpen(false)}
+                  programas={programas}
+                  onImported={importados => {
+                    setPqrs(previous => [...importados, ...previous.filter(pqr => !importados.some(item => item._id === pqr._id))]);
+                    setPqrSeccion("activos");
+                    void cargarPQRs();
+                  }}
+                />}
                 <Paper withBorder radius="md" p="md" style={{ overflow: "auto" }}>
                   {pqrSeccion === "agregar" && (
                     <PQRAgregarForm programas={programas} onCreado={handlePQRCreado} showHeader />
@@ -2195,6 +2296,7 @@ const ProcessesMenPage = () => {
                                     <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicado_men)}</td>
                                     <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
                                     <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle" }}>
+                                      <Group justify="center" gap="xs" wrap="nowrap">
                                       <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
                                         nombrePrograma: prog.nombre,
                                         tipo: proc.tipo_proceso as "RC" | "AV" | "AE",
@@ -2203,6 +2305,19 @@ const ProcessesMenPage = () => {
                                       })}>
                                         Gestionar
                                       </Button>
+                                      <Tooltip label="Eliminar proceso" withArrow>
+                                        <ActionIcon
+                                          color="red" variant="subtle" size="lg"
+                                          aria-label={`Eliminar proceso ${proc.tipo_proceso} de ${prog.nombre}`}
+                                          onClick={() => {
+                                            setErrorEliminarProceso(null);
+                                            setProcesoAEliminar({ proceso: proc, nombrePrograma: prog.nombre });
+                                          }}
+                                        >
+                                          <IconTrash size={18} stroke={1.5} />
+                                        </ActionIcon>
+                                      </Tooltip>
+                                      </Group>
                                     </td>
                                   </tr>
                               );
@@ -2268,8 +2383,8 @@ const ProcessesMenPage = () => {
                                     )}
                                   </td>
                                   <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle", minWidth: 0, overflow: "visible" }}>
+                                    <Group justify="center" gap="xs" wrap="nowrap">
                                     {prog && (
-                                      <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
                                         <Button
                                           size="sm"
                                           variant="filled"
@@ -2302,8 +2417,20 @@ const ProcessesMenPage = () => {
                                         >
                                           Crear proceso
                                         </Button>
-                                      </div>
                                     )}
+                                      <Tooltip label="Eliminar alerta" withArrow>
+                                        <ActionIcon
+                                          color="red" variant="subtle" size="lg"
+                                          aria-label={`Eliminar alerta ${r.tipo_proceso} de ${r.nombre_programa}`}
+                                          onClick={() => {
+                                            setErrorEliminarProceso(null);
+                                            setAlertaAEliminar(r);
+                                          }}
+                                        >
+                                          <IconTrash size={18} stroke={1.5} />
+                                        </ActionIcon>
+                                      </Tooltip>
+                                    </Group>
                                   </td>
                                 </tr>
                               );
@@ -2374,6 +2501,18 @@ const ProcessesMenPage = () => {
                                     })}>
                                       Gestionar PM
                                     </Button>
+                                    <Tooltip label="Eliminar proceso" withArrow>
+                                      <ActionIcon
+                                        color="red" variant="subtle" size="md" ml={4}
+                                        aria-label={`Eliminar proceso PM de ${prog.nombre}`}
+                                        onClick={() => {
+                                          setErrorEliminarProceso(null);
+                                          setProcesoAEliminar({ proceso: proc, nombrePrograma: prog.nombre });
+                                        }}
+                                      >
+                                        <IconTrash size={16} stroke={1.5} />
+                                      </ActionIcon>
+                                    </Tooltip>
                                   </td>
                                 </tr>
                               ))}

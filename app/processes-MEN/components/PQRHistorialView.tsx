@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Stack, Text, Table, Group, Badge, Button, ScrollArea, Modal } from "@mantine/core";
 import type { PQR, Program } from "../types";
+import PQRImportDetails from "./PQRImportDetails";
 
 export type PQRHistorialViewProps = {
   pqrs: PQR[];
@@ -23,6 +24,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 export default function PQRHistorialView({ pqrs, programas }: PQRHistorialViewProps) {
   const [viewModal, setViewModal] = useState<{ label: string; value: string } | null>(null);
+  const [importDetail, setImportDetail] = useState<PQR | null>(null);
 
   const getNombrePrograma = (id?: string | null) =>
     id ? (programas.find(p => p._id === id)?.nombre ?? "Programa") : null;
@@ -84,6 +86,7 @@ export default function PQRHistorialView({ pqrs, programas }: PQRHistorialViewPr
                   <Stack gap={2}>
                     {textCell(pqr, "nombre_solicitud")}
                     <Badge size="xs" color="gray" variant="outline">Cerrado</Badge>
+                    {!!pqr.importacion_fuentes?.length && <Button size="xs" variant="subtle" onClick={() => setImportDetail(pqr)}>Datos y enlaces del Excel</Button>}
                   </Stack>
                 </Table.Td>
                 <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px", textAlign: "center" }}>
@@ -147,6 +150,9 @@ export default function PQRHistorialView({ pqrs, programas }: PQRHistorialViewPr
             <Button variant="default" onClick={() => setViewModal(null)}>Cerrar</Button>
           </Group>
         </Stack>
+      </Modal>
+      <Modal opened={!!importDetail} onClose={() => setImportDetail(null)} title="Datos y enlaces del Excel" size="lg" centered zIndex={300}>
+        {importDetail && <PQRImportDetails pqr={importDetail} />}
       </Modal>
     </>
   );

@@ -283,6 +283,8 @@ export type PQR = {
   /** Documento de identidad de quien atiende o gestiona el PQR. */
   cedula_encargado?: string | null;
   cerrado: boolean;
+  enlaces_respuesta?: { nombre: string; url: string }[];
+  importacion_fuentes?: { hoja: string; fila: number; valores: Record<string, string> }[];
   createdAt?: string;
   updatedAt?: string;
 };

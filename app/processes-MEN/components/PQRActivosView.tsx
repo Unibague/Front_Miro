@@ -11,6 +11,7 @@ import axios from "axios";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import type { PQR, Program, ProcessDocument } from "../types";
 import { dateParserEspanol } from "../utils/parseFlexibleDate";
+import PQRImportDetails from "./PQRImportDetails";
 
 export type PQRActivosViewProps = {
   pqrs: PQR[];
@@ -332,6 +333,12 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
             text={uploadingDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo"}
             onDrop={subirDoc}
           />
+          {!!pqrs.find(pqr => pqr._id === docsModalPqrId)?.importacion_fuentes?.length && (
+            <>
+              <Divider label="Información y enlaces del Excel" />
+              <PQRImportDetails pqr={pqrs.find(pqr => pqr._id === docsModalPqrId)!} />
+            </>
+          )}
           {loadingDocs ? (
             <Text size="sm" c="dimmed" ta="center">Cargando documentos...</Text>
           ) : docs.length > 0 ? (
