@@ -10,6 +10,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { useSession } from "next-auth/react";
 import { useSort } from "../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Validation {
   _id: string;
@@ -26,7 +27,7 @@ const AdminValidationsPage = () => {
   const [validations, setValidations] = useState<Validation[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const router = useRouter();
   const { data: session } = useSession();
   const { selectedPeriodId, availablePeriods } = usePeriod();

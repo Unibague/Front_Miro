@@ -23,6 +23,7 @@ import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy, IconTrash } from "@tabler/icons-react";
 import { paramId } from "@/app/utils/routeParams";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Dimension {
   _id: string;
@@ -53,7 +54,7 @@ const AdminDimensionEditPage = () => {
   const [selectedDependencie, setSelectedDependencie] = useState<Dependency>();
   const [producers, setProducers] = useState<string[]>([]);
   const [producerNames, setProducerNames] = useState<{ [key: string]: string }>({});
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [responsibles, setResponsibles] = useState<User[]>([]);

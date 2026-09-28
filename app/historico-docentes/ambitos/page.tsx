@@ -21,6 +21,8 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ConsultaInfoSidebar from "../components/ConsultaInfoSidebar";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
+import { useRole } from "@/app/context/RoleContext";
 
 interface DimensionOption {
   _id: string;
@@ -32,10 +34,11 @@ interface DimensionOption {
 // Plantillas o Informes (ver app/historico-docentes/ambito/[id]/page.tsx).
 export default function AmbitosCarpetasPage() {
   const router = useRouter();
+  const { userRole } = useRole();
   const { data: session } = useSession();
   const [dimensions, setDimensions] = useState<DimensionOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
 
   useEffect(() => {
     if (!session?.user?.email) return;
@@ -69,7 +72,8 @@ export default function AmbitosCarpetasPage() {
       <Box style={{ flex: 1, padding: 20 }}>
         <Container size="xl">
           <Group gap={10} mb="lg">
-            <ActionIcon variant="subtle" onClick={() => router.push("/dashboard?view=gestion")}>
+            <ActionIcon variant="subtle" // El rol Usuario entra a Consulta desde el inicio; los demás desde Gestión.
+              onClick={() => router.push(userRole === "Usuario" ? "/dashboard" : "/dashboard?view=gestion")}>
               <IconArrowLeft size={18} />
             </ActionIcon>
             <ThemeIcon size={40} radius="xl" color="grape" variant="light">

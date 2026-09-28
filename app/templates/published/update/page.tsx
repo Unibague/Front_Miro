@@ -24,6 +24,7 @@ import { showNotification } from "@mantine/notifications";
 import dayjs from "dayjs";
 import { usePeriod } from "@/app/context/PeriodContext";
 import "dayjs/locale/es";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Template {
   _id: string;
@@ -66,7 +67,7 @@ const UpdatePublishedTemplatesDeadlinePage = () => {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [dates, setDates] = useState<DateFields>(emptyDates());

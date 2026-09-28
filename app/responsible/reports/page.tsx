@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Report {
   _id: string;
@@ -103,7 +104,7 @@ const ResponsibleReportsPage = () => {
   const { selectedPeriodId } = usePeriod();
   const { data: session } = useSession();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<string | null>(null);
   const [userDimensions, setUserDimensions] = useState<Dimension[]>([]);
   const [pendingReports, setPendingReports] = useState<PublishedReport[]>([]);

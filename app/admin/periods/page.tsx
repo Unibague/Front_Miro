@@ -12,6 +12,7 @@ import "dayjs/locale/es";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Period {
   _id: string;
@@ -34,7 +35,7 @@ const AdminPeriodsPage = () => {
   const [isActive, setIsActive] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const { sortedItems: sortedPeriods, handleSort, sortConfig } = useSort<Period>(periods, { key: null, direction: "asc" });
 
   const fetchPeriods = async (page: number, search: string) => {

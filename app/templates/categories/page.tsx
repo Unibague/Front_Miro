@@ -7,6 +7,7 @@ import { showNotification } from "@mantine/notifications";
 import { IconEdit, IconTrash, IconCirclePlus, IconArrowLeft } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useDisclosure } from "@mantine/hooks";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Category {
   _id: string;
@@ -23,7 +24,7 @@ const CategoryAdminPage = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [modalOpen, { open, close }] = useDisclosure(false);
   const router = useRouter();

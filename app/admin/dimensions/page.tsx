@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Dimension {
   _id: string;
@@ -60,7 +61,7 @@ const AdminDimensionsPage = () => {
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedDependencyFilter, setSelectedDependencyFilter] = useState<string | null>(null);
   const { sortedItems: sortedDimensions, handleSort, sortConfig } = useSort<Dimension>(dimensions, { key: null, direction: "asc" });
 

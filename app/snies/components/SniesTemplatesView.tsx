@@ -60,6 +60,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { useRole } from "@/app/context/RoleContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 type FieldEquivalenceMap = Record<
   string,
@@ -584,7 +585,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [opened, { open, close }] = useDisclosure(false);
   const [deleteModalOpened, { open: openDeleteModal, close: closeDeleteModal }] = useDisclosure(false);
   const [templates, setTemplates] = useState<SniesTemplate[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -598,7 +599,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   const [selectedPTemplateIds, setSelectedPTemplateIds] = useState<string[]>([]);
   const [loadingPTemplates, setLoadingPTemplates] = useState(false);
   const [publishedTemplatesList, setPublishedTemplatesList] = useState<any[]>([]);
-  const [ptSearch, setPtSearch] = useState("");
+  const [ptSearch, setPtSearch] = usePersistentSearch("ptSearch");
   const [ptPage, setPtPage] = useState(1);
   const [ptStatusFilter, setPtStatusFilter] = useState<string | null>(null);
   const PT_PAGE_SIZE = 15;

@@ -32,6 +32,7 @@ import { useRole } from "@/app/context/RoleContext";
 import { useSort } from "@/app/hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { applyFieldCommentNote, applyValidatorDropdowns } from "@/app/utils/templateUtils";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Field {
   name: string;
@@ -91,7 +92,7 @@ const PublishedTemplatesPage = () => {
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [opened, setOpened] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<PublishedTemplate>(templates, { key: null, direction: "asc" });

@@ -24,6 +24,7 @@ import { dateNow } from "@/app/components/DateConfig";
 import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Dimension {
   _id: string;
@@ -75,7 +76,7 @@ export default function AdminAmbitUploadedReportsPage() {
 
   const [allReports, setAllReports] = useState<PublishedReport[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [page, setPage] = useState(1);
 
   const fetchReports = async () => {

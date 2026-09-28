@@ -146,22 +146,11 @@ export default function Navbar() {
         email: session.user.email,
         activeRole: role,
       });
-      const permResponse = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
-        { params: { email: session.user.email } }
-      );
-      setUserRole(role as Roles);
-      setViewPermissions(permResponse.data.viewPermissions || {});
-      setUserAccessProfiles(permResponse.data.accessProfiles || []);
-      setAllowedDependencies(permResponse.data.allowedDependencies || []);
-      setAllowedDimensions(permResponse.data.allowedDimensions || []);
-      showNotification({
-        title: "Rol actualizado",
-        message: `Tu nuevo rol es ${role}`,
-        autoClose: 5000,
-        color: "teal",
-      });
       setRoleMenuOpened(false);
+      // Recargar la página completa: cada vista vuelve a pedir sus datos con
+      // el rol nuevo (AppInitializer lo lee de activeRole en el backend), en
+      // vez de quedarse mostrando lo que se cargó con el rol anterior.
+      window.location.reload();
     } catch (error) {
       console.error("Error updating active role:", error);
       showNotification({

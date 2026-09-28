@@ -41,6 +41,7 @@ import { usePdiConfig } from "../../hooks/usePdiConfig";
 import { PDI_ROUTES } from "../../api";
 import { useRole } from "@/app/context/RoleContext";
 import type { PdiNetworkEdge, PdiNetworkNode, PdiNetworkResponse, PdiNodeIntensity } from "../../types";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const VIEWBOX_WIDTH = 1200;
 const VIEWBOX_HEIGHT = 760;
@@ -230,7 +231,7 @@ export default function PdiNodeNetworkPage() {
   const [macroFilter, setMacroFilter] = useState<string>("all");
   const [intensityFilter, setIntensityFilter] = useState<string>("all");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [newEdge, setNewEdge] = useState<NewEdgeDraft>({
     origen: "",
     destino: "",

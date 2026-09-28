@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import axios from "axios";
 import {
@@ -43,6 +43,7 @@ import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
 import { usePeriod } from "@/app/context/PeriodContext";
 import FilterSidebar from "@/app/components/FilterSidebar";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const PAGE_SIZE = 20;
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
@@ -124,6 +125,13 @@ const HIDDEN_COLUMN_NAMES = new Set([
   "CEDULA", "NUMEROCEDULA", "CEDULACIUDADANIA", "CEDULADECIUDADANIA",
   "DOCIDENTIDAD",
 ]);
+// Variantes con sufijo de rol ("NUM_DOCUMENTO_Estudiante", "NUM_DOCUMENTO_Docente
+// Tutor"...). Mismos prefijos que DOCUMENT_HEADER_PREFIXES en el backend.
+const HIDDEN_COLUMN_PREFIXES = [
+  "NUMDOCUMENTO", "NUMERODOCUMENTO", "NUMERODEDOCUMENTO", "NRODOCUMENTO", "NODOCUMENTO",
+  "NUMEROIDENTIFICACION", "NUMERODEIDENTIFICACION", "NROIDENTIFICACION", "NOIDENTIFICACION",
+  "CEDULA", "NUMEROCEDULA",
+];
 const isHiddenColumnHeader = (h: string) => {
   const collapsed = h
     .trim()
@@ -131,7 +139,7 @@ const isHiddenColumnHeader = (h: string) => {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^A-Z]/g, "");
-  return HIDDEN_COLUMN_NAMES.has(collapsed);
+  return HIDDEN_COLUMN_NAMES.has(collapsed) || HIDDEN_COLUMN_PREFIXES.some((prefix) => collapsed.startsWith(prefix));
 };
 
 // Algunos archivos cargados antes de esta corrección guardaron las fechas
@@ -210,7 +218,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   const [xlsxSheet, setXlsxSheet] = useState(0);
   const [xlsxLoading, setXlsxLoading] = useState(false);
 
-  const [listSearch, setListSearch] = useState("");
+  const [listSearch, setListSearch] = usePersistentSearch("listSearch");
 
   const fetchFileList = useCallback(async () => {
     if (!session?.user?.email) return;
@@ -295,10 +303,13 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     }
   }, []);
 
+  const esPrimeraCargaLista = useRef(true);
   useEffect(() => {
+    // En la primera carga se conserva la búsqueda guardada; después se limpia al recargar la lista
+    if (!esPrimeraCargaLista.current) setListSearch("");
+    esPrimeraCargaLista.current = false;
     setSelectedFile(null);
     setFileData(null);
-    setListSearch("");
     setActiveFilters({});
     setAllRows([]);
     setFilterVisible(false);

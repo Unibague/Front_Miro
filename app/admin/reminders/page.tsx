@@ -20,6 +20,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { IconTrash, IconPlus, IconEdit } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 export default function AdminRemindersPage() {
   const [opened, setOpened] = useState(false);
@@ -27,7 +28,7 @@ export default function AdminRemindersPage() {
   const [reminders, setReminders] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newDays, setNewDays] = useState<number | "">(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [sending, setSending] = useState(false);
 
   const fetchReminders = async () => {

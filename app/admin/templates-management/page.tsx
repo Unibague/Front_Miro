@@ -46,6 +46,7 @@ import {
 } from "@/app/utils/templateUtils";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import { logPublishedTemplateAction, logFilterConfigChange, logMultiTemplateDownload } from "@/app/utils/auditUtils";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Field {
   name: string;
@@ -131,7 +132,7 @@ const TemplatesWithFiltersPage = () => {
   const [allTemplates, setAllTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [opened, setOpened] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PublishedTemplate | null>(null)
   
@@ -243,19 +244,6 @@ const TemplatesWithFiltersPage = () => {
       return 0;
     });
   };
-
-  // Load search from localStorage on component mount
-  useEffect(() => {
-    const savedSearch = localStorage.getItem('templates_search');
-    if (savedSearch) {
-      setSearch(savedSearch);
-    }
-  }, []);
-
-  // Save search to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('templates_search', search);
-  }, [search]);
 
   // Fetch all templates when period or session changes
   useEffect(() => {

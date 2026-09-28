@@ -56,6 +56,7 @@ import {
   formatTemplateDateValue,
   applyAdditionalFieldHeaderStyle,
 } from "@/app/utils/templateUtils";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const DropzoneButton = dynamic(
   () =>
@@ -171,7 +172,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [pageSize, setPageSize] = useState(10); // Nuevo estado para el tamaño de página
   const [producerEndDate, setProducerEndDate] = useState<Date | undefined>(
     undefined

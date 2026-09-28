@@ -15,6 +15,7 @@ import {
 import axios from "axios";
 import { paramId } from "@/app/utils/routeParams";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Dep {
   _id: string;
@@ -61,7 +62,7 @@ export default function DimensionTemplatesPage() {
   const [dimension, setDimension] = useState<Dimension | null>(null);
   const [templates, setTemplates] = useState<TemplateCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
 
   useEffect(() => {
     if (!id || !selectedPeriodId) return;

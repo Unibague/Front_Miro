@@ -36,6 +36,7 @@ import { getEffectiveRequired } from "@/app/utils/requiredFields";
 import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { modals } from "@mantine/modals";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Field {
   name: string;
@@ -809,7 +810,7 @@ const AdminTemplatesPage = () => {
     return fromUrl > 0 ? fromUrl : 1;
   });
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const router = useRouter();
   const { data: session } = useSession();
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);

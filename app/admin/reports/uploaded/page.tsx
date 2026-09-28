@@ -47,6 +47,7 @@ import { modals } from "@mantine/modals";
 import { showNotification } from "@mantine/notifications";
 import { useSort } from "../../../hooks/useSort";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Report {
   _id: string;
@@ -126,7 +127,7 @@ const AdminPubReportsPage = () => {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const router = useRouter();
   const theme = useMantineTheme();
   const { sortedItems: sortedReports, handleSort, sortConfig } = useSort<PublishedReport>(pubReports, { key: null, direction: "asc" });

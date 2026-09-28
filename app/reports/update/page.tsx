@@ -31,6 +31,7 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { usePeriod } from "@/app/context/PeriodContext";
 import { useRole } from "@/app/context/RoleContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 dayjs.extend(utc);
 
@@ -76,7 +77,7 @@ const AdminPubReportsPage = () => {
   const [page, setPage] = useState(1);
     const { selectedPeriodId } = usePeriod();
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [openedDeadlineModal, setOpenedDeadlineModal] = useState(false);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
   const [newDeadline, setNewDeadline] = useState<Date | null>(null);

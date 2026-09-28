@@ -5,6 +5,7 @@ import { Container, Table, TextInput, Select, Group, Title, Badge, Text, Paginat
 import { IconSearch, IconFilter } from "@tabler/icons-react";
 import axios from "axios";
 import { useSession } from "next-auth/react";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface AuditLog {
   _id: string;
@@ -20,7 +21,7 @@ interface AuditLog {
 const AuditPage = () => {
   const { data: session } = useSession();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [filterType, setFilterType] = useState<string>("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);

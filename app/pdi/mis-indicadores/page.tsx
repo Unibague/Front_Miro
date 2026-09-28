@@ -27,6 +27,7 @@ import { usePdiConfig } from "../hooks/usePdiConfig";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
 import { getWeightedContribution as getWeightedProgress, formatNumeroEs } from "../avance-utils";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const EvidenciasPanel = dynamic(() => import("../components/EvidenciasPanel"), { ssr: false });
 
@@ -2377,7 +2378,7 @@ export default function MisIndicadoresPage() {
   const [macroIdsLiderados, setMacroIdsLiderados] = useState<Set<string>>(new Set());
   const [macroNombresLiderados, setMacroNombresLiderados] = useState<string[]>([]);
   const [userFullName, setUserFullName] = useState("");
-  const [busquedaProyecto, setBusquedaProyecto] = useState("");
+  const [busquedaProyecto, setBusquedaProyecto] = usePersistentSearch("busquedaProyecto");
   const [informesMacros, setInformesMacros] = useState<MacroInforme[]>([]);
   const [loadingInformes, setLoadingInformes] = useState(false);
   const [corteInformes, setCorteInformes] = useState("");

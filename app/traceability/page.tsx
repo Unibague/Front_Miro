@@ -7,6 +7,7 @@ import { IconArrowLeft, IconSearch, IconFilter, IconHistory } from "@tabler/icon
 import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface AuditLog {
   _id: string;
@@ -24,7 +25,7 @@ const TraceabilityHistoryPage = () => {
   const { data: session } = useSession();
   const { userRole } = useRole();
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [filterType, setFilterType] = useState<string>("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);

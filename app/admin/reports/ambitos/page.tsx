@@ -33,6 +33,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Report {
   _id: string;
@@ -99,7 +100,7 @@ export default function AdminReportsAmbitosPage() {
 
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [page, setPage] = useState(1);
 
   const [createOpened, setCreateOpened] = useState(false);

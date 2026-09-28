@@ -15,6 +15,7 @@ import { useViewPermission } from "@/app/hooks/useViewPermission";
 import { usePeriod } from "@/app/context/PeriodContext";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Dependency {
   _id: string;
@@ -60,7 +61,7 @@ const AdminDependenciesPage = () => {
   const [selectedProducers, setSelectedProducers] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [isLoading, setIsLoading] = useState(false);
   const [permissionsModalOpened, setPermissionsModalOpened] = useState(false);
   const [usersWithDependencies, setUsersWithDependencies] = useState<UserWithDependencies[]>([]);

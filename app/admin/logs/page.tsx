@@ -26,6 +26,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { dateToGMT } from "@/app/components/DateConfig";
 import { useSort } from "../../hooks/useSort";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Log {
   _id: string;
@@ -56,7 +57,7 @@ const AdminLogsPage = () => {
   const [logs, setLogs] = useState<Log[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [modalOpened, setModalOpened] = useState(false);
   const [startDate, setStartDate] = useState<Date | null>(null);

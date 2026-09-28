@@ -52,6 +52,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { useRouter } from "next/navigation";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import ConsultaInfoSidebar from "./components/ConsultaInfoSidebar";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const PAGE_SIZE = 50;
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
@@ -149,7 +150,7 @@ export default function ConsultaInformacionPage() {
   const [sniesYearMode, setSniesYearMode] = useState<'single' | 'range'>('single');
   const [sniesYearFrom, setSniesYearFrom] = useState<string | null>(null);
   const [sniesYearTo, setSniesYearTo] = useState<string | null>(null);
-  const [sniesSearch, setSniesSearch] = useState("");
+  const [sniesSearch, setSniesSearch] = usePersistentSearch("sniesSearch");
   const [debouncedSniesSearch] = useDebouncedValue(sniesSearch, 350);
 
   // Estado para Plantillas/Informes (múltiples archivos)
@@ -191,7 +192,7 @@ export default function ConsultaInformacionPage() {
   const [xlsxLoading, setXlsxLoading] = useState(false);
 
   // Búsqueda en lista de archivos
-  const [listSearch, setListSearch] = useState("");
+  const [listSearch, setListSearch] = usePersistentSearch("listSearch");
 
   // Filtros sidebar
   const [filterVisible, setFilterVisible] = useState(false);
@@ -277,27 +278,33 @@ export default function ConsultaInformacionPage() {
   );
 
   // Efectos por categoría y período
+  const esPrimeraCargaCategoria = useRef(true);
   useEffect(() => {
+    // En la primera carga se conserva la búsqueda guardada; después se limpia al cambiar de categoría
+    const conservarBusqueda = esPrimeraCargaCategoria.current;
+    esPrimeraCargaCategoria.current = false;
+
     // Limpiar filtros y selección al cambiar de categoría
     setSelectedFile(null);
     setFileData(null);
     setActiveFilters({});
     setAllRows([]);
     setFilterVisible(false);
-    setListSearch("");
+    if (!conservarBusqueda) setListSearch("");
 
     if (activeCategory === "snies") {
       setSniesData(null);
       setSniesSheet(0);
       setSniesPage(1);
       setSniesYear(null);
-      setSniesSearch("");
-      fetchSnies(0, 1, null, "");
+      if (!conservarBusqueda) setSniesSearch("");
+      fetchSnies(0, 1, null, conservarBusqueda ? sniesSearch : "");
     } else {
       setFileList([]);
       fetchFileList(activeCategory, selectedPeriodId);
     }
     setFile(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategory, selectedPeriodId, fetchSnies, fetchFileList]);
 
   // SNIES: refetch al cambiar filtros

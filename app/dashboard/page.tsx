@@ -113,8 +113,10 @@ const DashboardPage = () => {
 
   const [avRcOpen, setAvRcOpen] = useState(false);
 
-  // gestionReportesOpen vive en la URL para que el historial del navegador funcione
-  const gestionReportesOpen = searchParams?.get("view") === "gestion";
+  // gestionReportesOpen vive en la URL para que el historial del navegador funcione.
+  // Solo se abre para quien puede ver Gestión de reportes (p. ej. el rol Usuario no).
+  const gestionReportesOpen = searchParams?.get("view") === "gestion"
+    && canSeeAny(GESTION_REPORTES_KEYS, ["Administrador", "Responsable", "Productor"]);
 
   useEffect(() => {
     if (searchParams?.get("gestionProcesos") === "1") {
@@ -1333,7 +1335,7 @@ const DashboardPage = () => {
                   radius="xl"
                   p="xl"
                   className="module-card"
-                  onClick={() => router.push("/historico-docentes/ambitos")}
+                  onClick={() => router.push("/historico-docentes/tablero")}
                   style={{
                     cursor: "pointer",
                     height: 340,
@@ -1521,7 +1523,7 @@ const DashboardPage = () => {
                         radius="xl"
                         p="xl"
                         className="module-card"
-                        onClick={() => router.push("/historico-docentes/ambitos")}
+                        onClick={() => router.push("/historico-docentes/tablero")}
                         style={{
                           cursor: "pointer",
                           height: 340,

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { modals } from "@mantine/modals";
 import { usePeriod } from "@/app/context/PeriodContext";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Report {
   _id: string;
@@ -53,7 +54,7 @@ const ProducerReportPage = () => {
   const { selectedPeriodId } = usePeriod();
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
 
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);

@@ -50,6 +50,7 @@ import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import { DateInput, DatePickerInput } from "@mantine/dates";
 import DateConfig, { dateToGMT } from "@/app/components/DateConfig";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 type LottieProps = {
   animationData: object;
@@ -112,7 +113,7 @@ const AdminReportsPage = () => {
   const [frameFile, setFrameFile] = useState<DriveFile | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<string | null>(null);
   const [userDimensions, setUserDimensions] = useState<Dimension[]>([]);
   const router = useRouter();

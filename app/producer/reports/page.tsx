@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 import dayjs from "dayjs";
 import "dayjs/locale/es";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface Report {
   _id: string;
@@ -76,7 +77,7 @@ const ProducerReportsPage = () => {
   const router = useRouter();
   const { selectedPeriodId } = usePeriod();
   const { data: session } = useSession();
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [publishedReports, setPublishedReports] = useState<PublishedReport[]>([]);
   const [pagePending, setPagePending] = useState(1);
   const [totalPagesPending, setTotalPagesPending] = useState(1);

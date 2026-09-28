@@ -46,6 +46,7 @@ import styles from "./AdminUsersPage.module.css";
 import { useSort } from "../../hooks/useSort";
 import { signIn, useSession } from "next-auth/react";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 interface User {
   _id: string;
@@ -99,7 +100,7 @@ const AdminUsersPage = () => {
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newDependency, setNewDependency] = useState<Dependency | undefined>();
   const [modalOpened, setModalOpened] = useState(false);

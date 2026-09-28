@@ -68,6 +68,7 @@ import {
 import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
+import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
 const UNCATEGORIZED_CATEGORY_FILTER = "__uncategorized__";
 
@@ -199,7 +200,7 @@ const ProducerTemplatesPage = () => {
   const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistentSearch();
   const [pageSize, setPageSize] = useState(20); // Nuevo estado para el tamaño de página
 
   const [nextDeadline, setNextDeadline] = useState<Date | null>(null);

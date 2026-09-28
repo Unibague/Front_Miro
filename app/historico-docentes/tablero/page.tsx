@@ -45,6 +45,7 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { usePeriod } from "@/app/context/PeriodContext";
 import ConsultaInfoSidebar from "../components/ConsultaInfoSidebar";
+import { useRole } from "@/app/context/RoleContext";
 
 interface DistributionEntry {
   value: string;
@@ -227,6 +228,30 @@ interface DependenciaDetalle {
   catedra: number;
 }
 
+// Punto de la gráfica "Docentes por periodo": total y su división por dedicación
+// (tiempoCompleto incluye medio tiempo; es todo lo que no es cátedra).
+interface DocentesPorPeriodo extends NamedValue {
+  tiempoCompleto?: number;
+  catedra?: number;
+}
+
+function DocentesPorPeriodoTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const punto = payload[0].payload as DocentesPorPeriodo;
+  return (
+    <Paper withBorder shadow="sm" p="xs" radius="sm">
+      <Text size="sm" fw={700} mb={4}>{label}</Text>
+      <Text size="sm" c="violet">Docentes: {formatNumber(punto.value)}</Text>
+      {punto.tiempoCompleto !== undefined && (
+        <Text size="sm" c="blue">Tiempo completo: {formatNumber(punto.tiempoCompleto)}</Text>
+      )}
+      {punto.catedra !== undefined && (
+        <Text size="sm" c="orange">Cátedra: {formatNumber(punto.catedra)}</Text>
+      )}
+    </Paper>
+  );
+}
+
 // Resumen a la medida del archivo Docentes Histórico SNIES, presente SOLO en
 // el ámbito Comunidad de Profesores: evolución anual de docentes contratados
 // más una fotografía del periodo más reciente.
@@ -238,11 +263,11 @@ interface DocentesHistoricoSniesAnalytics {
   periodoActual: string;
   totalDocentesHistorico: number;
   docentesPeriodoActual: number;
-  docentesPorAno: NamedValue[];
+  docentesPorAno: DocentesPorPeriodo[];
   dedicacionPeriodoActual: NamedValue[];
   escalafonPeriodoActual: NamedValue[];
   programasPeriodoActual: DependenciaDetalle[];
-  areasApoyoPeriodoActual: DependenciaDetalle[];
+  facultadesPeriodoActual: DependenciaDetalle[];
   nivelFormacionPeriodoActual: NamedValue[];
   hojas: HojaDetalle[];
 }
@@ -394,8 +419,22 @@ interface GruposInvestigacionAnalytics {
   porClasificacion: NamedValue[];
   porFacultad: NamedValue[];
   porPrograma: NamedValue[];
-  porAnioCreacion: NamedValue[];
+  porAnioCreacion: (NamedValue & { grupos?: string[] })[];
   hojas: HojaDetalle[];
+}
+
+function GruposPorAnioTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const punto = payload[0].payload as NamedValue & { grupos?: string[] };
+  return (
+    <Paper withBorder shadow="sm" p="xs" radius="sm" maw={320}>
+      <Text size="sm" fw={700} mb={4}>{label}</Text>
+      <Text size="sm" c="violet" mb={punto.grupos?.length ? 4 : 0}>Grupos: {formatNumber(punto.value)}</Text>
+      {punto.grupos?.map((grupo) => (
+        <Text key={grupo} size="xs">• {grupo}</Text>
+      ))}
+    </Paper>
+  );
 }
 
 // Resumen a la medida de Líneas de Investigación (Investigación e Indagación).
@@ -496,6 +535,7 @@ interface DimensionStats {
   redesInvestigacion: RedesInvestigacionAnalytics | null;
   semillerosParticipantes: SemillerosParticipantesAnalytics | null;
   trabajoGrado: TrabajoGradoAnalytics | null;
+  matriculados: MatriculadosResumen | null;
   movilidadEntranteEstudiantes: MovilidadAnalytics | null;
   movilidadEntranteFuncionarios: MovilidadAnalytics | null;
   movilidadSalienteEstudiantes: MovilidadAnalytics | null;
@@ -652,6 +692,30 @@ function PlantillaPanel({ plantilla }: { plantilla: PlantillaStats }) {
         </Box>
       )}
     </Stack>
+  );
+}
+
+// Total de matriculados de Comunidad de Estudiantes: cifra fija calculada en
+// el backend al guardar el archivo Matriculados (no se recuenta aquí).
+interface MatriculadosResumen {
+  fileName: string;
+  totalMatriculados: number;
+  porPeriodo: { periodo: string; total: number }[];
+}
+
+function MatriculadosCard({ resumen }: { resumen: MatriculadosResumen }) {
+  const periodos = resumen.porPeriodo.filter((p) => p.periodo !== "Sin periodo");
+  return (
+    <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm" mb="lg">
+      <Paper withBorder radius="md" p="sm">
+        <Text size="xs" c="dimmed" fw={600}>Total matriculados</Text>
+        <Text fw={800} size="xl" c="violet">{formatNumber(resumen.totalMatriculados)}</Text>
+        <Text size="xs" c="dimmed">
+          {periodos.length > 0 ? `Periodo ${periodos.map((p) => p.periodo).join(", ")} · ` : ""}
+          {displayFileName(resumen.fileName)}
+        </Text>
+      </Paper>
+    </SimpleGrid>
   );
 }
 
@@ -1017,7 +1081,7 @@ function DocentesHistoricoSniesReport({ report }: { report: DocentesHistoricoSni
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 11 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-            <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Docentes"]} />
+            <ReTooltip content={<DocentesPorPeriodoTooltip />} />
             <Line type="monotone" dataKey="value" stroke="#7048e8" strokeWidth={3} dot={{ r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
@@ -1034,7 +1098,7 @@ function DocentesHistoricoSniesReport({ report }: { report: DocentesHistoricoSni
 
       <Stack gap="lg">
         <DedicacionStackedBar title="Docentes por programa académico (periodo actual, top 10)" data={report.programasPeriodoActual} />
-        <DedicacionStackedBar title="Docentes por área de apoyo (periodo actual)" data={report.areasApoyoPeriodoActual} />
+        <DedicacionStackedBar title="Docentes por facultad (periodo actual)" data={report.facultadesPeriodoActual ?? []} />
       </Stack>
     </Paper>
   );
@@ -1316,7 +1380,7 @@ function CapacitacionFuncionariosReport({ report }: { report: CapacitacionFuncio
 
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mb="lg">
         <BoxedBar title="Capacitaciones por programa académico (top 10)" data={report.porProgramaAcademico} color="#228be6" />
-        <BoxedBar title="Capacitaciones por facultad" data={report.porAreaApoyo} color="#7048e8" />
+        <BoxedBar title="Capacitaciones por área" data={report.porAreaApoyo} color="#7048e8" />
       </SimpleGrid>
 
       <Box>
@@ -1668,7 +1732,7 @@ function GruposInvestigacionReport({ report }: { report: GruposInvestigacionAnal
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Grupos"]} />
+              <ReTooltip content={<GruposPorAnioTooltip />} />
               <Bar dataKey="value" fill="#7048e8" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -1868,15 +1932,22 @@ function TrabajoGradoReport({ report }: { report: TrabajoGradoAnalytics }) {
 
       <Box>
         <Text size="sm" fw={700} mb={4}>Estudiantes por programa</Text>
-        <ResponsiveContainer width="100%" height={Math.max(150, programaChartData.length * 28)}>
-          <BarChart data={programaChartData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-            <YAxis type="category" dataKey="shortName" width={220} tick={{ fontSize: 10 }} />
-            <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Estudiantes"]} labelFormatter={(_label, payload) => payload?.[0]?.payload?.name ?? _label} />
-            <Bar dataKey="value" fill="#228be6" radius={[0, 6, 6, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {programaChartData.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            Este archivo no trae el programa de los estudiantes. Se calcula a partir de NUM_DOCUMENTO_Estudiante al
+            enviar la plantilla a SNIES o al subir el archivo en Consulta de Información.
+          </Text>
+        ) : (
+          <ResponsiveContainer width="100%" height={Math.max(150, programaChartData.length * 28)}>
+            <BarChart data={programaChartData} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+              <YAxis type="category" dataKey="shortName" width={220} tick={{ fontSize: 10 }} />
+              <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Estudiantes"]} labelFormatter={(_label, payload) => payload?.[0]?.payload?.name ?? _label} />
+              <Bar dataKey="value" fill="#228be6" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </Box>
     </Paper>
   );
@@ -1996,6 +2067,7 @@ function MovilidadReport({ report, titulo }: { report: MovilidadAnalytics; titul
 // procesos que lo ameritan (Bienestar, Rutas de Aprendizaje, Prácticas).
 export default function TableroPorAmbitoPage() {
   const router = useRouter();
+  const { userRole } = useRole();
   const { selectedPeriodId } = usePeriod();
   const [stats, setStats] = useState<DimensionStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2048,7 +2120,8 @@ export default function TableroPorAmbitoPage() {
         <Container size="xl">
           <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap" gap="md">
             <Group gap={10}>
-              <ActionIcon variant="subtle" onClick={() => router.push("/historico-docentes/ambitos")}>
+              <ActionIcon variant="subtle" // El rol Usuario entra a Consulta desde el inicio; los demás desde Gestión.
+              onClick={() => router.push(userRole === "Usuario" ? "/dashboard" : "/dashboard?view=gestion")}>
                 <IconArrowLeft size={18} />
               </ActionIcon>
               <ThemeIcon size={40} radius="xl" color="grape" variant="light">
@@ -2141,6 +2214,7 @@ export default function TableroPorAmbitoPage() {
                     : dimension.plantillas;
 
                   const hasNothingToShow = !hasSpecialReport
+                    && !dimension.matriculados
                     && !dimension.curado
                     && !dimension.rutasAprendizaje
                     && !dimension.practicas
@@ -2226,6 +2300,8 @@ export default function TableroPorAmbitoPage() {
                         <Text size="xs" c="dimmed" fw={400}>{getAmbitoDescription(dimension.name)}</Text>
                       </Accordion.Control>
                       <Accordion.Panel>
+
+                      {dimension.matriculados && <MatriculadosCard resumen={dimension.matriculados} />}
 
                       {hasNothingToShow && (
                         <Text size="sm" c="dimmed" ta="center" py="md">
