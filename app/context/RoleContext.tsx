@@ -14,6 +14,14 @@ type RoleContextType = {
   setAllowedDependencies: (deps: string[]) => void;
   allowedDimensions: string[];
   setAllowedDimensions: (dims: string[]) => void;
+  // true si la persona es líder/responsable de algo en el PDI: ve "Mis
+  // proyectos PDI" con cualquier rol y aunque su perfil no incluya el PDI.
+  pdiAsignado: boolean;
+  setPdiAsignado: (asignado: boolean) => void;
+  // true = los permisos los decide su perfil (aunque no tenga ninguno del rol
+  // activo: entonces no ve nada en ese rol); false = sin perfiles, el rol decide.
+  hasProfile: boolean;
+  setHasProfile: (value: boolean) => void;
 };
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
@@ -30,9 +38,11 @@ export const RoleProvider = ({ children, initialRole }: RoleProviderProps) => {
   const [userAccessProfiles, setUserAccessProfiles] = useState<string[]>([]);
   const [allowedDependencies, setAllowedDependencies] = useState<string[]>([]);
   const [allowedDimensions, setAllowedDimensions] = useState<string[]>([]);
+  const [pdiAsignado, setPdiAsignado] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
 
   return (
-    <RoleContext.Provider value={{ userRole, setUserRole, viewPermissions, setViewPermissions, permissionsLoaded, setPermissionsLoaded, userAccessProfiles, setUserAccessProfiles, allowedDependencies, setAllowedDependencies, allowedDimensions, setAllowedDimensions }}>
+    <RoleContext.Provider value={{ userRole, setUserRole, viewPermissions, setViewPermissions, permissionsLoaded, setPermissionsLoaded, userAccessProfiles, setUserAccessProfiles, allowedDependencies, setAllowedDependencies, allowedDimensions, setAllowedDimensions, pdiAsignado, setPdiAsignado, hasProfile, setHasProfile }}>
       {children}
     </RoleContext.Provider>
   );

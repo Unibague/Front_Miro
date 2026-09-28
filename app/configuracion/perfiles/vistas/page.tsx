@@ -17,6 +17,7 @@ import {
   Group,
   Loader,
   MultiSelect,
+  Select,
   ScrollArea,
   SimpleGrid,
   Stack,
@@ -90,6 +91,8 @@ interface SimpleItem {
 interface AccessProfile {
   _id: string;
   name: string;
+  role?: string | null;
+  roleIsInferred?: boolean;
   positions: string[];
   individualMembers?: number[];
   excludedMembers?: number[];
@@ -175,6 +178,9 @@ export default function PositionViewsPage() {
   const [addingUser, setAddingUser] = useState(false);
   const [removingIdentification, setRemovingIdentification] = useState<number | null>(null);
   const [identification, setIdentification] = useState("");
+  // Rol del perfil: el perfil solo aplica cuando la persona tiene ESE rol
+  // activo, y la matriz muestra solo las vistas de ese rol.
+  const [profileRole, setProfileRole] = useState<string | null>(null);
 
   // Jerarquia dinamica: rol (Administrador/Responsable/Productor) -> modulo
   // grande (tarjetas del dashboard) -> submodulo -> vistas. El rol de cada
@@ -189,9 +195,16 @@ export default function PositionViewsPage() {
   // vea (el permiso es por vista, no por vista+rol), asi que repetirlo en
   // varias secciones solo generaba la sensacion de que marcar uno marcaba
   // "otro" cuando en realidad era la misma casilla dibujada dos veces.
+  // En un perfil solo se configuran las vistas de SU rol.
+  const visibleViews = useMemo(
+    () => (isProfileMode && profileRole ? views.filter((view) => (view.roles || []).includes(profileRole)) : views),
+    [views, isProfileMode, profileRole]
+  );
+
   const groupedViewsByRole = useMemo(() => {
     const asignados = new Set<string>();
-    return ROLE_ORDER.map((role) => {
+    const roles = isProfileMode && profileRole ? [profileRole] : ROLE_ORDER;
+    return roles.map((role) => {
       const viewsForRole = views.filter((view) => {
         if (!(view.roles || []).includes(role)) return false;
         if (asignados.has(view.key)) return false;
@@ -208,7 +221,7 @@ export default function PositionViewsPage() {
       }, {});
       return { role, groupedByModule, totalViews: viewsForRole.length };
     });
-  }, [views]);
+  }, [views, isProfileMode, profileRole]);
 
   const managedPositionNames = useMemo(
     () => selectedPositions.map((positionItem) => positionItem.position).filter(Boolean),
@@ -279,6 +292,7 @@ export default function PositionViewsPage() {
       setPermissionLevels(DEFAULT_PROFILES);
       setViews(response.data?.views || []);
       setSelectedProfile(response.data?.profile || null);
+      setProfileRole(response.data?.profile?.role || null);
       setAllDimensions(response.data?.allDimensions || []);
       setAllDependencies(response.data?.allDependencies || []);
       setSelectedPositions(fallbackPositions);
@@ -347,13 +361,21 @@ export default function PositionViewsPage() {
     });
   };
 
-  const setLevelForAllViews = (profile: string, checked: boolean) => setLevelForViews(views, profile, checked);
+  const setLevelForAllViews = (profile: string, checked: boolean) => setLevelForViews(visibleViews, profile, checked);
+
+  // Permisos que se guardan: en un perfil, solo los de las vistas de su rol
+  // (descarta vistas de otros roles que hubieran quedado marcadas).
+  const permissionsToSave = useMemo(() => {
+    if (!isProfileMode || !profileRole) return selectedPositionPermissions;
+    const allowedKeys = new Set(visibleViews.map((view) => view.key));
+    return Object.fromEntries(Object.entries(selectedPositionPermissions).filter(([key]) => allowedKeys.has(key)));
+  }, [isProfileMode, profileRole, visibleViews, selectedPositionPermissions]);
 
   const handleSavePermissions = async () => {
     if (managedPositionNames.length === 0 || !session?.user?.email || !apiUrl) return;
 
     // Validar que al menos un permiso esté seleccionado
-    const totalPermissions = countPermissionChecks(selectedPositionPermissions);
+    const totalPermissions = countPermissionChecks(permissionsToSave);
     if (totalPermissions === 0) {
       showNotification({
         title: "Validación requerida",
@@ -368,8 +390,8 @@ export default function PositionViewsPage() {
       const response = await axios.put(
         `${apiUrl}/users/position-view-permissions`,
         {
-          ...(isProfileMode ? { profileId } : { position: managedPositionNames[0] }),
-          permissions: selectedPositionPermissions,
+          ...(isProfileMode ? { profileId, role: profileRole } : { position: managedPositionNames[0] }),
+          permissions: permissionsToSave,
           allowed_dimensions: allowedDimensions,
           allowed_dependencies: allowedDependencies,
           adminEmail: session.user.email,
@@ -589,7 +611,7 @@ export default function PositionViewsPage() {
                 <Group justify="space-between">
                   <div>
                     <Text size="sm" c="dimmed">Checks activos</Text>
-                    <Title order={3}>{countPermissionChecks(selectedPositionPermissions)}</Title>
+                    <Title order={3}>{countPermissionChecks(permissionsToSave)}</Title>
                     <Text size="xs" c="dimmed">{formatUpdatedAt(latestUpdatedAt)}</Text>
                   </div>
                   <IconShield size={34} />
@@ -823,17 +845,35 @@ export default function PositionViewsPage() {
                     </Text>
                   </div>
                   <Badge variant="light" color="blue">
-                    {countPermissionChecks(selectedPositionPermissions)} checks activos
+                    {countPermissionChecks(permissionsToSave)} checks activos
                   </Badge>
                 </Group>
 
+                {isProfileMode && (
+                  <Select
+                    label="Rol del perfil"
+                    description="El perfil solo aplica cuando la persona tiene este rol activo. Si alguien tiene varios roles, cada rol usa su propio perfil."
+                    data={[...ROLE_ORDER, "Usuario"]}
+                    value={profileRole}
+                    onChange={(value) => { setProfileRole(value); setHasChanges(true); }}
+                    allowDeselect={false}
+                    disabled={!canManage}
+                    w={320}
+                  />
+                )}
+                {isProfileMode && selectedProfile?.roleIsInferred && (
+                  <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
+                    Este perfil aún no tenía rol: se dedujo <strong>{profileRole}</strong> por su nombre y sus vistas. Revísalo y guarda para dejarlo fijo.
+                  </Alert>
+                )}
+
                 <Alert color="blue" icon={<IconAlertCircle size={18} />}>
                   {isProfileMode
-                    ? "Marca las acciones permitidas para este perfil. Al guardar, se aplican a todos sus cargos."
+                    ? "Marca las acciones permitidas para este perfil. Los permisos son propios del perfil: no afectan a otros perfiles aunque compartan cargos."
                     : "Marca las acciones permitidas para este cargo y guarda los cambios al finalizar."}
                 </Alert>
 
-                {isProfileMode && hasMixedPermissions && (
+                {!isProfileMode && hasMixedPermissions && (
                   <Alert color="yellow" icon={<IconAlertCircle size={18} />}>
                     Algunos cargos del perfil tienen permisos distintos. Al guardar, todos quedaran con la seleccion actual.
                   </Alert>
@@ -842,8 +882,8 @@ export default function PositionViewsPage() {
                 <Group justify="space-between">
                   <Group gap="xs">
                     {permissionLevels.map((profile) => {
-                      const checkedViews = views.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length;
-                      const allChecked = views.length > 0 && checkedViews === views.length;
+                      const checkedViews = visibleViews.filter((view) => selectedPositionPermissions[view.key]?.includes(profile)).length;
+                      const allChecked = visibleViews.length > 0 && checkedViews === visibleViews.length;
 
                       return (
                         <Checkbox

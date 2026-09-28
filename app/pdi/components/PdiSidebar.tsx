@@ -11,6 +11,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import { useRole } from "@/app/context/RoleContext";
+import { usePdiAccess } from "@/app/hooks/usePdiAccess";
 import { PDI_ROUTES } from "../api";
 
 type PdiNavItem = {
@@ -161,15 +162,21 @@ export default function PdiSidebar() {
   }, [isAdmin, session?.user, status]);
 
   // Sin perfiles: admin ve todo; responsables solo ven informes si lideran un macroproyecto.
+  // Quien entra al PDI solo por estar asignado (sin rol/perfil que dé el
+  // módulo) ve únicamente "Mi PDI": el resto del módulo no es suyo.
+  const { soloMisProyectos } = usePdiAccess();
   const links = useMemo(() => {
     const source = isAdmin ? ADMIN_LINKS : RESPONSABLE_LINKS;
     return source
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) => !item.requiresMacroLeader || isMacroLeader),
+        items: group.items.filter((item) =>
+          (!item.requiresMacroLeader || isMacroLeader)
+          && (!soloMisProyectos || item.path === "/pdi/mis-indicadores")
+        ),
       }))
       .filter((group) => group.items.length > 0);
-  }, [isAdmin, isMacroLeader]);
+  }, [isAdmin, isMacroLeader, soloMisProyectos]);
 
   if (collapsed) {
     return (

@@ -9,7 +9,7 @@ import {
 } from "@mantine/core";
 import {
   IconArrowLeft, IconTarget,
-  IconEdit, IconChevronDown, IconChevronRight, IconChevronUp,
+  IconEdit, IconChevronDown, IconChevronRight, IconChevronUp, IconCircleCheck,
   IconCheck, IconX,
   IconListCheck, IconTrendingUp, IconFlag, IconFileTypePdf, IconGitPullRequest,
   IconForms, IconUpload, IconTrash, IconExternalLink, IconShieldCheck,
@@ -26,6 +26,7 @@ import dynamic from "next/dynamic";
 import { usePdiConfig } from "../hooks/usePdiConfig";
 import PdiSidebar from "../components/PdiSidebar";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
+import { usePdiAccess } from "@/app/hooks/usePdiAccess";
 import { getWeightedContribution as getWeightedProgress, formatNumeroEs } from "../avance-utils";
 import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 
@@ -158,6 +159,24 @@ function getReportesPendientesAccion(indicadores: Indicador[], cortesVigentes: C
         indicadorNombre: indicador.nombre,
         corte: periodo.periodo,
         estado: periodo.estado_reporte ?? "Borrador",
+      }))
+  );
+}
+
+// Indicadores que YA se reportaron en un periodo de reporte abierto (el que
+// les tocaba): enviados (en revisión) o ya aprobados.
+function getReportesRealizadosAccion(indicadores: Indicador[], cortesVigentes: CorteVigente[]) {
+  return indicadores.flatMap((indicador) =>
+    (indicador.periodos ?? [])
+      .filter((periodo) =>
+        esPeriodoEditable(periodo.periodo, cortesVigentes) &&
+        ["Enviado", "Aprobado", "Validado"].includes(periodo.estado_reporte ?? "")
+      )
+      .map((periodo) => ({
+        indicadorId: indicador._id,
+        indicadorCodigo: indicador.codigo,
+        corte: periodo.periodo,
+        estado: periodo.estado_reporte === "Enviado" ? "En revisión" : "Aprobado",
       }))
   );
 }
@@ -932,6 +951,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
   const periodoSugeridoEvaluacion = getPeriodoSugeridoParaEvaluacion(ind);
   const reportesPendientes = esResponsable ? getReportesPendientesAccion([ind], cortesVigentes) : [];
   const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion([ind]) : [];
+  const reportesRealizados = getReportesRealizadosAccion([ind], cortesVigentes);
   const tieneReporteRechazado = reportesPendientes.some((r) => r.estado === "Rechazado");
   const alertaPendiente = reportesPendientes.length > 0
     ? {
@@ -1003,6 +1023,21 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
           {alertaPendiente.label} · {alertaPendiente.cortes.join(", ")}
         </Badge>
       )}
+
+      {reportesRealizados.map((r) => (
+        <Badge
+          key={`hecho-${r.corte}`}
+          color="green"
+          variant="light"
+          radius="xl"
+          size="sm"
+          mb="sm"
+          ml={alertaPendiente ? 4 : 0}
+          leftSection={<IconCircleCheck size={11} />}
+        >
+          Ya reportado · {r.corte} · {r.estado}
+        </Badge>
+      ))}
 
       {ind.indicador_resultado && (
         <Text size="xs" c="dimmed" mb="sm">{ind.indicador_resultado}</Text>
@@ -1507,6 +1542,9 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   canManage?: boolean;
 }) {
   const [openAccion, setOpenAccion] = useState(false);
+  // Presupuesto y ejecución por año arrancan contraídos: el total se ve en
+  // la casilla "Presupuesto" junto a Avance/Indicadores.
+  const [openPresupuesto, setOpenPresupuesto] = useState(false);
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSheetRow[]>([]);
 
   // Presupuesto/ejecucion real del año vigente (hoja "Proyecto 2026" en
@@ -1523,6 +1561,18 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
     [presupuestoRows, accion.codigo]
   );
 
+  // Presupuesto total de la acción: suma de los años del PDI (el año vigente
+  // con el dato real de la hoja de presupuesto), igual que el detalle por año.
+  const presupuestoTotalAccion = (() => {
+    const ppa = accion.presupuesto_por_anio ?? {};
+    const anios = Object.keys(ppa);
+    if (!anios.length) return Number(accion.presupuesto) || 0;
+    return anios.reduce((sum, anio) => {
+      const usaReal = anio === ANIO_ACTUAL && !!presupuestoReal;
+      return sum + (usaReal ? presupuestoReal!.presupuesto : Number(ppa[anio] ?? 0));
+    }, 0);
+  })();
+
   const avanceAccion = indicadores.length
     ? getWeightedProgress(indicadores, (indicador) => getIndicadorAvancePonderado(indicador))
     : Number(accion.avance) || 0;
@@ -1530,6 +1580,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   const avanceAccionBarra = Math.min(Math.max(avanceAccion, 0), 100);
   const reportesPendientes = esResponsable ? getReportesPendientesAccion(indicadores, cortesVigentes) : [];
   const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion(indicadores) : [];
+  const reportesRealizados = esResponsable ? getReportesRealizadosAccion(indicadores, cortesVigentes) : [];
   return (
     <Paper withBorder radius="xl" p="lg"
       style={{ background: "rgba(255,255,255,0.72)", cursor: "pointer", transition: "box-shadow 0.2s" }}
@@ -1548,8 +1599,20 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
             {accion.responsable && (
               <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
             )}
-            {(reportesPendientes.length > 0 || evaluacionesPendientes.length > 0) && (
+            {(reportesPendientes.length > 0 || evaluacionesPendientes.length > 0 || reportesRealizados.length > 0) && (
               <Group gap={4} mt={8} wrap="wrap">
+                {reportesRealizados.map((r) => (
+                  <Badge
+                    key={`hecho-${r.indicadorId}-${r.corte}`}
+                    size="sm"
+                    color="green"
+                    variant="light"
+                    radius="xl"
+                    leftSection={<IconCircleCheck size={10} />}
+                  >
+                    Ya reportado · {r.indicadorCodigo} · {r.corte} · {r.estado}
+                  </Badge>
+                ))}
                 {reportesPendientes.map((r) => (
                   <Badge
                     key={`rep-${r.indicadorId}-${r.corte}`}
@@ -1617,10 +1680,11 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
       </Group>
 
       <Collapse in={openAccion} onClick={(e) => e.stopPropagation()}>
-        <SimpleGrid cols={{ base: 2, sm: 2 }} spacing="sm" mb="md">
+        <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="sm" mb="md">
           {[
             { label: "Avance", value: `${avanceAccion}%` },
             { label: "Indicadores", value: indicadores.length },
+            { label: "Presupuesto", value: formatCOP(presupuestoTotalAccion) },
           ].map((item) => (
             <Box
               key={item.label}
@@ -1645,6 +1709,22 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           <Progress value={avanceAccionBarra} color={getProgressColor(avanceAccion)} size="md" radius="xl" />
         </Box>
 
+        {/* Presupuesto y ejecución por año: contraído por defecto */}
+        {Object.keys(accion.presupuesto_por_anio ?? {}).length > 0 && (
+          <Group
+            gap={6}
+            mb="md"
+            style={{ cursor: "pointer", userSelect: "none" }}
+            onClick={(e) => { e.stopPropagation(); setOpenPresupuesto((o) => !o); }}
+          >
+            {openPresupuesto ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+            <Text size="xs" fw={700}>
+              {openPresupuesto ? "Ocultar presupuesto y ejecución por año" : "Ver presupuesto y ejecución por año"}
+            </Text>
+          </Group>
+        )}
+
+        <Collapse in={openPresupuesto}>
         {/* Distribución presupuestal por año */}
         {(() => {
           const ppa = accion.presupuesto_por_anio ?? {};
@@ -1770,6 +1850,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
             </Box>
           );
         })()}
+        </Collapse>
 
         {indicadores.length === 0 ? (
           <Paper withBorder radius="lg" p="md" style={{ background: "rgba(124,58,237,0.04)" }} onClick={(e) => e.stopPropagation()}>
@@ -1813,7 +1894,10 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   esResponsableProyecto?: boolean;
   esAdmin?: boolean;
 }) {
-  const [openProyecto, setOpenProyecto] = useState(true);
+  // Con rol Responsable los proyectos arrancan contraídos (se despliegan al
+  // hacer clic); los demás roles los siguen viendo desplegados.
+  const { userRole } = useRole();
+  const [openProyecto, setOpenProyecto] = useState(userRole !== "Responsable");
   const [selectedAccionIds, setSelectedAccionIds] = useState<string[]>([]);
   const indicadoresCount = vista.acciones.reduce((acc, item) => acc + item.indicadores.length, 0);
   const indicadoresProyecto = vista.acciones.flatMap((item) => item.indicadores);
@@ -2369,7 +2453,12 @@ export default function MisIndicadoresPage() {
   const { config } = usePdiConfig();
   // "pdi" es la llave de Administrador; Responsable tiene su propia llave
   // separada ("pdiResponsable") aunque comparta la misma página.
-  const { canManage: canManagePdi } = useViewPermission(userRole === "Responsable" ? "pdiResponsable" : "pdi");
+  const { canManage: canManageByPermission } = useViewPermission(userRole === "Responsable" ? "pdiResponsable" : "pdi");
+  // Quien está asignado en el PDI gestiona SUS proyectos aunque su rol/perfil
+  // no dé el módulo: los botones igual exigen que sea responsable o líder de
+  // ese proyecto en particular (esResponsableProyecto / esLiderProyecto).
+  const { pdiAsignado, soloMisProyectos } = usePdiAccess();
+  const canManagePdi = canManageByPermission || pdiAsignado;
   const [proyectosVista, setProyectosVista] = useState<ProyectoResponsableView[]>([]);
   const [loading, setLoading] = useState(true);
   const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
@@ -2603,7 +2692,8 @@ export default function MisIndicadoresPage() {
     <Container size="xl" py="xl">
       <Group mb="lg" justify="space-between">
         <Group gap={10}>
-          <ActionIcon variant="subtle" onClick={() => router.push("/pdi-modulo")}>
+          {/* Quien entra solo por asignación no tiene el resto del módulo PDI: vuelve al inicio. */}
+          <ActionIcon variant="subtle" onClick={() => router.push(soloMisProyectos ? "/dashboard" : "/pdi-modulo")}>
             <IconArrowLeft size={18} />
           </ActionIcon>
           <ThemeIcon size={40} radius="xl" color="violet" variant="light">

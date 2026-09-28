@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import { showNotification } from "@mantine/notifications";
 import LoadingScreen from "@/app/components/LoadingScreen";
+import { asignacionPdiAplica } from "@/app/hooks/usePdiAccess";
 
 // Orden importa: las más específicas primero
 const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
@@ -58,15 +59,22 @@ const ROLE_KEY_VARIANTS: Record<string, Partial<Record<string, string>>> = {
   pdiCharts:                 { Responsable: "pdiChartsResponsable" },
 };
 
+/** Rutas que un Administrador siempre puede abrir, aunque su perfil no las incluya. */
+const ADMIN_RECOVERY_KEYS = ["configuration", "profiles"];
+
 const FREE_ROUTES = /^\/(|dashboard|logs|traceability|operations|historico-docentes)(\/|$)/;
 
 /** Rutas accesibles por rol sin necesitar permiso de cargo explícito */
-const ROLE_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [
-  { roles: ["Responsable", "Productor"], pattern: /^\/processes-MEN\/responsible/ },
+const ROLE_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [];
+
+/** Rutas exclusivas de un rol: cualquier otro rol queda bloqueado aunque su perfil tenga la vista. */
+const ROLE_ONLY_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [
+  // Procesos de calidad MEN: solo Administrador (oculto para Responsable y Productor).
+  { roles: ["Administrador"], pattern: /^\/processes-MEN/ },
 ];
 
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
-  const { userRole, viewPermissions, permissionsLoaded } = useRole();
+  const { userRole, viewPermissions, permissionsLoaded, pdiAsignado, hasProfile } = useRole();
   const router = useRouter();
   const pathname = usePathname() ?? "";
   const [isVerifying, setIsVerifying] = useState(true);
@@ -87,6 +95,17 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
+    const roleOnlyRoute = ROLE_ONLY_ROUTES.find(({ pattern }) => pattern.test(pathname));
+    if (roleOnlyRoute && !roleOnlyRoute.roles.includes(role)) {
+      showNotification({
+        title: "Acceso denegado",
+        message: "No tienes permiso para acceder a esta página",
+        color: "red",
+      });
+      router.replace("/dashboard");
+      return;
+    }
+
     // Rutas accesibles por rol sin permiso de cargo
     const roleRoute = ROLE_ROUTES.find(({ pattern }) => pattern.test(pathname));
     if (roleRoute) {
@@ -100,14 +119,24 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
     const matched = VIEW_PERMISSION_ROUTES.find(({ pattern }) => pattern.test(pathname));
 
     if (matched) {
-      // Administrador pasa en todas las rutas sin excepción
-      if (role === "Administrador") {
+      // Administrador sin perfil pasa en todas las rutas. Con perfil, su perfil
+      // también lo limita, salvo Configuración y Gestionar perfiles: nunca se
+      // bloquean para un Administrador, para que un perfil mal armado siempre
+      // se pueda corregir (mismo resguardo que ADMIN_RECOVERY_KEYS del inicio).
+      if (role === "Administrador" && (!hasProfile || ADMIN_RECOVERY_KEYS.includes(matched.key))) {
+        setIsVerifying(false);
+        return;
+      }
+
+      // Líder/responsable de algo en el PDI: entra a SUS proyectos (y sus
+      // subpáginas de evidencias/evaluación) con cualquier rol y perfil.
+      if (matched.key === "pdiMine" && asignacionPdiAplica(pdiAsignado, role)) {
         setIsVerifying(false);
         return;
       }
 
       // Sin perfil asignado → acceso completo basado en el rol
-      if (Object.keys(viewPermissions).length === 0) {
+      if (!hasProfile) {
         setIsVerifying(false);
         return;
       }
@@ -139,7 +168,7 @@ const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {
       color: "red",
     });
     router.replace("/dashboard");
-  }, [role, viewPermissions, permissionsLoaded, pathname, router]);
+  }, [role, viewPermissions, permissionsLoaded, pdiAsignado, hasProfile, pathname, router]);
 
   if (!permissionsLoaded || isVerifying) {
     return <LoadingScreen />;

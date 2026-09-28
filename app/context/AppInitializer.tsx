@@ -8,7 +8,7 @@ import LoadingScreen from '../components/LoadingScreen';
 
 export const AppInitializer = ({ children }: { children: React.ReactNode }) => {
   const { data: session, status } = useSession();
-  const { setUserRole, setViewPermissions, setPermissionsLoaded, setUserAccessProfiles, setAllowedDependencies, setAllowedDimensions } = useRole();
+  const { setUserRole, setViewPermissions, setPermissionsLoaded, setUserAccessProfiles, setAllowedDependencies, setAllowedDimensions, setPdiAsignado, setHasProfile } = useRole();
   const pathname = usePathname() ?? '';
   const isPublic = pathname.startsWith('/public');
   const [isRoleLoaded, setIsRoleLoaded] = useState(isPublic);
@@ -53,6 +53,8 @@ export const AppInitializer = ({ children }: { children: React.ReactNode }) => {
           setUserAccessProfiles(response.data.accessProfiles || []);
           setAllowedDependencies(response.data.allowedDependencies || []);
           setAllowedDimensions(response.data.allowedDimensions || []);
+          setPdiAsignado(Boolean(response.data.pdiAsignado));
+          setHasProfile(Boolean(response.data.hasProfile ?? (response.data.accessProfiles || []).length > 0));
           setPermissionsLoaded(true);
         } catch (error) {
           console.error("Error fetching user role from database:", error);

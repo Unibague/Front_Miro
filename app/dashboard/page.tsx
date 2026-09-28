@@ -15,6 +15,7 @@ import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
 import AIChat from "@/app/components/AIAssistant/AIChat";
 import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
+import { asignacionPdiAplica } from "@/app/hooks/usePdiAccess";
 
 
 const GESTION_REPORTES_KEYS = [
@@ -50,7 +51,9 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const { userRole, setUserRole, viewPermissions, setViewPermissions, userAccessProfiles, setUserAccessProfiles, permissionsLoaded } = useRole();
+  const { userRole, setUserRole, viewPermissions, setViewPermissions, userAccessProfiles, setUserAccessProfiles, permissionsLoaded, pdiAsignado: asignadoEnPdi, hasProfile } = useRole();
+  // La asignación en el PDI solo abre el módulo con rol Responsable o Productor (nunca Usuario).
+  const pdiAsignado = asignacionPdiAplica(asignadoEnPdi, userRole);
   const [notificationShown, setNotificationShown] = useState(false);
   const [isResponsible, setIsResponsible] = useState(false);
   const colorScheme = useColorScheme();
@@ -81,7 +84,6 @@ const DashboardPage = () => {
   // cuales de esos modulos ve exactamente (lo que marco en "Gestionar
   // vistas"). Si no tiene perfil, ve todo lo que su rol permite, como antes
   // de que existiera el sistema de perfiles.
-  const hasProfile = userAccessProfiles.length > 0;
 
   // Unico resguardo: un Administrador siempre puede llegar a "Gestionar
   // perfiles" (y a la tarjeta "Configuración" que la contiene), sin importar
@@ -501,26 +503,11 @@ const DashboardPage = () => {
         { email: session.user.email, activeRole: role }
       );
 
-      // Recargar permisos del cargo para el nuevo rol activo
-      const permResponse = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/users/roles`,
-        { params: { email: session.user.email } }
-      );
-      setUserRole(role);
-      setViewPermissions(permResponse.data.viewPermissions || {});
-      setUserAccessProfiles(permResponse.data.accessProfiles || []);
-
+      // Recargar la aplicación con el rol nuevo (igual que el selector de rol
+      // del menú): así se vuelven a cargar TODOS sus permisos (perfil,
+      // asignación PDI...) en vez de actualizar solo una parte.
       setOpened(false);
-      const targetRoute = getDefaultRouteByRole(role);
-      if (targetRoute !== pathname) {
-        router.replace(targetRoute);
-      }
-      showNotification({
-        title: "Rol actualizado",
-        message: `Tu nuevo rol es ${role}`,
-        autoClose: 5000,
-        color: "teal",
-      });
+      window.location.assign(getDefaultRouteByRole(role));
     } catch (error) {
       console.error("Error updating active role:", error);
       showNotification({
@@ -1012,28 +999,6 @@ const DashboardPage = () => {
           </Grid.Col>
         )}
 
-        {(canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"])) && (
-          <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
-            <Card shadow="sm" padding="lg" radius="md" withBorder>
-              <Center><IconCalendarMonth size={80} /></Center>
-              <Group mt="md" mb="xs">
-                <Text ta={"center"} w={500}>Estado de procesos MEN</Text>
-              </Group>
-              <Text ta={"center"} size="sm" color="dimmed">
-                Consulta el estado de fases y actividades de los programas de tu facultad.
-              </Text>
-              <Button
-                variant="light"
-                fullWidth
-                mt="md"
-                radius="md"
-                onClick={() => router.push("/processes-MEN/responsible")}
-              >
-                Ver procesos de mi facultad
-              </Button>
-            </Card>
-          </Grid.Col>
-        )}
       </>
     );
   };
@@ -1153,7 +1118,8 @@ const DashboardPage = () => {
               </>
             )}
 
-            {(canSee("dateReview", ["Administrador"]) || canSee("dateReviewComunicaciones", ["Administrador"]) || (canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"]))) && (
+            {/* Procesos de calidad MEN: solo Administrador (oculto para Responsable y Productor). */}
+            {(canSee("dateReview", ["Administrador"]) || canSee("dateReviewComunicaciones", ["Administrador"])) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
@@ -1208,13 +1174,20 @@ const DashboardPage = () => {
               </Grid.Col>
             )}
 
-            {canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) && (
+            {/* Quien es líder/responsable de algo en el PDI ve la tarjeta con
+                cualquier rol y aunque su perfil no incluya el PDI; en ese caso
+                entra directo a sus proyectos (ver app/hooks/usePdiAccess.ts). */}
+            {(canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) || pdiAsignado) && (
               <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
                 <Card
                   radius="xl"
                   p="xl"
                   className="module-card"
-                  onClick={() => router.push(userRole === "Responsable" ? "/pdi-modulo" : "/pdi")}
+                  onClick={() => router.push(
+                    !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"])
+                      ? "/pdi/mis-indicadores"
+                      : userRole === "Responsable" ? "/pdi-modulo" : "/pdi"
+                  )}
                   style={{
                     cursor: "pointer",
                     height: 340,
@@ -1236,7 +1209,7 @@ const DashboardPage = () => {
                         PDI
                       </Title>
                       <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
-                        {userRole === "Responsable"
+                        {userRole === "Responsable" || !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"])
                           ? "Seguimiento de tus proyectos, acciones e indicadores PDI."
                           : "Proyecto de Desarrollo Institucional."}
                       </Text>
@@ -1374,8 +1347,8 @@ const DashboardPage = () => {
              !canSee("supportTemplates", ["Administrador"]) &&
              !canSee("dateReview", ["Administrador"]) &&
              !canSee("dateReviewComunicaciones", ["Administrador"]) &&
-             !(canSee("dateReviewResponsible", ["Responsable"]) || canSee("dateReviewResponsibleProductor", ["Productor"])) &&
              !canSeeAny(PDI_KEYS, ["Administrador", "Responsable"]) &&
+             !pdiAsignado &&
              !canSeeAny(RESPONSIBLE_ADMIN_KEYS, ["Administrador", "Responsable"]) &&
              !canSeeAny(CONFIGURATION_KEYS, ["Administrador"]) && (
               <Grid.Col span={12}>

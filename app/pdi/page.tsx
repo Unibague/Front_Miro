@@ -1724,9 +1724,16 @@ function MacroproyectoPortfolioCard({ macro, proyectos, accionesCount, indicador
 // ── Página principal PDI ───────────────────────────────────────────────────
 export default function PdiPage() {
   const router = useRouter();
-  const { userRole } = useRole();
+  const { userRole, permissionsLoaded } = useRole();
   const admin = isAdmin(userRole);
   const { config, refresh: refreshConfig } = usePdiConfig();
+
+  // Este es el panel del Administrador: cualquier otro rol trabaja sobre sus
+  // propios proyectos en "Mis proyectos PDI" (p. ej. tras cambiar de rol o
+  // entrar escribiendo la URL).
+  useEffect(() => {
+    if (permissionsLoaded && !admin) router.replace("/pdi/mis-indicadores");
+  }, [permissionsLoaded, admin, router]);
 
   const [macros, setMacros] = useState<Macroproyecto[]>([]);
   const [resumen, setResumen] = useState<DashboardResumen | null>(null);

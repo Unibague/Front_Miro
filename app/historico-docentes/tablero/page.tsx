@@ -536,6 +536,7 @@ interface DimensionStats {
   semillerosParticipantes: SemillerosParticipantesAnalytics | null;
   trabajoGrado: TrabajoGradoAnalytics | null;
   matriculados: MatriculadosResumen | null;
+  poblacionEstudiantil: PoblacionEstudiantil | null;
   movilidadEntranteEstudiantes: MovilidadAnalytics | null;
   movilidadEntranteFuncionarios: MovilidadAnalytics | null;
   movilidadSalienteEstudiantes: MovilidadAnalytics | null;
@@ -716,6 +717,63 @@ function MatriculadosCard({ resumen }: { resumen: MatriculadosResumen }) {
         </Text>
       </Paper>
     </SimpleGrid>
+  );
+}
+
+// Población estudiantil oficial del periodo (Admisiones y Registro), que se
+// muestra en Comunidad de Estudiantes por fuera de las plantillas.
+interface PoblacionEstudiantil {
+  semestre: string;
+  inscritos: number;
+  admitidos: number;
+  nuevos: number;
+  antiguos: number;
+  total: number;
+  porFacultad: NamedValue[];
+  fuente: string;
+}
+
+function PoblacionEstudiantilReport({ data }: { data: PoblacionEstudiantil }) {
+  const facultadChartData = data.porFacultad.map((item) => ({ ...item, shortName: truncate(item.name, 30) }));
+  return (
+    <Paper withBorder radius="md" p="md" mb="lg" style={{ borderColor: "var(--mantine-color-blue-3)" }}>
+      <Group justify="space-between" mb="md" align="flex-start">
+        <Box>
+          <Group gap="xs">
+            <IconUsers size={20} color="#1c7ed6" />
+            <Text fw={800}>Población estudiantil</Text>
+            <Badge variant="light" color="blue">Semestre {data.semestre}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mt={3}>{data.fuente}</Text>
+        </Box>
+      </Group>
+
+      <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm" mb="lg">
+        <MetricCard label="Inscritos" value={data.inscritos} color="violet" />
+        <MetricCard label="Admitidos" value={data.admitidos} color="blue" />
+        <MetricCard label="Nuevos" value={data.nuevos} color="teal" />
+        <MetricCard label="Antiguos" value={data.antiguos} color="orange" />
+        <MetricCard label="Total" value={data.total} color="indigo" />
+      </SimpleGrid>
+
+      {data.porFacultad.length > 0 && (
+        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+          <Box>
+            <Text size="sm" fw={700} mb={4}>Estudiantes por facultad</Text>
+            <ResponsiveContainer width="100%" height={Math.max(180, facultadChartData.length * 40)}>
+              <BarChart data={facultadChartData} layout="vertical" margin={{ top: 4, right: 40, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="shortName" width={190} tick={{ fontSize: 11 }} />
+                <ReTooltip formatter={(value: any) => [formatNumber(Number(value)), "Estudiantes"]} labelFormatter={(_label, payload) => payload?.[0]?.payload?.name ?? _label} />
+                <Bar dataKey="value" fill="#1c7ed6" radius={[0, 6, 6, 0]} label={{ position: "right", fontSize: 11, formatter: (v: any) => formatNumber(Number(v)) }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+          <NamedDonut title="Participación por facultad" data={data.porFacultad} />
+        </SimpleGrid>
+      )}
+    </Paper>
   );
 }
 
@@ -2215,6 +2273,7 @@ export default function TableroPorAmbitoPage() {
 
                   const hasNothingToShow = !hasSpecialReport
                     && !dimension.matriculados
+                    && !dimension.poblacionEstudiantil
                     && !dimension.curado
                     && !dimension.rutasAprendizaje
                     && !dimension.practicas
@@ -2301,7 +2360,11 @@ export default function TableroPorAmbitoPage() {
                       </Accordion.Control>
                       <Accordion.Panel>
 
-                      {dimension.matriculados && <MatriculadosCard resumen={dimension.matriculados} />}
+                      {dimension.poblacionEstudiantil && <PoblacionEstudiantilReport data={dimension.poblacionEstudiantil} />}
+
+                      {/* El conteo del archivo Matriculados solo se muestra si no
+                          hay cifra oficial del periodo, para no dar dos totales. */}
+                      {dimension.matriculados && !dimension.poblacionEstudiantil && <MatriculadosCard resumen={dimension.matriculados} />}
 
                       {hasNothingToShow && (
                         <Text size="sm" c="dimmed" ta="center" py="md">

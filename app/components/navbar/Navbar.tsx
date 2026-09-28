@@ -147,10 +147,11 @@ export default function Navbar() {
         activeRole: role,
       });
       setRoleMenuOpened(false);
-      // Recargar la página completa: cada vista vuelve a pedir sus datos con
-      // el rol nuevo (AppInitializer lo lee de activeRole en el backend), en
-      // vez de quedarse mostrando lo que se cargó con el rol anterior.
-      window.location.reload();
+      // Recargar la aplicación en la pantalla de módulos (inicio): cada rol
+      // tiene sus propios módulos, así que se arranca desde ahí con el rol
+      // nuevo (AppInitializer lo lee de activeRole en el backend) en vez de
+      // quedarse en una página que puede ser del rol anterior.
+      window.location.assign("/dashboard");
     } catch (error) {
       console.error("Error updating active role:", error);
       showNotification({

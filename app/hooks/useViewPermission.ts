@@ -11,7 +11,7 @@ import { useRole } from "@/app/context/RoleContext";
  * Si el cargo no tiene viewPermissions configurados, se usa el rol como fallback.
  */
 export function useViewPermission(viewKey: string) {
-  const { userRole, viewPermissions } = useRole();
+  const { userRole, viewPermissions, hasProfile } = useRole();
 
   // Administrador siempre tiene todo
   if (userRole === "Administrador") {
@@ -20,7 +20,6 @@ export function useViewPermission(viewKey: string) {
 
   // Si el usuario no tiene ningún perfil asignado (viewPermissions vacío),
   // usar acceso completo basado en el rol para no bloquear el sistema
-  const hasProfile = Object.keys(viewPermissions).length > 0;
   if (!hasProfile) {
     return { canView: true, canManage: true };
   }
