@@ -85,6 +85,10 @@ interface RespuestaFormulario {
   aval_razones?: string[];
   aval_otro_cual?: string;
   aval_fecha?: string | null;
+  aval_planeacion?: "Pendiente" | "Validado" | "Devuelto" | null;
+  aval_planeacion_por?: string;
+  aval_planeacion_comentario?: string;
+  aval_planeacion_fecha?: string | null;
 }
 
 interface DocumentoEvidencia {
@@ -1654,6 +1658,10 @@ export default function SubirEvidenciasPage() {
                     const estadoAval = resp?.estado_aval ?? (autoAprobadoFormulario ? "Aprobado" : enviado ? "Pendiente" : null);
                     const fechaAval = formatFechaCorta(resp?.aval_fecha);
                     const fechaEnvio = formatFechaCorta(resp?.fecha_envio);
+                    // Planeación devuelve el reporte a Borrador; mientras no se reenvíe,
+                    // el responsable debe ver la observación que dejó Planeación.
+                    const devueltoPlaneacion = !enviado && resp?.aval_planeacion === "Devuelto";
+                    const fechaPlaneacion = formatFechaCorta(resp?.aval_planeacion_fecha);
                     const documentosAdjuntos = getDocumentosEvidencia(resp);
                     const totalEvidencias = getDocumentosTotalSize(documentosAdjuntos);
                     const porcentajeCapacidad = Math.min((totalEvidencias / MAX_EVIDENCE_TOTAL_SIZE) * 100, 100);
@@ -1664,7 +1672,9 @@ export default function SubirEvidenciasPage() {
                           borderLeft: `4px solid ${
                             estadoAval === "Rechazado"
                               ? "#ef4444"
-                              : estadoAval === "Aprobado"
+                              : devueltoPlaneacion
+                                ? "#f97316"
+                                : estadoAval === "Aprobado"
                                 ? "#16a34a"
                                 : enviado
                                   ? "#0d9488"
@@ -1678,6 +1688,7 @@ export default function SubirEvidenciasPage() {
                               color={
                                 autoAprobadoFormulario ? "teal"
                                 : estadoAval === "Rechazado" ? "red"
+                                : devueltoPlaneacion ? "orange"
                                 : enviado ? "teal"
                                 : resp ? "yellow"
                                 : "gray"
@@ -1686,6 +1697,7 @@ export default function SubirEvidenciasPage() {
                             >
                               {autoAprobadoFormulario ? "Aprobado"
                                 : estadoAval === "Rechazado" ? "Rechazado — corrige y reenvía"
+                                : devueltoPlaneacion ? "Devuelto por Planeación — corrige y reenvía"
                                 : enviado ? "Enviado"
                                 : resp ? "Borrador"
                                 : "Sin responder"}
@@ -1696,6 +1708,31 @@ export default function SubirEvidenciasPage() {
                           <Text size="xs" c="dimmed" mt={-8} mb="sm">
                             Última edición del borrador por: {resp.respondido_por}
                           </Text>
+                        )}
+                        {devueltoPlaneacion && (
+                          <Paper
+                            withBorder
+                            radius="md"
+                            p="sm"
+                            mb="md"
+                            style={{ background: "rgba(255,247,237,0.95)", borderColor: "#fed7aa" }}
+                          >
+                            <Stack gap={6}>
+                              <Text size="sm" fw={700}>Evaluación de Planeación: Devuelto con observaciones</Text>
+                              <Text size="xs" c="dimmed">
+                                {resp?.aval_planeacion_por ? `Evaluado por ${resp.aval_planeacion_por}` : ""}
+                                {fechaPlaneacion ? `${resp?.aval_planeacion_por ? " · " : ""}${fechaPlaneacion}` : ""}
+                              </Text>
+                              {resp?.aval_planeacion_comentario?.trim() ? (
+                                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>{resp.aval_planeacion_comentario}</Text>
+                              ) : (
+                                <Text size="sm" c="dimmed">Planeación no dejó observaciones adicionales.</Text>
+                              )}
+                              <Text size="sm" c="orange.8" fw={600}>
+                                Planeación devolvió este reporte. Realiza los ajustes indicados y vuelve a enviarlo.
+                              </Text>
+                            </Stack>
+                          </Paper>
                         )}
                         {(resp?.estado === "Enviado" || resp?.estado_aval === "Rechazado") && (
                           <Paper
