@@ -1401,6 +1401,114 @@ const appendOptionTexts = (
   return merged;
 };
 
+// Etiqueta que la lista desplegable usa para UNA fila del validador (misma
+// lógica que getValidatorOptions, para que coincida exactamente con la lista).
+const getValidatorRowLabel = (
+  validator: ValidatorOptionSource,
+  row: Record<string, unknown>,
+  columnName?: string
+): string => getValidatorOptions({ ...validator, values: [row] }, columnName)[0]?.displayLabel ?? "";
+
+interface DependentListSource {
+  parentCol: number;
+  groups: { keys: string[]; options: string[] }[];
+}
+
+// Lista dependiente: si las filas del validador del campo traen una columna
+// cuyos valores corresponden a los de un campo ANTERIOR de la misma hoja
+// (p. ej. "Grupo" en LINEAS_DE_INVESTIGACION ↔ el grupo elegido con
+// GRUPOS_DE_INVESTIGACION), la lista del campo se filtra según lo que se haya
+// elegido en ese campo en la misma fila.
+const buildDependentListSource = (
+  field: FieldWithValidator,
+  fieldIndex: number,
+  fields: FieldWithValidator[],
+  validators: ValidatorOptionSource[]
+): DependentListSource | null => {
+  if (field.multiple || validators.length === 0) return null;
+  const own = findValidatorForField(field, validators);
+  const childRows = own?.validator.values ?? [];
+  if (!own || childRows.length === 0) return null;
+
+  // La propia columna del campo también puede ser la de enlace (p. ej. validar
+  // con "Grupo", cuyo valor es "D+TEC01 - Materiales y diseño de equipos").
+  const childKeys = Object.keys(childRows[0] || {});
+  // Valor de enlace de la fila hija. Si viene compuesto ("D+TEC01 - Materiales…")
+  // se toma la parte antes del " - ". Algunas tablas traen el grupo con el
+  // consecutivo pegado ("D+TEC01", "EULOGOS04" en vez de "D+TEC"/"EULOGOS"),
+  // así que se ignoran los dígitos finales, salvo que el valor sea solo dígitos.
+  const childLinkValue = (row: Record<string, unknown>, key: string): string => {
+    const raw = toOptionText(resolveValueByKey(row, key));
+    const dashIndex = raw.indexOf(" - ");
+    const text = normalizeToken(dashIndex > 0 ? raw.slice(0, dashIndex) : raw);
+    const withoutSuffix = text.replace(/\s*\d+$/, "");
+    return withoutSuffix || text;
+  };
+  const valueSet = (rows: Record<string, unknown>[], key: string) =>
+    new Set(rows.map((row) => childLinkValue(row, key)).filter(Boolean));
+  // El backend puede entregar el valor del padre ya compuesto ("COL0007284 - D+TEC"):
+  // se compara contra el texto completo y contra cada lado del " - ".
+  const linkCandidates = (row: Record<string, unknown>, key: string): string[] => {
+    const text = toOptionText(resolveValueByKey(row, key));
+    if (!text) return [];
+    const dashIndex = text.indexOf(" - ");
+    const parts = dashIndex > 0 ? [text, text.slice(0, dashIndex), text.slice(dashIndex + 3)] : [text];
+    return Array.from(new Set(parts.map(normalizeToken).filter(Boolean)));
+  };
+
+  for (let parentIndex = fieldIndex - 1; parentIndex >= 0; parentIndex -= 1) {
+    const parentField = fields[parentIndex];
+    if (parentField.multiple) continue;
+    const parent = findValidatorForField(parentField, validators);
+    const parentRows = parent?.validator.values ?? [];
+    if (!parent || parent.validator === own.validator || parentRows.length === 0) continue;
+
+    for (const childKey of childKeys) {
+      const childValues = valueSet(childRows, childKey);
+      // Una columna con un único valor repetido no sirve para agrupar.
+      if (childValues.size < 2) continue;
+
+      const parentKey = Object.keys(parentRows[0] || {}).find((key) => {
+        const parentValues = new Set(parentRows.flatMap((row) => linkCandidates(row, key)));
+        const covered = Array.from(childValues).filter((value) => parentValues.has(value)).length;
+        return covered / childValues.size >= 0.8;
+      });
+      if (!parentKey) continue;
+
+      const groups = parentRows.flatMap((parentRow) => {
+        const candidates = new Set(linkCandidates(parentRow, parentKey));
+        if (candidates.size === 0) return [];
+        const options = normalizeDropdownOptionTexts(
+          childRows
+            .filter((row) => candidates.has(childLinkValue(row, childKey)))
+            .map((row) => getValidatorRowLabel(own.validator, row, own.columnName || field.name))
+        );
+        if (options.length === 0) return [];
+        // La celda del padre puede traer la etiqueta de la lista ("COL0007284 - D+TEC"),
+        // solo el código ("COL0007284") o solo el valor enlazado ("D+TEC").
+        const parentColumnName = parent.columnName || parentField.name;
+        const rawKeyParts = [parentColumnName, parentKey].flatMap((key) => {
+          const text = toOptionText(resolveValueByKey(parentRow, key));
+          const dashIndex = text.indexOf(" - ");
+          return dashIndex > 0 ? [text, text.slice(0, dashIndex), text.slice(dashIndex + 3)] : [text];
+        });
+        const keys = Array.from(new Set(
+          [getValidatorRowLabel(parent.validator, parentRow, parentColumnName), ...rawKeyParts]
+            .map((key) => key.trim())
+            .filter(Boolean)
+        ));
+        return [{ keys, options }];
+      });
+
+      if (groups.length === 0) continue;
+      const { col: parentCol } = getConfiguredFieldPosition(parentField, parentIndex, fields);
+      return { parentCol, groups };
+    }
+  }
+
+  return null;
+};
+
 export const applyValidatorDropdowns = ({
   workbook,
   worksheet,
@@ -1527,6 +1635,67 @@ export const applyValidatorDropdowns = ({
     const rangeRef = `'${sourcesSheetName}'!$${colLetter}$1:$${colLetter}$${options.length}`;
     sourceCol += 1;
 
+    // Si el campo depende de otro de la misma fila (p. ej. línea ← grupo), en
+    // _Listas se escriben pares clave/opción agrupados por clave y la lista
+    // pasa a ser un OFFSET sobre el bloque de la clave elegida. Sin selección
+    // (o con un valor sin opciones asociadas) se muestra la lista completa.
+    let listFormula = rangeRef;
+    const dependent = buildDependentListSource(field, fieldIndex, fields, validators);
+    if (dependent) {
+      const keyCol = sourceCol;
+      const optionCol = sourceCol + 1;
+      sourceCol += 2;
+      let pairRow = 1;
+      dependent.groups.forEach(({ keys, options: groupOptions }) => {
+        keys.forEach((key) => {
+          groupOptions.forEach((option) => {
+            sourcesSheet.getCell(pairRow, keyCol).value = key;
+            sourcesSheet.getCell(pairRow, optionCol).value = option;
+            pairRow += 1;
+          });
+        });
+      });
+      const lastPairRow = pairRow - 1;
+      if (lastPairRow > 0) {
+        const keyLetter = toColumnLetter(keyCol);
+        const optionLetter = toColumnLetter(optionCol);
+        const keysRef = `'${sourcesSheetName}'!$${keyLetter}$1:$${keyLetter}$${lastPairRow}`;
+        const parentRef = `$${toColumnLetter(dependent.parentCol)}${firstDataRow}`;
+        const formula =
+          `IF(${parentRef}="",${rangeRef},IF(COUNTIF(${keysRef},${parentRef})=0,${rangeRef},` +
+          `OFFSET('${sourcesSheetName}'!$${optionLetter}$1,MATCH(${parentRef},${keysRef},0)-1,0,COUNTIF(${keysRef},${parentRef}),1)))`;
+        // Excel limita a 255 caracteres la fórmula de una validación de lista.
+        if (formula.length <= 255) {
+          listFormula = formula;
+          // La columna se ve "apagada" (gris) mientras no se elija el campo del que
+          // depende, y se resalta cuando ya se eligió pero falta escoger la opción.
+          const childCell = `${toColumnLetter(templateCol)}${firstDataRow}`;
+          worksheet.addConditionalFormatting({
+            ref: rangeAddress,
+            rules: [
+              {
+                type: "expression",
+                priority: 1,
+                formulae: [`${parentRef}=""`],
+                style: {
+                  fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFEDEDED" } },
+                  font: { color: { argb: "FF9E9E9E" } },
+                },
+              },
+              {
+                type: "expression",
+                priority: 2,
+                formulae: [`AND(${parentRef}<>"",${childCell}="")`],
+                style: {
+                  fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFFF4CC" } },
+                },
+              },
+            ],
+          });
+        }
+      }
+    }
+
     // Limpiar validaciones de celda individuales para esta columna (evitar conflictos)
     const dvModel = (worksheet as any).dataValidations?.model;
     if (dvModel && typeof dvModel === "object" && !Array.isArray(dvModel)) {
@@ -1546,7 +1715,7 @@ export const applyValidatorDropdowns = ({
     const validation: ExcelJS.DataValidation = {
       type: "list",
       allowBlank: true,
-      formulae: [rangeRef],
+      formulae: [listFormula],
       showErrorMessage: !field.multiple,
       errorStyle: "stop",
       errorTitle: "Valor no valido",
