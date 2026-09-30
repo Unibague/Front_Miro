@@ -28,7 +28,7 @@ import { procesoRcActivoDePrograma } from "../../utils/procesoRcUnico";
 import { programCodeKey } from "../../utils/programCode";
 import { filterFacultadesMen, parseDependenciesAllResponse } from "../../utils/facultadesMen";
 import { processesMenRoutes } from "../../config/routes";
-import { ClasificacionCineNbcSection } from "../../components/ClasificacionCineNbcSection";
+import { ClasificacionCineNbcSection, type CineFEdit, type NbcEdit } from "../../components/ClasificacionCineNbcSection";
 import { FichaCampoLectura } from "../../components/FichaCampoLectura";
 import HistoricoProgramaModal from "../../components/HistoricoProgramaModal";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
@@ -45,6 +45,26 @@ function primeraActividadEnFase(fase: Phase | undefined): string | null {
 function esSubtipoReformaOReformaConRenovacion(subtipo: string | null | undefined): boolean {
   const n = String(subtipo ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   return n === "reforma curricular" || n === "renovación + reforma";
+}
+
+function valorPeriodoDuracion(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim();
+  return !normalized || /^\d+$/.test(normalized) ? "Semestral" : normalized;
+}
+
+function cineParaEdicion(cine: Program["cine_f"]): CineFEdit {
+  return {
+    campo_amplio: cine?.campo_amplio ?? "",
+    campo_especifico: cine?.campo_especifico ?? "",
+    campo_detallado: cine?.campo_detallado ?? "",
+  };
+}
+
+function nbcParaEdicion(nbc: Program["nbc"]): NbcEdit {
+  return {
+    area_conocimiento: nbc?.area_conocimiento ?? "",
+    nbc: nbc?.nbc ?? "",
+  };
 }
 
 export default function ProgramaProcessesMenPage() {
@@ -297,12 +317,17 @@ export default function ProgramaProcessesMenPage() {
     setEditForm({
       dep_code_programa: programa.dep_code_programa ?? "",
       codigo_snies: programa.codigo_snies ?? "",
+      periodos_duracion: valorPeriodoDuracion(programa.periodos_duracion),
+      enfoque: programa.enfoque ?? "",
+      cine_f: cineParaEdicion(programa.cine_f),
+      nbc: nbcParaEdicion(programa.nbc),
     });
     setEditando(true);
   };
 
   const guardar = async () => {
     if (!programa) return;
+    if (!window.confirm("¿Está seguro de que desea guardar los cambios de la información del programa?")) return;
     setSaveError(null);
     setSaving(true);
     setHasChanges(false);
@@ -311,7 +336,14 @@ export default function ProgramaProcessesMenPage() {
     const codProg = codProgRaw || null;
     const sniesRaw = String(editForm.codigo_snies ?? "").trim();
     try {
-      const payload = { dep_code_programa: codProg, codigo_snies: sniesRaw || null };
+      const payload = {
+        dep_code_programa: codProg,
+        codigo_snies: sniesRaw || null,
+        periodos_duracion: valorPeriodoDuracion(String(editForm.periodos_duracion ?? "")),
+        enfoque: String(editForm.enfoque ?? "").trim() || null,
+        cine_f: cineParaEdicion(editForm.cine_f),
+        nbc: nbcParaEdicion(editForm.nbc),
+      };
       const res = await axios.put(`${base}/programs/${programa._id}`, payload);
       setPrograma(res.data);
       setEditando(false);
@@ -526,6 +558,33 @@ export default function ProgramaProcessesMenPage() {
               setEditForm((f) => ({ ...f, codigo_snies: v }));
             }}
           />
+          <Select
+            label="Periodos de duración"
+            data={[...PERIODICIDAD_ADMISION]}
+            value={String(editForm.periodos_duracion ?? "Semestral")}
+            onChange={(value) => setEditForm((f) => ({ ...f, periodos_duracion: value ?? "Semestral" }))}
+            allowDeselect={false}
+          />
+          <Select
+            label="Enfoque"
+            data={["Investigación", "Profundización", "Ambos"]}
+            value={String(editForm.enfoque ?? "") || null}
+            onChange={(value) => setEditForm((f) => ({ ...f, enfoque: value }))}
+            clearable
+          />
+          <ClasificacionCineNbcSection
+            mode="edit"
+            cine_f={cineParaEdicion(editForm.cine_f)}
+            nbc={nbcParaEdicion(editForm.nbc)}
+            onChangeCine={(key, value) => setEditForm((f) => ({
+              ...f,
+              cine_f: { ...cineParaEdicion(f.cine_f), [key]: value },
+            }))}
+            onChangeNbc={(key, value) => setEditForm((f) => ({
+              ...f,
+              nbc: { ...nbcParaEdicion(f.nbc), [key]: value },
+            }))}
+          />
 
           {saveError && (
             <Text size="sm" c="red">{saveError}</Text>
@@ -548,8 +607,9 @@ export default function ProgramaProcessesMenPage() {
               { label: "Modalidad", value: programa.modalidad },
               { label: "Nivel académico", value: programa.nivel_academico },
               { label: "Nivel de formación", value: programa.nivel_formacion },
+              { label: "Enfoque", value: programa.enfoque },
               { label: "Créditos", value: programa.num_creditos },
-              { label: "Periodos de duración", value: programa.periodos_duracion },
+              { label: "Periodos de duración", value: valorPeriodoDuracion(programa.periodos_duracion) },
               { label: "Semestres", value: programa.num_semestres },
               { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
               { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
@@ -641,6 +701,9 @@ export default function ProgramaProcessesMenPage() {
               <Stack gap={2} mb="xs">
                 <Text size="xs"><strong>Proceso:</strong> {LABEL_PROCESO[t]}</Text>
                 <Text size="xs"><strong>Subtipo:</strong> {proceso?.subtipo?.trim() || "—"}</Text>
+                {t === "RC" && proceso?.subtipo?.trim().toLowerCase() === "registro calificado de oficio" && (
+                  <Text size="xs" c="blue"><strong>Registro calificado otorgado de oficio</strong></Text>
+                )}
               </Stack>
               {rcTransitoria && (
                 <Text size="xs" c="dimmed" mb="xs" style={{ lineHeight: 1.45 }}>
@@ -773,7 +836,7 @@ export default function ProgramaProcessesMenPage() {
                     );
                   })()}
                   <Group gap="md" mt="sm" wrap="wrap">
-                    <Text size="xs" c="dimmed">Vencimiento del proceso: <strong>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
+                    <Text size="xs" c="dimmed">Vencimiento de la vigencia del registro calificado: <strong>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
                   </Group>
                   {p.tipo_proceso === "PM" && p.parent_tipo_proceso && (
                     <Text size="xs" c="orange" mt={8}>

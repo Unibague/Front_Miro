@@ -35,6 +35,7 @@ export type Program = {
   modalidad: string | null;
   nivel_academico: string | null;
   nivel_formacion: string | null;
+  enfoque?: string | null;
   num_creditos: number | null;
   periodos_duracion: string | null;
   num_semestres: number | null;

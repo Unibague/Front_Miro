@@ -21,6 +21,7 @@ import {
   IconList,
   IconArchive,
   IconMessageCircle,
+  IconFileTypePdf,
 } from "@tabler/icons-react";
 
 import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcessReminderRecord, BarRow, PQR } from "./types";
@@ -61,7 +62,7 @@ import {
   esSubtipoReformaCurricularSoloHistorial,
   esSubtipoRenovacionReformaHistorial,
 } from "./utils/programaEditReforma";
-import HistorialReformaFicha, { HistorialReformaCambios } from "./components/HistorialReformaFicha";
+import { HistorialReformaCambios } from "./components/HistorialReformaFicha";
 import { HistorialFechasTramiteDetalle, HistorialInformacionCaso } from "./components/HistorialTramiteDetalle";
 import HistorialResolucionSeccion from "./components/HistorialResolucionSeccion";
 import FaseBadge from "./components/FaseBadge";
@@ -105,6 +106,23 @@ function normalizarNivelPrograma(value: string | null | undefined): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "");
+}
+
+function tipoPosgrado(programa: Program): string {
+  const formacion = normalizarNivelPrograma(programa.nivel_formacion);
+  if (formacion.includes("especializacion")) return "Especialización";
+  if (formacion.includes("maestria")) return "Maestría";
+  if (formacion.includes("doctorado")) return "Doctorado";
+  if (normalizarNivelPrograma(programa.nivel_academico).includes("posgrado")) return "Otros posgrados";
+  return "No aplica";
+}
+
+function etiquetaPosgradoCorta(programa: Program): string {
+  const tipo = tipoPosgrado(programa);
+  if (tipo === "Especialización") return "Esp.";
+  if (tipo === "Maestría") return "Mg.";
+  if (tipo === "Doctorado") return "Doc.";
+  return tipo === "Otros posgrados" ? "Pgr." : "";
 }
 
 function agruparProgramasPorNivel(programas: Program[]): Array<{ titulo: string; lista: Program[] }> {
@@ -389,10 +407,14 @@ const ProcessesMenPage = () => {
   /* ── Vista administrador: estadísticas / alertas / historial ── */
   type AdminSection = "main" | "alertas" | "historial" | "informacion";
   const [activeSection, setActiveSection] = useState<AdminSection>("main");
+  const [activeParentSection, setActiveParentSection] = useState<AdminSection | null>(null);
+  const navigationSection = activeParentSection ?? activeSection;
 
   const [remFacultad, setRemFacultad]             = useState<string>("Todos");
   const [remPrograma, setRemPrograma]             = useState<string>("Todos");
   const [remNivel, setRemNivel]                   = useState<string>("Todos");
+  const [remModalidad, setRemModalidad]           = useState<string>("Todos");
+  const [remTipoPosgrado, setRemTipoPosgrado]     = useState<string>("Todos");
   const [remTipoProceso, setRemTipoProceso]       = useState<string>("Todos");
   const [remSubtipo, setRemSubtipo]               = useState<string>("Todos");
   const [reminders, setReminders]                 = useState<ProcessReminderRecord[]>([]);
@@ -408,6 +430,15 @@ const ProcessesMenPage = () => {
   const [processesMenModulo, setProcessesMenModulo] = useState<ProcessesMenModulo>("procesos");
   const [pqrSeccion, setPqrSeccion]         = useState<PqrSeccion>("activos");
   const [pqrs, setPqrs]                     = useState<PQR[]>([]);
+  const backButtonLabel = processesMenModulo === "comunicaciones"
+    ? "Volver a estadísticas generales"
+    : activeParentSection === "alertas"
+      ? "Volver a alertas"
+      : activeParentSection === "historial"
+        ? "Volver a historial"
+        : activeParentSection === "main"
+          ? "Volver a estadísticas generales"
+          : "Volver al panel de gestión de procesos";
 
   const loadingFilters = loadingFacultades || loadingProgramas || loadingProcesos;
 
@@ -436,6 +467,7 @@ const ProcessesMenPage = () => {
   };
 
   const irAModuloMen = (m: ProcessesMenModulo) => {
+    setActiveParentSection(null);
     setProcessesMenModulo(m);
     router.replace(m === "comunicaciones" ? processesMenRoutes.comunicaciones : processesMenRoutes.home, { scroll: false });
   };
@@ -444,12 +476,21 @@ const ProcessesMenPage = () => {
     if (!searchParams) return;
     setProcessesMenModulo(searchParams.get("modulo") === "comunicaciones" ? "comunicaciones" : "procesos");
     if (searchParams.get("vista") === "informacion") {
+      setActiveParentSection(null);
       setActiveSection("informacion");
       setFacultad("Todos");
       setPrograma("Todos");
       setNivelAcademico("Todos");
       setTipoProceso("Todos");
       setSubtipoFiltro("Todos");
+    } else if (searchParams.get("vista") === "alertas") {
+      const esGestionDesdeAlertas = searchParams.get("gestionar") === "1";
+      setActiveParentSection(esGestionDesdeAlertas ? "alertas" : null);
+      setActiveSection(esGestionDesdeAlertas ? "informacion" : "alertas");
+    } else if (searchParams.get("vista") === "historial") {
+      const esGestionDesdeHistorial = searchParams.get("gestionar") === "1";
+      setActiveParentSection(esGestionDesdeHistorial ? "alertas" : null);
+      setActiveSection(esGestionDesdeHistorial ? "informacion" : "historial");
     }
   }, [searchParams]);
 
@@ -491,6 +532,7 @@ const ProcessesMenPage = () => {
   useEffect(() => {
     const onReset = () => {
       setActiveSection("main");
+      setActiveParentSection(null);
       setFacultad("Todos");
       setPrograma("Todos");
       setNivelAcademico("Todos");
@@ -498,6 +540,8 @@ const ProcessesMenPage = () => {
       setRemFacultad("Todos");
       setRemPrograma("Todos");
       setRemNivel("Todos");
+      setRemModalidad("Todos");
+      setRemTipoPosgrado("Todos");
       setRemTipoProceso("Todos");
       setRemSubtipo("Todos");
       setSubtipoFiltro("Todos");
@@ -514,6 +558,7 @@ const ProcessesMenPage = () => {
   const gestionarQuery = searchParams?.get("gestionar") ?? null;
   const focusTipoQuery = searchParams?.get("focusTipo") ?? null;
   const focusProcessQuery = searchParams?.get("focusProcess") ?? null;
+  const vistaQuery = searchParams?.get("vista") ?? null;
 
   /**
    * Solo reacciona a la URL (searchParams), no a cada refresh de `programas`.
@@ -542,6 +587,7 @@ const ProcessesMenPage = () => {
     setPrograma(pr._id);
     setNivelAcademico("Todos");
     setSubtipoFiltro("Todos");
+    setActiveParentSection("alertas");
     setActiveSection("informacion");
     setProcessesMenModulo("procesos");
     router.replace(processesMenRoutes.home, { scroll: false });
@@ -551,6 +597,7 @@ const ProcessesMenPage = () => {
     gestionarQuery,
     focusTipoQuery,
     focusProcessQuery,
+    vistaQuery,
     programas,
     facultades,
     router,
@@ -645,6 +692,7 @@ const ProcessesMenPage = () => {
 
   /** La ficha es una sección explícita del sidebar; el selector solo filtra estadísticas. */
   const irAInformacionPrograma = () => {
+    setActiveParentSection(null);
     setActiveSection("informacion");
   };
 
@@ -987,6 +1035,8 @@ const ProcessesMenPage = () => {
         }
         if (remPrograma !== "Todos" && prog._id !== remPrograma) return false;
         if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
+        if (remModalidad !== "Todos" && normalizarNivelPrograma(prog.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+        if (remTipoPosgrado !== "Todos" && tipoPosgrado(prog) !== remTipoPosgrado) return false;
         return true;
       })
       .sort((a, b) => {
@@ -994,7 +1044,7 @@ const ProcessesMenPage = () => {
         if (porVenc !== 0) return porVenc;
         return (a.prog.nombre ?? "").localeCompare(b.prog.nombre ?? "", "es");
       });
-  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remTipoProceso, remSubtipo, facultades]);
+  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remModalidad, remTipoPosgrado, remTipoProceso, remSubtipo, facultades]);
 
   /** Planes de Mejoramiento activos (PM) que cumplen filtros de alertas. */
   const filasActivasPM = useMemo(() => {
@@ -1012,6 +1062,8 @@ const ProcessesMenPage = () => {
         }
         if (remPrograma !== "Todos" && prog._id !== remPrograma) return false;
         if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
+        if (remModalidad !== "Todos" && normalizarNivelPrograma(prog.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+        if (remTipoPosgrado !== "Todos" && tipoPosgrado(prog) !== remTipoPosgrado) return false;
         return true;
       })
       .sort((a, b) => {
@@ -1019,16 +1071,19 @@ const ProcessesMenPage = () => {
         if (porVenc !== 0) return porVenc;
         return (a.prog.nombre ?? "").localeCompare(b.prog.nombre ?? "", "es");
       });
-  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, facultades]);
+  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remModalidad, remTipoPosgrado, facultades]);
 
   /** Alertas por cierre (RC/AV/AE): solo si aún no hay un proceso activo del mismo tipo en ese programa. */
   const remindersSinActivoMismoTipo = useMemo(() => {
     return remindersFiltradosTipo.filter((r) => {
       if (r.tipo_proceso === "PM") return false; // PM se maneja aparte en remindersActivosPM
       if (!procesoCumpleSubtipoFiltro(r.subtipo, r.tipo_proceso, remSubtipo, remTipoProceso)) return false;
+      const prog = findProgramByCode(programasDelModulo, r.program_code);
+      if (remModalidad !== "Todos" && normalizarNivelPrograma(prog?.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+      if (remTipoPosgrado !== "Todos" && (!prog || tipoPosgrado(prog) !== remTipoPosgrado)) return false;
       return !procesosDelModulo.some((p) => p.program_code === r.program_code && p.tipo_proceso === r.tipo_proceso);
     });
-  }, [remindersFiltradosTipo, procesosDelModulo, remSubtipo]);
+  }, [remindersFiltradosTipo, procesosDelModulo, remSubtipo, remTipoProceso, programasDelModulo, remModalidad, remTipoPosgrado]);
 
   /** Alertas activas del Plan de Mejoramiento (siempre visibles mientras el PM esté activo). */
   const remindersActivosPM = useMemo(() => {
@@ -1044,10 +1099,13 @@ const ProcessesMenPage = () => {
           const prog = findProgramByCode(programasDelModulo, r.program_code);
           if (prog?._id !== remPrograma) return false;
         }
+        const prog = findProgramByCode(programasDelModulo, r.program_code);
+        if (remModalidad !== "Todos" && normalizarNivelPrograma(prog?.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+        if (remTipoPosgrado !== "Todos" && (!prog || tipoPosgrado(prog) !== remTipoPosgrado)) return false;
         return true;
       })
       .sort((a, b) => (a.nombre_programa ?? "").localeCompare(b.nombre_programa ?? "", "es"));
-  }, [reminders, remFacultad, remPrograma, facultades, programasDelModulo]);
+  }, [reminders, remFacultad, remPrograma, remModalidad, remTipoPosgrado, facultades, programasDelModulo]);
 
   /** Alertas de cierre: vencimiento más cercano arriba (gestiones activas van aparte, arriba). */
   const remindersOrdenados = useMemo(
@@ -1099,6 +1157,7 @@ const ProcessesMenPage = () => {
     setAgregarProcesoOpen(false);
     setAgregarProcesoPrefill(null);
     setProcessesMenModulo("procesos");
+    setActiveParentSection("alertas");
     setActiveSection("informacion");
 
     const [resProg, resProc] = await Promise.all([
@@ -1122,6 +1181,7 @@ const ProcessesMenPage = () => {
           programId: pid,
           gestionar: "1",
           focusTipo: args.tipo,
+          vista: "alertas",
         }),
         { scroll: false },
       );
@@ -1294,16 +1354,16 @@ const ProcessesMenPage = () => {
                     </Group>
                     <Divider />
                     <NavLink label="Estadísticas generales" leftSection={<IconChartBar size={16} />} color="green"
-                      active={activeSection === "main"}
-                      onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                      active={navigationSection === "main"}
+                      onClick={() => { setActiveParentSection(null); setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
                       style={{ borderRadius: 8 }} />
                     <Divider mt={8} />
                     <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>PROCESOS</Text>
                     <NavLink label="Alertas de procesos" leftSection={<IconBellRinging size={16} />} color="blue"
-                      active={activeSection === "alertas"} onClick={() => setActiveSection("alertas")}
+                      active={navigationSection === "alertas"} onClick={() => { setActiveParentSection(null); setActiveSection("alertas"); }}
                       style={{ borderRadius: 8 }} />
                     <NavLink label="Historial de procesos" leftSection={<IconHistory size={16} />} color="blue"
-                      active={activeSection === "historial"} onClick={() => setActiveSection("historial")}
+                      active={navigationSection === "historial"} onClick={() => { setActiveParentSection(null); setActiveSection("historial"); }}
                       style={{ borderRadius: 8 }} />
                     <Divider mt={8} />
                     <Text size="xs" c="dimmed" fw={600} px={8} pt={8}>MÓDULOS</Text>
@@ -1313,7 +1373,7 @@ const ProcessesMenPage = () => {
                     <NavLink label="Tareas asignadas" leftSection={<IconList size={16} />} color="violet"
                       onClick={() => router.push("/processes-MEN/tasks")} style={{ borderRadius: 8 }} />
                     <NavLink label="Información del programa" leftSection={<IconArchive size={16} />} color="blue"
-                      active={activeSection === "informacion"}
+                      active={navigationSection === "informacion"}
                       onClick={irAInformacionPrograma} style={{ borderRadius: 8 }} />
                   </Stack>
                 )}
@@ -1367,9 +1427,9 @@ const ProcessesMenPage = () => {
                     <Tooltip label="Estadisticas generales" position="right" withArrow>
                       <ActionIcon
                         size="xl"
-                        variant={activeSection === "main" ? "filled" : "default"}
+                        variant={navigationSection === "main" ? "filled" : "default"}
                         color="blue"
-                        onClick={() => { setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                        onClick={() => { setActiveParentSection(null); setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
                       >
                         <IconChartBar size={20} stroke={1.5} />
                       </ActionIcon>
@@ -1377,9 +1437,9 @@ const ProcessesMenPage = () => {
                     <Tooltip label="Alertas de procesos" position="right" withArrow>
                       <ActionIcon
                         size="xl"
-                        variant={activeSection === "alertas" ? "filled" : "default"}
+                        variant={navigationSection === "alertas" ? "filled" : "default"}
                         color="blue"
-                        onClick={() => setActiveSection("alertas")}
+                        onClick={() => { setActiveParentSection(null); setActiveSection("alertas"); }}
                       >
                         <IconBellRinging size={20} stroke={1.5} />
                       </ActionIcon>
@@ -1387,9 +1447,9 @@ const ProcessesMenPage = () => {
                     <Tooltip label="Historial de procesos" position="right" withArrow>
                       <ActionIcon
                         size="xl"
-                        variant={activeSection === "historial" ? "filled" : "default"}
+                        variant={navigationSection === "historial" ? "filled" : "default"}
                         color="blue"
-                        onClick={() => setActiveSection("historial")}
+                        onClick={() => { setActiveParentSection(null); setActiveSection("historial"); }}
                       >
                         <IconHistory size={20} stroke={1.5} />
                       </ActionIcon>
@@ -1397,7 +1457,7 @@ const ProcessesMenPage = () => {
                     <Tooltip label="Información del programa" position="right" withArrow>
                       <ActionIcon
                         size="xl"
-                        variant={activeSection === "informacion" ? "filled" : "default"}
+                        variant={navigationSection === "informacion" ? "filled" : "default"}
                         color="blue"
                         onClick={irAInformacionPrograma}
                       >
@@ -1585,7 +1645,7 @@ const ProcessesMenPage = () => {
         <Group justify="space-between" align="center" mb="xl" wrap="wrap" gap="md">
           <Group gap={10}>
             <Tooltip
-              label={processesMenModulo === "comunicaciones" ? "Volver a estadísticas generales" : "Volver al panel de gestión de procesos"}
+              label={backButtonLabel}
               withArrow
             >
               <ActionIcon
@@ -1598,9 +1658,14 @@ const ProcessesMenPage = () => {
                     irAModuloMen("procesos");
                     return;
                   }
+                  if (activeParentSection && activeParentSection !== "informacion") {
+                    setActiveSection(activeParentSection);
+                    setActiveParentSection(null);
+                    return;
+                  }
                   router.push("/dashboard?gestionProcesos=1");
                 }}
-                aria-label={processesMenModulo === "comunicaciones" ? "Volver a estadísticas generales" : "Volver al panel de gestión de procesos"}
+                aria-label={backButtonLabel}
               >
                 <IconArrowLeft size={18} />
               </ActionIcon>
@@ -1653,13 +1718,17 @@ const ProcessesMenPage = () => {
             )}
             {activeSection === "informacion" && (
               <Box mb="md">
-                <Title order={2} lh={1.2}>Información del programa</Title>
+                <Title order={2} lh={1.2}>
+                  {activeParentSection === "alertas" ? "Gestión" : "Información del programa"}
+                </Title>
                 <Text size="sm" c="dimmed" mt={4}>
-                  Consulta la información y el estado de los procesos de cada programa.
+                  {activeParentSection === "alertas"
+                    ? "Gestiona el proceso seleccionado."
+                    : "Consulta la información y el estado de los procesos de cada programa."}
                 </Text>
               </Box>
             )}
-            {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
+            {(activeSection === "main" || activeSection === "informacion") && activeParentSection !== "alertas" && !loadingFilters && (
               <Paper withBorder radius="md" p="sm" mb="md">
                 <Flex
                   gap={8}
@@ -2001,16 +2070,18 @@ const ProcessesMenPage = () => {
                   return (
                     <>
                       <Box mb="lg">
-                        <Tooltip label="Volver a estadísticas" withArrow>
-                          <ActionIcon
-                            variant="default"
-                            size="sm"
-                            onClick={() => { setActiveSection("main"); }}
-                            aria-label="Volver a estadísticas"
-                          >
-                            <IconChevronLeft size={16} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {activeParentSection !== "alertas" && (
+                          <Tooltip label="Volver a estadísticas" withArrow>
+                            <ActionIcon
+                              variant="default"
+                              size="sm"
+                              onClick={() => { setActiveParentSection(null); setActiveSection("main"); }}
+                              aria-label="Volver a estadísticas"
+                            >
+                              <IconChevronLeft size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         <Group justify="space-between" align="flex-start" wrap="wrap" gap="md" mt="xs">
                           <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
                             <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
@@ -2227,34 +2298,35 @@ const ProcessesMenPage = () => {
                   Activos: procesos RC, AV, AE y PM en curso. Alertas: recordatorios tras cierre cuando aún no hay proceso activo del mismo tipo.
                 </Text>
                 {/* Leyenda de colores */}
-                <Group gap={8} wrap="wrap">
-                  {([
-                    { tipo: "RC", label: "Registro calificado", color: ROW_BG_PROCESO.RC, border: "#74c0fc" },
-                    { tipo: "AV", label: "Acreditación voluntaria", color: ROW_BG_PROCESO.AV, border: "#b197fc" },
-                    { tipo: "PM", label: "Plan de mejoramiento", color: ROW_BG_PROCESO.PM, border: "#9775fa" },
-                    { tipo: "AE", label: "Autoevaluación", color: ROW_BG_PROCESO.AE, border: "#74c0fc" },
-                  ] as const).map(({ tipo, label, color, border }) => (
-                    <Group key={tipo} gap={4} align="center">
-                      <Box style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: color, border: `1.5px solid ${border}` }} />
-                      <Text size="xs" c="dimmed">{label}</Text>
-                    </Group>
-                  ))}
-                  <Group gap={6} align="center" wrap="wrap">
-                    <Text size="xs" c="dimmed" fw={600}>Alerta</Text>
+                <Stack gap={6} align="stretch">
+                  <Group gap={8} wrap="wrap">
                     {([
-                      { c: "#2f9e44", t: "hasta digitación" },
-                      { c: "#f59f00", t: "hasta radicado" },
-                      { c: "#e03131", t: "hasta vencimiento" },
-                      { c: "#868e96", t: "vencida" },
+                      { tipo: "RC", label: "Registro calificado", color: ROW_BG_PROCESO.RC, border: "#74c0fc" },
+                      { tipo: "AV", label: "Acreditación voluntaria", color: ROW_BG_PROCESO.AV, border: "#b197fc" },
+                      { tipo: "PM", label: "Plan de mejoramiento", color: ROW_BG_PROCESO.PM, border: "#9775fa" },
+                      { tipo: "AE", label: "Autoevaluación", color: ROW_BG_PROCESO.AE, border: "#74c0fc" },
+                    ] as const).map((x) => (
+                      <Group key={x.tipo} gap={4} align="center">
+                        <Box style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: x.color, border: `1.5px solid ${x.border}` }} />
+                        <Text size="xs" c="dimmed">{x.label}</Text>
+                      </Group>
+                    ))}
+                  </Group>
+                  <Group gap={6} align="center" wrap="wrap">
+                    <Text size="xs" c="dimmed" fw={600} tt="uppercase">Alertas</Text>
+                    {([
+                      { c: "#2f9e44", t: "HASTA DIGITACIÓN" },
+                      { c: "#f59f00", t: "HASTA RADICADO" },
+                      { c: "#e03131", t: "HASTA VENCIMIENTO" },
+                      { c: "#868e96", t: "VENCIDA" },
                     ] as const).map((x) => (
                       <Group key={x.t} gap={4} align="center">
                         <Box style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: x.c }} />
-                        <Text size="xs" c="dimmed">{x.t}</Text>
+                        <Text size="xs" c="dimmed" tt="uppercase">{x.t}</Text>
                       </Group>
                     ))}
-                    <Text size="xs" c="dimmed">— fila como el tipo (RC/AV/…); badge y «Crear proceso» siguen este semáforo.</Text>
                   </Group>
-                </Group>
+                </Stack>
                 {!loadingFilters ? (
                   <Paper withBorder radius="md" p="sm">
                     <Flex
@@ -2273,6 +2345,12 @@ const ProcessesMenPage = () => {
                       <Select label="Nivel académico" data={opcionesNivelAcademico} value={remNivel}
                         style={{ flex: "0.95 1 108px", minWidth: 0, maxWidth: 190 }}
                         onChange={(v) => setRemNivel(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
+                      <Select label="Modalidad" data={["Todos", "Presencial", "Virtual", "Híbrido"]} value={remModalidad}
+                        style={{ flex: "0.9 1 112px", minWidth: 0, maxWidth: 180 }}
+                        onChange={(v) => setRemModalidad(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
+                      <Select label="Tipo de posgrado" data={["Todos", "Especialización", "Maestría", "Doctorado", "Otros posgrados"]} value={remTipoPosgrado}
+                        style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 210 }}
+                        onChange={(v) => setRemTipoPosgrado(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Por proceso (tipo)" data={opcionesTipoProceso} value={remTipoProceso}
                         style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 240 }}
                         onChange={(v) => { setRemTipoProceso(v ?? "Todos"); setRemSubtipo("Todos"); }} searchable={false} styles={selectorStyleFilters} />
@@ -2292,24 +2370,26 @@ const ProcessesMenPage = () => {
                     <div>
                       <Text size="sm" fw={600} mb={6} c="dimmed">Procesos activos y alertas de vencimiento</Text>
                       <div style={{ width: "100%", minWidth: 0, overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                        <table style={{ width: "100%", minWidth: 1280, borderCollapse: "collapse", tableLayout: "fixed" }}>
                           <colgroup>
-                            <col style={{ width: "16%" }} />
-                            <col style={{ width: "26%" }} />
-                            <col style={{ width: "8%" }} />
-                            <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "8%" }} />
                             <col style={{ width: "14%" }} />
+                            <col style={{ width: "9%" }} />
+                            <col style={{ width: "16%" }} />
+                            <col style={{ width: "9.5%" }} />
+                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "8%" }} />
+                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "7.5%" }} />
+                            <col style={{ width: "10%" }} />
                           </colgroup>
                           <thead>
                             <tr style={{ borderBottom: "2px solid #dee2e6", backgroundColor: "#f8f9fa" }}>
                               {(
                                 [
                                   "Programa",
+                                  "Modalidad",
                                   "Tipo",
                                   "Acto admin.",
                                   "Venc.",
@@ -2328,7 +2408,7 @@ const ProcessesMenPage = () => {
                                     key={h}
                                     style={{
                                       padding: isFechaCol ? "8px 6px" : "8px 10px",
-                                      textAlign: h === "Acciones" || isFechaCol || isDocCol ? "center" : "left",
+                                      textAlign: h === "Acciones" || h === "Modalidad" || isFechaCol || isDocCol ? "center" : "left",
                                       fontSize: isFechaCol ? 12 : 13,
                                       fontWeight: 700,
                                       whiteSpace: isDocCol ? "normal" : "nowrap",
@@ -2336,6 +2416,7 @@ const ProcessesMenPage = () => {
                                       verticalAlign: "middle",
                                       maxWidth: isDocCol ? "5.5rem" : undefined,
                                     }}
+                                    title={h === "Lectura Vicer." ? "Fecha del documento para lectura de Vicerrectoría" : undefined}
                                   >
                                     {h}
                                   </th>
@@ -2361,6 +2442,12 @@ const ProcessesMenPage = () => {
                                       <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {prog.nombre}
                                       </Anchor>
+                                    </td>
+                                    <td style={{ padding: "8px 6px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
+                                      <Stack gap={2} align="center">
+                                        <Text size="xs">{prog.modalidad || "—"}</Text>
+                                        {etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
+                                      </Stack>
                                     </td>
                                     <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
                                       <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
@@ -2414,6 +2501,12 @@ const ProcessesMenPage = () => {
                                       <Text size="sm" fw={600}>{r.nombre_programa}</Text>
                                     )}
                                   </td>
+                                  <td style={{ padding: "8px 6px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
+                                    <Stack gap={2} align="center">
+                                      <Text size="xs">{prog?.modalidad || "—"}</Text>
+                                      {prog && etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
+                                    </Stack>
+                                  </td>
                                   <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
                                     <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
                                       <Badge size="sm" color={badgeTipoColor} variant="filled" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
@@ -2440,38 +2533,40 @@ const ProcessesMenPage = () => {
                                     {r.documentos?.length ? (
                                       <Stack gap={6} align="center">
                                         {(r.documentos ?? []).map((d, i) => (
-                                          <Anchor
+                                          <Button
                                             key={i}
+                                            component="a"
                                             href={d.view_link}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            size="sm"
-                                            fw={600}
+                                            size="xs"
+                                            variant="light"
+                                            leftSection={<IconFileTypePdf size={14} />}
                                             title={d.name}
                                             aria-label={`Abrir documento: ${d.name}`}
                                           >
-                                            {(r.documentos ?? []).length > 1 ? `Ver (${i + 1})` : "Ver"}
-                                          </Anchor>
+                                            Abrir PDF
+                                          </Button>
                                         ))}
                                       </Stack>
                                     ) : (
                                       celdaGuionCentrado
                                     )}
                                   </td>
-                                  <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle", minWidth: 0, overflow: "visible" }}>
+                                    <td style={{ padding: "8px 6px", textAlign: "center", verticalAlign: "middle", minWidth: 0 }}>
                                     {prog && (
                                       <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
                                         <Button
-                                          size="sm"
+                                          size="xs"
                                           variant="filled"
                                           color={mantineSemaAlerta}
                                           styles={{
                                             root: {
                                               maxWidth: "100%",
-                                              width: "auto",
+                                              width: "100%",
                                               minWidth: 0,
-                                              minHeight: 34,
-                                              padding: "8px 12px",
+                                              minHeight: 30,
+                                              padding: "6px 4px",
                                               display: "inline-flex",
                                               alignItems: "center",
                                               justifyContent: "center",
@@ -2483,7 +2578,7 @@ const ProcessesMenPage = () => {
                                             label: {
                                               lineHeight: 1.2,
                                               textAlign: "center",
-                                              fontSize: 13,
+                                              fontSize: 12,
                                               display: "flex",
                                               alignItems: "center",
                                               justifyContent: "center",
@@ -2501,7 +2596,7 @@ const ProcessesMenPage = () => {
                             })}
                             {filasProcesosActivosRcAv.length === 0 && remindersOrdenados.length === 0 && (
                               <tr>
-                                <td colSpan={10} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
+                                <td colSpan={11} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
                                   No hay procesos ni alertas con estos filtros.
                                 </td>
                               </tr>
@@ -2797,17 +2892,7 @@ const ProcessesMenPage = () => {
             )}
 
             {historialDetalle.tipo_proceso === "RC" && esSubtipoReformaHistorial(historialDetalle.subtipo) && (
-              <>
-                {historialDetalle.programa_ficha_al_cierre ? (
-                  <HistorialReformaFicha
-                    ficha={historialDetalle.programa_ficha_al_cierre}
-                    codigoProgramaRespaldo={
-                      findProgramByCode(programas, historialDetalle.program_code)?.dep_code_programa ?? null
-                    }
-                  />
-                ) : null}
-                <HistorialReformaCambios cambios={historialDetalle.programa_cambios ?? []} />
-              </>
+              <HistorialReformaCambios cambios={historialDetalle.programa_cambios ?? []} />
             )}
 
             <HistorialResolucionSeccion
@@ -2942,6 +3027,7 @@ const ProcessesMenPage = () => {
               )}
               <DropzoneCustomComponent
                 text={histSubiendoPdf ? "Subiendo..." : "Haz clic o arrastra el PDF de resolución"}
+                loading={histSubiendoPdf}
                 onDrop={async (files) => {
                   const file = files[0];
                   if (!file || !historialDetalle) return;

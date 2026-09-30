@@ -33,6 +33,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso, CasoFechaKey } from "../types";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import {
+  getCasoFechaKeyForDocumentoActividad,
   getCasoFechaKeyForActividad,
   getCasoFechaKeyForSubactividad,
   findActividadByCasoKey,
@@ -699,7 +700,9 @@ const ProcesoDetalleCard = ({
       (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV")
       && !esReformaCurricularSolo
       && !(proceso.tipo_proceso === "RC" && esRcSubtipoNoRenovacion(proceso.subtipo));
-    const duracionPred = muestraDuracionResolucionCierre ? DURACION_VIGENCIA_CIERRE_ANOS_PRED : "";
+    const duracionPred = muestraDuracionResolucionCierre && proceso.tipo_proceso !== "AV"
+      ? DURACION_VIGENCIA_CIERRE_ANOS_PRED
+      : "";
     if (esRcOficioPostAvGracia && programa.ultimo_rc) {
       const ur = programa.ultimo_rc;
       const fr = ur.fecha_resolucion ? String(ur.fecha_resolucion).slice(0, 10) : "";
@@ -720,6 +723,7 @@ const ProcesoDetalleCard = ({
   };
 
   const cerrarProceso = async () => {
+    if (!window.confirm("¿Está seguro de que desea cerrar el proceso?")) return;
     setCierreError(null);
     setCerrandoProceso(true);
     try {
@@ -907,7 +911,7 @@ const ProcesoDetalleCard = ({
         console.error("Cierre OK pero falló recargar programa; refrescando listado:", e);
       }
       await onRefreshProcesos(programCodeKey(programa));
-      router.push(`/processes-MEN/program/${encodeURIComponent(String(programa._id))}`);
+      router.push("/processes-MEN?vista=alertas");
     } finally {
       setCerrandoProceso(false);
     }
@@ -930,7 +934,7 @@ const ProcesoDetalleCard = ({
         console.error("Cierre OK pero falló recargar programa; refrescando listado:", e);
       }
       await onRefreshProcesos(programCodeKey(programa));
-      router.push(`/processes-MEN/program/${encodeURIComponent(String(programa._id))}`);
+      router.push("/processes-MEN?vista=alertas");
     } catch (e: unknown) {
       console.error("Error cerrando proceso (API):", e);
       const ax = e as {
@@ -1308,23 +1312,26 @@ const ProcesoDetalleCard = ({
         params: { process_id: proceso._id, caso_date_key: field },
       });
       const fromCaso = Array.isArray(resC.data) ? (resC.data as ProcessDocument[]) : [];
-      const hitA = findActividadByCasoKey(fases, field);
-      const hitS = !hitA ? findSubactividadByCasoKey(fases, field) : null;
-      if (hitA) {
+      const hitsA = fases.flatMap((fase) =>
+        fase.actividades
+          .filter((act) => getCasoFechaKeyForDocumentoActividad(fase.numero, act.nombre) === field)
+          .map((act) => ({ fase, act })),
+      );
+      const hitS = findSubactividadByCasoKey(fases, field);
+      const fromFaseDocs: ProcessDocument[] = [];
+      for (const hitA of hitsA) {
         const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
           params: { phase_id: hitA.fase._id, actividad_id: hitA.act._id },
         });
-        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
-        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
-      } else if (hitS) {
+        if (Array.isArray(resP.data)) fromFaseDocs.push(...(resP.data as ProcessDocument[]));
+      }
+      if (hitS) {
         const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
           params: { phase_id: hitS.fase._id, actividad_id: hitS.act._id, subactividad_id: hitS.sub._id },
         });
-        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
-        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
-      } else {
-        setCasoFechaDocs(fromCaso);
+        if (Array.isArray(resP.data)) fromFaseDocs.push(...(resP.data as ProcessDocument[]));
       }
+      setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFaseDocs));
     } catch { setCasoFechaDocs([]); }
     finally { setLoadingCasoFechaDocs(false); }
   };
@@ -1362,6 +1369,7 @@ const ProcesoDetalleCard = ({
 
   const subirCasoFechaDoc = async (files: File[]) => {
     if (!casoFechaModalField || files.length === 0) return;
+    if (casoFechaDocs.length > 0 && !window.confirm("Ya existen anexos para esta fecha. ¿Desea agregar este archivo también?")) return;
     setUploadingCasoFechaDoc(true);
     try {
       const formData = new FormData();
@@ -1380,6 +1388,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarCasoFechaDoc = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setCasoFechaDocs(prev => prev.filter(d => d._id !== docId));
@@ -1583,7 +1592,7 @@ const ProcesoDetalleCard = ({
         params: { phase_id: fase._id, actividad_id: act._id },
       });
       const fromFase = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
-      const key = getCasoFechaKeyForActividad(fase.numero, act.nombre);
+      const key = getCasoFechaKeyForDocumentoActividad(fase.numero, act.nombre);
       let data = fromFase;
       if (key) {
         const resC = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
@@ -1605,7 +1614,7 @@ const ProcesoDetalleCard = ({
       const formData = new FormData();
       formData.append("file", files[0]);
       formData.append("actividad_id", actDocsTarget.act._id);
-      const k = getCasoFechaKeyForActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre);
+      const k = getCasoFechaKeyForDocumentoActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre);
       if (k) {
         formData.append("caso_date_key", k);
         formData.append("process_id", proceso._id);
@@ -1627,6 +1636,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocActividad = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setActDocs(prev => {
@@ -1806,6 +1816,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocSubactividad = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setSubDocs(prev => {
@@ -1877,6 +1888,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocumento = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setDocs(prev => prev.filter(d => d._id !== docId));
@@ -2425,6 +2437,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red"
                     loading={deletingDocId === respuestaNoRenovacionDoc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                       try {
                         setDeletingDocId(respuestaNoRenovacionDoc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${respuestaNoRenovacionDoc._id}`);
@@ -2439,8 +2452,10 @@ const ProcesoDetalleCard = ({
               )}
               <DropzoneCustomComponent
                 text={loadingResolucionDoc ? "Subiendo..." : "Adjuntar o reemplazar documento de respuesta"}
+                loading={loadingResolucionDoc}
                 onDrop={async (files) => {
                   const file = files[0]; if (!file) return;
+                  if (respuestaNoRenovacionDoc && !window.confirm("¿Está seguro de que desea reemplazar el documento de respuesta?")) return;
                   try {
                     setLoadingResolucionDoc(true);
                     const formData = new FormData();
@@ -2463,11 +2478,21 @@ const ProcesoDetalleCard = ({
             <>
               <TextInput label={etiquetasResolucionAv ? "Código de resolución (AV)" : "Código de resolución"} value={cierreForm.codigo}
                 onChange={(e) => { const v = e.currentTarget.value; setCierreForm((f) => ({ ...f, codigo: v })); }} />
-              <TextInput label={etiquetasResolucionAv ? "Duración de la vigencia — años (AV)" : "Duración de la vigencia (años)"} value={cierreForm.duracion}
-                onChange={(e) => {
-                  const duracion = e.currentTarget.value.replace(/\D/g, "");
-                  setCierreForm((f) => ({ ...f, duracion }));
-                }} />
+              {proceso.tipo_proceso === "AV" ? (
+                <Select
+                  label="Duración de la acreditación"
+                  placeholder="Selecciona los años de vigencia"
+                  data={[4, 6, 8, 10].map((anos) => ({ value: String(anos), label: `${anos} años` }))}
+                  value={cierreForm.duracion || null}
+                  onChange={(duracion) => setCierreForm((f) => ({ ...f, duracion: duracion ?? "" }))}
+                />
+              ) : (
+                <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
+                  onChange={(e) => {
+                    const duracion = e.currentTarget.value.replace(/\D/g, "");
+                    setCierreForm((f) => ({ ...f, duracion }));
+                  }} />
+              )}
               <div>
                 <Text size="sm" fw={500} mb={4}>
                   {esRenovacionReforma
@@ -2518,6 +2543,7 @@ const ProcesoDetalleCard = ({
                       size="xs" variant="subtle" color="red"
                       loading={deletingDocId === cierreResolucionDoc._id}
                       onClick={async () => {
+                        if (!window.confirm("¿Está seguro de que desea eliminar este anexo de cierre?")) return;
                         try {
                           setDeletingDocId(cierreResolucionDoc._id);
                           await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${cierreResolucionDoc._id}`);
@@ -2544,8 +2570,10 @@ const ProcesoDetalleCard = ({
                             ? "Adjuntar PDF con resolución y constancia (obligatorio si está aprobado)"
                             : "Adjuntar PDF del cierre (obligatorio si está aprobado)"
                   }
+                  loading={loadingCierreResolucionDoc}
                   onDrop={async (files) => {
                     const file = files[0]; if (!file) return;
+                    if (cierreResolucionDoc && !window.confirm("¿Está seguro de que desea reemplazar el documento de cierre?")) return;
                     try {
                       setLoadingCierreResolucionDoc(true);
                       const formData = new FormData();
@@ -2612,6 +2640,7 @@ const ProcesoDetalleCard = ({
                 size="xs" variant="subtle" color="red"
                 loading={deletingDocId === constanciaReformaDoc._id}
                 onClick={async () => {
+                  if (!window.confirm("¿Está seguro de que desea eliminar esta constancia?")) return;
                   try {
                     setDeletingDocId(constanciaReformaDoc._id);
                     await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${constanciaReformaDoc._id}`);
@@ -2626,9 +2655,11 @@ const ProcesoDetalleCard = ({
           )}
           <DropzoneCustomComponent
             text={loadingConstancia ? "Subiendo..." : "Haz clic o arrastra la constancia o confirmación"}
+            loading={loadingConstancia}
             onDrop={async (files) => {
               const file = files[0];
               if (!file) return;
+              if (constanciaReformaDoc && !window.confirm("¿Está seguro de que desea reemplazar esta constancia?")) return;
               try {
                 setLoadingConstancia(true);
                 if (constanciaReformaDoc) {
@@ -2798,6 +2829,7 @@ const ProcesoDetalleCard = ({
         </Group>
         <DropzoneCustomComponent
           text={uploadingCasoFechaDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para esta fecha del caso"}
+          loading={uploadingCasoFechaDoc}
           onDrop={(files) => void subirCasoFechaDoc(files)}
         />
         <Divider label="Documentos de esta fecha" labelPosition="center" />
@@ -3071,6 +3103,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red" p={2}
                     loading={deletingDocId === doc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                       try {
                         setDeletingDocId(doc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
@@ -3114,6 +3147,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red"
                     loading={deletingDocId === resolucionDoc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar la resolución vigente?")) return;
                       try {
                         setDeletingDocId(resolucionDoc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${resolucionDoc._id}`);
@@ -3128,8 +3162,10 @@ const ProcesoDetalleCard = ({
             )}
             <DropzoneCustomComponent
               text={loadingResolucionDoc ? "Subiendo PDF..." : "Haz clic o arrastra el PDF de la resolución"}
+              loading={loadingResolucionDoc}
               onDrop={async (files) => {
                 const file = files[0]; if (!file) return;
+                if (resolucionDoc && !window.confirm("¿Está seguro de que desea reemplazar el PDF de resolución?")) return;
                 try {
                   setLoadingResolucionDoc(true);
                   const formData = new FormData();
@@ -3154,6 +3190,7 @@ const ProcesoDetalleCard = ({
           <Stack gap="md">
             <DropzoneCustomComponent
               text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo"}
+              loading={loadingResolucionDoc}
               onDrop={async (files) => {
                 const file = files[0]; if (!file) return;
                 try {
@@ -3183,6 +3220,7 @@ const ProcesoDetalleCard = ({
                         size="xs" variant="subtle" color="red" p={4}
                         loading={deletingDocId === doc._id}
                         onClick={async () => {
+                          if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                           try {
                             setDeletingDocId(doc._id);
                             await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
@@ -3638,11 +3676,12 @@ const ProcesoDetalleCard = ({
             <Paper withBorder p="sm" radius="sm">
               <Text size="xs" fw={600} mb={4}>Archivo actual</Text>
               <Text size="xs" mb={4}>{resolucionDoc.name}</Text>
-              <Button size="xs" variant="light" component="a" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">Ver PDF</Button>
+              <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">{resolucionDoc.name || "Abrir PDF"}</Anchor>
             </Paper>
           )}
           <DropzoneCustomComponent
             text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra el PDF de la resolución"}
+            loading={loadingResolucionDoc}
             onDrop={async (files) => {
               const file = files[0]; if (!file) return;
               try {
@@ -3784,6 +3823,7 @@ const ProcesoDetalleCard = ({
           <Stack gap="md">
             <DropzoneCustomComponent
               text={uploadingDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta fase"}
+              loading={uploadingDoc}
               onDrop={subirDocumento}
             />
             <Divider label="Documentos de esta fase" labelPosition="center" />
@@ -3801,7 +3841,7 @@ const ProcesoDetalleCard = ({
                         {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                       </div>
                       <Group gap="xs">
-                        <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                        <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                         <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocumento(doc._id)}>Eliminar</Button>
                       </Group>
                     </Group>
@@ -3833,6 +3873,7 @@ const ProcesoDetalleCard = ({
         <Stack gap="md">
           <DropzoneCustomComponent
             text={uploadingActDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta actividad"}
+            loading={uploadingActDoc}
             onDrop={subirDocActividad}
           />
           <Divider label="Documentos de esta actividad" labelPosition="center" />
@@ -3850,7 +3891,7 @@ const ProcesoDetalleCard = ({
                       {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                     </div>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                       <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocActividad(doc._id)}>Eliminar</Button>
                     </Group>
                   </Group>
@@ -3881,6 +3922,7 @@ const ProcesoDetalleCard = ({
         <Stack gap="md">
           <DropzoneCustomComponent
             text={uploadingSubDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta subactividad"}
+            loading={uploadingSubDoc}
             onDrop={subirDocSubactividad}
           />
           <Divider label="Documentos de esta subactividad" labelPosition="center" />
@@ -3898,7 +3940,7 @@ const ProcesoDetalleCard = ({
                       {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                     </div>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                       <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocSubactividad(doc._id)}>Eliminar</Button>
                     </Group>
                   </Group>

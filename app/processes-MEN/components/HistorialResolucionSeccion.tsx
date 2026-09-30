@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Anchor,
   Badge,
   Button,
   Divider,
@@ -71,23 +72,16 @@ function TarjetaDocumento({
             {titulo}
           </Text>
         </Stack>
-        <Button
-          component="a"
+        <Anchor
           href={doc.view_link}
           target="_blank"
           rel="noopener noreferrer"
-          variant="filled"
-          color={color}
-          size="sm"
-          leftSection={<IconExternalLink size={15} />}
           title={doc.name}
-          styles={{
-            root: { flexShrink: 0, justifyContent: "center", textAlign: "center" },
-            label: { textAlign: "center" },
-          }}
+          style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5 }}
         >
-          Ver documento
-        </Button>
+          <IconExternalLink size={15} />
+          {doc.name || "Abrir PDF"}
+        </Anchor>
       </Group>
     </Paper>
   );

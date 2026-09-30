@@ -51,6 +51,14 @@ export function getCasoFechaKeyForActividad(faseNumero: number, nombre: string):
   return null;
 }
 
+/** Documentos de la actividad padre «Completitud» también se muestran como respuesta en el caso. */
+export function getCasoFechaKeyForDocumentoActividad(faseNumero: number, nombre: string): CasoFechaKey | null {
+  const mappedKey = getCasoFechaKeyForActividad(faseNumero, nombre);
+  if (mappedKey) return mappedKey;
+  if (faseNumero === 5 && norm(nombre) === norm("Completitud")) return "fecha_respuesta_completitud";
+  return null;
+}
+
 export function getCasoFechaKeyForSubactividad(faseNumero: number, nombre: string): CasoFechaKey | null {
   const n = norm(nombre);
   if (faseNumero === 4) return F4_SUB[n] ?? null;
