@@ -1765,12 +1765,15 @@ function PlaneacionRevisionPanel({
         // No se filtra por aval_planeacion pendiente: el último reporte ya evaluado
         // (Validado/Devuelto) debe seguir visible aquí hasta que llegue uno nuevo
         // para el periodo actual, en vez de desaparecer apenas Planeación lo revisa.
-        // Un reporte "Devuelto" vuelve a Borrador (y pierde el aval del líder), así
-        // que se incluye explícitamente para que Planeación siga viendo su observación.
+        // Todo reporte ya evaluado por Planeación (Validado/Devuelto) se incluye sin
+        // importar su estado actual: un "Devuelto" vuelve a Borrador, y uno "Validado"
+        // puede reabrirse como Borrador cuando el responsable empieza a editarlo o a
+        // subir otro reporte; en ambos casos la última evaluación debe seguir visible.
         deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
           (item) =>
             (item.estado === "Enviado" && (item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))) ||
-            (item.estado === "Borrador" && item.aval_planeacion === "Devuelto")
+            item.aval_planeacion === "Validado" ||
+            item.aval_planeacion === "Devuelto"
         ))
       ))
       .catch(() => {})

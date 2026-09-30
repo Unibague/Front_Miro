@@ -1935,6 +1935,14 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
   const evaluacionesPendientesProyecto = indicadoresQuePuedoEvaluar.length
     ? getEvaluacionesPendientesAccion(indicadoresQuePuedoEvaluar)
     : [];
+  // Si el usuario no es responsable del proyecto (ni líder/admin), el proyecto solo
+  // aparece porque tiene acciones propias dentro de él: se aclara cuáles son.
+  const accionesPropiasEnProyectoAjeno =
+    esAdmin || esLiderProyecto || proyectoTieneResponsable(vista.proyecto, email, fullName)
+      ? []
+      : vista.acciones
+          .filter((item) => accionTieneResponsablePropio(item.accion, email, fullName))
+          .map((item) => item.accion);
   const reportesRechazadosProyecto = reportesPendientesProyecto.filter((r) => r.estado === "Rechazado");
   const reportesPorEnviarProyecto = reportesPendientesProyecto.filter((r) => r.estado !== "Rechazado");
 
@@ -1967,6 +1975,12 @@ function ProyectoResponsableCard({ vista, cortesVigentes, onUpdated, aniosPdi, a
                 <Text size="xs" c="dimmed">Responsable: <b>{vista.proyecto.responsable}</b></Text>
               )}
             </Group>
+            {accionesPropiasEnProyectoAjeno.length > 0 && (
+              <Badge color="gray" variant="light" radius="xl" size="sm" mt={8} style={{ textTransform: "none" }}>
+                Apareces aquí solo como responsable de {pluralizeCount(accionesPropiasEnProyectoAjeno.length, "la acción", "las acciones")}{" "}
+                {accionesPropiasEnProyectoAjeno.map((a) => a.codigo).join(", ")}
+              </Badge>
+            )}
             {(reportesRechazadosProyecto.length > 0 || reportesPorEnviarProyecto.length > 0 || evaluacionesPendientesProyecto.length > 0) && (
               <Group gap={6} mt={10} wrap="wrap">
                 {reportesRechazadosProyecto.length > 0 && (
