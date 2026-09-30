@@ -261,8 +261,10 @@ const AdminValidationUpdatePage = () => {
   };
 
   const handleAddValue = () => {
-    // Verificar si hay valores duplicados en alguna columna
+    // Verificar valores duplicados solo en la(s) columna(s) validadora(s): las
+    // demás (p. ej. "Grupo" en una tabla de líneas) pueden repetirse.
     const hasDuplicates = columns.some(column => {
+      if (!column.is_validator) return false;
       const values = column.values.filter(v => v !== "" && v !== null && v !== undefined);
       return values.length !== new Set(values.map(v => String(v).toLowerCase())).size;
     });
@@ -270,7 +272,7 @@ const AdminValidationUpdatePage = () => {
     if (hasDuplicates) {
       showNotification({
         title: "Error",
-        message: "No se puede agregar una nueva fila mientras haya valores duplicados en las columnas",
+        message: "No se puede agregar una nueva fila mientras haya valores duplicados en la columna validadora",
         color: "red",
       });
       return;
@@ -403,7 +405,8 @@ const AdminValidationUpdatePage = () => {
             return;
           }
         }
-        // Verificar duplicados en la columna
+        // Verificar duplicados solo en la columna validadora (la llave de la tabla)
+        if (!column.is_validator) continue;
         const nonEmptyValues = column.values.filter(v => v !== "" && v !== null && v !== undefined);
         const uniqueValues = new Set(nonEmptyValues.map(v => String(v).toLowerCase()));
         if (nonEmptyValues.length !== uniqueValues.size) {

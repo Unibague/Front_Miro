@@ -1412,7 +1412,20 @@ const getValidatorRowLabel = (
 interface DependentListSource {
   parentCol: number;
   groups: { keys: string[]; options: string[] }[];
+  // Lista completa con las mismas etiquetas (se usa cuando no hay selección).
+  allOptions: string[];
 }
+
+// Listas dependientes habilitadas. Solo aplica a estas hojas y validaciones
+// (plantilla "Investigación (Grupos, líneas y semilleros)"), para no cambiar
+// el comportamiento de ninguna otra plantilla.
+const DEPENDENT_LISTS: { sheets: string[]; parentValidator: string; childValidator: string }[] = [
+  {
+    sheets: ["GRUPOS", "INVESTIGADORES"],
+    parentValidator: "GRUPOS_DE_INVESTIGACION",
+    childValidator: "LINEAS_DE_INVESTIGACION",
+  },
+];
 
 // Lista dependiente: si las filas del validador del campo traen una columna
 // cuyos valores corresponden a los de un campo ANTERIOR de la misma hoja
@@ -1423,12 +1436,18 @@ const buildDependentListSource = (
   field: FieldWithValidator,
   fieldIndex: number,
   fields: FieldWithValidator[],
-  validators: ValidatorOptionSource[]
+  validators: ValidatorOptionSource[],
+  worksheetName: string
 ): DependentListSource | null => {
   if (field.multiple || validators.length === 0) return null;
   const own = findValidatorForField(field, validators);
   const childRows = own?.validator.values ?? [];
   if (!own || childRows.length === 0) return null;
+  const allowedRules = DEPENDENT_LISTS.filter((rule) =>
+    rule.sheets.some((sheet) => normalizeToken(sheet) === normalizeToken(worksheetName)) &&
+    normalizeToken(rule.childValidator) === normalizeToken(own.validator.name)
+  );
+  if (allowedRules.length === 0) return null;
 
   // La propia columna del campo también puede ser la de enlace (p. ej. validar
   // con "Grupo", cuyo valor es "D+TEC01 - Materiales y diseño de equipos").
@@ -1462,6 +1481,7 @@ const buildDependentListSource = (
     const parent = findValidatorForField(parentField, validators);
     const parentRows = parent?.validator.values ?? [];
     if (!parent || parent.validator === own.validator || parentRows.length === 0) continue;
+    if (!allowedRules.some((rule) => normalizeToken(rule.parentValidator) === normalizeToken(parent.validator.name))) continue;
 
     for (const childKey of childKeys) {
       const childValues = valueSet(childRows, childKey);
@@ -1475,13 +1495,34 @@ const buildDependentListSource = (
       });
       if (!parentKey) continue;
 
+      // Si la etiqueta es solo el código ("DTEC01"), se le agrega la columna de
+      // texto descriptivo de la tabla ("DTEC01 - Materiales y diseño de equipos").
+      // La carga del archivo acepta el valor porque toma el código del inicio.
+      const ownColumnName = own.columnName || field.name;
+      const descriptionKey = childKeys
+        .filter((key) => normalizeToken(key) !== normalizeToken(ownColumnName) && key !== childKey)
+        .map((key) => {
+          const texts = childRows.map((row) => toOptionText(resolveValueByKey(row, key))).filter(Boolean);
+          const average = texts.length ? texts.reduce((sum, text) => sum + text.length, 0) / texts.length : 0;
+          const withSpaces = texts.length ? texts.filter((text) => /\s/.test(text)).length / texts.length : 0;
+          return { key, average, ok: average >= 15 && withSpaces >= 0.8 };
+        })
+        .filter((item) => item.ok)
+        .sort((a, b) => b.average - a.average)[0]?.key;
+      const labelFor = (row: Record<string, unknown>) => {
+        const label = getValidatorRowLabel(own.validator, row, ownColumnName);
+        if (!label || !descriptionKey || label.includes(" - ")) return label;
+        const description = toOptionText(resolveValueByKey(row, descriptionKey));
+        return description ? `${label} - ${description}` : label;
+      };
+
       const groups = parentRows.flatMap((parentRow) => {
         const candidates = new Set(linkCandidates(parentRow, parentKey));
         if (candidates.size === 0) return [];
         const options = normalizeDropdownOptionTexts(
           childRows
             .filter((row) => candidates.has(childLinkValue(row, childKey)))
-            .map((row) => getValidatorRowLabel(own.validator, row, own.columnName || field.name))
+            .map(labelFor)
         );
         if (options.length === 0) return [];
         // La celda del padre puede traer la etiqueta de la lista ("COL0007284 - D+TEC"),
@@ -1502,7 +1543,7 @@ const buildDependentListSource = (
 
       if (groups.length === 0) continue;
       const { col: parentCol } = getConfiguredFieldPosition(parentField, parentIndex, fields);
-      return { parentCol, groups };
+      return { parentCol, groups, allOptions: normalizeDropdownOptionTexts(childRows.map(labelFor)) };
     }
   }
 
@@ -1627,6 +1668,11 @@ export const applyValidatorDropdowns = ({
     const firstDataRow = Math.max(startRow, headerRow + 1);
     const rangeAddress = `${toColumnLetter(templateCol)}${firstDataRow}:${toColumnLetter(templateCol)}${endRow}`;
 
+    // Campo con lista dependiente (solo las hojas/validaciones de DEPENDENT_LISTS):
+    // la lista completa usa las mismas etiquetas que los bloques por clave.
+    const dependent = buildDependentListSource(field, fieldIndex, fields, validators, worksheet.name);
+    if (dependent && dependent.allOptions.length > 0) options = dependent.allOptions;
+
     // Escribir opciones en hoja oculta _Listas
     options.forEach((opt, i) => {
       sourcesSheet.getCell(i + 1, sourceCol).value = opt;
@@ -1640,7 +1686,6 @@ export const applyValidatorDropdowns = ({
     // pasa a ser un OFFSET sobre el bloque de la clave elegida. Sin selección
     // (o con un valor sin opciones asociadas) se muestra la lista completa.
     let listFormula = rangeRef;
-    const dependent = buildDependentListSource(field, fieldIndex, fields, validators);
     if (dependent) {
       const keyCol = sourceCol;
       const optionCol = sourceCol + 1;
