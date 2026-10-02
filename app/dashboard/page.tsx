@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconRobot, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -13,7 +13,6 @@ import dayjs from "dayjs";
 import "dayjs/locale/es";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { paramId } from "@/app/utils/routeParams";
-import AIChat from "@/app/components/AIAssistant/AIChat";
 import { processesMenRoutes } from "@/app/processes-MEN/config/routes";
 import { asignacionPdiAplica } from "@/app/hooks/usePdiAccess";
 
@@ -111,7 +110,6 @@ const DashboardPage = () => {
   // llave suelta (si no, un perfil con acceso a una vista hija nunca podria
   // llegar a ella porque la tarjeta de entrada estaria oculta).
   const canSeeAny = (keys: string[], roles: string[]) => keys.some((key) => canSee(key, roles));
-  const [aiChatOpened, setAiChatOpened] = useState(false);
 
   const [avRcOpen, setAvRcOpen] = useState(false);
 
@@ -1546,25 +1544,7 @@ const DashboardPage = () => {
         )}
         </Stack>
         
-        {/* AI Assistant Button */}
-        <Button
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            borderRadius: '50px',
-            zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
-          }}
-          size="lg"
-          leftSection={<IconRobot size={20} />}
-          onClick={() => setAiChatOpened(true)}
-        >
-          Hablar con Ardi
-        </Button>
       </Container>
-      
-      <AIChat opened={aiChatOpened} onClose={() => setAiChatOpened(false)} />
       
       <Modal
         opened={opened}

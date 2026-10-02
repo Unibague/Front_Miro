@@ -1009,7 +1009,7 @@ export default function SubirEvidenciasPage() {
       }
     }
 
-    const documentosConservados = respActual?.estado_aval === "Rechazado" ? [] : getDocumentosEvidencia(respActual);
+    const documentosConservados = getDocumentosEvidencia(respActual);
     const totalExistente = getDocumentosTotalSize(documentosConservados);
     const totalNuevo = getFilesTotalSize(files);
     const totalFinal = totalExistente + totalNuevo;
