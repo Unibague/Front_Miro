@@ -23,6 +23,14 @@ import { useSession } from "next-auth/react";
 import ConsultaInfoSidebar from "../components/ConsultaInfoSidebar";
 import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
 import { useRole } from "@/app/context/RoleContext";
+import descripciones from "./descripciones.json";
+
+const normalizeAmbitoName = (name: string) =>
+  name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+
+const descriptionsByName = new Map(
+  Object.entries(descripciones).map(([name, description]) => [normalizeAmbitoName(name), description])
+);
 
 interface DimensionOption {
   _id: string;
@@ -111,13 +119,18 @@ export default function AmbitosCarpetasPage() {
                   style={{ cursor: "pointer" }}
                   onClick={() => router.push(`/historico-docentes/ambito/${dimension._id}?tab=plantillas`)}
                 >
-                  <Group gap="sm" wrap="nowrap">
+                  <Group gap="sm" wrap="nowrap" align="flex-start">
                     <ThemeIcon size={44} radius="md" color="violet" variant="light">
                       <IconFolder size={22} />
                     </ThemeIcon>
                     <Box style={{ flex: 1, minWidth: 0 }}>
                       <Text fw={700} lineClamp={2}>{dimension.name}</Text>
                       <Badge size="xs" variant="light" color="grape" mt={4}>Ámbito</Badge>
+                      {descriptionsByName.get(normalizeAmbitoName(dimension.name)) && (
+                        <Text size="sm" c="dimmed" mt="xs">
+                          {descriptionsByName.get(normalizeAmbitoName(dimension.name))}
+                        </Text>
+                      )}
                     </Box>
                   </Group>
                 </Paper>

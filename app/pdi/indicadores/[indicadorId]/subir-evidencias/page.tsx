@@ -199,7 +199,7 @@ function formatFechaCorta(fecha?: string | null) {
   return date.toLocaleDateString("es-CO");
 }
 
-const MAX_EVIDENCE_TOTAL_SIZE = 10 * 1024 * 1024;
+const MAX_EVIDENCE_TOTAL_SIZE = 50 * 1024 * 1024;
 const ALLOWED_EVIDENCE_EXTENSIONS = [".pdf", ".xlsx", ".xls", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".zip", ".rar"];
 const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
@@ -228,7 +228,7 @@ const EVIDENCE_HELP_TEXT_REQUESTED =
 const EVIDENCE_HELP_TEXT_2_REQUESTED =
   "Importante: la evidencia debe comprobar directamente el avance del indicador de resultado. Evite adjuntar soportes de actividades o informaci\u00f3n sin relaci\u00f3n directa con la meta reportada.";
 const EVIDENCE_HELP_TEXT_3 =
-  "Capacidad m\u00e1xima: el tama\u00f1o total de las evidencias cargadas no debe superar los 10 MB.";
+  "Capacidad m\u00e1xima: el tama\u00f1o total de las evidencias cargadas no debe superar los 50 MB.";
 
 function getDocumentosEvidencia(resp?: RespuestaFormulario | null): DocumentoEvidencia[] {
   if (!resp) return [];
@@ -836,7 +836,7 @@ export default function SubirEvidenciasPage() {
     if (file.size > MAX_EVIDENCE_TOTAL_SIZE) {
       showNotification({
         title: "Archivo demasiado grande",
-        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El maximo permitido es 10 MB.`,
+        message: `El archivo "${file.name}" pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. El maximo permitido es 50 MB.`,
         color: "red",
       });
       return;
@@ -976,7 +976,7 @@ export default function SubirEvidenciasPage() {
     if (oversizedFile) {
       showNotification({
         title: "Archivo demasiado grande",
-        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El maximo total permitido es 10 MB.`,
+        message: `El archivo "${oversizedFile.name}" pesa ${(oversizedFile.size / 1024 / 1024).toFixed(1)} MB. El maximo total permitido es 50 MB.`,
         color: "red",
       });
       return;
@@ -1016,7 +1016,7 @@ export default function SubirEvidenciasPage() {
     if (totalFinal > MAX_EVIDENCE_TOTAL_SIZE) {
       showNotification({
         title: "Capacidad maxima superada",
-        message: `Las evidencias sumarian ${formatFileSize(totalFinal)}. El maximo total permitido es 10 MB.`,
+        message: `Las evidencias sumarian ${formatFileSize(totalFinal)}. El maximo total permitido es 50 MB.`,
         color: "red",
       });
       return;
@@ -1099,7 +1099,7 @@ export default function SubirEvidenciasPage() {
         errores.push(`Debes adjuntar al menos una evidencia del formulario ${formulariosSinDocumento.map((form: FormularioPDI) => `"${form.nombre}"`).join(", ")}.`);
       }
       if (formulariosConEvidenciasPesadas.length > 0) {
-        errores.push(`El total de evidencias no debe superar 10 MB en ${formulariosConEvidenciasPesadas.map((form) => `"${form.nombre}"`).join(", ")}.`);
+        errores.push(`El total de evidencias no debe superar 50 MB en ${formulariosConEvidenciasPesadas.map((form) => `"${form.nombre}"`).join(", ")}.`);
       }
       showNotification({
         title: "Falta información obligatoria",
@@ -2238,7 +2238,7 @@ export default function SubirEvidenciasPage() {
                               <Paper withBorder radius="md" p="xs" style={{ borderColor: "#ede9fe", background: "#fff" }}>
                                 <Group justify="space-between" mb={6}>
                                   <Text size="xs" fw={700}>Peso total de evidencias</Text>
-                                  <Text size="xs" fw={700}>{formatFileSize(totalEvidencias) || "0 KB"} / 10 MB</Text>
+                                  <Text size="xs" fw={700}>{formatFileSize(totalEvidencias) || "0 KB"} / 50 MB</Text>
                                 </Group>
                                 <Progress
                                   value={porcentajeCapacidad}
@@ -2388,7 +2388,7 @@ export default function SubirEvidenciasPage() {
                     erroresDetalle.push(`Adjunta al menos una evidencia en "${form.nombre}".`);
                   });
                   formulariosConEvidenciasPesadas.forEach((form: FormularioPDI) => {
-                    erroresDetalle.push(`El peso total de evidencias en "${form.nombre}" supera 10 MB.`);
+                    erroresDetalle.push(`El peso total de evidencias en "${form.nombre}" supera 50 MB.`);
                   });
                   return (
                     <Paper
