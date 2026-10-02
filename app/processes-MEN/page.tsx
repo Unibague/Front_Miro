@@ -1162,7 +1162,6 @@ const ProcessesMenPage = () => {
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/processes/${id}`);
       setProcesos(previous => previous.filter(proceso => proceso._id !== id));
-      setTablePhases(previous => previous.filter(fase => fase.proceso_id !== id));
       setFases(previous => previous.filter(fase => fase.proceso_id !== id));
       setProcesoAEliminar(null);
     } catch (error) {
