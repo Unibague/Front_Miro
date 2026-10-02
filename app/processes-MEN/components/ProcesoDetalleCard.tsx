@@ -1859,14 +1859,20 @@ const ProcesoDetalleCard = ({
   };
 
   const cargarDocumentos = async () => {
-    if (!faseActual) return;
+    if (!faseActual) {
+      setDocs([]);
+      setDocsOpen(true);
+      return;
+    }
+
     setLoadingDocs(true);
+    setDocsOpen(true);
+
     try {
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
         params: { phase_id: faseActual._id },
       });
       setDocs(Array.isArray(res.data) ? res.data as ProcessDocument[] : []);
-      setDocsOpen(true);
     } catch (e) { console.error(e); }
     finally { setLoadingDocs(false); }
   };

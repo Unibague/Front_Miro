@@ -1729,81 +1729,127 @@ const ProcessesMenPage = () => {
               </Box>
             )}
             {(activeSection === "main" || activeSection === "informacion") && activeParentSection !== "alertas" && !loadingFilters && (
-              <Paper withBorder radius="md" p="sm" mb="md">
-                <Flex
-                  gap={8}
-                  align="flex-end"
-                  wrap="nowrap"
-                  w="100%"
-                  style={{
-                    minWidth: 0,
-                    overflowX: "auto",
-                    paddingBottom: 2,
-                    justifyContent: activeSection === "informacion" ? "center" : undefined,
-                  }}
-                >
-                  <Select
-                    label="Facultad"
-                    data={opcionesFacultad}
-                    value={facultad}
-                    style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
-                    onChange={handleFacultadChange}
-                    searchable={false}
-                    styles={selectorStyleFilters}
-                  />
-                  <Select
-                    label="Programa"
-                    data={opcionesPrograma}
-                    value={programa}
-                    style={{ flex: "1.4 1 150px", minWidth: 0, maxWidth: 300 }}
-                    searchable
-                    onChange={(v) => {
-                      const n = v ?? "Todos";
-                      if (activeSection === "informacion" && n !== "Todos") {
-                        router.push(processesMenRoutes.program(n));
-                        return;
-                      }
-                      setPrograma(n);
-                      if (n !== "Todos") setNivelAcademico("Todos");
-                    }}
-                    styles={selectorStyleFilters}
-                  />
-                  {activeSection === "main" && (
-                    <>
-                      <Select
-                        label="Nivel académico"
-                        data={opcionesNivelAcademico}
-                        value={nivelAcademico}
-                        style={{ flex: "0.9 1 108px", minWidth: 0, maxWidth: 185 }}
-                        onChange={(v) => setNivelAcademico(v ?? "Todos")}
-                        searchable={false}
-                        styles={selectorStyleFilters}
-                      />
-                      <Select
-                        label="Tipo de proceso"
-                        data={opcionesTipoProceso}
-                        value={tipoProceso}
-                        style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 235 }}
-                        onChange={(v) => {
-                          setTipoProceso(v ?? "Todos");
-                          setSubtipoFiltro("Todos");
+              activeSection === "informacion" ? (
+                <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
+                  <Group gap="sm" wrap="wrap" align="flex-end">
+                    <Select
+                      placeholder="Todas las facultades"
+                      data={opcionesFacultad}
+                      value={facultad}
+                      onChange={handleFacultadChange}
+                      clearable
+                      searchable={false}
+                      size="xs"
+                      w={220}
+                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                    />
+                    <Select
+                      placeholder="Todos los programas"
+                      data={opcionesPrograma}
+                      value={programa}
+                      onChange={(v) => {
+                        const n = v ?? "Todos";
+                        if (activeSection === "informacion" && n !== "Todos") {
+                          router.push(processesMenRoutes.program(n));
+                          return;
+                        }
+                        setPrograma(n);
+                        if (n !== "Todos") setNivelAcademico("Todos");
+                      }}
+                      clearable
+                      searchable
+                      size="xs"
+                      w={240}
+                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                    />
+                    {(facultad !== "Todos" || programa !== "Todos") && (
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => {
+                          setFacultad("Todos");
+                          setPrograma("Todos");
+                          setNivelAcademico("Todos");
                         }}
-                        searchable={false}
-                        styles={selectorStyleFilters}
-                      />
-                      <Select
-                        label="Subtipo"
-                        data={opcionesSubtipoFiltroData}
-                        value={subtipoFiltro}
-                        style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
-                        onChange={(v) => setSubtipoFiltro(v ?? "Todos")}
-                        searchable={false}
-                        styles={selectorStyleFiltersSubtipo}
-                      />
-                    </>
-                  )}
-                </Flex>
-              </Paper>
+                      >
+                        Limpiar filtros
+                      </Button>
+                    )}
+                  </Group>
+                </Paper>
+              ) : (
+                <Paper withBorder radius="md" p="sm" mb="md">
+                  <Flex
+                    gap={8}
+                    align="flex-end"
+                    wrap="nowrap"
+                    w="100%"
+                    style={{
+                      minWidth: 0,
+                      overflowX: "auto",
+                      paddingBottom: 2,
+                    }}
+                  >
+                    <Select
+                      label="Facultad"
+                      data={opcionesFacultad}
+                      value={facultad}
+                      style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
+                      onChange={handleFacultadChange}
+                      searchable={false}
+                      styles={selectorStyleFilters}
+                    />
+                    <Select
+                      label="Programa"
+                      data={opcionesPrograma}
+                      value={programa}
+                      style={{ flex: "1.4 1 150px", minWidth: 0, maxWidth: 300 }}
+                      searchable
+                      onChange={(v) => {
+                        const n = v ?? "Todos";
+                        setPrograma(n);
+                        if (n !== "Todos") setNivelAcademico("Todos");
+                      }}
+                      styles={selectorStyleFilters}
+                    />
+                    {activeSection === "main" && (
+                      <>
+                        <Select
+                          label="Nivel académico"
+                          data={opcionesNivelAcademico}
+                          value={nivelAcademico}
+                          style={{ flex: "0.9 1 108px", minWidth: 0, maxWidth: 185 }}
+                          onChange={(v) => setNivelAcademico(v ?? "Todos")}
+                          searchable={false}
+                          styles={selectorStyleFilters}
+                        />
+                        <Select
+                          label="Tipo de proceso"
+                          data={opcionesTipoProceso}
+                          value={tipoProceso}
+                          style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 235 }}
+                          onChange={(v) => {
+                            setTipoProceso(v ?? "Todos");
+                            setSubtipoFiltro("Todos");
+                          }}
+                          searchable={false}
+                          styles={selectorStyleFilters}
+                        />
+                        <Select
+                          label="Subtipo"
+                          data={opcionesSubtipoFiltroData}
+                          value={subtipoFiltro}
+                          style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
+                          onChange={(v) => setSubtipoFiltro(v ?? "Todos")}
+                          searchable={false}
+                          styles={selectorStyleFiltersSubtipo}
+                        />
+                      </>
+                    )}
+                  </Flex>
+                </Paper>
+              )
             )}
 
             {activeSection === "main" && loadingFilters && (
