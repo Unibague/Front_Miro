@@ -5,6 +5,7 @@ import {
   Paper, Title, Text, Button, Group, Stack, Alert,
   Table, Badge, Divider, Anchor, Box, Tabs,
 } from "@mantine/core";
+import ModuleHeader from "../components/ModuleHeader";
 
 type ImportadoRow = {
   fila: number;
@@ -201,13 +202,10 @@ export default function AdminImportPage() {
   return (
     <Box p="xl" maw={900} mx="auto">
       <Stack gap="lg">
-        <Stack gap={2}>
-          <Title order={4} c="dimmed" fw={500}>Carga masiva — processes-MEN</Title>
-          <Text size="xs" c="dimmed">
-            Herramienta de administración. No compartir enlace.{" "}
-            <Anchor href="/processes-MEN" size="xs">← Volver</Anchor>
-          </Text>
-        </Stack>
+        <ModuleHeader
+          title="Carga masiva — Procesos de calidad MEN"
+          description={<>Herramienta de administración. No compartir enlace. <Anchor href="/processes-MEN">← Volver</Anchor></>}
+        />
 
         <Divider />
 

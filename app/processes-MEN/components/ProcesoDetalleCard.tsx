@@ -3,13 +3,14 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
-  Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader,
-  ActionIcon, Switch, Tooltip, Alert, Textarea,
+  Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader, Progress,
+  ActionIcon, Switch, Tooltip, Alert, Textarea, ThemeIcon,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { IconChevronDown, IconChevronUp, IconGripVertical, IconPlus, IconTrash, IconEdit, IconFile, IconMessageCircle, IconChevronLeft, IconChevronRight, IconHistory, IconCalendar, IconCheck, IconX, IconAlertTriangle, IconUpload, IconExternalLink, IconLink, IconUnlink, IconChecklist } from "@tabler/icons-react";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import {
   DndContext,
@@ -32,6 +33,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Process, Program, Phase, ProcessDocument, Actividad, Subactividad, ProcesoDetalleProps, Caso, CasoFechaKey } from "../types";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import {
+  getCasoFechaKeyForDocumentoActividad,
   getCasoFechaKeyForActividad,
   getCasoFechaKeyForSubactividad,
   findActividadByCasoKey,
@@ -211,7 +213,7 @@ const SortableActividad = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <Paper withBorder radius="sm" p="sm">
+      <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#ffffff" }}>
         {/* Fila principal de la actividad */}
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Group gap="sm" align="flex-start" style={{ flex: 1 }}>
@@ -698,7 +700,9 @@ const ProcesoDetalleCard = ({
       (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV")
       && !esReformaCurricularSolo
       && !(proceso.tipo_proceso === "RC" && esRcSubtipoNoRenovacion(proceso.subtipo));
-    const duracionPred = muestraDuracionResolucionCierre ? DURACION_VIGENCIA_CIERRE_ANOS_PRED : "";
+    const duracionPred = muestraDuracionResolucionCierre && proceso.tipo_proceso !== "AV"
+      ? DURACION_VIGENCIA_CIERRE_ANOS_PRED
+      : "";
     if (esRcOficioPostAvGracia && programa.ultimo_rc) {
       const ur = programa.ultimo_rc;
       const fr = ur.fecha_resolucion ? String(ur.fecha_resolucion).slice(0, 10) : "";
@@ -719,6 +723,7 @@ const ProcesoDetalleCard = ({
   };
 
   const cerrarProceso = async () => {
+    if (!window.confirm("¿Está seguro de que desea cerrar el proceso?")) return;
     setCierreError(null);
     setCerrandoProceso(true);
     try {
@@ -906,7 +911,7 @@ const ProcesoDetalleCard = ({
         console.error("Cierre OK pero falló recargar programa; refrescando listado:", e);
       }
       await onRefreshProcesos(programCodeKey(programa));
-      router.push(`/processes-MEN/program/${encodeURIComponent(String(programa._id))}`);
+      router.push("/processes-MEN?vista=alertas");
     } finally {
       setCerrandoProceso(false);
     }
@@ -929,7 +934,7 @@ const ProcesoDetalleCard = ({
         console.error("Cierre OK pero falló recargar programa; refrescando listado:", e);
       }
       await onRefreshProcesos(programCodeKey(programa));
-      router.push(`/processes-MEN/program/${encodeURIComponent(String(programa._id))}`);
+      router.push("/processes-MEN?vista=alertas");
     } catch (e: unknown) {
       console.error("Error cerrando proceso (API):", e);
       const ax = e as {
@@ -1307,23 +1312,26 @@ const ProcesoDetalleCard = ({
         params: { process_id: proceso._id, caso_date_key: field },
       });
       const fromCaso = Array.isArray(resC.data) ? (resC.data as ProcessDocument[]) : [];
-      const hitA = findActividadByCasoKey(fases, field);
-      const hitS = !hitA ? findSubactividadByCasoKey(fases, field) : null;
-      if (hitA) {
+      const hitsA = fases.flatMap((fase) =>
+        fase.actividades
+          .filter((act) => getCasoFechaKeyForDocumentoActividad(fase.numero, act.nombre) === field)
+          .map((act) => ({ fase, act })),
+      );
+      const hitS = findSubactividadByCasoKey(fases, field);
+      const fromFaseDocs: ProcessDocument[] = [];
+      for (const hitA of hitsA) {
         const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
           params: { phase_id: hitA.fase._id, actividad_id: hitA.act._id },
         });
-        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
-        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
-      } else if (hitS) {
+        if (Array.isArray(resP.data)) fromFaseDocs.push(...(resP.data as ProcessDocument[]));
+      }
+      if (hitS) {
         const resP = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
           params: { phase_id: hitS.fase._id, actividad_id: hitS.act._id, subactividad_id: hitS.sub._id },
         });
-        const fromFase = Array.isArray(resP.data) ? (resP.data as ProcessDocument[]) : [];
-        setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFase));
-      } else {
-        setCasoFechaDocs(fromCaso);
+        if (Array.isArray(resP.data)) fromFaseDocs.push(...(resP.data as ProcessDocument[]));
       }
+      setCasoFechaDocs(mergeDocsUniq(fromCaso, fromFaseDocs));
     } catch { setCasoFechaDocs([]); }
     finally { setLoadingCasoFechaDocs(false); }
   };
@@ -1361,6 +1369,7 @@ const ProcesoDetalleCard = ({
 
   const subirCasoFechaDoc = async (files: File[]) => {
     if (!casoFechaModalField || files.length === 0) return;
+    if (casoFechaDocs.length > 0 && !window.confirm("Ya existen anexos para esta fecha. ¿Desea agregar este archivo también?")) return;
     setUploadingCasoFechaDoc(true);
     try {
       const formData = new FormData();
@@ -1379,6 +1388,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarCasoFechaDoc = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setCasoFechaDocs(prev => prev.filter(d => d._id !== docId));
@@ -1582,7 +1592,7 @@ const ProcesoDetalleCard = ({
         params: { phase_id: fase._id, actividad_id: act._id },
       });
       const fromFase = Array.isArray(res.data) ? (res.data as ProcessDocument[]) : [];
-      const key = getCasoFechaKeyForActividad(fase.numero, act.nombre);
+      const key = getCasoFechaKeyForDocumentoActividad(fase.numero, act.nombre);
       let data = fromFase;
       if (key) {
         const resC = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/by-process`, {
@@ -1604,7 +1614,7 @@ const ProcesoDetalleCard = ({
       const formData = new FormData();
       formData.append("file", files[0]);
       formData.append("actividad_id", actDocsTarget.act._id);
-      const k = getCasoFechaKeyForActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre);
+      const k = getCasoFechaKeyForDocumentoActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre);
       if (k) {
         formData.append("caso_date_key", k);
         formData.append("process_id", proceso._id);
@@ -1626,6 +1636,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocActividad = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setActDocs(prev => {
@@ -1805,6 +1816,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocSubactividad = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setSubDocs(prev => {
@@ -1847,14 +1859,20 @@ const ProcesoDetalleCard = ({
   };
 
   const cargarDocumentos = async () => {
-    if (!faseActual) return;
+    if (!faseActual) {
+      setDocs([]);
+      setDocsOpen(true);
+      return;
+    }
+
     setLoadingDocs(true);
+    setDocsOpen(true);
+
     try {
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
         params: { phase_id: faseActual._id },
       });
       setDocs(Array.isArray(res.data) ? res.data as ProcessDocument[] : []);
-      setDocsOpen(true);
     } catch (e) { console.error(e); }
     finally { setLoadingDocs(false); }
   };
@@ -1876,6 +1894,7 @@ const ProcesoDetalleCard = ({
   };
 
   const eliminarDocumento = async (docId: string) => {
+    if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setDocs(prev => prev.filter(d => d._id !== docId));
@@ -2070,13 +2089,22 @@ const ProcesoDetalleCard = ({
       const isEditing = editingCasoDateKey === field;
       const dateVal   = fecha ? new Date(fecha + "T12:00:00") : null;
       const isApelacion = field === "fecha_resolucion_apelacion" || field === "fecha_respuesta_men";
+      const actividadMapeada = findActividadByCasoKey(fases, field);
+      const subactividadMapeada = findSubactividadByCasoKey(fases, field);
+      const esNoAplica = Boolean(
+        actividadMapeada?.act.no_aplica
+        || subactividadMapeada?.sub.no_aplica
+        || subactividadMapeada?.act.no_aplica
+      );
       const nDocs = casoFechaDocCounts[field] ?? 0;
       const obsK = `obs_${field}` as keyof Caso;
       const tieneObs = !!String((caso[obsK] as string | undefined) ?? "").trim();
       return (
         <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 108, maxWidth: 132, padding: "8px 6px", ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
           <Stack gap={2} align="center">
-            {isEditing ? (
+            {esNoAplica ? (
+              <Text fw={600} ta="center" style={{ ...cellFont, color: "#e67700" }}>N/A</Text>
+            ) : isEditing ? (
               <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
                 valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
                 style={{ width: 118 }} clearable disabled={savingCaso}
@@ -2415,6 +2443,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red"
                     loading={deletingDocId === respuestaNoRenovacionDoc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                       try {
                         setDeletingDocId(respuestaNoRenovacionDoc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${respuestaNoRenovacionDoc._id}`);
@@ -2429,8 +2458,10 @@ const ProcesoDetalleCard = ({
               )}
               <DropzoneCustomComponent
                 text={loadingResolucionDoc ? "Subiendo..." : "Adjuntar o reemplazar documento de respuesta"}
+                loading={loadingResolucionDoc}
                 onDrop={async (files) => {
                   const file = files[0]; if (!file) return;
+                  if (respuestaNoRenovacionDoc && !window.confirm("¿Está seguro de que desea reemplazar el documento de respuesta?")) return;
                   try {
                     setLoadingResolucionDoc(true);
                     const formData = new FormData();
@@ -2453,11 +2484,21 @@ const ProcesoDetalleCard = ({
             <>
               <TextInput label={etiquetasResolucionAv ? "Código de resolución (AV)" : "Código de resolución"} value={cierreForm.codigo}
                 onChange={(e) => { const v = e.currentTarget.value; setCierreForm((f) => ({ ...f, codigo: v })); }} />
-              <TextInput label={etiquetasResolucionAv ? "Duración de la vigencia — años (AV)" : "Duración de la vigencia (años)"} value={cierreForm.duracion}
-                onChange={(e) => {
-                  const duracion = e.currentTarget.value.replace(/\D/g, "");
-                  setCierreForm((f) => ({ ...f, duracion }));
-                }} />
+              {proceso.tipo_proceso === "AV" ? (
+                <Select
+                  label="Duración de la acreditación"
+                  placeholder="Selecciona los años de vigencia"
+                  data={[4, 6, 8, 10].map((anos) => ({ value: String(anos), label: `${anos} años` }))}
+                  value={cierreForm.duracion || null}
+                  onChange={(duracion) => setCierreForm((f) => ({ ...f, duracion: duracion ?? "" }))}
+                />
+              ) : (
+                <TextInput label="Duración de la vigencia (años)" value={cierreForm.duracion}
+                  onChange={(e) => {
+                    const duracion = e.currentTarget.value.replace(/\D/g, "");
+                    setCierreForm((f) => ({ ...f, duracion }));
+                  }} />
+              )}
               <div>
                 <Text size="sm" fw={500} mb={4}>
                   {esRenovacionReforma
@@ -2508,6 +2549,7 @@ const ProcesoDetalleCard = ({
                       size="xs" variant="subtle" color="red"
                       loading={deletingDocId === cierreResolucionDoc._id}
                       onClick={async () => {
+                        if (!window.confirm("¿Está seguro de que desea eliminar este anexo de cierre?")) return;
                         try {
                           setDeletingDocId(cierreResolucionDoc._id);
                           await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${cierreResolucionDoc._id}`);
@@ -2534,8 +2576,10 @@ const ProcesoDetalleCard = ({
                             ? "Adjuntar PDF con resolución y constancia (obligatorio si está aprobado)"
                             : "Adjuntar PDF del cierre (obligatorio si está aprobado)"
                   }
+                  loading={loadingCierreResolucionDoc}
                   onDrop={async (files) => {
                     const file = files[0]; if (!file) return;
+                    if (cierreResolucionDoc && !window.confirm("¿Está seguro de que desea reemplazar el documento de cierre?")) return;
                     try {
                       setLoadingCierreResolucionDoc(true);
                       const formData = new FormData();
@@ -2602,6 +2646,7 @@ const ProcesoDetalleCard = ({
                 size="xs" variant="subtle" color="red"
                 loading={deletingDocId === constanciaReformaDoc._id}
                 onClick={async () => {
+                  if (!window.confirm("¿Está seguro de que desea eliminar esta constancia?")) return;
                   try {
                     setDeletingDocId(constanciaReformaDoc._id);
                     await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${constanciaReformaDoc._id}`);
@@ -2616,9 +2661,11 @@ const ProcesoDetalleCard = ({
           )}
           <DropzoneCustomComponent
             text={loadingConstancia ? "Subiendo..." : "Haz clic o arrastra la constancia o confirmación"}
+            loading={loadingConstancia}
             onDrop={async (files) => {
               const file = files[0];
               if (!file) return;
+              if (constanciaReformaDoc && !window.confirm("¿Está seguro de que desea reemplazar esta constancia?")) return;
               try {
                 setLoadingConstancia(true);
                 if (constanciaReformaDoc) {
@@ -2788,6 +2835,7 @@ const ProcesoDetalleCard = ({
         </Group>
         <DropzoneCustomComponent
           text={uploadingCasoFechaDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para esta fecha del caso"}
+          loading={uploadingCasoFechaDoc}
           onDrop={(files) => void subirCasoFechaDoc(files)}
         />
         <Divider label="Documentos de esta fecha" labelPosition="center" />
@@ -3061,6 +3109,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red" p={2}
                     loading={deletingDocId === doc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                       try {
                         setDeletingDocId(doc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
@@ -3104,6 +3153,7 @@ const ProcesoDetalleCard = ({
                     size="xs" variant="subtle" color="red"
                     loading={deletingDocId === resolucionDoc._id}
                     onClick={async () => {
+                      if (!window.confirm("¿Está seguro de que desea eliminar la resolución vigente?")) return;
                       try {
                         setDeletingDocId(resolucionDoc._id);
                         await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${resolucionDoc._id}`);
@@ -3118,8 +3168,10 @@ const ProcesoDetalleCard = ({
             )}
             <DropzoneCustomComponent
               text={loadingResolucionDoc ? "Subiendo PDF..." : "Haz clic o arrastra el PDF de la resolución"}
+              loading={loadingResolucionDoc}
               onDrop={async (files) => {
                 const file = files[0]; if (!file) return;
+                if (resolucionDoc && !window.confirm("¿Está seguro de que desea reemplazar el PDF de resolución?")) return;
                 try {
                   setLoadingResolucionDoc(true);
                   const formData = new FormData();
@@ -3144,6 +3196,7 @@ const ProcesoDetalleCard = ({
           <Stack gap="md">
             <DropzoneCustomComponent
               text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo"}
+              loading={loadingResolucionDoc}
               onDrop={async (files) => {
                 const file = files[0]; if (!file) return;
                 try {
@@ -3173,6 +3226,7 @@ const ProcesoDetalleCard = ({
                         size="xs" variant="subtle" color="red" p={4}
                         loading={deletingDocId === doc._id}
                         onClick={async () => {
+                          if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
                           try {
                             setDeletingDocId(doc._id);
                             await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${doc._id}`);
@@ -3405,7 +3459,7 @@ const ProcesoDetalleCard = ({
                         <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
                       ) : isEditing && !esSoloLectura ? (
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
-                          valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
+                          valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
                           style={{ width: 130 }} clearable disabled={savingDate}
                           onKeyDown={(e) => e.preventDefault()}
                           styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
@@ -3420,7 +3474,7 @@ const ProcesoDetalleCard = ({
                           title={esSoloLectura ? (esRegistroCalificadoDeOficio ? "RC de oficio: la resolución y la vigencia se registran al cerrar el proceso (fecha, código y PDF)." : (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente")) : (esProcesoPm ? "Clic para editar esta fecha del plan" : "Clic para editar fecha")}
                           onClick={() => { if (!esSoloLectura) setEditingDateKey(col.key); }}
                         >
-                          {fecha ? (esProcesoPm ? formatFechaDDMMYY(fecha) : fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
+                          {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
                         </Text>
                       )}
                       {!( !esProcesoPm && col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez")) && (
@@ -3525,7 +3579,7 @@ const ProcesoDetalleCard = ({
                           <Stack gap={4} align="center">
                             {isEditing ? (
                               <DateInput value={dateVal} onChange={(val) => savePmDate(col.key, val)}
-                                valueFormat="YYYY-MM-DD" size="xs" autoFocus onBlur={() => setEditingPmDateKey(null)}
+                                valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingPmDateKey(null)}
                                 style={{ width: 130 }} clearable disabled={savingPmDate}
                                 onKeyDown={(e) => e.preventDefault()}
                                 styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
@@ -3572,8 +3626,8 @@ const ProcesoDetalleCard = ({
             <>
               <Group gap="xs" mt={6} align="center">
                 <Text size="xs" c="#555">Actividad actual: <strong>{ultimaActiva.nombre}</strong></Text>
-                <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                  Ver actividades
+                <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                  Ver actividades ({faseActual.actividades.length})
                 </Button>
               </Group>
               {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
@@ -3602,8 +3656,8 @@ const ProcesoDetalleCard = ({
           {!ultimaActiva && faseActual && (
             <Group gap="xs" mt={6}>
               <Text size="xs" c="green" fw={600}>✓ Todas las actividades completadas</Text>
-              <Button size="xs" variant="light" onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                Ver actividades
+              <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                Ver actividades ({faseActual.actividades.length})
               </Button>
             </Group>
           )}
@@ -3628,11 +3682,12 @@ const ProcesoDetalleCard = ({
             <Paper withBorder p="sm" radius="sm">
               <Text size="xs" fw={600} mb={4}>Archivo actual</Text>
               <Text size="xs" mb={4}>{resolucionDoc.name}</Text>
-              <Button size="xs" variant="light" component="a" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">Ver PDF</Button>
+              <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">{resolucionDoc.name || "Abrir PDF"}</Anchor>
             </Paper>
           )}
           <DropzoneCustomComponent
             text={loadingResolucionDoc ? "Subiendo documento..." : "Haz clic o arrastra el PDF de la resolución"}
+            loading={loadingResolucionDoc}
             onDrop={async (files) => {
               const file = files[0]; if (!file) return;
               try {
@@ -3774,6 +3829,7 @@ const ProcesoDetalleCard = ({
           <Stack gap="md">
             <DropzoneCustomComponent
               text={uploadingDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta fase"}
+              loading={uploadingDoc}
               onDrop={subirDocumento}
             />
             <Divider label="Documentos de esta fase" labelPosition="center" />
@@ -3791,7 +3847,7 @@ const ProcesoDetalleCard = ({
                         {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                       </div>
                       <Group gap="xs">
-                        <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                        <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                         <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocumento(doc._id)}>Eliminar</Button>
                       </Group>
                     </Group>
@@ -3823,6 +3879,7 @@ const ProcesoDetalleCard = ({
         <Stack gap="md">
           <DropzoneCustomComponent
             text={uploadingActDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta actividad"}
+            loading={uploadingActDoc}
             onDrop={subirDocActividad}
           />
           <Divider label="Documentos de esta actividad" labelPosition="center" />
@@ -3840,7 +3897,7 @@ const ProcesoDetalleCard = ({
                       {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                     </div>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                       <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocActividad(doc._id)}>Eliminar</Button>
                     </Group>
                   </Group>
@@ -3871,6 +3928,7 @@ const ProcesoDetalleCard = ({
         <Stack gap="md">
           <DropzoneCustomComponent
             text={uploadingSubDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta subactividad"}
+            loading={uploadingSubDoc}
             onDrop={subirDocSubactividad}
           />
           <Divider label="Documentos de esta subactividad" labelPosition="center" />
@@ -3888,7 +3946,7 @@ const ProcesoDetalleCard = ({
                       {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
                     </div>
                     <Group gap="xs">
-                      <Button size="xs" variant="light" component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer">Ver</Button>
+                      <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
                       <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocSubactividad(doc._id)}>Eliminar</Button>
                     </Group>
                   </Group>
@@ -3920,12 +3978,46 @@ const ProcesoDetalleCard = ({
 
       <Modal opened={checklistOpen}
         onClose={() => { setChecklistOpen(false); setEditActividadId(null); setNuevaActividad(""); }}
-        title={faseActual ? `${faseActual.nombre} — Fase ${proceso.fase_actual}` : "Actividades"}
-        centered size="lg" radius="md">
+        title={
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon color="blue" variant="light" size="lg" radius="md">
+              <IconChecklist size={20} />
+            </ThemeIcon>
+            <Box>
+              <Text fw={700} size="sm">Actividades de la fase</Text>
+              <Text size="xs" c="dimmed">{faseActual ? `${faseActual.nombre} · Fase ${proceso.fase_actual}` : "Actividades"}</Text>
+            </Box>
+          </Group>
+        }
+        centered size="min(96vw, 1120px)" radius="lg"
+        styles={{
+          content: { width: "100%" },
+          header: { padding: "18px 24px", borderBottom: "1px solid #e9ecef" },
+          body: { backgroundColor: "#f3f6fa", padding: "20px 24px 24px" },
+        }}>
         {faseActual && (
           <Stack gap="sm">
+            {(() => {
+              const totalActividades = faseActual.actividades.length;
+              const completadas = faseActual.actividades.filter(actividadResuelta).length;
+              const porcentaje = totalActividades > 0 ? Math.round((completadas / totalActividades) * 100) : 0;
+              return (
+                <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
+                  <Group justify="space-between" align="flex-start" mb={6}>
+                    <Box>
+                      <Text size="sm" fw={700}>{faseActual.nombre}</Text>
+                      <Text size="xs" c="dimmed">Seguimiento de actividades y subactividades</Text>
+                    </Box>
+                    <Badge color={porcentaje === 100 ? "teal" : "blue"} variant="light">
+                      {completadas}/{totalActividades} completadas
+                    </Badge>
+                  </Group>
+                  <Progress value={porcentaje} color={porcentaje === 100 ? "teal" : "blue"} size="sm" radius="xl" />
+                </Paper>
+              );
+            })()}
             {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
-              <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "#fff9db" }}>
+              <Paper withBorder p="sm" radius="md" style={{ backgroundColor: "#fff9db" }}>
                 <Text size="xs" fw={600} mb={4}>
                   {etiquetaFactorCondicion} en revisión — reuniones parciales de avance
                 </Text>
@@ -3941,8 +4033,10 @@ const ProcesoDetalleCard = ({
                 />
               </Paper>
             )}
+            <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, faseActual)}>
               <SortableContext items={faseActual.actividades.map(a => a._id)} strategy={verticalListSortingStrategy}>
+                <Stack gap="sm">
                 {faseActual.actividades.map((act, index) => {
                   const firstIncompleteIndex = faseActual.actividades.findIndex(a => !actividadResuelta(a));
                   const isFirstIncomplete    = !actividadResuelta(act) && index === firstIncompleteIndex;
@@ -3993,10 +4087,12 @@ const ProcesoDetalleCard = ({
                     />
                   );
                 })}
+                </Stack>
               </SortableContext>
             </DndContext>
+            </Paper>
             <Group justify="flex-end" mt="xs" wrap="wrap">
-              {proceso.fase_actual > 0 && (
+              {proceso.fase_actual > (esProcesoPm ? 1 : 0) && (
                 <Button
                   size="xs"
                   color="orange"

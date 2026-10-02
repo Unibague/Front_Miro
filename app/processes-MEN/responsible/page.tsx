@@ -5,10 +5,11 @@ import {
   Title, Text, Paper, Box, Stack, Group, Loader, Badge, Anchor,
   Select, Collapse, Divider, ThemeIcon, Container, Textarea, Button,
   ActionIcon, Tooltip,
+  NavLink,
 } from "@mantine/core";
 import {
   IconChevronDown, IconChevronRight, IconCircleCheck,
-  IconCircle, IconAlertCircle, IconBan, IconClipboardList,
+  IconCircle, IconAlertCircle, IconBan, IconClipboardList, IconChevronLeft,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import axios from "axios";
@@ -19,6 +20,7 @@ import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import { procesoRcActivoDePrograma } from "../utils/procesoRcUnico";
 import { programCodeKey } from "../utils/programCode";
 import { processesMenRoutes } from "../config/routes";
+import ModuleHeader from "../components/ModuleHeader";
 
 type Task = {
   _id: string;
@@ -183,8 +185,12 @@ function ProcesoCard({ proc, fases }: { proc: Process; fases: Phase[] }) {
               style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >
               {LABEL_PROCESO[proc.tipo_proceso]}
-              {proc.subtipo ? ` — ${proc.subtipo}` : ""}
             </Text>
+            {proc.subtipo && (
+              <Badge size="xs" variant="outline" color="gray">
+                {proc.subtipo}
+              </Badge>
+            )}
           </Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <Text size="xs" c="dimmed">{pct}% completado</Text>
@@ -227,6 +233,8 @@ export default function ProcessesMenResponsiblePage() {
 
   const [filtroFacultad, setFiltroFacultad] = useState<string>("Todos");
   const [filtroPrograma, setFiltroPrograma] = useState<string>("Todos");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState("estadisticas");
 
   const [loading, setLoading] = useState(true);
   const [loadingFases, setLoadingFases] = useState(false);
@@ -320,31 +328,32 @@ export default function ProcessesMenResponsiblePage() {
   }, [email]);
 
   // ── Programas filtrados ────────────────────────────────────────────────────
+  const facultadesDelUsuario = useMemo(() => {
+    const allDepsMap = new Map<string, Dependency>(allDeps.map((d) => [d.dep_code, d]));
+    const facCodes = new Set<string>();
+    for (const userDep of userDeps) {
+      let current: Dependency | undefined = userDep;
+      let depth = 0;
+      while (current && depth < 10) {
+        if (current.name.toUpperCase().includes("FACULTAD")) {
+          facCodes.add(current.dep_code);
+          break;
+        }
+        current = current.dep_father ? allDepsMap.get(current.dep_father) : undefined;
+        depth++;
+      }
+    }
+    return facultades.filter((fac) => facCodes.has(fac.dep_code));
+  }, [allDeps, userDeps, facultades]);
+
   const programasFiltrados = useMemo(() => {
-    let list = programas;
+    let list = facultadesDelUsuario.length > 0
+      ? programas.filter((p) => facultadesDelUsuario.some((fac) => fac.dep_code === p.dep_code_facultad))
+      : programas;
 
     if (filtroFacultad !== "Todos") {
       const fac = facultades.find((f) => f.name === filtroFacultad);
       if (fac) list = list.filter((p) => p.dep_code_facultad === fac.dep_code);
-    } else if (userDeps.length > 0) {
-      // Subir la jerarquía dep_father hasta encontrar una FACULTAD
-      const allDepsMap = new Map<string, Dependency>(
-        allDeps.map((d) => [d.dep_code, d]),
-      );
-      const myFacCodes = new Set<string>();
-      for (const myDep of userDeps) {
-        let current: Dependency | undefined = myDep;
-        let depth = 0;
-        while (current && depth < 10) {
-          if (current.name.toUpperCase().includes("FACULTAD")) {
-            myFacCodes.add(current.dep_code);
-            break;
-          }
-          current = current.dep_father ? allDepsMap.get(current.dep_father) : undefined;
-          depth++;
-        }
-      }
-      if (myFacCodes.size > 0) list = list.filter((p) => myFacCodes.has(p.dep_code_facultad));
     }
 
     if (filtroPrograma !== "Todos") {
@@ -352,7 +361,7 @@ export default function ProcessesMenResponsiblePage() {
     }
 
     return list;
-  }, [programas, facultades, allDeps, userDeps, filtroFacultad, filtroPrograma]);
+  }, [programas, facultades, facultadesDelUsuario, filtroFacultad, filtroPrograma]);
 
   // ── Cargar fases cuando cambia la selección ────────────────────────────────
   useEffect(() => {
@@ -385,20 +394,14 @@ export default function ProcessesMenResponsiblePage() {
 
   // ── Opciones de selects ────────────────────────────────────────────────────
   const opcionesFacultad = useMemo(
-    () => ["Todos", ...facultades.map((f) => f.name).sort((a, b) => a.localeCompare(b, "es"))],
-    [facultades],
+    () => ["Todos", ...facultadesDelUsuario.map((f) => f.name).sort((a, b) => a.localeCompare(b, "es"))],
+    [facultadesDelUsuario],
   );
 
   const opcionesPrograma = useMemo(() => {
-    const base =
-      filtroFacultad !== "Todos"
-        ? programas.filter((p) => {
-            const fac = facultades.find((f) => f.name === filtroFacultad);
-            return fac ? p.dep_code_facultad === fac.dep_code : true;
-          })
-        : programas;
+    const base = programasFiltrados;
     return ["Todos", ...base.map((p) => p.nombre).sort((a, b) => a.localeCompare(b, "es"))];
-  }, [programas, facultades, filtroFacultad]);
+  }, [programasFiltrados]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const toggleTask = async (task: Task) => {
@@ -443,18 +446,101 @@ export default function ProcessesMenResponsiblePage() {
     );
   }
 
+  const sidebarWidth = sidebarCollapsed ? 58 : 224;
+
   return (
-    <Container size="xl" py="xl">
+    <div style={{ minHeight: "100vh", paddingTop: 56 }}>
+      <Box
+        component="aside"
+        style={{
+          position: "fixed",
+          top: 56,
+          bottom: 0,
+          left: 0,
+          width: sidebarWidth,
+          zIndex: 20,
+          padding: sidebarCollapsed ? "12px 7px" : "16px 12px",
+          borderRight: "1px solid var(--mantine-color-default-border)",
+          backgroundColor: "var(--mantine-color-body)",
+          transition: "width 160ms ease",
+        }}
+      >
+        <Group justify="flex-end" mb="md">
+          <Tooltip label={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"} withArrow>
+            <ActionIcon
+              variant="light"
+              color="blue"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              aria-label={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
+            >
+              {sidebarCollapsed ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+        {!sidebarCollapsed && (
+          <Stack gap="md">
+            <Group gap="xs">
+              <ThemeIcon size={30} radius="md" color="blue" variant="light">
+                <IconClipboardList size={17} />
+              </ThemeIcon>
+              <Text size="sm" fw={700}>Panel MEN</Text>
+            </Group>
+            <Divider />
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Procesos</Text>
+            {[
+              { value: "estadisticas", label: "Estadísticas generales", icon: <IconClipboardList size={16} /> },
+              { value: "alertas", label: "Alertas de procesos", icon: <IconAlertCircle size={16} /> },
+              { value: "historial", label: "Historial de procesos", icon: <IconCircleCheck size={16} /> },
+              { value: "informacion", label: "Información del programa", icon: <IconCircle size={16} /> },
+            ].map((tab) => (
+              <NavLink
+                key={tab.value}
+                label={tab.label}
+                leftSection={tab.icon}
+                active={activeTab === tab.value}
+                color="blue"
+                onClick={() => setActiveTab(tab.value)}
+                style={{ borderRadius: 8 }}
+              />
+            ))}
+            {activeTab === "estadisticas" && (
+              <>
+                <Divider mt="xs" />
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase">Filtrar programas</Text>
+                <Select
+                  label="Facultad"
+                  data={opcionesFacultad}
+                  value={filtroFacultad}
+                  onChange={(value) => { setFiltroFacultad(value ?? "Todos"); setFiltroPrograma("Todos"); }}
+                  searchable={false}
+                  styles={{ input: { cursor: "pointer" } }}
+                />
+                <Select
+                  label="Programa"
+                  data={opcionesPrograma}
+                  value={filtroPrograma}
+                  onChange={(value) => setFiltroPrograma(value ?? "Todos")}
+                  searchable
+                  styles={{ input: { cursor: "pointer" } }}
+                />
+              </>
+            )}
+          </Stack>
+        )}
+      </Box>
+      <Container size="xl" py="xl" style={{ marginLeft: sidebarWidth, width: `calc(100% - ${sidebarWidth}px)` }}>
       <Stack gap="lg">
-        <div>
-          <Title order={2}>Procesos de calidad MEN</Title>
-          <Text size="sm" c="dimmed" mt={4}>
-            Estado de fases y actividades de los programas de tu facultad/dependencia.
-            {userRole === "Responsable" || userRole === "Productor"
-              ? " Solo lectura — no puedes crear ni cerrar procesos."
-              : ""}
-          </Text>
-        </div>
+        <ModuleHeader
+          title="Procesos de calidad MEN"
+          description={
+            <>
+              Consulta el estado de las fases y actividades de los programas de tu facultad o dependencia.
+              {userRole === "Responsable" || userRole === "Productor"
+                ? " Solo lectura — no puedes crear ni cerrar procesos."
+                : ""}
+            </>
+          }
+        />
 
         {/* Tareas asignadas */}
         {tasks.length > 0 && (
@@ -554,28 +640,6 @@ export default function ProcessesMenResponsiblePage() {
             </Stack>
           </Paper>
         )}
-
-        {/* Filtros */}
-        <Paper withBorder radius="md" p="md">
-          <Group gap="md" wrap="wrap">
-            <Select
-              label="Facultad"
-              data={opcionesFacultad}
-              value={filtroFacultad}
-              onChange={(v) => { setFiltroFacultad(v ?? "Todos"); setFiltroPrograma("Todos"); }}
-              style={{ minWidth: 220 }}
-              styles={{ input: { cursor: "pointer" } }}
-            />
-            <Select
-              label="Programa"
-              data={opcionesPrograma}
-              value={filtroPrograma}
-              onChange={(v) => setFiltroPrograma(v ?? "Todos")}
-              searchable
-              style={{ minWidth: 260 }}
-            />
-          </Group>
-        </Paper>
 
         {loadingFases && (
           <Group gap="xs">
@@ -682,6 +746,7 @@ export default function ProcessesMenResponsiblePage() {
           </Stack>
         )}
       </Stack>
-    </Container>
+      </Container>
+    </div>
   );
 }

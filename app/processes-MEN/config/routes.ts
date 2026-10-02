@@ -4,6 +4,7 @@ export const PROCESSES_MEN_BASE = "/processes-MEN";
 export const processesMenRoutes = {
   home: PROCESSES_MEN_BASE,
   comunicaciones: `${PROCESSES_MEN_BASE}?modulo=comunicaciones`,
+  tasks: `${PROCESSES_MEN_BASE}/tasks`,
   adminImport: `${PROCESSES_MEN_BASE}/admin`,
   program: (programId: string) =>
     `${PROCESSES_MEN_BASE}/program/${encodeURIComponent(programId)}`,

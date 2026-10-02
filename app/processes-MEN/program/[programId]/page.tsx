@@ -28,9 +28,11 @@ import { procesoRcActivoDePrograma } from "../../utils/procesoRcUnico";
 import { programCodeKey } from "../../utils/programCode";
 import { filterFacultadesMen, parseDependenciesAllResponse } from "../../utils/facultadesMen";
 import { processesMenRoutes } from "../../config/routes";
-import { ClasificacionCineNbcSection } from "../../components/ClasificacionCineNbcSection";
+import { ClasificacionCineNbcSection, type CineFEdit, type NbcEdit } from "../../components/ClasificacionCineNbcSection";
 import { FichaCampoLectura } from "../../components/FichaCampoLectura";
+import HistoricoProgramaModal from "../../components/HistoricoProgramaModal";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+import ModuleHeader from "../../components/ModuleHeader";
 
 function primeraActividadEnFase(fase: Phase | undefined): string | null {
   if (!fase?.actividades?.length) return null;
@@ -43,6 +45,26 @@ function primeraActividadEnFase(fase: Phase | undefined): string | null {
 function esSubtipoReformaOReformaConRenovacion(subtipo: string | null | undefined): boolean {
   const n = String(subtipo ?? "").trim().replace(/\s+/g, " ").toLowerCase();
   return n === "reforma curricular" || n === "renovación + reforma";
+}
+
+function valorPeriodoDuracion(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim();
+  return !normalized || /^\d+$/.test(normalized) ? "Semestral" : normalized;
+}
+
+function cineParaEdicion(cine: Program["cine_f"]): CineFEdit {
+  return {
+    campo_amplio: cine?.campo_amplio ?? "",
+    campo_especifico: cine?.campo_especifico ?? "",
+    campo_detallado: cine?.campo_detallado ?? "",
+  };
+}
+
+function nbcParaEdicion(nbc: Program["nbc"]): NbcEdit {
+  return {
+    area_conocimiento: nbc?.area_conocimiento ?? "",
+    nbc: nbc?.nbc ?? "",
+  };
 }
 
 export default function ProgramaProcessesMenPage() {
@@ -65,6 +87,10 @@ export default function ProgramaProcessesMenPage() {
   const [fasesProg, setFasesProg] = useState<Phase[]>([]);
   const [loadingFasesProg, setLoadingFasesProg] = useState(false);
   const [historialRc, setHistorialRc] = useState<ProcessHistoryRecord[]>([]);
+  const [historicoOpen, setHistoricoOpen] = useState(false);
+  const [observaciones, setObservaciones] = useState("");
+  const [savingObservaciones, setSavingObservaciones] = useState(false);
+  const [observacionesMsg, setObservacionesMsg] = useState<string | null>(null);
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
@@ -101,6 +127,7 @@ export default function ProgramaProcessesMenPage() {
 
         const programaData = progRes.data;
         setPrograma(programaData);
+        setObservaciones(programaData.observaciones ?? "");
         setLoading(false);
 
         const code = programCodeKey(programaData);
@@ -263,11 +290,7 @@ export default function ProgramaProcessesMenPage() {
     const rc = code ? procesoRcActivoDePrograma(procesosDelPrograma, code) : undefined;
     const av = procesosDelPrograma.find((p) => p.tipo_proceso === "AV");
     if (!rc) {
-      out.push({
-        key: "RC-empty",
-        proc: null,
-        rotuloTipo: LABEL_PROCESO["RC"],
-      });
+      out.push({ key: "RC-empty", proc: null, rotuloTipo: LABEL_PROCESO["RC"] });
     } else {
       const subLbl = rc.subtipo ? etiquetaSubtipoCompacta(rc.subtipo) : "";
       out.push({
@@ -294,12 +317,17 @@ export default function ProgramaProcessesMenPage() {
     setEditForm({
       dep_code_programa: programa.dep_code_programa ?? "",
       codigo_snies: programa.codigo_snies ?? "",
+      periodos_duracion: valorPeriodoDuracion(programa.periodos_duracion),
+      enfoque: programa.enfoque ?? "",
+      cine_f: cineParaEdicion(programa.cine_f),
+      nbc: nbcParaEdicion(programa.nbc),
     });
     setEditando(true);
   };
 
   const guardar = async () => {
     if (!programa) return;
+    if (!window.confirm("¿Está seguro de que desea guardar los cambios de la información del programa?")) return;
     setSaveError(null);
     setSaving(true);
     setHasChanges(false);
@@ -311,6 +339,10 @@ export default function ProgramaProcessesMenPage() {
       const payload = {
         dep_code_programa: codProg,
         codigo_snies: sniesRaw || null,
+        periodos_duracion: valorPeriodoDuracion(String(editForm.periodos_duracion ?? "")),
+        enfoque: String(editForm.enfoque ?? "").trim() || null,
+        cine_f: cineParaEdicion(editForm.cine_f),
+        nbc: nbcParaEdicion(editForm.nbc),
       };
       const res = await axios.put(`${base}/programs/${programa._id}`, payload);
       setPrograma(res.data);
@@ -354,6 +386,25 @@ export default function ProgramaProcessesMenPage() {
       setToggleError(msg);
     } finally {
       setSavingToggleKey(null);
+    }
+  };
+
+  const guardarObservaciones = async () => {
+    if (!programa) return;
+    setSavingObservaciones(true);
+    setObservacionesMsg(null);
+    try {
+      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}`, {
+        observaciones,
+      });
+      setPrograma(res.data);
+      setObservaciones(res.data.observaciones ?? observaciones);
+      setObservacionesMsg("Observaciones guardadas.");
+    } catch (e) {
+      console.error(e);
+      setObservacionesMsg("No se pudieron guardar las observaciones.");
+    } finally {
+      setSavingObservaciones(false);
     }
   };
 
@@ -412,15 +463,18 @@ export default function ProgramaProcessesMenPage() {
               variant="default"
               size="sm"
               mb={8}
-              onClick={() => confirmNavigation(() => router.back(), { isBackNavigation: true })}
+              onClick={() => confirmNavigation(() => {
+                router.push(processesMenRoutes.homeWithQuery({ vista: "informacion" }));
+              }, { isBackNavigation: true })}
               aria-label="Volver"
             >
               <IconChevronLeft size={16} />
             </ActionIcon>
           </Tooltip>
-          <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
-            <Title order={2} style={{ flex: "1 1 10rem", minWidth: 0 }}>{programa.nombre}</Title>
-            <Group gap={6} style={{ flexShrink: 0, alignSelf: "center" }}>
+          <ModuleHeader
+            title={programa.nombre}
+            description="Consulta la información académica y administrativa, y el estado de los procesos de calidad del programa."
+            actions={<Group gap={6}>
               <Badge color={estadoMenActivo ? "green" : "red"} variant="light">
                 {estadoMenActivo ? "Activo ante MEN" : "Inactivo ante MEN"}
               </Badge>
@@ -430,17 +484,8 @@ export default function ProgramaProcessesMenPage() {
               <Badge color={esAcreditable ? "blue" : "gray"} variant="light">
                 {esAcreditable ? "Acreditable" : "No acreditable"}
               </Badge>
-            </Group>
-          </Group>
-          <Text size="sm" c="dimmed" mt={4}>
-            <strong>Código del programa:</strong> {programa.dep_code_programa?.trim() || "—"}
-            {programa.codigo_snies ? (
-              <>
-                {" · "}
-                <strong>SNIES:</strong> {programa.codigo_snies}
-              </>
-            ) : null}
-          </Text>
+            </Group>}
+          />
         </div>
 
         <Group justify="space-between" align="center" wrap="nowrap">
@@ -513,6 +558,33 @@ export default function ProgramaProcessesMenPage() {
               setEditForm((f) => ({ ...f, codigo_snies: v }));
             }}
           />
+          <Select
+            label="Periodos de duración"
+            data={[...PERIODICIDAD_ADMISION]}
+            value={String(editForm.periodos_duracion ?? "Semestral")}
+            onChange={(value) => setEditForm((f) => ({ ...f, periodos_duracion: value ?? "Semestral" }))}
+            allowDeselect={false}
+          />
+          <Select
+            label="Enfoque"
+            data={["Investigación", "Profundización", "Ambos"]}
+            value={String(editForm.enfoque ?? "") || null}
+            onChange={(value) => setEditForm((f) => ({ ...f, enfoque: value }))}
+            clearable
+          />
+          <ClasificacionCineNbcSection
+            mode="edit"
+            cine_f={cineParaEdicion(editForm.cine_f)}
+            nbc={nbcParaEdicion(editForm.nbc)}
+            onChangeCine={(key, value) => setEditForm((f) => ({
+              ...f,
+              cine_f: { ...cineParaEdicion(f.cine_f), [key]: value },
+            }))}
+            onChangeNbc={(key, value) => setEditForm((f) => ({
+              ...f,
+              nbc: { ...nbcParaEdicion(f.nbc), [key]: value },
+            }))}
+          />
 
           {saveError && (
             <Text size="sm" c="red">{saveError}</Text>
@@ -535,8 +607,9 @@ export default function ProgramaProcessesMenPage() {
               { label: "Modalidad", value: programa.modalidad },
               { label: "Nivel académico", value: programa.nivel_academico },
               { label: "Nivel de formación", value: programa.nivel_formacion },
+              { label: "Enfoque", value: programa.enfoque },
               { label: "Créditos", value: programa.num_creditos },
-              { label: "Periodos de duración", value: programa.periodos_duracion },
+              { label: "Periodos de duración", value: valorPeriodoDuracion(programa.periodos_duracion) },
               { label: "Semestres", value: programa.num_semestres },
               { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
               { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
@@ -552,8 +625,10 @@ export default function ProgramaProcessesMenPage() {
         </Stack>
       )}
 
+      <Stack gap="md" style={{ order: 2 }}>
       <Divider />
-      <Text fw={700} size="sm" mb={4}>Resoluciones vigentes</Text>
+      <Text fw={700} size="sm" mb={4}>Histórico</Text>
+      <Text fw={600} size="sm" mb={4}>Resoluciones vigentes</Text>
       <Text size="xs" c="dimmed" mb="sm">
         Datos del último cierre registrado sobre el programa. Si aún no hay historial cerrado en el sistema,
         pueden mostrarse valores “planos” (SNIES/resoluciones) que existan sobre el mismo registro.
@@ -562,6 +637,7 @@ export default function ProgramaProcessesMenPage() {
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" mb="lg">
         {(["RC", "AV"] as const).map((t) => {
           const ult = t === "RC" ? programa.ultimo_rc : programa.ultimo_av;
+          const proceso = procesosDelPrograma.find((p) => p.tipo_proceso === t);
           const codigo =
             ult?.codigo_resolucion
             ?? (t === "RC" ? programa.codigo_resolucion_rc : programa.codigo_resolucion_av);
@@ -622,6 +698,13 @@ export default function ProgramaProcessesMenPage() {
                   )}
                 </Group>
               </Group>
+              <Stack gap={2} mb="xs">
+                <Text size="xs"><strong>Proceso:</strong> {LABEL_PROCESO[t]}</Text>
+                <Text size="xs"><strong>Subtipo:</strong> {proceso?.subtipo?.trim() || "—"}</Text>
+                {t === "RC" && proceso?.subtipo?.trim().toLowerCase() === "registro calificado de oficio" && (
+                  <Text size="xs" c="blue"><strong>Registro calificado otorgado de oficio</strong></Text>
+                )}
+              </Stack>
               {rcTransitoria && (
                 <Text size="xs" c="dimmed" mb="xs" style={{ lineHeight: 1.45 }}>
                   {vigenciaPorFecha
@@ -659,6 +742,20 @@ export default function ProgramaProcessesMenPage() {
         })}
       </SimpleGrid>
 
+      <Text size="xs" c="dimmed" mt="xs" mb={4}>
+        Consulta los procesos anteriores del programa y carga o reemplaza la resolución asociada a cada cierre.
+      </Text>
+      <Button
+        variant="light"
+        size="xs"
+        mb="sm"
+        onClick={() => setHistoricoOpen(true)}
+      >
+        Ver histórico de procesos
+      </Button>
+      </Stack>
+
+      <Stack gap="md" style={{ order: 1 }}>
       <Divider />
       <Group justify="space-between" mb="xs" wrap="wrap" align="center">
         <div>
@@ -739,7 +836,7 @@ export default function ProgramaProcessesMenPage() {
                     );
                   })()}
                   <Group gap="md" mt="sm" wrap="wrap">
-                    <Text size="xs" c="dimmed">Vencimiento del proceso: <strong>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
+                    <Text size="xs" c="dimmed">Vencimiento de la vigencia del registro calificado: <strong>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
                   </Group>
                   {p.tipo_proceso === "PM" && p.parent_tipo_proceso && (
                     <Text size="xs" c="orange" mt={8}>
@@ -757,6 +854,33 @@ export default function ProgramaProcessesMenPage() {
           );
         })}
       </Stack>
+      </Stack>
+
+      <Stack gap="sm" style={{ order: 3 }}>
+        <Divider />
+        <Text fw={700} size="sm">Observaciones</Text>
+        <Textarea
+          label="Notas de la hoja de vida"
+          placeholder="Añade observaciones relevantes sobre este programa..."
+          minRows={4}
+          autosize
+          value={observaciones}
+          onChange={(event) => {
+            setObservaciones(event.currentTarget.value);
+            setObservacionesMsg(null);
+          }}
+        />
+        <Group justify="space-between" align="center">
+          {observacionesMsg && (
+            <Text size="xs" c={observacionesMsg.startsWith("No") ? "red" : "green"}>
+              {observacionesMsg}
+            </Text>
+          )}
+          <Button size="xs" loading={savingObservaciones} onClick={() => void guardarObservaciones()}>
+            Guardar observaciones
+          </Button>
+        </Group>
+      </Stack>
 
       <Modal opened={gestionarInfoOpen} onClose={() => setGestionarInfoOpen(false)} title="Sin procesos para gestionar" centered>
         <Text size="sm">
@@ -764,6 +888,13 @@ export default function ProgramaProcessesMenPage() {
         </Text>
         <Button mt="md" onClick={() => setGestionarInfoOpen(false)}>Entendido</Button>
       </Modal>
+
+      <HistoricoProgramaModal
+        opened={historicoOpen}
+        onClose={() => setHistoricoOpen(false)}
+        programa={programa}
+        programCode={programCodeKey(programa)}
+      />
     </Stack>
   );
 }

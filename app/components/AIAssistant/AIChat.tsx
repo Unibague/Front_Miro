@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Modal, TextInput, Button, ScrollArea, Text, Group, ActionIcon, Paper, Loader } from '@mantine/core';
-import { IconSend, IconRobot } from '@tabler/icons-react';
+import { Modal, TextInput, Button, ScrollArea, Text, Group, ActionIcon, Paper, Loader, Textarea, Stack, ThemeIcon } from '@mantine/core';
+import { IconSend, IconRobot, IconFileTypeDocx, IconFileTypeXls, IconFileTypePdf, IconSparkles } from '@tabler/icons-react';
 import axios from 'axios';
+import DocumentUploader from './DocumentUploader';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -21,6 +22,10 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [generatingFile, setGeneratingFile] = useState(false);
+  const [promptModalOpened, setPromptModalOpened] = useState(false);
+  const [fileType, setFileType] = useState<'word' | 'excel' | 'pdf'>('word');
+  const [promptInput, setPromptInput] = useState('');
 
   // Verificar estado del servicio al abrir el chat
   useEffect(() => {
@@ -52,6 +57,24 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
     }
   };
 
+  const handleDocumentUploading = (filename: string) => {
+    const uploadingMessage: Message = {
+      role: 'assistant',
+      content: `📄 Procesando el documento "${filename}"... Por favor espera mientras analizo su contenido.`,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, uploadingMessage]);
+  };
+
+  const handleDocumentAnalyzed = (analysis: string, filename: string) => {
+    const documentMessage: Message = {
+      role: 'assistant',
+      content: `📄 **Análisis completo del documento "${filename}":**\n\n${analysis}\n\n❓ **Ahora puedes hacerme preguntas específicas sobre este documento.**`,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, documentMessage]);
+  };
+
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -77,7 +100,7 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
         message: currentInput,
         history: history
       }, {
-        timeout: 30000
+        timeout: 120000 // 2 minutos para chat normal
       });
 
       const assistantMessage: Message = {
@@ -119,6 +142,94 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
     }
   };
 
+  const generateFile = async (type: 'word' | 'excel' | 'pdf', prompt: string) => {
+    if (!prompt.trim()) return;
+
+    setGeneratingFile(true);
+    const generatingMessage: Message = {
+      role: 'assistant',
+      content: `🔄 Generando archivo ${type.toUpperCase()}... Por favor espera, esto puede tomar varios minutos.`,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, generatingMessage]);
+
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/ai-assistant/generate-${type}`,
+        { 
+          prompt: prompt.trim()
+          // NO enviamos returnBase64: true porque queremos respuesta binaria
+        },
+        {
+          timeout: 600000, // 10 minutos
+          responseType: 'blob' // Recibir como blob binario
+        }
+      );
+
+      // Crear blob y descargar
+      const blob = new Blob([response.data], {
+        type: type === 'pdf' ? 'application/pdf' : 
+              type === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `informe-ia.${type === 'word' ? 'docx' : type === 'excel' ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const successMessage: Message = {
+        role: 'assistant',
+        content: `✅ ¡Archivo ${type.toUpperCase()} generado y descargado exitosamente!`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, successMessage]);
+    } catch (error: any) {
+      console.error('Error generating file:', error);
+      let errorMessage = `❌ Error al generar el archivo ${type.toUpperCase()}.`;
+      
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNABORTED') {
+          errorMessage = `⏱️ La generación del archivo ${type.toUpperCase()} tardó demasiado y fue cancelada. Intenta con un prompt más simple.`;
+        } else if (error.response?.status === 500) {
+          errorMessage = `🔧 Error interno del servidor al generar ${type.toUpperCase()}. El servicio podría estar ocupado.`;
+        } else if (error.response?.status === 413) {
+          errorMessage = `📄 El contenido solicitado es demasiado grande. Intenta con un prompt más corto.`;
+        }
+      }
+      
+      const errorMsg: Message = {
+        role: 'assistant',
+        content: errorMessage,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setGeneratingFile(false);
+    }
+  };
+
+  const openPromptModal = (type: 'word' | 'excel' | 'pdf') => {
+    setFileType(type);
+    const defaultPrompts = {
+      word: 'Genera un informe de acreditación con introducción, objetivos y conclusiones',
+      excel: 'Genera tabla con 5 indicadores: nombre, valor, meta, cumplimiento',
+      pdf: 'Genera informe con introducción, desarrollo y conclusiones'
+    };
+    setPromptInput(defaultPrompts[type]);
+    setPromptModalOpened(true);
+  };
+
+  const handleGenerateFile = () => {
+    generateFile(fileType, promptInput);
+    setPromptModalOpened(false);
+    setPromptInput('');
+  };
+
   return (
     <Modal
       opened={opened}
@@ -132,13 +243,18 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
           {healthStatus === 'checking' && <Text size="xs" c="yellow">• Verificando...</Text>}
         </Group>
       }
-      size="md"
+      size="xl"
       styles={{
         body: { padding: 0 },
         header: { borderBottom: '1px solid #e9ecef' }
       }}
     >
-      <ScrollArea h={400} p="md">
+      <ScrollArea h={500} p="md">
+        <DocumentUploader 
+          onDocumentAnalyzed={handleDocumentAnalyzed}
+          onDocumentUploading={handleDocumentUploading}
+          disabled={healthStatus === 'offline' || loading}
+        />
         {messages.map((message, index) => (
           <Paper
             key={index}
@@ -169,6 +285,35 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
       </ScrollArea>
       
       <Group gap="xs" p="md" style={{ borderTop: '1px solid #e9ecef' }}>
+        <Group gap="xs" mb="xs">
+          <Button 
+            size="xs" 
+            leftSection={<IconFileTypeDocx size={14} />} 
+            loading={generatingFile} 
+            onClick={() => openPromptModal('word')}
+            variant="light"
+          >
+            Word
+          </Button>
+          <Button 
+            size="xs" 
+            leftSection={<IconFileTypeXls size={14} />} 
+            loading={generatingFile} 
+            onClick={() => openPromptModal('excel')}
+            variant="light"
+          >
+            Excel
+          </Button>
+          <Button 
+            size="xs" 
+            leftSection={<IconFileTypePdf size={14} />} 
+            loading={generatingFile} 
+            onClick={() => openPromptModal('pdf')}
+            variant="light"
+          >
+            PDF
+          </Button>
+        </Group>
         <TextInput
           flex={1}
           placeholder="Escribe tu pregunta..."
@@ -186,6 +331,81 @@ const AIChat = ({ opened, onClose }: AIChatProps) => {
           <IconSend size={16} />
         </ActionIcon>
       </Group>
+      
+      {/* Modal para prompt de generación de archivos */}
+      <Modal
+        opened={promptModalOpened}
+        onClose={() => setPromptModalOpened(false)}
+        title={
+          <Group gap="xs">
+            <ThemeIcon size="lg" variant="gradient" gradient={{ from: 'blue', to: 'cyan' }}>
+              {fileType === 'word' && <IconFileTypeDocx size={20} />}
+              {fileType === 'excel' && <IconFileTypeXls size={20} />}
+              {fileType === 'pdf' && <IconFileTypePdf size={20} />}
+            </ThemeIcon>
+            <Stack gap={0}>
+              <Text fw={600} size="lg">Generar {fileType.toUpperCase()}</Text>
+              <Text size="sm" c="dimmed">Describe qué quieres que genere la IA</Text>
+            </Stack>
+          </Group>
+        }
+        size="xl"
+        overlayProps={{ backgroundOpacity: 0.7, blur: 4 }}
+        styles={{
+          header: { 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            borderRadius: '8px 8px 0 0'
+          },
+          title: { color: 'white', width: '100%' }
+        }}
+      >
+        <Stack gap="md" p="md">
+          <Text size="sm" c="dimmed">
+            🤖 Ardi usará estas instrucciones para generar tu archivo {fileType.toUpperCase()}. 
+            Sé específico para obtener mejores resultados.
+          </Text>
+          
+          <Textarea
+            label="Instrucciones para la IA"
+            placeholder={`Describe qué contenido debe tener el archivo ${fileType.toUpperCase()}...`}
+            value={promptInput}
+            onChange={(e) => setPromptInput(e.target.value)}
+            minRows={6}
+            maxRows={10}
+            autosize
+            styles={{
+              input: {
+                border: '2px solid #e9ecef',
+                '&:focus': {
+                  borderColor: '#667eea',
+                  boxShadow: '0 0 0 3px rgba(102, 126, 234, 0.1)'
+                }
+              }
+            }}
+          />
+          
+          <Group justify="flex-end" gap="sm">
+            <Button 
+              variant="outline" 
+              onClick={() => setPromptModalOpened(false)}
+              disabled={generatingFile}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              leftSection={<IconSparkles size={16} />}
+              onClick={handleGenerateFile}
+              disabled={!promptInput.trim() || generatingFile}
+              loading={generatingFile}
+              gradient={{ from: 'blue', to: 'cyan' }}
+              variant="gradient"
+            >
+              Generar Archivo
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Modal>
   );
 };

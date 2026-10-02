@@ -43,18 +43,21 @@ function programsInSegment(
   segmentIndex: number,
   tipo: "RC" | "AV",
   programas: Program[],
-  procesos: Process[]
+  procesos: Process[],
+  rowProgramCode?: string,
 ): Program[] {
   // Segmento 7 = Plan de mejoramiento (solo AV): programas con PM activo
   if (segmentIndex === 7 && tipo === "AV") {
     return programas.filter((p) => {
-      if (p.dep_code_facultad !== depCode) return false;
+      if (rowProgramCode && programCodeKey(p) !== rowProgramCode) return false;
+      if (!rowProgramCode && p.dep_code_facultad !== depCode) return false;
       return procesos.some((x) => x.program_code === programCodeKey(p) && x.tipo_proceso === "PM");
     });
   }
   const { min } = segmentIndexToFaseActual(segmentIndex);
   return programas.filter((p) => {
-    if (p.dep_code_facultad !== depCode) return false;
+    if (rowProgramCode && programCodeKey(p) !== rowProgramCode) return false;
+    if (!rowProgramCode && p.dep_code_facultad !== depCode) return false;
     const proc =
       tipo === "RC"
         ? procesoRcActivoDePrograma(procesos, programCodeKey(p))
@@ -115,7 +118,7 @@ const StackedBar = ({
             title="Ver programas en esta fase"
             onClick={() =>
               onSegment(
-                programsInSegment(row.dep_code, i, tipoProceso, programas, procesos),
+                programsInSegment(row.dep_code, i, tipoProceso, programas, procesos, row.program_code),
                 row.nombre,
                 i
               )

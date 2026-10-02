@@ -1,4 +1,4 @@
-/** Fechas en pantalla: dd/mm/aa (año de2 dígitos). */
+/** Fechas en pantalla: dd-mm-aa. */
 export function formatFechaDDMMYY(iso?: string | null): string {
   if (iso == null || String(iso).trim() === "") return "—";
   const s = String(iso).trim();
@@ -7,5 +7,5 @@ export function formatFechaDDMMYY(iso?: string | null): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}/${mm}/${yy}`;
+  return `${dd}-${mm}-${yy}`;
 }

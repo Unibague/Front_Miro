@@ -10,7 +10,7 @@ import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 const actividadResuelta = (a: Actividad) => !!a.completada || !!a.no_aplica;
 
 const fmtDocFecha = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }) : null;
+  iso ? formatFechaDDMMYY(iso) : null;
 
 function groupDocsByPhase(
   all: ProcessDocument[],

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Stack, Text, Table, Group, Badge, Button, ScrollArea, Modal } from "@mantine/core";
 import type { PQR, Program } from "../types";
+import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import PQRImportDetails from "./PQRImportDetails";
 
 export type PQRHistorialViewProps = {
@@ -102,7 +103,7 @@ export default function PQRHistorialView({ pqrs, programas }: PQRHistorialViewPr
                   {textCell(pqr, "cedula_encargado")}
                 </Table.Td>
                 <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px", textAlign: "center" }}>
-                  <Text size="xs" c={pqr.fecha_radicacion ? "dark" : "dimmed"}>{pqr.fecha_radicacion ?? "—"}</Text>
+                  <Text size="xs" c={pqr.fecha_radicacion ? "dark" : "dimmed"}>{pqr.fecha_radicacion ? formatFechaDDMMYY(pqr.fecha_radicacion) : "—"}</Text>
                 </Table.Td>
                 <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
                   {textCell(pqr, "hora")}
@@ -114,7 +115,7 @@ export default function PQRHistorialView({ pqrs, programas }: PQRHistorialViewPr
                   {textCell(pqr, "medio_realizado")}
                 </Table.Td>
                 <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px", textAlign: "center" }}>
-                  <Text size="xs" c={pqr.fecha_respuesta ? "dark" : "dimmed"}>{pqr.fecha_respuesta ?? "—"}</Text>
+                  <Text size="xs" c={pqr.fecha_respuesta ? "dark" : "dimmed"}>{pqr.fecha_respuesta ? formatFechaDDMMYY(pqr.fecha_respuesta) : "—"}</Text>
                 </Table.Td>
                 <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px", textAlign: "center" }}>
                   {pqr.observacion_respuesta ? (

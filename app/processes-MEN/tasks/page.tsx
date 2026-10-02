@@ -3,14 +3,20 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   Title, Text, Paper, Stack, Group, Button, TextInput, Textarea,
-  Select, Badge, Modal, ActionIcon, Loader, Divider, Box,
+  Select, Badge, Modal, ActionIcon, Loader, Divider, Box, NavLink, ThemeIcon, Tooltip,
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle } from "@tabler/icons-react";
+import {
+  IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle, IconArrowLeft,
+  IconChartBar, IconMessageCircle, IconList, IconChevronLeft, IconChevronRight,
+} from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 import type { Dependency } from "../types";
+import { processesMenRoutes } from "../config/routes";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
+import ModuleHeader from "../components/ModuleHeader";
 
 type Task = {
   _id: string;
@@ -37,6 +43,7 @@ const EMPTY_FORM = {
 };
 
 export default function TasksAdminPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const base = process.env.NEXT_PUBLIC_API_URL ?? "";
   const { setHasChanges } = useUnsavedChanges();
@@ -50,6 +57,7 @@ export default function TasksAdminPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filtroDep, setFiltroDep] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Cargar tareas y dependencias
   useEffect(() => {
@@ -165,17 +173,88 @@ export default function TasksAdminPage() {
 
   if (loading) return <Stack align="center" p="xl"><Loader /></Stack>;
 
+  const sidebarW = sidebarCollapsed ? 56 : 208;
+
   return (
-    <Stack p="md" gap="lg">
-      <Group justify="space-between" wrap="wrap">
-        <div>
-          <Title order={3}>Tareas asignadas</Title>
-          <Text size="sm" c="dimmed">Crea y asigna tareas/checklist a líderes de dependencia o responsables.</Text>
-        </div>
-        <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
-          Asignar tarea
-        </Button>
-      </Group>
+    <div style={{ display: "flex", minHeight: "calc(100vh - 56px)", marginTop: "-50px", background: "var(--mantine-color-body)" }}>
+      <Box style={{
+        position: "fixed",
+        top: 56,
+        bottom: 0,
+        left: 0,
+        width: `${sidebarW}px`,
+        borderRight: "1px solid var(--mantine-color-default-border)",
+        boxSizing: "border-box",
+        padding: sidebarCollapsed ? "10px 6px 16px" : "16px 10px 20px",
+        backgroundColor: "var(--mantine-color-body)",
+        zIndex: 50,
+      }}>
+        <Group justify="flex-end" mb={6} wrap="nowrap" gap={4}>
+          <Tooltip label={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"} withArrow>
+            <ActionIcon
+              variant="light"
+              color="teal"
+              radius="xl"
+              size="lg"
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              aria-label={sidebarCollapsed ? "Expandir menú lateral" : "Contraer menú lateral"}
+            >
+              {sidebarCollapsed ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+        {sidebarCollapsed ? (
+          <Stack gap={14} align="center" mt="xl">
+            <Tooltip label="Gestión de procesos MEN" position="right" withArrow>
+              <ActionIcon variant="default" color="blue" onClick={() => router.push(processesMenRoutes.home)}>
+                <IconChartBar size={18} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Comunicaciones MEN" position="right" withArrow>
+              <ActionIcon variant="default" color="teal" onClick={() => router.push(processesMenRoutes.comunicaciones)}>
+                <IconMessageCircle size={18} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Tareas asignadas" position="right" withArrow>
+              <ActionIcon variant="filled" color="violet" aria-label="Tareas asignadas">
+                <IconList size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Stack>
+        ) : (
+          <Stack gap={0} mt={8}>
+            <Group gap={8} px={8} pb={8}>
+              <ThemeIcon size={32} radius="xl" color="violet" variant="light">
+                <IconList size={18} />
+              </ThemeIcon>
+              <Text size="xs" fw={700} c="violet" tt="uppercase">Procesos MEN</Text>
+            </Group>
+            <Divider />
+            <NavLink label="Gestión de procesos MEN" leftSection={<IconChartBar size={16} />} color="blue"
+              onClick={() => router.push(processesMenRoutes.home)} style={{ borderRadius: 8 }} />
+            <NavLink label="Comunicaciones MEN" leftSection={<IconMessageCircle size={16} />} color="teal"
+              onClick={() => router.push(processesMenRoutes.comunicaciones)} style={{ borderRadius: 8 }} />
+            <NavLink label="Tareas asignadas" leftSection={<IconList size={16} />} color="violet" active
+              style={{ borderRadius: 8 }} />
+          </Stack>
+        )}
+      </Box>
+
+      <Stack p="md" gap="lg" style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0 }}>
+        <ModuleHeader
+          title="Tareas asignadas"
+          description="Crea y asigna tareas de seguimiento a líderes de dependencia y responsables."
+          actions={
+            <>
+              <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push(processesMenRoutes.home)}>
+                <IconArrowLeft size={18} />
+              </ActionIcon>
+              <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
+                Asignar tarea
+              </Button>
+            </>
+          }
+        />
 
       <Select
         placeholder="Filtrar por dependencia"
@@ -294,6 +373,7 @@ export default function TasksAdminPage() {
           </Group>
         </Stack>
       </Modal>
-    </Stack>
+      </Stack>
+    </div>
   );
 }

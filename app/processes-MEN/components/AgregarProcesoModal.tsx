@@ -1148,7 +1148,7 @@ export default function AgregarProcesoModal({
                 )}
                 {prefillDesdeRecordatorio?.reminderRowId && !fechaRes && !codigoRes && !duracionRes && (
                   <Text size="xs" c="orange">
-                    No hay resolución en la alerta ni en el programa. Complétala a mano (o cierra el proceso anterior indicando fecha, código y vigencia para que quede en la alerta).
+                    No hay resolución en la alerta ni en el programa. Complétala de manera manual (o cierra el proceso anterior indicando fecha, código y vigencia para que se genere la alerta).
                   </Text>
                 )}
                 {subtipo === "No renovación" && (
@@ -1193,6 +1193,7 @@ export default function AgregarProcesoModal({
                     !pdfFile && !omitirPdfCopiaAlerta && !!docAlerta?.view_link?.trim();
                   const abrirSelectorPdf = () => fileInputRef.current?.click();
                   const quitarPdf = () => {
+                    if (!window.confirm("¿Está seguro de que desea quitar este PDF de resolución?")) return;
                     setPdfFile(null);
                     if (fileInputRef.current) fileInputRef.current.value = "";
                     if (prefillDesdeRecordatorio?.reminderRowId && docsAlerta.length > 0) {

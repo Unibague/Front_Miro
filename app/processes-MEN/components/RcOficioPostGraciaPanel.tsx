@@ -215,6 +215,7 @@ export default function RcOficioPostGraciaPanel({
                 ? "Subiendo documento..."
                 : "Haz clic o arrastra el PDF de la resolución de oficio"
             }
+            loading={loadingResolucionDoc}
             onDrop={async (files) => {
               const file = files[0];
               if (file) await onUploadPdf(file);

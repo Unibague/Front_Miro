@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   Paper, Text, Title, Modal, Table, ScrollArea, Button, Stack, Box,
 } from "@mantine/core";
-import type { MouseHandlerDataParam } from "recharts";
 import {
   ResponsiveContainer,
   LineChart,
@@ -14,12 +13,22 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import type { Program } from "../types";
+import type { Process, Program } from "../types";
 import { useRouter } from "next/navigation";
 import { fechaVencimientoPrograma } from "../utils/fechaVencimientoPrograma";
+import { procesoRcActivoDePrograma } from "../utils/procesoRcUnico";
+import { programCodeKey } from "../utils/programCode";
 import { lineasAuxPrograma } from "../utils/programDisplay";
 
-type Punto = { año: string; cantidad: number; programas: Program[] };
+type Metrica = "inicio" | "vencimiento";
+type TipoGrafica = "RC" | "AV";
+type Punto = {
+  año: string;
+  rcProgramas: Program[];
+  avProgramas: Program[];
+  rcCantidad: number;
+  avCantidad: number;
+};
 
 function añoDesdeIso(f: string | null | undefined): string | null {
   if (!f) return null;
@@ -28,21 +37,30 @@ function añoDesdeIso(f: string | null | undefined): string | null {
   return m ? m[1] : null;
 }
 
-function construirSerie(programasBase: Program[], tipo: "RC" | "AV"): Punto[] {
-  const porAño = new Map<string, Map<string, Program>>();
+function construirSerie(programasBase: Program[], procesos: Process[], metrica: Metrica): Punto[] {
+  const porAño = new Map<string, { rc: Map<string, Program>; av: Map<string, Program> }>();
   for (const prog of programasBase) {
-    const venc = fechaVencimientoPrograma(prog, tipo);
-    const y = añoDesdeIso(venc);
-    if (!y) continue;
-    if (!porAño.has(y)) porAño.set(y, new Map());
-    porAño.get(y)!.set(prog._id, prog);
+    for (const tipo of ["RC", "AV"] as const) {
+      const proceso = tipo === "RC"
+        ? procesoRcActivoDePrograma(procesos, programCodeKey(prog))
+        : procesos.find((p) => p.program_code === programCodeKey(prog) && p.tipo_proceso === "AV");
+      const fecha = metrica === "inicio" ? proceso?.fecha_inicio : fechaVencimientoPrograma(prog, tipo);
+      const y = añoDesdeIso(fecha);
+      if (!y) continue;
+      if (!porAño.has(y)) porAño.set(y, { rc: new Map(), av: new Map() });
+      porAño.get(y)![tipo === "RC" ? "rc" : "av"].set(prog._id, prog);
+    }
   }
   return [...porAño.entries()]
     .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([año, m]) => ({
+    .map(([año, grupos]) => ({
       año,
-      cantidad: m.size,
-      programas: [...m.values()].sort((p, q) =>
+      rcCantidad: grupos.rc.size,
+      avCantidad: grupos.av.size,
+      rcProgramas: [...grupos.rc.values()].sort((p, q) =>
+        (p.nombre ?? "").localeCompare(q.nombre ?? "", "es"),
+      ),
+      avProgramas: [...grupos.av.values()].sort((p, q) =>
         (p.nombre ?? "").localeCompare(q.nombre ?? "", "es"),
       ),
     }));
@@ -50,23 +68,25 @@ function construirSerie(programasBase: Program[], tipo: "RC" | "AV"): Punto[] {
 
 type Props = {
   programasBase: Program[];
+  procesos: Process[];
 };
 
-export default function VencimientosPorAnoCharts({ programasBase }: Props) {
+export default function VencimientosPorAnoCharts({ programasBase, procesos }: Props) {
   const router = useRouter();
-  const dataRc = useMemo(
-    () => construirSerie(programasBase, "RC"),
-    [programasBase],
+  const dataInicio = useMemo(
+    () => construirSerie(programasBase, procesos, "inicio"),
+    [programasBase, procesos],
   );
-  const dataAv = useMemo(
-    () => construirSerie(programasBase, "AV"),
-    [programasBase],
+  const dataVencimiento = useMemo(
+    () => construirSerie(programasBase, procesos, "vencimiento"),
+    [programasBase, procesos],
   );
 
   const [modal, setModal] = useState<{
     titulo: string;
     año: string;
-    tipo: "RC" | "AV";
+    tipo: TipoGrafica;
+    metrica: Metrica;
     programas: Program[];
   } | null>(null);
 
@@ -81,43 +101,37 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
     return payload;
   };
 
-  const abrirFila = (fila: Punto[], tipo: "RC" | "AV", row: Punto | undefined) => {
-    if (!row?.programas?.length) return;
+  const abrirFila = (fila: Punto[], tipo: TipoGrafica, metrica: Metrica, row: Punto | undefined) => {
+    const programas = tipo === "RC" ? row?.rcProgramas : row?.avProgramas;
+    if (!row || !programas?.length) return;
     setModal({
-      titulo: `Programas con vencimiento de vigencia ${tipo} en ${row.año}`,
+      titulo: `Programas con fecha de ${metrica} ${tipo} en ${row.año}`,
       año: row.año,
       tipo,
-      programas: row.programas,
+      metrica,
+      programas,
     });
-  };
-
-  const indiceDesdeChartClick = (state: MouseHandlerDataParam): number | undefined => {
-    const raw = state.activeTooltipIndex ?? state.activeIndex;
-    if (typeof raw === "number" && !Number.isNaN(raw)) return raw;
-    if (typeof raw === "string" && raw !== "") {
-      const n = Number.parseInt(raw, 10);
-      return Number.isNaN(n) ? undefined : n;
-    }
-    return undefined;
   };
 
   const renderChart = (
     titulo: string,
-    color: string,
     data: Punto[],
-    tipo: "RC" | "AV",
+    metrica: Metrica,
+    tipo: TipoGrafica,
   ) => (
     <Paper withBorder radius="md" p="md" style={{ backgroundColor: "#fff" }}>
       <Title order={5} mb="xs" c="dark.7">
         {titulo}
       </Title>
       <Text size="xs" c="dimmed" mb="md">
-        Fecha de fin de vigencia del programa (<strong>ultimo_rc</strong> / <strong>ultimo_av</strong> o campos legados):
-        vencimiento guardado al cerrar el proceso o estimado (fecha de resolución + años de vigencia). Haz clic en un punto para ver los programas.
+        {metrica === "inicio"
+          ? `Fecha de inicio del proceso ${tipo}.`
+          : `Fecha de fin de vigencia del programa ${tipo} (vencimiento guardado al cerrar el proceso o estimado).`}
+        {" "}Haz clic en un punto para ver los programas.
       </Text>
       {data.length === 0 ? (
         <Text size="sm" c="dimmed" ta="center" py="xl">
-          No hay vencimientos de vigencia calculables en el alcance actual de filtros (faltan resolución/duración o fecha de vencimiento).
+          No hay fechas calculables en el alcance actual de filtros.
         </Text>
       ) : (
         <Box h={300} w="100%" style={{ minWidth: 280 }}>
@@ -125,22 +139,18 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
             <LineChart
               data={data}
               margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
-              onClick={(nextState) => {
-                const idx = indiceDesdeChartClick(nextState);
-                if (idx == null) return;
-                abrirFila(data, tipo, data[idx]);
-              }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
               <XAxis dataKey="año" tick={{ fontSize: 12 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} width={36} />
-              <Tooltip
-                formatter={(v) => [`${v ?? 0} programa(s)`, "Cantidad"]}
-                labelFormatter={(l) => `Año ${l}`}
-              />
-              <Line
+              <Tooltip labelFormatter={(l) => `Año ${l}`} />
+              {(() => {
+                const color = tipo === "RC" ? "#228be6" : "#7950f2";
+                const dataKey = tipo === "RC" ? "rcCantidad" : "avCantidad";
+                return <Line
+                  key={tipo}
                 type="monotone"
-                dataKey="cantidad"
+                dataKey={dataKey}
                 stroke={color}
                 strokeWidth={2}
                 /** Sin punto “active” encima que intercepte clics en el punto estático. */
@@ -162,9 +172,10 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
                   ) {
                     return null;
                   }
+                  const fila = filaPorIndice(data, index, payload);
                   return (
                     <g>
-                      <title>{`Año ${payload.año}: ${payload.cantidad} programa(s) — clic para listar`}</title>
+                      <title>{`Año ${payload.año}: ${tipo} — clic para listar`}</title>
                       {/* Área de clic ancha sobre el punto */}
                       <circle
                         cx={cx}
@@ -172,7 +183,7 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
                         r={18}
                         fill="transparent"
                         style={{ cursor: "pointer", pointerEvents: "all" }}
-                        onClick={() => abrirFila(data, tipo, filaPorIndice(data, index, payload))}
+                        onClick={() => abrirFila(data, tipo, metrica, fila)}
                       />
                       <circle
                         cx={cx}
@@ -186,7 +197,8 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
                     </g>
                   );
                 }}
-              />
+                />;
+              })()}
             </LineChart>
           </ResponsiveContainer>
         </Box>
@@ -197,11 +209,13 @@ export default function VencimientosPorAnoCharts({ programasBase }: Props) {
   return (
     <>
       <Title order={4} ta="center" mb="md" mt="xl">
-        Vencimientos de vigencia por año (RC / AV en el programa)
+        Vigencias por año (RC/AV en el programa)
       </Title>
       <Stack gap="lg">
-        {renderChart("Registro calificado (RC) — programas por año de vencimiento", "#228be6", dataRc, "RC")}
-        {renderChart("Acreditación voluntaria (AV) — programas por año de vencimiento", "#7950f2", dataAv, "AV")}
+        {renderChart("Fechas de inicio — Registro calificado (RC)", dataInicio, "inicio", "RC")}
+        {renderChart("Fechas de vencimiento — Registro calificado (RC)", dataVencimiento, "vencimiento", "RC")}
+        {renderChart("Fechas de inicio — Acreditación voluntaria (AV)", dataInicio, "inicio", "AV")}
+        {renderChart("Fechas de vencimiento — Acreditación voluntaria (AV)", dataVencimiento, "vencimiento", "AV")}
       </Stack>
 
       <Modal

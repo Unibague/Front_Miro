@@ -24,6 +24,19 @@
   height: 8rem;
 }
 
+.loading {
+  border-color: var(--mantine-color-blue-5);
+  background-color: var(--mantine-color-blue-light);
+  cursor: progress;
+}
+
+.progress {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  left: 12px;
+}
+
 .icon {
   color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
 }

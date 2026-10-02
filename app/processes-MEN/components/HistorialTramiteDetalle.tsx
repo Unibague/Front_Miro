@@ -21,6 +21,7 @@ import {
 } from "../constants";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import { esSubtipoRcOficioHistorial, esSubtipoReformaHistorial } from "../utils/programaEditReforma";
+import { getCasoFechaKeyForActividad, getCasoFechaKeyForSubactividad } from "../utils/casoActividadMap";
 
 function subtipoHistorialEsNoRenovacion(subtipo: string | null | undefined): boolean {
   const sub = String(subtipo ?? "")
@@ -334,6 +335,18 @@ function docsCaso(caso: CasoSnapshotHistorial, field: CasoFechaKey): DocSnap[] {
   return caso.documentos_por_fecha?.[field] ?? [];
 }
 
+function fechaCasoEsNoAplica(record: ProcessHistoryRecord, field: CasoFechaKey): boolean {
+  return record.fases.some((fase) => fase.actividades.some((act) => {
+    if (getCasoFechaKeyForActividad(fase.fase_numero, act.nombre) === field && act.no_aplica) {
+      return true;
+    }
+    return act.subactividades.some((sub) => (
+      getCasoFechaKeyForSubactividad(fase.fase_numero, sub.nombre) === field
+      && (sub.no_aplica || act.no_aplica)
+    ));
+  }));
+}
+
 /** Información del caso archivada al cierre (fechas, estado, reposición, obs y docs). */
 export function HistorialInformacionCaso({ record }: { record: ProcessHistoryRecord }) {
   const [openObs, setOpenObs] = useState<string | null>(null);
@@ -380,6 +393,7 @@ export function HistorialInformacionCaso({ record }: { record: ProcessHistoryRec
 
   const renderFechaCelda = (field: CasoFechaKey, bg?: string) => {
     const fecha = caso[field] as string | null | undefined;
+    const esNoAplica = fechaCasoEsNoAplica(record, field);
     const isApelacion = field === "fecha_resolucion_apelacion" || field === "fecha_respuesta_men";
     return (
       <Table.Td
@@ -399,10 +413,10 @@ export function HistorialInformacionCaso({ record }: { record: ProcessHistoryRec
               borderRadius: 4,
               border: isApelacion ? "1px dashed #fd7014" : "1px dashed #4dabf7",
               backgroundColor: isApelacion ? "#fff3e0" : "#e7f5ff",
-              color: fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
+              color: esNoAplica ? "#e67700" : fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
             }}
           >
-            {fecha ? formatFechaDDMMYY(fecha) : "Sin fecha"}
+            {esNoAplica ? "N/A" : fecha ? formatFechaDDMMYY(fecha) : "Sin fecha"}
           </Text>
           <CeldaCasoDetalle
             obs={obsCaso(caso, field)}
