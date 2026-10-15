@@ -91,6 +91,8 @@ interface Template {
     user: string;
     date: string;
   };
+  producer_names?: string[];
+  responsible_producer_names?: string[];
 }
 
 interface Period {
@@ -1405,7 +1407,7 @@ const AdminTemplatesPage = () => {
     const summary = workbook.addWorksheet('Plantillas');
     const fieldsDetail = workbook.addWorksheet('Campos Plantillas');
 
-    summary.addRow(['Plantilla', 'Creado Por', 'Ambitos', 'Campos', 'Publicada']);
+    summary.addRow(['Plantilla', 'Creado Por', 'Ambitos', 'Campos', 'Publicada', 'Productores', 'Productor Encargado']);
     allTemplates.forEach((template) => {
       summary.addRow([
         template.name,
@@ -1413,6 +1415,8 @@ const AdminTemplatesPage = () => {
         template.dimensions?.map((dim) => dim.name).join(', ') || '',
         template.fields?.length || 0,
         template.published ? 'Si' : 'No',
+        template.producer_names?.join(', ') || '',
+        template.responsible_producer_names?.join(', ') || '',
       ]);
     });
 
@@ -1557,6 +1561,10 @@ const AdminTemplatesPage = () => {
         column.width = 30;
       });
     });
+    [6, 7].forEach((col) => {
+      summary.getColumn(col).width = 50;
+      summary.getColumn(col).alignment = { wrapText: true, vertical: 'top' };
+    });
   };
 
   const fetchAllTemplatesForExport = async () => {
@@ -1567,7 +1575,7 @@ const AdminTemplatesPage = () => {
 
     do {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/templates/all`, {
-        params: { page: currentPage, limit, search: '', periodId: selectedPeriodId, onlyPublishedInPeriod: true, withValidators: true },
+        params: { page: currentPage, limit, search: '', periodId: selectedPeriodId, onlyPublishedInPeriod: true, withValidators: true, withProducers: true },
       });
 
       allTemplates.push(...(response.data?.templates || []));
