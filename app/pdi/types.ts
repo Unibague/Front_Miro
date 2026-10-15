@@ -88,6 +88,13 @@ export interface RespuestaFormulario {
   aval_planeacion_por?: string;
   aval_planeacion_comentario?: string;
   aval_planeacion_fecha?: string | null;
+  reversiones?: Array<{
+    nivel: "proyecto" | "lider" | "planeacion";
+    modo: "reabrir" | "devolver";
+    por: string;
+    motivo: string;
+    fecha: string;
+  }>;
   createdAt: string;
 }
 

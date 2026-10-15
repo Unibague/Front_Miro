@@ -19,6 +19,7 @@ import { PDI_ROUTES } from "../../api";
 import PdiSidebar from "../../components/PdiSidebar";
 import EvidenciasPanel from "../../components/EvidenciasPanel";
 import ReporteAvanceModal from "../../components/ReporteAvanceModal";
+import DeshacerAprobacion from "../../components/DeshacerAprobacion";
 import { usePdiConfig } from "../../hooks/usePdiConfig";
 
 const ESTADO_COLORS: Record<EstadoReporte, string> = {
@@ -826,7 +827,9 @@ function LiderRevisionPanelV2({
         deduplicarRespuestas(r.data.filter((item: RespuestaFormulario) =>
           item.estado === "Enviado" && (!onlyApproved || item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))
           && (!onlyEvaluated || (item.estado_aval != null && item.estado_aval !== "Pendiente"))
-          && (!onlyPending || item.estado_aval == null || item.estado_aval === "Pendiente")
+          // El líder sigue viendo lo que ya aprobó para poder deshacer la aprobación si se equivocó
+          && (!onlyPending || item.estado_aval == null || item.estado_aval === "Pendiente"
+            || (permitirEvaluacion && !readOnly && item.estado_aval === "Aprobado"))
         ))
       ))
       .catch(() => {})
@@ -1255,6 +1258,15 @@ function LiderRevisionPanelV2({
                       Guardar evaluación
                     </Button>
                   </Group>
+                )}
+
+                {!readOnly && permitirEvaluacion && avalEstado === "Aprobado" && (
+                  <DeshacerAprobacion
+                    respuesta={r}
+                    nivel="lider"
+                    por={liderEmail}
+                    onDone={() => { load(); router.refresh(); }}
+                  />
                 )}
               </Paper>
             </Paper>
@@ -1726,6 +1738,15 @@ function ResponsableProyectoRevisionPanel({
                     </Button>
                   </Group>
                 )}
+
+                {permitirEvaluacion && avalEstado === "Aprobado" && (
+                  <DeshacerAprobacion
+                    respuesta={r}
+                    nivel="proyecto"
+                    por={proyectoEmail}
+                    onDone={() => { load(); router.refresh(); }}
+                  />
+                )}
               </Paper>
             </Paper>
           );
@@ -1769,11 +1790,15 @@ function PlaneacionRevisionPanel({
         // importar su estado actual: un "Devuelto" vuelve a Borrador, y uno "Validado"
         // puede reabrirse como Borrador cuando el responsable empieza a editarlo o a
         // subir otro reporte; en ambos casos la última evaluación debe seguir visible.
+        // También se muestran (en solo lectura) los reportes enviados que aún no han
+        // sido evaluados por el responsable del proyecto o por el líder.
         deduplicarRespuestas((res.data as RespuestaFormulario[]).filter(
           (item) =>
-            (item.estado === "Enviado" && (item.estado_aval === "Aprobado" || isAutoApprovedByLeader(item.respondido_por, item.lider_email_aval))) ||
+            item.estado === "Enviado" ||
             item.aval_planeacion === "Validado" ||
-            item.aval_planeacion === "Devuelto"
+            item.aval_planeacion === "Devuelto" ||
+            item.estado_aval === "Rechazado" ||
+            item.estado_aval_proyecto === "Rechazado"
         ))
       ))
       .catch(() => {})
@@ -1825,7 +1850,7 @@ function PlaneacionRevisionPanel({
     return (
       <Paper withBorder radius="xl" p="lg">
         <Text size="sm" c="dimmed" ta="center">
-          Todavía no hay reportes aprobados por el líder para este indicador.
+          Todavía no hay reportes enviados para este indicador.
         </Text>
       </Paper>
     );
@@ -1848,7 +1873,19 @@ function PlaneacionRevisionPanel({
           const pct            = avanceNum != null && metaNum && metaNum > 0
             ? Math.min(Math.round((avanceNum / metaNum) * 100), 100) : null;
           const planEstado     = r.aval_planeacion ?? null;
-          const puedoEvaluar   = !planEstado || planEstado === "Pendiente";
+          const aprobadoPorLider = r.estado === "Enviado"
+            && (r.estado_aval === "Aprobado" || isAutoApprovedByLeader(r.respondido_por, r.lider_email_aval));
+          const etapaPendiente = r.estado_aval_proyecto === "Pendiente"
+            ? "Pendiente de evaluación del responsable del proyecto"
+            : "Pendiente de evaluación del líder del macroproyecto";
+          const puedoEvaluar   = aprobadoPorLider && (!planEstado || planEstado === "Pendiente");
+          const devueltoPor = r.estado !== "Enviado" && planEstado !== "Devuelto"
+            ? (r.estado_aval === "Rechazado"
+                ? { quien: "el líder del macroproyecto", motivo: [...(r.aval_razones ?? []), r.aval_comentario].filter(Boolean).join(" · ") }
+                : r.estado_aval_proyecto === "Rechazado"
+                  ? { quien: "el responsable del proyecto", motivo: [...(r.aval_proyecto_razones ?? []), r.aval_proyecto_comentario].filter(Boolean).join(" · ") }
+                  : null)
+            : null;
           const estadoSel      = estados[r._id] ?? "";
           const formularioNombre = typeof r.formulario_id === "string" ? "Formulario" : (r.formulario_id as any).nombre ?? "Formulario";
           const documentosFormulario = getDocumentosFormulario(r);
@@ -1859,9 +1896,19 @@ function PlaneacionRevisionPanel({
                 <div>
                   <Group gap={8} mb={6}>
                     <Badge color="violet" variant="filled" radius="xl">{periodoMostrado}</Badge>
-                    <Badge color="teal" variant="light" radius="xl" leftSection={<IconShieldCheck size={12} />}>
-                      Aprobado por el líder
-                    </Badge>
+                    {aprobadoPorLider || planEstado === "Validado" ? (
+                      <Badge color="teal" variant="light" radius="xl" leftSection={<IconShieldCheck size={12} />}>
+                        Aprobado por el líder
+                      </Badge>
+                    ) : r.estado === "Enviado" ? (
+                      <Badge color="yellow" variant="light" radius="xl" leftSection={<IconClockHour4 size={12} />}>
+                        {etapaPendiente}
+                      </Badge>
+                    ) : devueltoPor ? (
+                      <Badge color="red" variant="light" radius="xl" leftSection={<IconShieldX size={12} />}>
+                        Devuelto por {devueltoPor.quien} — en corrección
+                      </Badge>
+                    ) : null}
                     {planEstado && planEstado !== "Pendiente" && (
                       <Badge color={PLAN_COLOR[planEstado]} variant="filled" radius="xl">
                         {PLAN_LABEL[planEstado]}
@@ -1945,7 +1992,11 @@ function PlaneacionRevisionPanel({
                 <Text size="sm" c="dimmed" mb="md">
                   {puedoEvaluar
                     ? "El reporte fue aprobado por el líder. Define si queda validado o si requiere ajustes."
-                    : "Evaluación de Planeación ya registrada."}
+                    : r.estado === "Enviado" && !aprobadoPorLider
+                      ? `${etapaPendiente}. Puedes consultarlo; la validación de Planeación se habilita cuando el líder lo apruebe.`
+                      : devueltoPor
+                        ? `Devuelto por ${devueltoPor.quien}. Motivo: ${devueltoPor.motivo || "sin motivo registrado"}`
+                        : "Evaluación de Planeación ya registrada."}
                 </Text>
 
                 {planEstado && planEstado !== "Pendiente" && (
@@ -2008,6 +2059,17 @@ function PlaneacionRevisionPanel({
                       </Button>
                     </Group>
                   </Stack>
+                )}
+
+                {planEstado === "Validado" && r.estado === "Enviado" && (
+                  <Box mt="md">
+                    <DeshacerAprobacion
+                      respuesta={r}
+                      nivel="planeacion"
+                      por={adminEmail}
+                      onDone={() => { load(); router.refresh(); }}
+                    />
+                  </Box>
                 )}
               </Paper>
             </Paper>
@@ -2438,7 +2500,7 @@ export default function IndicadorEvidenciasPage() {
                           </Group>
                         </Title>
                         <Text size="sm" c="dimmed" mb="md">
-                          Solo se muestran reportes ya aprobados por el líder del macroproyecto. El último reporte evaluado se mantiene visible aquí hasta que se envíe uno nuevo para el periodo actual.
+                          Se muestran todos los reportes enviados, incluso los que aún no han sido evaluados por el responsable del proyecto o el líder del macroproyecto. La validación de Planeación se habilita una vez el líder aprueba.
                         </Text>
                         <PlaneacionRevisionPanel
                           indicadorId={indicador._id}
