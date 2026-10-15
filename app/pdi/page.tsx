@@ -563,7 +563,7 @@ interface PendienteAprobacion {
   indicadorCodigo: string;
   indicadorNombre: string;
   corte: string;
-  tipo: "proyecto" | "lider" | "planeacion";
+  tipo: "lider" | "planeacion";
   respuestaId?: string;
   formularioId?: string;
   liderEmail?: string;
@@ -577,7 +577,6 @@ interface PendienteRevisionResponse {
   formulario_id_ref?: string;
   corte?: string;
   lider_email_aval?: string;
-  proyecto_email_aval?: string;
   respondido_por?: string;
   indicador_id?: string | {
     _id?: string;
@@ -607,7 +606,7 @@ function mapPendienteRevision(item: PendienteRevisionResponse, tipo: PendienteAp
     respuestaId: item.respuesta_id ?? item._id,
     formularioId: item.formulario_id_ref
       || (typeof item.formulario_id === "string" ? item.formulario_id : item.formulario_id?._id),
-    liderEmail: (tipo === "proyecto" ? item.proyecto_email_aval : item.lider_email_aval) ?? "",
+    liderEmail: item.lider_email_aval ?? "",
     respondidoPor: item.respondido_por ?? "",
   };
 }
@@ -757,14 +756,13 @@ const getPresupuestoPlaneadoSplit = (row: PresupuestoDashboardRow) => {
   return { gasto: presupuesto, inversion: 0 };
 };
 
-function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, resumen, aniosPdi, pendientesProyecto, pendientesLider, pendientesAprobacion, devueltos }: {
+function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPorMacro, resumen, aniosPdi, pendientesLider, pendientesAprobacion, devueltos }: {
   macros: Macroproyecto[];
   proyectosPorMacro: Record<string, Proyecto[]>;
   accionesPorMacro: Record<string, number>;
   indicadoresPorMacro: Record<string, number>;
   resumen: DashboardResumen | null;
   aniosPdi: number[];
-  pendientesProyecto: PendienteAprobacion[];
   pendientesLider: PendienteAprobacion[];
   pendientesAprobacion: PendienteAprobacion[];
   devueltos: ReporteDevuelto[];
@@ -777,7 +775,6 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
   const [presupuestosPorAnio, setPresupuestosPorAnio] = useState<Record<string, PresupuestoResumen>>({});
   const [modalPendientes, setModalPendientes] = useState(false);
   const [modalPendientesLider, setModalPendientesLider] = useState(false);
-  const [modalPendientesProyecto, setModalPendientesProyecto] = useState(false);
   const [modalAprobaciones, setModalAprobaciones] = useState(false);
 
   useEffect(() => {
@@ -978,7 +975,6 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
     { label: "Indicadores", value: totalIndicadores, color: "teal" },
   ];
   const totalPendientesLider = pendientesLider.length;
-  const totalPendientesProyecto = pendientesProyecto.length;
   const totalPendientesPlaneacion = pendientesAprobacion.length;
   const abrirPendienteLider = (item: PendienteAprobacion) => {
     if (!item.indicadorId) return;
@@ -1309,100 +1305,6 @@ function StatsCards({ macros, proyectosPorMacro, accionesPorMacro, indicadoresPo
 
         {/* Alertas de acciones devueltas (acción + motivo) */}
         <AlertasDevoluciones devueltos={devueltos} />
-
-        {/* Bandeja del responsable de proyecto — reportes aún no evaluados (primer nivel) */}
-        <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
-          <Group justify="space-between" align="center" mb="sm">
-            <Group gap="sm" align="center">
-              <ThemeIcon size={36} radius="xl" color={totalPendientesProyecto > 0 ? "grape" : "teal"} variant="light">
-                <IconShieldCheck size={18} />
-              </ThemeIcon>
-              <Box>
-                <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Bandeja responsable de proyecto</Text>
-                <Text size="sm" fw={700} lh={1.2} mt={2}>Reportes cargados sin evaluar</Text>
-              </Box>
-            </Group>
-            <Group gap={8}>
-              {totalPendientesProyecto > 0 ? (
-                <>
-                  <Badge color="grape" variant="filled" radius="xl" size="md">
-                    {totalPendientesProyecto} pendiente{totalPendientesProyecto !== 1 ? "s" : ""}
-                  </Badge>
-                  <ActionIcon variant="light" color="grape" size="md" onClick={() => setModalPendientesProyecto(true)} title="Ver todos">
-                    <IconSearch size={14} />
-                  </ActionIcon>
-                </>
-              ) : (
-                <Badge color="teal" variant="light" radius="xl" size="md">Sin pendientes</Badge>
-              )}
-            </Group>
-          </Group>
-
-          {totalPendientesProyecto === 0 ? (
-            <Text size="sm" c="dimmed">No hay reportes esperando evaluación del responsable de proyecto.</Text>
-          ) : (
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
-              {pendientesProyecto.slice(0, 8).map((item, i) => (
-                <Box
-                  key={`proy-prev-${item.indicadorId}-${item.corte}-${i}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => abrirPendientePlaneacion(item)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      abrirPendientePlaneacion(item);
-                    }
-                  }}
-                  style={{
-                    background: "rgba(190,75,219,0.06)",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                    borderLeft: "3px solid #be4bdb",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Text size="xs" fw={800} c="grape.7" lh={1.2}>{item.indicadorCodigo}</Text>
-                  <Text size="xs" lh={1.4} lineClamp={1}>{item.indicadorNombre}</Text>
-                  <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte}</Text>
-                  {item.liderEmail && <Text size="10px" c="dimmed" lineClamp={1}>Responsable proyecto: {item.liderEmail}</Text>}
-                </Box>
-              ))}
-            </SimpleGrid>
-          )}
-
-          <Modal
-            opened={modalPendientesProyecto}
-            onClose={() => setModalPendientesProyecto(false)}
-            title={<Text fw={700} size="sm">Reportes pendientes del responsable de proyecto</Text>}
-            size="lg"
-            radius="lg"
-          >
-            <ScrollArea h={440} offsetScrollbars>
-              <Stack gap={8}>
-                {pendientesProyecto.map((item, i) => (
-                  <Box
-                    key={`modal-proy-${item.indicadorId}-${item.corte}-${i}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => { setModalPendientesProyecto(false); abrirPendientePlaneacion(item); }}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <Group gap={6} align="center">
-                      <Text size="xs" fw={800} c="grape.7" lh={1.2}>{item.indicadorCodigo}</Text>
-                      <Badge color="grape" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
-                    </Group>
-                    <Text size="xs" lh={1.4} mt={2}>{item.indicadorNombre}</Text>
-                    <Group gap={10} mt={2} wrap="wrap">
-                      {item.respondidoPor && <Text size="10px" c="dimmed">Reportó: {item.respondidoPor}</Text>}
-                      {item.liderEmail && <Text size="10px" c="dimmed">Responsable proyecto: {item.liderEmail}</Text>}
-                    </Group>
-                  </Box>
-                ))}
-              </Stack>
-            </ScrollArea>
-          </Modal>
-        </Box>
 
         {/* Bandejas de revisión — debajo del panorama, ancho completo */}
         <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
@@ -1845,7 +1747,6 @@ export default function PdiPage() {
   const [indicadoresPorMacro, setIndicadoresPorMacro] = useState<Record<string, number>>({});
   const [annualStatsPorMacro, setAnnualStatsPorMacro] = useState<Record<string, MacroAnnualStats>>({});
   const [pendientesLider, setPendientesLider] = useState<PendienteAprobacion[]>([]);
-  const [pendientesProyecto, setPendientesProyecto] = useState<PendienteAprobacion[]>([]);
   const [devueltos, setDevueltos] = useState<ReporteDevuelto[]>([]);
   const [pendientesAprobacion, setPendientesAprobacion] = useState<PendienteAprobacion[]>([]);
   const [loadingMacros, setLoadingMacros] = useState(true);
@@ -1856,19 +1757,10 @@ export default function PdiPage() {
   // pagina se queda pegada en 0 hasta un refresh manual — con backoff se
   // reintenta sola hasta que la carga sea exitosa.
   const [failedLoadAttempts, setFailedLoadAttempts] = useState(0);
-  // Reportes sin evaluar por el responsable del proyecto y acciones devueltas
+  // Acciones devueltas pendientes de corrección
   const cargarBandejasExtra = async () => {
-    const [proyectoRes, devueltosRes] = await Promise.all([
-      axios.get<PendienteRevisionResponse[]>(PDI_ROUTES.formularioRespuestasPendientesResponsableProyecto())
-        .catch(() => ({ data: [] as PendienteRevisionResponse[] })),
-      axios.get<ReporteDevuelto[]>(PDI_ROUTES.formularioRespuestasDevueltas())
-        .catch(() => ({ data: [] as ReporteDevuelto[] })),
-    ]);
-    setPendientesProyecto(
-      (proyectoRes.data ?? [])
-        .map((item) => mapPendienteRevision(item, "proyecto"))
-        .filter((item): item is PendienteAprobacion => Boolean(item))
-    );
+    const devueltosRes = await axios.get<ReporteDevuelto[]>(PDI_ROUTES.formularioRespuestasDevueltas())
+      .catch(() => ({ data: [] as ReporteDevuelto[] }));
     setDevueltos(devueltosRes.data ?? []);
   };
 
@@ -2080,7 +1972,6 @@ export default function PdiPage() {
         indicadoresPorMacro={indicadoresPorMacro}
         resumen={resumen}
         aniosPdi={config.anios}
-        pendientesProyecto={pendientesProyecto}
         pendientesLider={pendientesLider}
         pendientesAprobacion={pendientesAprobacion}
         devueltos={devueltos}

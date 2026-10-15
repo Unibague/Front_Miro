@@ -18,6 +18,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
 import type { Macroproyecto, Proyecto, Accion, Indicador } from "../types";
 import { PDI_ROUTES } from "../api";
+import { getIndicadorIdDevuelto, getMotivoDevolucion, type ReporteDevuelto } from "../components/AlertasDevoluciones";
 import PdiSidebar from "../components/PdiSidebar";
 import MacroproyectoModal from "../components/MacroproyectoModal";
 import ProyectoModal from "../components/ProyectoModal";
@@ -50,6 +51,41 @@ function getEvaluacionesPendientesAccion(indicadores: Indicador[]) {
         tipo: (p.estado_reporte ?? "") === "Aprobado" ? "planeacion" : "lider",
       }))
   );
+}
+
+// Reportes devueltos (por el líder o Planeación) aún sin corregir. Se consultan una
+// sola vez y se comparten entre todas las tarjetas (cache de 30 s).
+let devueltosCache: { ts: number; promise: Promise<ReporteDevuelto[]> } | null = null;
+
+function useReportesDevueltos() {
+  const [devueltos, setDevueltos] = useState<ReporteDevuelto[]>([]);
+  useEffect(() => {
+    if (!devueltosCache || Date.now() - devueltosCache.ts > 30000) {
+      devueltosCache = {
+        ts: Date.now(),
+        promise: axios.get<ReporteDevuelto[]>(PDI_ROUTES.formularioRespuestasDevueltas())
+          .then((r) => r.data ?? [])
+          .catch(() => []),
+      };
+    }
+    let activo = true;
+    devueltosCache.promise.then((data) => { if (activo) setDevueltos(data); });
+    return () => { activo = false; };
+  }, []);
+  return devueltos;
+}
+
+function getDevueltosDeIndicadores(devueltos: ReporteDevuelto[], indicadores: Indicador[]) {
+  const ids = new Set(indicadores.map((ind) => ind._id));
+  return devueltos
+    .filter((item) => ids.has(getIndicadorIdDevuelto(item)))
+    .map((item) => ({
+      indicadorId: getIndicadorIdDevuelto(item),
+      indicadorCodigo: (typeof item.indicador_id === "object" ? item.indicador_id?.codigo : "") ?? "",
+      corte: item.corte ?? "",
+      quien: item.devolucion.nivel_label,
+      motivo: getMotivoDevolucion(item),
+    }));
 }
 
 function pluralizeCount(count: number, singular: string, plural: string) {
@@ -403,6 +439,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const [indicadoresPrevio, setIndicadoresPrevio] = useState<Indicador[]>([]);
   const [presupuestoRows, setPresupuestoRows] = useState<PresupuestoSheetRow[]>([]);
   const [aniosFiltro, setAniosFiltro] = useState<string[]>(["todos"]);
+  const devueltosTodos = useReportesDevueltos();
 
   useEffect(() => { setAccion(accionInicial); }, [accionInicial]);
 
@@ -464,6 +501,7 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   const pendientesBadges = getEvaluacionesPendientesAccion(
     loaded ? indicadores : indicadoresPrevio
   );
+  const devueltosAccion = getDevueltosDeIndicadores(devueltosTodos, loaded ? indicadores : indicadoresPrevio);
 
   const cargar = async () => {
     if (loaded) {
@@ -547,8 +585,21 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
             <SemaforoBadge semaforo={semaforoAccion} />
           </Group>
           <Text size="xl" lh={1.35}>{accion.nombre}</Text>
-          {pendientesBadges.length > 0 && (
+          {(pendientesBadges.length > 0 || devueltosAccion.length > 0) && (
             <Group gap={4} mt={8} wrap="wrap">
+              {devueltosAccion.map((r) => (
+                <Badge
+                  key={`dev-${r.indicadorId}-${r.corte}`}
+                  size="sm"
+                  color="red"
+                  variant="light"
+                  radius="xl"
+                  leftSection={<IconFlag size={10} />}
+                  title={`Motivo: ${r.motivo}`}
+                >
+                  {`Devuelto · ${r.indicadorCodigo} · ${r.corte}`}
+                </Badge>
+              ))}
               {pendientesBadges.map((r) => (
                 <Badge
                   key={`${r.indicadorId}-${r.corte}`}
@@ -886,6 +937,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const [selectedAccion, setSelectedAccion] = useState<Accion | null>(null);
   const [accionesCount, setAccionesCount] = useState<number | null>(null);
   const [pendientesProyecto, setPendientesProyecto] = useState<ReturnType<typeof getEvaluacionesPendientesAccion>>([]);
+  const devueltosTodos = useReportesDevueltos();
   const [indicadoresProyecto, setIndicadoresProyecto] = useState<Indicador[]>([]);
 
   useEffect(() => { setProyecto(proyectoInicial); }, [proyectoInicial]);
@@ -1022,6 +1074,7 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
     ? "yellow"
     : "red";
   const pendientesLiderProyecto = pendientesProyecto.filter((item) => item.tipo === "lider");
+  const devueltosProyecto = getDevueltosDeIndicadores(devueltosTodos, indicadoresProyecto);
   const pendientesPlaneacionProyecto = pendientesProyecto.filter((item) => item.tipo === "planeacion");
 
   useEffect(() => {
@@ -1055,8 +1108,22 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
           {proyecto.descripcion && (
             <Text size="sm" c="dimmed" mt={2}>Propósito: {proyecto.descripcion}</Text>
           )}
-          {pendientesProyecto.length > 0 && (
+          {(pendientesProyecto.length > 0 || devueltosProyecto.length > 0) && (
             <Group gap={6} mt={10} wrap="wrap">
+              {devueltosProyecto.length > 0 && (
+                <Badge
+                  color="red"
+                  variant="light"
+                  radius="xl"
+                  size="sm"
+                  leftSection={<IconFlag size={10} />}
+                  title={devueltosProyecto.map((d) => `${d.indicadorCodigo} (${d.corte}) — ${d.quien}: ${d.motivo}`).join("\n")}
+                >
+                  Devuelto {devueltosProyecto.length} {pluralizeCount(devueltosProyecto.length, "reporte", "reportes")}
+                  {formatIndicadoresPendientes(devueltosProyecto) ? ` · ${formatIndicadoresPendientes(devueltosProyecto)}` : ""}
+                  {formatCortesPendientes(devueltosProyecto) ? ` · ${formatCortesPendientes(devueltosProyecto)}` : ""}
+                </Badge>
+              )}
               {pendientesLiderProyecto.length > 0 && (
                 <Badge color="yellow" variant="filled" radius="xl" size="sm" leftSection={<IconFlag size={10} />}>
                   Pendiente líder {pendientesLiderProyecto.length} {pluralizeCount(pendientesLiderProyecto.length, "reporte", "reportes")}

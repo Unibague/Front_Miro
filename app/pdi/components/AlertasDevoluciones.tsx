@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Badge, Box, Group, Modal, ScrollArea, SimpleGrid, Stack, Text } from "@mantine/core";
-import { IconAlertTriangle, IconArrowBackUp } from "@tabler/icons-react";
+import { ActionIcon, Badge, Box, Group, Modal, ScrollArea, SimpleGrid, Stack, Text, ThemeIcon } from "@mantine/core";
+import { IconArrowBackUp, IconSearch } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 
 export interface ReporteDevuelto {
@@ -24,124 +24,145 @@ export interface ReporteDevuelto {
   };
 }
 
-const NIVEL_COLOR: Record<string, string> = { proyecto: "grape", lider: "orange", planeacion: "red" };
-
-function getMotivo(item: ReporteDevuelto) {
+export function getMotivoDevolucion(item: ReporteDevuelto) {
   const partes = [...(item.devolucion.razones ?? [])];
   if (item.devolucion.comentario?.trim()) partes.push(item.devolucion.comentario.trim());
   return partes.join(" · ") || "Sin motivo registrado";
 }
 
-function DevolucionItem({ item, onOpen, full = false }: { item: ReporteDevuelto; onOpen: () => void; full?: boolean }) {
-  const indicador = typeof item.indicador_id === "object" ? item.indicador_id : null;
-  return (
-    <Box
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
-      }}
-      style={{
-        background: "rgba(250,82,82,0.06)",
-        borderRadius: 10,
-        padding: "10px 12px",
-        borderLeft: "3px solid #fa5252",
-        cursor: "pointer",
-      }}
-    >
-      <Group gap={6} wrap="wrap" mb={2}>
-        <Text size="xs" fw={800} c="red.7" lh={1.2}>
-          {item.accion?.codigo ? `Acción ${item.accion.codigo}` : indicador?.codigo ?? "Acción"}
-        </Text>
-        <Badge size="xs" radius="xl" variant="light" color={NIVEL_COLOR[item.devolucion.nivel] ?? "red"}>
-          Devuelto por {item.devolucion.nivel_label}
-        </Badge>
-        {item.corte && <Badge size="xs" radius="xl" variant="outline" color="gray">Corte {item.corte}</Badge>}
-      </Group>
-      <Text size="xs" fw={600} lh={1.4} lineClamp={full ? undefined : 1}>{item.accion?.nombre ?? indicador?.nombre}</Text>
-      {indicador?.codigo && (
-        <Text size="10px" c="dimmed" lineClamp={1}>Indicador {indicador.codigo}</Text>
-      )}
-      <Text size="xs" mt={4} lineClamp={full ? undefined : 2}>
-        <b>Motivo:</b> {getMotivo(item)}
-      </Text>
-      <Text size="10px" c="dimmed" mt={2}>
-        {[
-          item.devolucion.por && `Por: ${item.devolucion.por}`,
-          item.devolucion.fecha && new Date(item.devolucion.fecha).toLocaleDateString("es-CO"),
-          item.respondido_por && `Responsable: ${item.respondido_por}`,
-        ].filter(Boolean).join(" · ")}
-      </Text>
-    </Box>
-  );
+export function getIndicadorIdDevuelto(item: ReporteDevuelto) {
+  return item.indicador_id_ref
+    || (typeof item.indicador_id === "object" ? item.indicador_id?._id : item.indicador_id)
+    || "";
 }
 
-// Alertas del panel del administrador: reportes devueltos (por el responsable del
-// proyecto, el líder del macroproyecto o Planeación) que aún no se han corregido.
+// Bandeja del panel del administrador con los reportes devueltos (por el líder del
+// macroproyecto o Planeación) que aún no se han corregido. Mismo estilo discreto
+// que las bandejas de pendientes.
 export default function AlertasDevoluciones({ devueltos }: { devueltos: ReporteDevuelto[] }) {
   const router = useRouter();
   const [modal, setModal] = useState(false);
-  if (!devueltos.length) return null;
+  const total = devueltos.length;
 
   const abrir = (item: ReporteDevuelto) => {
-    const indicadorId = item.indicador_id_ref
-      || (typeof item.indicador_id === "object" ? item.indicador_id?._id : item.indicador_id);
+    const indicadorId = getIndicadorIdDevuelto(item);
     if (!indicadorId) return;
     const params = new URLSearchParams({ modo: "planeacion", origen: "alertas-devoluciones" });
     if (item.corte) params.set("periodo", item.corte);
-    if (item.respuesta_id ?? item._id) params.set("respuesta_id", item.respuesta_id ?? item._id);
+    params.set("respuesta_id", item.respuesta_id ?? item._id);
     router.push(`/pdi/indicadores/${encodeURIComponent(indicadorId)}?${params.toString()}`);
   };
 
+  const titulo = (item: ReporteDevuelto) => {
+    const indicador = typeof item.indicador_id === "object" ? item.indicador_id : null;
+    return item.accion?.codigo ? `Acción ${item.accion.codigo}` : indicador?.codigo ?? "Acción";
+  };
+
   return (
-    <>
-      <Alert
-        mt="lg"
-        radius="lg"
-        color="red"
-        variant="light"
-        icon={<IconAlertTriangle size={18} />}
-        title={
-          <Group gap={8}>
-            <Text fw={700} size="sm">
-              {devueltos.length} acci{devueltos.length !== 1 ? "ones devueltas" : "ón devuelta"} pendiente{devueltos.length !== 1 ? "s" : ""} de corrección
+    <Box mt="lg" style={{ borderTop: "1px solid var(--mantine-color-default-border)", paddingTop: 16 }}>
+      <Group justify="space-between" align="center" mb="sm">
+        <Group gap="sm" align="center">
+          <ThemeIcon size={36} radius="xl" color={total > 0 ? "red" : "teal"} variant="light">
+            <IconArrowBackUp size={18} />
+          </ThemeIcon>
+          <Box>
+            <Text size="xs" c="dimmed" fw={600} tt="uppercase" lh={1}>Acciones devueltas</Text>
+            <Text size="sm" fw={700} lh={1.2} mt={2}>Pendientes de corrección por el responsable</Text>
+          </Box>
+        </Group>
+        <Group gap={8}>
+          {total > 0 ? (
+            <>
+              <Badge color="red" variant="filled" radius="xl" size="md">
+                {total} devuelta{total !== 1 ? "s" : ""}
+              </Badge>
+              <ActionIcon variant="light" color="red" size="md" onClick={() => setModal(true)} title="Ver todas">
+                <IconSearch size={14} />
+              </ActionIcon>
+            </>
+          ) : (
+            <Badge color="teal" variant="light" radius="xl" size="md">Sin devoluciones</Badge>
+          )}
+        </Group>
+      </Group>
+
+      {total === 0 ? (
+        <Text size="sm" c="dimmed">No hay acciones devueltas pendientes de corrección.</Text>
+      ) : (
+        <>
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="xs">
+            {devueltos.slice(0, 8).map((item) => (
+              <Box
+                key={item._id}
+                role="button"
+                tabIndex={0}
+                onClick={() => abrir(item)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(item); }
+                }}
+                title={`Motivo: ${getMotivoDevolucion(item)}`}
+                style={{
+                  background: "rgba(250,82,82,0.06)",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  borderLeft: "3px solid #fa5252",
+                  cursor: "pointer",
+                }}
+              >
+                <Text size="xs" fw={800} c="red.7" lh={1.2}>{titulo(item)}</Text>
+                <Text size="xs" lh={1.4} lineClamp={1}>Motivo: {getMotivoDevolucion(item)}</Text>
+                <Text size="10px" c="dimmed" mt={2}>Corte: {item.corte} · {item.devolucion.nivel_label}</Text>
+              </Box>
+            ))}
+          </SimpleGrid>
+          {total > 8 && (
+            <Text size="xs" c="red.7" fw={600} mt="xs" style={{ cursor: "pointer" }} onClick={() => setModal(true)}>
+              + {total - 8} más — ver todas
             </Text>
-            {devueltos.length > 4 && (
-              <Text size="xs" c="red.7" fw={600} style={{ cursor: "pointer" }} onClick={() => setModal(true)}>
-                Ver todas
-              </Text>
-            )}
-          </Group>
-        }
-      >
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs" mt={4}>
-          {devueltos.slice(0, 4).map((item) => (
-            <DevolucionItem key={item._id} item={item} onOpen={() => abrir(item)} />
-          ))}
-        </SimpleGrid>
-      </Alert>
+          )}
+        </>
+      )}
 
       <Modal
         opened={modal}
         onClose={() => setModal(false)}
         size="lg"
         radius="lg"
-        title={
-          <Group gap="xs">
-            <IconArrowBackUp size={18} color="#fa5252" />
-            <Text fw={700} size="sm">Acciones devueltas</Text>
-          </Group>
-        }
+        title={<Text fw={700} size="sm">Acciones devueltas pendientes de corrección</Text>}
       >
-        <ScrollArea h={460} offsetScrollbars>
-          <Stack gap="xs">
-            {devueltos.map((item) => (
-              <DevolucionItem key={item._id} item={item} full onOpen={() => { setModal(false); abrir(item); }} />
-            ))}
+        <ScrollArea h={440} offsetScrollbars>
+          <Stack gap={10}>
+            {devueltos.map((item) => {
+              const indicador = typeof item.indicador_id === "object" ? item.indicador_id : null;
+              return (
+                <Box
+                  key={item._id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { setModal(false); abrir(item); }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <Group gap={6} align="center">
+                    <Text size="xs" fw={800} c="red.7" lh={1.2}>{titulo(item)}</Text>
+                    <Badge color="red" variant="light" size="xs" radius="xl">Corte {item.corte}</Badge>
+                    <Badge color="gray" variant="light" size="xs" radius="xl">{item.devolucion.nivel_label}</Badge>
+                  </Group>
+                  <Text size="xs" lh={1.4} mt={2}>{item.accion?.nombre ?? indicador?.nombre}</Text>
+                  <Text size="xs" mt={2}><b>Motivo:</b> {getMotivoDevolucion(item)}</Text>
+                  <Text size="10px" c="dimmed" mt={2}>
+                    {[
+                      indicador?.codigo && `Indicador ${indicador.codigo}`,
+                      item.devolucion.por && `Por: ${item.devolucion.por}`,
+                      item.devolucion.fecha && new Date(item.devolucion.fecha).toLocaleDateString("es-CO"),
+                      item.respondido_por && `Responsable: ${item.respondido_por}`,
+                    ].filter(Boolean).join(" · ")}
+                  </Text>
+                </Box>
+              );
+            })}
           </Stack>
         </ScrollArea>
       </Modal>
-    </>
+    </Box>
   );
 }
