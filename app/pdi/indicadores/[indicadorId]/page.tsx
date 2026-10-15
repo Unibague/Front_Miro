@@ -1078,197 +1078,210 @@ function LiderRevisionPanelV2({
                 </Paper>
               </div>
 
-              <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
-                <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{titulo ?? (readOnly ? "Aprobación del líder" : "Evaluación del líder")}</Title>
-                <Text size="sm" c="dimmed" mb="md">
-                  {subtitulo ?? (readOnly
-                    ? "Vista de solo lectura del estado definido por el líder."
-                    : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte.")}
-                </Text>
-
-                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
-                  <Select
-                    label="Estado de evaluación"
-                    data={[
-                      { value: "Pendiente", label: "En revisión" },
-                      { value: "Rechazado", label: "Rechazado" },
-                      { value: "Aprobado", label: "Aprobado" },
-                    ]}
-                    value={estadoSeleccionado}
-                    disabled={readOnly || !puedoAval}
-                    onChange={(value) => {
-                      if (!value) return;
-                      setEstadosSeleccionados((prev) => ({
-                        ...prev,
-                        [r._id]: value as "Pendiente" | "Aprobado" | "Rechazado",
-                      }));
-                    }}
-                  />
-                  <Box
-                    style={{
-                      padding: "12px 14px",
-                      borderRadius: 12,
-                      background: "var(--mantine-color-default-hover)",
-                      alignSelf: "end",
-                    }}
-                  >
-                    <Text size="xs" c="dimmed">Estado actual</Text>
-                    <Text fw={700} mt={4}>{AVAL_LABEL[avalEstado]}</Text>
-                  </Box>
-                </SimpleGrid>
-
-                {estadoSeleccionado === "Rechazado" && (
-                  <Stack gap="sm" mb="md">
-                    {razonesDisponibles.length > 1 && (
-                      <MultiSelect
-                        label="Razones de rechazo"
-                        placeholder="Selecciona una o varias razones..."
-                        data={razonesDisponibles}
-                        value={razonesSeleccionadas[r._id] ?? []}
-                        onChange={(vals) => {
-                          setRazonesSeleccionadas((prev) => ({ ...prev, [r._id]: vals }));
-                          if (!vals.includes("Otro")) setOtrosCuales((prev) => ({ ...prev, [r._id]: "" }));
-                        }}
-                        disabled={readOnly || !puedoAval}
-                        radius="md"
-                      />
-                    )}
-                    {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
-                      <TextInput
-                        label='Especifica "Otro ¿Cuál?"'
-                        placeholder="Escribe aquí..."
-                        value={otrosCuales[r._id] ?? ""}
-                        onChange={(e) => { const v = e.currentTarget.value; setOtrosCuales((prev) => ({ ...prev, [r._id]: v })); }}
-                        disabled={readOnly || !puedoAval}
-                        radius="md"
-                      />
-                    )}
-                    <Textarea
-                      label="Observaciones del rechazo"
-                      placeholder="Escribe aquí el motivo del rechazo para el responsable..."
-                      value={comentarios[r._id] ?? r.aval_comentario ?? ""}
-                      onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
-                      rows={4}
-                      radius="md"
-                      disabled={readOnly || !puedoAval}
-                    />
-
-                    <Paper withBorder radius="lg" p="md" style={{ background: "#fff", borderColor: "#fee2e2" }}>
-                      <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
-                        <div>
-                          <Text size="sm" fw={700}>Formulario enviado por el responsable</Text>
-                          <Text size="xs" c="dimmed">
-                            Revisa las respuestas en linea. Solo puedes agregar comentarios; las respuestas no se editan.
-                          </Text>
-                        </div>
-                        <Badge color="red" variant="light">Comentarios por campo</Badge>
-                      </Group>
-
-                      <Stack gap="sm">
-                        {r.respuestas.map((respuestaCampo, index) => {
-                          const campoKey = getRespuestaCampoKey(respuestaCampo, index);
-                          const valorCampo = getRespuestaCampoValor(respuestaCampo);
-                          const comentarioCampo =
-                            comentariosCampos[r._id]?.[campoKey] ?? respuestaCampo.comentario_lider ?? "";
-
-                          return (
-                            <Paper
-                              key={campoKey}
-                              withBorder
-                              radius="md"
-                              p="sm"
-                              style={{ background: "var(--mantine-color-default-hover)" }}
-                            >
-                              <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>
-                                {respuestaCampo.etiqueta || `Pregunta ${index + 1}`}
-                              </Text>
-
-                              {respuestaCampo.url ? (
-                                <Button
-                                  size="xs"
-                                  variant="light"
-                                  color="blue"
-                                  component="a"
-                                  href={respuestaCampo.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  leftSection={<IconFileTypePdf size={13} />}
-                                  mb="sm"
-                                >
-                                  {respuestaCampo.nombre_original || "Abrir archivo"}
-                                </Button>
-                              ) : (
-                                <Text size="sm" mb="sm" style={{ whiteSpace: "pre-wrap" }}>
-                                  {valorCampo || <span style={{ color: "#94a3b8" }}>Sin respuesta</span>}
-                                </Text>
-                              )}
-
-                              <Textarea
-                                label="Comentario del lider"
-                                placeholder="Comentario puntual para esta respuesta..."
-                                value={comentarioCampo}
-                                onChange={(e) => {
-                                  const value = e.currentTarget.value;
-                                  setComentariosCampos((prev) => ({
-                                    ...prev,
-                                    [r._id]: {
-                                      ...(prev[r._id] ?? {}),
-                                      [campoKey]: value,
-                                    },
-                                  }));
-                                }}
-                                minRows={2}
-                                autosize
-                                radius="md"
-                                disabled={readOnly || !puedoAval}
-                              />
-                            </Paper>
-                          );
-                        })}
-                      </Stack>
-                    </Paper>
-                  </Stack>
-                )}
-
-                {!puedoAval && (
-                  <Paper withBorder radius="md" p="sm" mb="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+              {!permitirEvaluacion && avalEstado === "Pendiente" ? (
+                // Quien no es el líder (p. ej. el administrador) solo visualiza: la
+                // evaluación se muestra cuando el líder aprueba y el reporte llega a Planeación.
+                <Paper withBorder radius="md" p="sm" style={{ background: "rgba(250,176,5,0.06)", borderColor: "#ffec99" }}>
+                  <Group gap={8} wrap="nowrap">
+                    <IconClockHour4 size={16} color="#f59f00" />
                     <Text size="sm" c="dimmed">
-                      {avalEstado === "Pendiente"
-                        ? "Este formulario sigue en revisión."
-                        : `La evaluación ya fue cerrada con estado ${AVAL_LABEL[avalEstado].toLowerCase()}.`}
+                      Pendiente de evaluación del líder del macroproyecto. Este reporte es solo de consulta hasta que el líder lo evalúe.
                     </Text>
-                  </Paper>
-                )}
-
-
-                {puedoAval && (
-                  <Group justify="flex-end">
-                    <Button
-                      color={estadoSeleccionado === "Aprobado" ? "teal" : "red"}
-                      radius="xl"
-                      loading={savingId === r._id}
-                      disabled={estadoSeleccionado === "Pendiente"}
-                      leftSection={
-                        estadoSeleccionado === "Aprobado"
-                          ? <IconShieldCheck size={14} />
-                          : <IconShieldX size={14} />
-                      }
-                      onClick={() => handleAval(r)}
-                    >
-                      Guardar evaluación
-                    </Button>
                   </Group>
-                )}
+                </Paper>
+              ) : (
+                <Paper withBorder radius="xl" p="lg" style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
+                  <Title order={5} mb="sm" style={{ background: "linear-gradient(90deg, #0891b2, #6366f1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{titulo ?? (readOnly ? "Aprobación del líder" : "Evaluación del líder")}</Title>
+                  <Text size="sm" c="dimmed" mb="md">
+                    {subtitulo ?? (readOnly
+                      ? "Vista de solo lectura del estado definido por el líder."
+                      : "Define el estado del formulario. Las observaciones solo aplican cuando rechazas el reporte.")}
+                  </Text>
 
-                {!readOnly && permitirEvaluacion && avalEstado === "Aprobado" && (
-                  <DeshacerAprobacion
-                    respuesta={r}
-                    nivel="lider"
-                    por={liderEmail}
-                    onDone={() => { load(); router.refresh(); }}
-                  />
-                )}
-              </Paper>
+                  <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" mb="md">
+                    <Select
+                      label="Estado de evaluación"
+                      data={[
+                        { value: "Pendiente", label: "En revisión" },
+                        { value: "Rechazado", label: "Rechazado" },
+                        { value: "Aprobado", label: "Aprobado" },
+                      ]}
+                      value={estadoSeleccionado}
+                      disabled={readOnly || !puedoAval}
+                      onChange={(value) => {
+                        if (!value) return;
+                        setEstadosSeleccionados((prev) => ({
+                          ...prev,
+                          [r._id]: value as "Pendiente" | "Aprobado" | "Rechazado",
+                        }));
+                      }}
+                    />
+                    <Box
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "var(--mantine-color-default-hover)",
+                        alignSelf: "end",
+                      }}
+                    >
+                      <Text size="xs" c="dimmed">Estado actual</Text>
+                      <Text fw={700} mt={4}>{AVAL_LABEL[avalEstado]}</Text>
+                    </Box>
+                  </SimpleGrid>
+
+                  {estadoSeleccionado === "Rechazado" && (
+                    <Stack gap="sm" mb="md">
+                      {razonesDisponibles.length > 1 && (
+                        <MultiSelect
+                          label="Razones de rechazo"
+                          placeholder="Selecciona una o varias razones..."
+                          data={razonesDisponibles}
+                          value={razonesSeleccionadas[r._id] ?? []}
+                          onChange={(vals) => {
+                            setRazonesSeleccionadas((prev) => ({ ...prev, [r._id]: vals }));
+                            if (!vals.includes("Otro")) setOtrosCuales((prev) => ({ ...prev, [r._id]: "" }));
+                          }}
+                          disabled={readOnly || !puedoAval}
+                          radius="md"
+                        />
+                      )}
+                      {(razonesSeleccionadas[r._id] ?? []).includes("Otro") && (
+                        <TextInput
+                          label='Especifica "Otro ¿Cuál?"'
+                          placeholder="Escribe aquí..."
+                          value={otrosCuales[r._id] ?? ""}
+                          onChange={(e) => { const v = e.currentTarget.value; setOtrosCuales((prev) => ({ ...prev, [r._id]: v })); }}
+                          disabled={readOnly || !puedoAval}
+                          radius="md"
+                        />
+                      )}
+                      <Textarea
+                        label="Observaciones del rechazo"
+                        placeholder="Escribe aquí el motivo del rechazo para el responsable..."
+                        value={comentarios[r._id] ?? r.aval_comentario ?? ""}
+                        onChange={(e) => { const v = e.currentTarget.value; setComentarios((prev) => ({ ...prev, [r._id]: v })); }}
+                        rows={4}
+                        radius="md"
+                        disabled={readOnly || !puedoAval}
+                      />
+
+                      <Paper withBorder radius="lg" p="md" style={{ background: "#fff", borderColor: "#fee2e2" }}>
+                        <Group justify="space-between" align="flex-start" mb="sm" wrap="wrap">
+                          <div>
+                            <Text size="sm" fw={700}>Formulario enviado por el responsable</Text>
+                            <Text size="xs" c="dimmed">
+                              Revisa las respuestas en linea. Solo puedes agregar comentarios; las respuestas no se editan.
+                            </Text>
+                          </div>
+                          <Badge color="red" variant="light">Comentarios por campo</Badge>
+                        </Group>
+
+                        <Stack gap="sm">
+                          {r.respuestas.map((respuestaCampo, index) => {
+                            const campoKey = getRespuestaCampoKey(respuestaCampo, index);
+                            const valorCampo = getRespuestaCampoValor(respuestaCampo);
+                            const comentarioCampo =
+                              comentariosCampos[r._id]?.[campoKey] ?? respuestaCampo.comentario_lider ?? "";
+
+                            return (
+                              <Paper
+                                key={campoKey}
+                                withBorder
+                                radius="md"
+                                p="sm"
+                                style={{ background: "var(--mantine-color-default-hover)" }}
+                              >
+                                <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb={6}>
+                                  {respuestaCampo.etiqueta || `Pregunta ${index + 1}`}
+                                </Text>
+
+                                {respuestaCampo.url ? (
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    color="blue"
+                                    component="a"
+                                    href={respuestaCampo.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    leftSection={<IconFileTypePdf size={13} />}
+                                    mb="sm"
+                                  >
+                                    {respuestaCampo.nombre_original || "Abrir archivo"}
+                                  </Button>
+                                ) : (
+                                  <Text size="sm" mb="sm" style={{ whiteSpace: "pre-wrap" }}>
+                                    {valorCampo || <span style={{ color: "#94a3b8" }}>Sin respuesta</span>}
+                                  </Text>
+                                )}
+
+                                <Textarea
+                                  label="Comentario del lider"
+                                  placeholder="Comentario puntual para esta respuesta..."
+                                  value={comentarioCampo}
+                                  onChange={(e) => {
+                                    const value = e.currentTarget.value;
+                                    setComentariosCampos((prev) => ({
+                                      ...prev,
+                                      [r._id]: {
+                                        ...(prev[r._id] ?? {}),
+                                        [campoKey]: value,
+                                      },
+                                    }));
+                                  }}
+                                  minRows={2}
+                                  autosize
+                                  radius="md"
+                                  disabled={readOnly || !puedoAval}
+                                />
+                              </Paper>
+                            );
+                          })}
+                        </Stack>
+                      </Paper>
+                    </Stack>
+                  )}
+
+                  {!puedoAval && (
+                    <Paper withBorder radius="md" p="sm" mb="md" style={{ background: "var(--mantine-color-default-hover)" }}>
+                      <Text size="sm" c="dimmed">
+                        {avalEstado === "Pendiente"
+                          ? "Este formulario sigue en revisión."
+                          : `La evaluación ya fue cerrada con estado ${AVAL_LABEL[avalEstado].toLowerCase()}.`}
+                      </Text>
+                    </Paper>
+                  )}
+
+
+                  {puedoAval && (
+                    <Group justify="flex-end">
+                      <Button
+                        color={estadoSeleccionado === "Aprobado" ? "teal" : "red"}
+                        radius="xl"
+                        loading={savingId === r._id}
+                        disabled={estadoSeleccionado === "Pendiente"}
+                        leftSection={
+                          estadoSeleccionado === "Aprobado"
+                            ? <IconShieldCheck size={14} />
+                            : <IconShieldX size={14} />
+                        }
+                        onClick={() => handleAval(r)}
+                      >
+                        Guardar evaluación
+                      </Button>
+                    </Group>
+                  )}
+
+                  {!readOnly && permitirEvaluacion && avalEstado === "Aprobado" && (
+                    <DeshacerAprobacion
+                      respuesta={r}
+                      nivel="lider"
+                      por={liderEmail}
+                      onDone={() => { load(); router.refresh(); }}
+                    />
+                  )}
+                </Paper>
+              )}
             </Paper>
           );
         })}
