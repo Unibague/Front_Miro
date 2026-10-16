@@ -921,7 +921,7 @@ function ResponsableIndicadorModal({ opened, onClose, indicador, cortesVigentes,
 }
 
 // ── Card de indicador ──────────────────────────────────────────────────────
-function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, aniosPdi, anioMeta, email, esLider = false, esResponsable = true }: {
+function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, aniosPdi, anioMeta, email, esLider = false, esResponsable = true, responsablesReporte = [] }: {
   indicador: Indicador;
   cortesVigentes: CorteVigente[];
   onUpdated: (ind: Indicador) => void;
@@ -930,6 +930,7 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
   email: string;
   esLider?: boolean;
   esResponsable?: boolean;
+  responsablesReporte?: string[];
 }) {
   const router = useRouter();
   const [ind, setInd] = useState(indInicial);
@@ -1183,6 +1184,12 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
           >
             Actualizar avances y evidencias
           </Button>
+        )}
+        {esLider && !esResponsable && responsablesReporte.length > 0 && (
+          <Text size="xs" c="dimmed" ta="center">
+            {responsablesReporte.length > 1 ? "Reportan: " : "Reporta: "}
+            <b>{responsablesReporte.join(", ")}</b>
+          </Text>
         )}
         {esLider && !esResponsable && (
           <Button
@@ -1581,6 +1588,9 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
   const reportesPendientes = esResponsable ? getReportesPendientesAccion(indicadores, cortesVigentes) : [];
   const evaluacionesPendientes = esLider ? getEvaluacionesPendientesAccion(indicadores) : [];
   const reportesRealizados = esResponsable ? getReportesRealizadosAccion(indicadores, cortesVigentes) : [];
+  const responsablesReporte = Array.isArray(accion.responsables) && accion.responsables.length > 0
+    ? accion.responsables.map((r) => r.nombre).filter(Boolean)
+    : accion.responsable ? [accion.responsable] : [];
   return (
     <Paper withBorder radius="xl" p="lg"
       style={{ background: "rgba(255,255,255,0.72)", cursor: "pointer", transition: "box-shadow 0.2s" }}
@@ -1596,8 +1606,11 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <Text size="xs" fw={700} c="dimmed">{accion.codigo}</Text>
             <Text size="lg" style={{ lineHeight: 1.25, WebkitBackgroundClip: "text", WebkitTextFillColor: "dark", backgroundClip: "text" }}>{accion.nombre}</Text>
-            {accion.responsable && (
-              <Text size="xs" c="dimmed" mt={4}>Responsable: <b>{accion.responsable}</b></Text>
+            {responsablesReporte.length > 0 && (
+              <Text size="xs" c="dimmed" mt={4}>
+                {responsablesReporte.length > 1 ? "Responsables de reportar: " : "Responsable de reportar: "}
+                <b>{responsablesReporte.join(", ")}</b>
+              </Text>
             )}
             {(reportesPendientes.length > 0 || evaluacionesPendientes.length > 0 || reportesRealizados.length > 0) && (
               <Group gap={4} mt={8} wrap="wrap">
@@ -1872,6 +1885,7 @@ function AccionResponsableCard({ accion, indicadores, cortesVigentes, onUpdated,
                 email={email}
                 esLider={esLider}
                 esResponsable={esResponsable}
+                responsablesReporte={responsablesReporte}
               />
             ))}
           </SimpleGrid>
