@@ -1191,7 +1191,9 @@ function MiIndicadorCard({ indicador: indInicial, cortesVigentes, onUpdated, ani
             <b>{responsablesReporte.join(", ")}</b>
           </Text>
         )}
-        {esLider && !esResponsable && (
+        {/* Si el líder también es responsable (p. ej. comparte la acción con otra persona),
+            igual debe poder evaluar los reportes que otro responsable dejó pendientes. */}
+        {esLider && (!esResponsable || evaluacionesPendientes.length > 0) && (
           <Button
             fullWidth
             variant="light"
