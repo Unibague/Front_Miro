@@ -348,6 +348,9 @@ export interface DashboardResumen {
   anio_actual: string;
   avance_anio_actual: number;
   semaforo_anio_actual: Semaforo;
+  // Avance del año (mismo cálculo ponderado que la memoria técnica), por _id.
+  avance_anio_por_macro?: Record<string, number>;
+  avance_anio_por_proyecto?: Record<string, number>;
   estructura_anio_actual: {
     macroproyectos: number;
     proyectos: number;

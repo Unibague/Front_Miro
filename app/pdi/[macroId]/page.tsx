@@ -16,7 +16,7 @@ import { showNotification } from "@mantine/notifications";
 import axios from "axios";
 import { useRouter, useParams } from "next/navigation";
 import { useRole } from "@/app/context/RoleContext";
-import type { Macroproyecto, Proyecto, Accion, Indicador } from "../types";
+import type { Macroproyecto, Proyecto, Accion, Indicador, DashboardResumen } from "../types";
 import { PDI_ROUTES } from "../api";
 import { getIndicadorIdDevuelto, getMotivoDevolucion, type ReporteDevuelto } from "../components/AlertasDevoluciones";
 import PdiSidebar from "../components/PdiSidebar";
@@ -25,7 +25,7 @@ import ProyectoModal from "../components/ProyectoModal";
 import AccionModal from "../components/AccionModal";
 import IndicadorModal from "../components/IndicadorModal";
 import { usePdiConfig } from "../hooks/usePdiConfig";
-import { getWeightedContribution as getWeightedProgress, formatNumeroEs, getAvanceAnioSimple } from "../avance-utils";
+import { getWeightedContribution as getWeightedProgress, formatNumeroEs } from "../avance-utils";
 
 const ANIO_ACTUAL = String(new Date().getFullYear());
 // Ancho fijo de cada tarjeta de año en las secciones de distribución
@@ -920,8 +920,11 @@ function AccionCard({ accion: accionInicial, admin, aniosPdi, onEdit, onDelete, 
   );
 }
 
-function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, onDelete, onAvanceUpdate, onComputedProgress }: {
+function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, avanceProyectoAnio, onEdit, onDelete, onAvanceUpdate, onComputedProgress }: {
   proyecto: Proyecto; admin: boolean;
+  // Avance del año en curso calculado en el backend (calcularAvanceVigencia),
+  // igual que en la memoria técnica de la vigencia.
+  avanceProyectoAnio: number;
   aniosPdi: number[];
   onEdit: (p: Proyecto) => void;
   onDelete: (id: string) => void;
@@ -1058,7 +1061,6 @@ function ProyectoSeccion({ proyecto: proyectoInicial, admin, aniosPdi, onEdit, o
   const avanceProyecto = acciones.length
     ? getWeightedProgress(acciones, (accion) => Number(accion.avance) || 0)
     : proyecto.avance;
-  const avanceProyectoAnio = getAvanceAnioSimple(indicadoresProyecto, ANIO_ACTUAL);
   const semaforoProyectoAnio = getSemaforoByAvance(avanceProyectoAnio);
   const presupuestoProyecto = Number(proyecto.presupuesto || 0);
   const presupuestoEjecutadoProyecto = Number(proyecto.presupuesto_ejecutado || 0);
@@ -1288,9 +1290,16 @@ export default function MacroproyectoDetallePage() {
   const [macroModal, setMacroModal] = useState(false);
   const [proyectoModal, setProyectoModal] = useState(false);
   const [selectedProyecto, setSelectedProyecto] = useState<Proyecto | null>(null);
+  const [avanceAnioPorProyecto, setAvanceAnioPorProyecto] = useState<Record<string, number>>({});
+
+  const cargarAvanceAnioProyectos = () =>
+    axios.get<DashboardResumen>(PDI_ROUTES.dashboardResumen(ANIO_ACTUAL))
+      .then(({ data }) => setAvanceAnioPorProyecto(data?.avance_anio_por_proyecto ?? {}))
+      .catch((e) => console.error(e));
 
   useEffect(() => {
     if (!macroId) return;
+    cargarAvanceAnioProyectos();
     Promise.all([
       axios.get(PDI_ROUTES.macroproyecto(macroId)),
       axios.get(PDI_ROUTES.proyectos(), { params: { macroproyecto_id: macroId } }),
@@ -1306,6 +1315,7 @@ export default function MacroproyectoDetallePage() {
   }, [macroId]);
 
   const refrescarMacro = async () => {
+    cargarAvanceAnioProyectos();
     try {
       const [resMacro, resProyectos] = await Promise.all([
         axios.get(PDI_ROUTES.macroproyecto(macroId)),
@@ -1468,6 +1478,7 @@ export default function MacroproyectoDetallePage() {
                   proyecto={proyecto}
                   admin={admin}
                   aniosPdi={config.anios}
+                  avanceProyectoAnio={avanceAnioPorProyecto[proyecto._id] ?? 0}
                   onEdit={(item) => { setSelectedProyecto(item); setProyectoModal(true); }}
                   onDelete={handleDeleteProyecto}
                   onAvanceUpdate={refrescarMacro}

@@ -26,7 +26,7 @@ import PdiSidebar from "./components/PdiSidebar";
 import { usePdiConfig } from "./hooks/usePdiConfig";
 import PermissionGate from "@/app/components/PermissionGate";
 import AlertasDevoluciones, { type ReporteDevuelto } from "./components/AlertasDevoluciones";
-import { getAvanceAnioSimple, formatNumeroEs, getSemaforoByAvance } from "./avance-utils";
+import { formatNumeroEs, getSemaforoByAvance } from "./avance-utils";
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
@@ -1827,13 +1827,11 @@ export default function PdiPage() {
       const anioActual = String(resumenRes.data?.anio_actual ?? new Date().getFullYear());
       const annualStatsMap = macrosData.reduce<Record<string, MacroAnnualStats>>((acc, macro) => {
         const accionesMacro = accionesData.filter((accion) => accionToMacroMap[accion._id] === macro._id);
-        const indicadoresMacro = indicadoresData.filter((indicador) => {
-          const accionId = indicador.accion_id?._id;
-          return Boolean(accionId && accionToMacroMap[accionId] === macro._id);
-        });
 
         acc[macro._id] = {
-          avance: getAvanceAnioSimple(indicadoresMacro, anioActual),
+          // Viene del backend (calcularAvanceVigencia): mismo cálculo
+          // ponderado por peso que la memoria técnica de la vigencia.
+          avance: resumenRes.data?.avance_anio_por_macro?.[macro._id] ?? 0,
           presupuesto: accionesMacro.reduce(
             (total, accion) => total + (Number(accion.presupuesto_por_anio?.[anioActual]) || 0),
             0,
