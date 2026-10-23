@@ -1417,15 +1417,54 @@ interface DependentListSource {
 }
 
 // Listas dependientes habilitadas. Solo aplica a estas hojas y validaciones
-// (plantilla "Investigación (Grupos, líneas y semilleros)"), para no cambiar
-// el comportamiento de ninguna otra plantilla.
-const DEPENDENT_LISTS: { sheets: string[]; parentValidator: string; childValidator: string }[] = [
+// (plantillas "Investigación (Grupos, líneas y semilleros)", "Beneficios
+// funcionarios" y "Desarrollo y estímulos Profesorales"), para no cambiar el
+// comportamiento de ninguna otra plantilla.
+// Sin `sheets` aplica en cualquier hoja donde aparezcan ambas validaciones.
+// `childCodePrefixes`: respaldo cuando la tabla hija no trae una columna que
+// enlace con la padre; las letras iniciales del código hijo ("BP01" → "BP")
+// se asocian con la fila padre cuyo código sea ese prefijo o cuyo texto
+// empiece por el nombre indicado.
+const DEPENDENT_LISTS: {
+  sheets?: string[];
+  parentValidator: string;
+  childValidator: string;
+  childCodePrefixes?: Record<string, string>;
+}[] = [
   {
     sheets: ["GRUPOS", "INVESTIGADORES"],
     parentValidator: "GRUPOS_DE_INVESTIGACION",
     childValidator: "LINEAS_DE_INVESTIGACION",
   },
+  {
+    parentValidator: "CATEGORÍA_BENEFICIO_FUNCIONARIO",
+    childValidator: "TIPO_BENEFICIOS_FUNCIONARIOS",
+    childCodePrefixes: {
+      BP: "Beneficios a pensionados",
+      BA: "Beneficios Académicos",
+      SB: "Servicios de Bienestar",
+      BAS: "Beneficios asistenciales",
+      BC: "Beneficios por convenios",
+      BT: "Beneficios en tiempo",
+      OB: "Otros beneficios",
+    },
+  },
+  {
+    // Plantilla "Desarrollo y estímulos Profesorales": el código va al inicio
+    // de la descripción del tipo ("DH01 Honoris Causa").
+    parentValidator: "CATEGORIA_INCENTIVOS_ESTÍMULOS",
+    childValidator: "TIPO_CATEGORIA_ESTIMULOS_PROFESORES",
+    childCodePrefixes: {
+      DH: "Distinción honorífica",
+      EP: "Estímulo profesoral",
+      RIP: "Reconocimiento e Incentivo profesoral",
+      SA: "Situación administrativa",
+    },
+  },
 ];
+
+// Texto sin tildes, espacios ni signos, para comparar nombres de categoría.
+const compactToken = (value: string): string => normalizeToken(value).replace(/[^A-Z0-9]/g, "");
 
 // Lista dependiente: si las filas del validador del campo traen una columna
 // cuyos valores corresponden a los de un campo ANTERIOR de la misma hoja
@@ -1444,7 +1483,7 @@ const buildDependentListSource = (
   const childRows = own?.validator.values ?? [];
   if (!own || childRows.length === 0) return null;
   const allowedRules = DEPENDENT_LISTS.filter((rule) =>
-    rule.sheets.some((sheet) => normalizeToken(sheet) === normalizeToken(worksheetName)) &&
+    (!rule.sheets || rule.sheets.some((sheet) => normalizeToken(sheet) === normalizeToken(worksheetName))) &&
     normalizeToken(rule.childValidator) === normalizeToken(own.validator.name)
   );
   if (allowedRules.length === 0) return null;
@@ -1481,7 +1520,23 @@ const buildDependentListSource = (
     const parent = findValidatorForField(parentField, validators);
     const parentRows = parent?.validator.values ?? [];
     if (!parent || parent.validator === own.validator || parentRows.length === 0) continue;
-    if (!allowedRules.some((rule) => normalizeToken(rule.parentValidator) === normalizeToken(parent.validator.name))) continue;
+    const parentRules = allowedRules.filter((rule) => normalizeToken(rule.parentValidator) === normalizeToken(parent.validator.name));
+    if (parentRules.length === 0) continue;
+    const parentColumnName = parent.columnName || parentField.name;
+    // La celda del padre puede traer la etiqueta de la lista ("COL0007284 - D+TEC"),
+    // solo el código ("COL0007284") o solo el valor enlazado ("D+TEC").
+    const parentKeysFor = (parentRow: Record<string, unknown>, linkKeys: string[]) => {
+      const rawKeyParts = linkKeys.flatMap((key) => {
+        const text = toOptionText(resolveValueByKey(parentRow, key));
+        const dashIndex = text.indexOf(" - ");
+        return dashIndex > 0 ? [text, text.slice(0, dashIndex), text.slice(dashIndex + 3)] : [text];
+      });
+      return Array.from(new Set(
+        [getValidatorRowLabel(parent.validator, parentRow, parentColumnName), ...rawKeyParts]
+          .map((key) => key.trim())
+          .filter(Boolean)
+      ));
+    };
 
     for (const childKey of childKeys) {
       const childValues = valueSet(childRows, childKey);
@@ -1525,25 +1580,60 @@ const buildDependentListSource = (
             .map(labelFor)
         );
         if (options.length === 0) return [];
-        // La celda del padre puede traer la etiqueta de la lista ("COL0007284 - D+TEC"),
-        // solo el código ("COL0007284") o solo el valor enlazado ("D+TEC").
-        const parentColumnName = parent.columnName || parentField.name;
-        const rawKeyParts = [parentColumnName, parentKey].flatMap((key) => {
-          const text = toOptionText(resolveValueByKey(parentRow, key));
-          const dashIndex = text.indexOf(" - ");
-          return dashIndex > 0 ? [text, text.slice(0, dashIndex), text.slice(dashIndex + 3)] : [text];
-        });
-        const keys = Array.from(new Set(
-          [getValidatorRowLabel(parent.validator, parentRow, parentColumnName), ...rawKeyParts]
-            .map((key) => key.trim())
-            .filter(Boolean)
-        ));
-        return [{ keys, options }];
+        return [{ keys: parentKeysFor(parentRow, [parentColumnName, parentKey]), options }];
       });
 
       if (groups.length === 0) continue;
       const { col: parentCol } = getConfiguredFieldPosition(parentField, parentIndex, fields);
       return { parentCol, groups, allOptions: normalizeDropdownOptionTexts(childRows.map(labelFor)) };
+    }
+
+    // Respaldo por prefijo del código hijo (p. ej. "BP01" → categoría "BP" /
+    // "Beneficios a pensionados").
+    const prefixes = parentRules.find((rule) => rule.childCodePrefixes)?.childCodePrefixes;
+    if (prefixes) {
+      const ownColumnName = own.columnName || field.name;
+      // El valor puede venir compuesto con el ID delante ("1 - DH01 Honoris
+      // Causa") o con el código delante ("BP01 - Programa…"): se toma la primera
+      // parte que empiece por letras seguidas de dígitos.
+      const childPrefix = (row: Record<string, unknown>): string => {
+        const raw = toOptionText(resolveValueByKey(row, ownColumnName));
+        for (const part of raw.split(" - ")) {
+          const match = normalizeToken(part).match(/^([A-Z]+)\d+\b/);
+          if (match) return match[1];
+        }
+        return "";
+      };
+      const parentKeys = Object.keys(parentRows[0] || {});
+      const prefixForParent = (parentRow: Record<string, unknown>): string | undefined => {
+        const texts = parentKeys.flatMap((key) => {
+          const text = toOptionText(resolveValueByKey(parentRow, key));
+          const dashIndex = text.indexOf(" - ");
+          return dashIndex > 0 ? [text, text.slice(0, dashIndex), text.slice(dashIndex + 3)] : [text];
+        }).map(compactToken).filter(Boolean);
+        const entries = Object.entries(prefixes);
+        return (
+          entries.find(([prefix]) => texts.includes(compactToken(prefix))) ||
+          entries.find(([, name]) => texts.some((text) => text.startsWith(compactToken(name))))
+        )?.[0];
+      };
+      const labelFor = (row: Record<string, unknown>) => getValidatorRowLabel(own.validator, row, ownColumnName);
+
+      const groups = parentRows.flatMap((parentRow) => {
+        const prefix = prefixForParent(parentRow);
+        if (!prefix) return [];
+        const normalizedPrefix = normalizeToken(prefix);
+        const options = normalizeDropdownOptionTexts(
+          childRows.filter((row) => childPrefix(row) === normalizedPrefix).map(labelFor)
+        );
+        if (options.length === 0) return [];
+        return [{ keys: parentKeysFor(parentRow, parentKeys), options }];
+      });
+
+      if (groups.length > 0) {
+        const { col: parentCol } = getConfiguredFieldPosition(parentField, parentIndex, fields);
+        return { parentCol, groups, allOptions: normalizeDropdownOptionTexts(childRows.map(labelFor)) };
+      }
     }
   }
 
