@@ -386,7 +386,7 @@ export default function ConsultaInformacionPage() {
       return;
     }
     try {
-      await axios.patch(`${API_BASE}/${item._id}/rename`, { file_name: editingName.trim() });
+      await axios.patch(`${API_BASE}/${item._id}/rename`, { file_name: editingName.trim(), email: session?.user?.email });
       setFileList(prev => prev.map(f => f._id === item._id ? { ...f, file_name: editingName.trim() } : f));
       setEditingId(null);
     } catch {

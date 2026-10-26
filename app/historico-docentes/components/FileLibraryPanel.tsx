@@ -88,6 +88,7 @@ interface FileItem {
   anexosCount: number;
   anexosNames: string[];
   sheetsInfo: { index: number; name: string; totalRows: number }[];
+  can_manage?: boolean;
 }
 
 interface Anexo {
@@ -208,6 +209,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   // únicamente en el ámbito "Recursos Físicos y Tecnológicos".
   const [uploadPermissions, setUploadPermissions] = useState<Record<string, boolean>>({});
   const canUpload = isAdmin || !!uploadPermissions[category];
+  // El backend marca con can_manage los archivos que el usuario puede editar/
+  // eliminar (para AYUDAS EDUCATIVAS: los cargados por cualquiera de sus miembros).
+  const canManage = (item: FileItem) => isAdmin || !!item.can_manage;
 
   useEffect(() => {
     if (!session?.user?.email) return;
@@ -424,11 +428,12 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       return;
     }
     try {
-      await axios.patch(`${API_BASE}/${item._id}/rename`, { file_name: editingName.trim() });
+      await axios.patch(`${API_BASE}/${item._id}/rename`, { file_name: editingName.trim(), email: session?.user?.email });
       setFileList((prev) => prev.map((f) => (f._id === item._id ? { ...f, file_name: editingName.trim() } : f)));
       setEditingId(null);
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo renombrar el archivo.", color: "red" });
+    } catch (error) {
+      const message = axios.isAxiosError(error) && error.response?.data?.message;
+      showNotification({ title: "Error", message: message || "No se pudo renombrar el archivo.", color: "red" });
     }
   };
 
@@ -442,8 +447,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
         setFileData(null);
       }
       fetchFileList();
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo eliminar el archivo.", color: "red" });
+    } catch (error) {
+      const message = axios.isAxiosError(error) && error.response?.data?.message;
+      showNotification({ title: "Error", message: message || "No se pudo eliminar el archivo.", color: "red" });
     }
   };
 
@@ -955,7 +961,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                         ) : (
                           <Group gap={4} wrap="nowrap">
                             <Text fw={500} truncate style={{ flex: 1 }}>{displayFileName(item.file_name)}</Text>
-                            {isAdmin && (
+                            {canManage(item) && (
                               <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => { setEditingId(item._id); setEditingName(item.file_name); }}>
                                 <IconPencil size={13} />
                               </ActionIcon>
@@ -993,7 +999,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                           <IconDownload size={15} />
                         </ActionIcon>
                       </Tooltip>
-                      {isAdmin && (
+                      {canManage(item) && (
                         <Tooltip label="Eliminar">
                           <ActionIcon variant="subtle" color="red" onClick={() => handleDeleteFile(item)}>
                             <IconTrash size={16} />
