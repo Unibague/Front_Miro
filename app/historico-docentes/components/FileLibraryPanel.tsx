@@ -203,6 +203,20 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
+  // Además del Administrador, el backend habilita la carga de Plantillas a los
+  // miembros de AYUDAS EDUCATIVAS (sin importar si son Responsable o Productor)
+  // únicamente en el ámbito "Recursos Físicos y Tecnológicos".
+  const [uploadPermissions, setUploadPermissions] = useState<Record<string, boolean>>({});
+  const canUpload = isAdmin || !!uploadPermissions[category];
+
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    axios
+      .get(`${API_BASE}/upload-permissions`, { params: { email: session.user.email, dimensionId } })
+      .then((res) => setUploadPermissions(res.data || {}))
+      .catch(() => setUploadPermissions({}));
+  }, [session?.user?.email, dimensionId]);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -458,8 +472,9 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       showNotification({ title: "Archivo cargado", message: `"${file.name}" fue cargado en este ámbito.`, color: "teal" });
       setFile(null);
       fetchFileList();
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo cargar el archivo.", color: "red" });
+    } catch (error) {
+      const message = axios.isAxiosError(error) && error.response?.data?.message;
+      showNotification({ title: "Error", message: message || "No se pudo cargar el archivo.", color: "red" });
     } finally {
       setUploading(false);
     }
@@ -814,10 +829,10 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
         )}
       </Modal>
 
-      {!selectedFile && (tabs || isAdmin) && (
+      {!selectedFile && (tabs || canUpload) && (
         <Group mb="md" justify="space-between" align="flex-end" wrap="wrap" gap="xs">
           {tabs || <div />}
-          {isAdmin && (
+          {canUpload && (
             <Group gap="xs">
               <FileInput
                 placeholder={category === "informes" ? "Excel (.xlsx) o PDF" : "Seleccionar Excel (.xlsx)"}
@@ -904,7 +919,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                 <Text c="dimmed" ta="center">
                   {listSearch.trim()
                     ? `Sin resultados para "${listSearch}".`
-                    : isAdmin
+                    : canUpload
                       ? `No hay archivos en este ámbito. ${category === "informes" ? "Sube un Excel o PDF." : "Sube un Excel para comenzar."}`
                       : "No hay archivos disponibles en este ámbito."}
                 </Text>
