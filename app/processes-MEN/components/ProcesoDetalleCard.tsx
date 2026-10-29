@@ -607,6 +607,7 @@ const ProcesoDetalleCard = ({
   const [respuestaNoRenovModalOpen, setRespuestaNoRenovModalOpen] = useState(false);
   const [fase7DocsOpen, setFase7DocsOpen]                   = useState(false);
   const [deletingDocId, setDeletingDocId]                   = useState<string | null>(null);
+  const documentoCierreNoRenovacion = respuestaNoRenovacionDoc ?? actoAdminMenDoc;
 
   const fetchProcesoDocs = async () => {
     try {
@@ -713,7 +714,11 @@ const ProcesoDetalleCard = ({
       });
       setCierreResultado("aprobado");
     } else {
-      setCierreForm({ fecha: "", codigo: "", duracion: duracionPred });
+      setCierreForm({
+        fecha: caso?.fecha_resolucion?.slice(0, 10) ?? "",
+        codigo: "",
+        duracion: duracionPred,
+      });
     }
     setCierreFormRc({ fecha: "", codigo: "", duracion: duracionPred });
     setIncluirRcOficioAlCierre(!!proceso.av_espera_rc_oficio);
@@ -765,7 +770,7 @@ const ProcesoDetalleCard = ({
           setCerrandoProceso(false);
           return;
         }
-        if (!respuestaNoRenovacionDoc) {
+        if (!documentoCierreNoRenovacion) {
           setCierreError("Sube el documento de respuesta al cierre (no es una resolución MEN con código ni vigencia) antes de cerrar como aprobado.");
           setCerrandoProceso(false);
           return;
@@ -2433,31 +2438,39 @@ const ProcesoDetalleCard = ({
               <Text size="xs" c="dimmed" mb="xs">
                 Acto o comunicación con el que se da respuesta al trámite de no renovación (no es resolución MEN con código ni vigencia).
               </Text>
-              {respuestaNoRenovacionDoc && (
+              {documentoCierreNoRenovacion && (
                 <Group gap="xs" align="center" wrap="wrap" mb="xs">
-                  <Text size="xs" fw={600}>Archivo actual:</Text>
-                  <Anchor size="xs" href={respuestaNoRenovacionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                    {respuestaNoRenovacionDoc.name}
+                  <Text size="xs" fw={600}>
+                    {respuestaNoRenovacionDoc ? "Archivo actual:" : "Acto administrativo MEN (se reutilizará):"}
+                  </Text>
+                  <Anchor size="xs" href={documentoCierreNoRenovacion.view_link} target="_blank" rel="noopener noreferrer">
+                    {documentoCierreNoRenovacion.name}
                   </Anchor>
-                  <Button
-                    size="xs" variant="subtle" color="red"
-                    loading={deletingDocId === respuestaNoRenovacionDoc._id}
-                    onClick={async () => {
-                      if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
-                      try {
-                        setDeletingDocId(respuestaNoRenovacionDoc._id);
-                        await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${respuestaNoRenovacionDoc._id}`);
-                        await fetchProcesoDocs();
-                      } catch (e) { console.error(e); }
-                      finally { setDeletingDocId(null); }
-                    }}
-                  >
-                    Quitar
-                  </Button>
+                  {respuestaNoRenovacionDoc && (
+                    <Button
+                      size="xs" variant="subtle" color="red"
+                      loading={deletingDocId === respuestaNoRenovacionDoc._id}
+                      onClick={async () => {
+                        if (!window.confirm("¿Está seguro de que desea eliminar este anexo?")) return;
+                        try {
+                          setDeletingDocId(respuestaNoRenovacionDoc._id);
+                          await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${respuestaNoRenovacionDoc._id}`);
+                          await fetchProcesoDocs();
+                        } catch (e) { console.error(e); }
+                        finally { setDeletingDocId(null); }
+                      }}
+                    >
+                      Quitar
+                    </Button>
+                  )}
                 </Group>
               )}
               <DropzoneCustomComponent
-                text={loadingResolucionDoc ? "Subiendo..." : "Adjuntar o reemplazar documento de respuesta"}
+                text={loadingResolucionDoc
+                  ? "Subiendo..."
+                  : actoAdminMenDoc && !respuestaNoRenovacionDoc
+                    ? "Adjuntar documento de respuesta (opcional si se reutiliza el acto administrativo)"
+                    : "Adjuntar o reemplazar documento de respuesta"}
                 loading={loadingResolucionDoc}
                 onDrop={async (files) => {
                   const file = files[0]; if (!file) return;
@@ -3363,7 +3376,7 @@ const ProcesoDetalleCard = ({
 
       {/* Tabla de fechas */}
       <ScrollArea>
-        <Table withTableBorder withColumnBorders style={{ minWidth: 800 }}>
+        <Table withTableBorder withColumnBorders style={{ minWidth: 720 }}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
@@ -3406,7 +3419,7 @@ const ProcesoDetalleCard = ({
           </Table.Thead>
           <Table.Tbody>
             <Table.Tr>
-              <Table.Td style={{ verticalAlign: "top" }}>
+              <Table.Td style={{ verticalAlign: "top", minWidth: 112, padding: "8px 4px" }}>
                 <Stack gap={4} align="center">
                   {muestraResolucionVigenteInexistente ? (
                     <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
@@ -3452,7 +3465,7 @@ const ProcesoDetalleCard = ({
                   ? ((proceso[labelKey] as string | null | undefined) ?? col.label)
                   : col.label;
                 return (
-                  <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
+                  <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 112, padding: "8px 4px" }}>
                     <Stack gap={4} align="center">
                       {/* Fecha vencimiento inexistente para Nuevo / Primera vez */}
                       {!esProcesoPm && col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez") ? (
@@ -3460,7 +3473,7 @@ const ProcesoDetalleCard = ({
                       ) : isEditing && !esSoloLectura ? (
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
                           valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
-                          style={{ width: 130 }} clearable disabled={savingDate}
+                          style={{ width: 110 }} clearable disabled={savingDate}
                           onKeyDown={(e) => e.preventDefault()}
                           styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
                         />
@@ -3495,7 +3508,7 @@ const ProcesoDetalleCard = ({
       {bloqueInformacionCasoUi}
 
       {/* Bloque Plan de Mejoramiento — solo para AV y AE (el PM se gestiona como proceso propio) */}
-      {(proceso.tipo_proceso === "AV" || proceso.tipo_proceso === "AE") && (
+      {(proceso.tipo_proceso === "AV" || proceso.tipo_proceso === "AE") && proceso.cerrado_process_history_id && (
         <Box px="md" pt="sm" pb="sm">
           <Group justify="space-between" mb="xs" align="center">
             <Group gap="xs">
@@ -4040,10 +4053,12 @@ const ProcesoDetalleCard = ({
                 {faseActual.actividades.map((act, index) => {
                   const firstIncompleteIndex = faseActual.actividades.findIndex(a => !actividadResuelta(a));
                   const isFirstIncomplete    = !actividadResuelta(act) && index === firstIncompleteIndex;
+                  const esActoAdmin          = esActoAdministrativo(act.nombre);
                   const puedeHechaActoAdmin  = puedeMarcarHechaActoAdminActividad(act, caso);
-                  const canToggleCompletada  = act.no_aplica ? false : (act.completada || (isFirstIncomplete && puedeHechaActoAdmin));
+                  const puedeCompletar      = esActoAdmin || isFirstIncomplete;
+                  const canToggleCompletada  = act.no_aplica ? false : (act.completada || (puedeCompletar && puedeHechaActoAdmin));
                   const canToggleNoAplica    = act.completada ? false : (act.no_aplica || isFirstIncomplete);
-                  const tooltipBloqueoHecha  = esActoAdministrativo(act.nombre) && !act.completada && !act.no_aplica && isFirstIncomplete && !puedeHechaActoAdmin
+                  const tooltipBloqueoHecha  = esActoAdmin && !act.completada && !act.no_aplica && !puedeHechaActoAdmin
                     ? "Indica si el acto administrativo fue satisfactorio o no (tabla del caso o interruptor de estado)."
                     : null;
                   return (

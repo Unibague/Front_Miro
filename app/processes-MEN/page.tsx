@@ -701,6 +701,9 @@ const ProcessesMenPage = () => {
   const irAInformacionPrograma = () => {
     setActiveParentSection(null);
     setActiveSection("informacion");
+    setFacultad("Todos");
+    setPrograma("Todos");
+    setNivelAcademico("Todos");
   };
 
   const handleRemFacultadChange = (val: string | null) => {
@@ -2516,7 +2519,7 @@ const ProcessesMenPage = () => {
                     <div>
                       <Text size="sm" fw={600} mb={6} c="dimmed">Procesos activos y alertas de vencimiento</Text>
                       <div style={{ width: "100%", minWidth: 0, overflowX: "auto" }}>
-                        <table style={{ width: "100%", minWidth: 1280, borderCollapse: "collapse", tableLayout: "fixed" }}>
+                        <table style={{ width: "100%", minWidth: 1160, borderCollapse: "collapse", tableLayout: "fixed" }}>
                           <colgroup>
                             <col style={{ width: "14%" }} />
                             <col style={{ width: "9%" }} />
@@ -2553,7 +2556,7 @@ const ProcessesMenPage = () => {
                                   <th
                                     key={h}
                                     style={{
-                                      padding: isFechaCol ? "8px 6px" : "8px 10px",
+                                      padding: "6px 5px",
                                       textAlign: h === "Acciones" || h === "Modalidad" || isFechaCol || isDocCol ? "center" : "left",
                                       fontSize: isFechaCol ? 12 : 13,
                                       fontWeight: 700,
@@ -2584,18 +2587,18 @@ const ProcessesMenPage = () => {
                               const badgeColor = proc.tipo_proceso === "RC" ? "blue" : proc.tipo_proceso === "AV" ? "violet" : "teal";
                               return (
                                 <tr key={`act-${proc._id}`} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                    <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
                                       <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {prog.nombre}
                                       </Anchor>
                                     </td>
-                                    <td style={{ padding: "8px 6px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
+                                    <td style={{ padding: "6px 4px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
                                       <Stack gap={2} align="center">
                                         <Text size="xs">{prog.modalidad || "—"}</Text>
                                         {etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
                                       </Stack>
                                     </td>
-                                    <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
+                                    <td style={{ padding: "6px 5px", verticalAlign: "middle" }}>
                                       <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
                                         <Badge size="sm" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
                                         {proc.subtipo && (
@@ -2605,7 +2608,7 @@ const ProcessesMenPage = () => {
                                         )}
                                       </div>
                                     </td>
-                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle" }}>
+                                    <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle" }}>
                                       <Stack gap={2}>
                                         <Text size="sm" ff="monospace">{codigoActo}</Text>
                                         {fechaActo && <Text size="sm" c="dimmed">{formatFechaDDMMYY(fechaActo)}</Text>}
@@ -2616,8 +2619,8 @@ const ProcessesMenPage = () => {
                                     <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_documento_par)}</td>
                                     <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_digitacion_saces)}</td>
                                     <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicado_men)}</td>
-                                    <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
-                                    <td style={{ padding: "8px 10px", textAlign: "center", verticalAlign: "middle" }}>
+                                    <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
+                                    <td style={{ padding: "6px 5px", textAlign: "center", verticalAlign: "middle" }}>
                                       <Group justify="center" gap="xs" wrap="nowrap">
                                       <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
                                         nombrePrograma: prog.nombre,
@@ -2652,7 +2655,7 @@ const ProcessesMenPage = () => {
                               const mantineSemaAlerta = nivelSemaforoAlerta(r);
                               return (
                                 <tr key={r._id} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                  <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
                                     {prog ? (
                                       <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {r.nombre_programa}
@@ -2661,13 +2664,13 @@ const ProcessesMenPage = () => {
                                       <Text size="sm" fw={600}>{r.nombre_programa}</Text>
                                     )}
                                   </td>
-                                  <td style={{ padding: "8px 6px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
+                                  <td style={{ padding: "6px 4px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
                                     <Stack gap={2} align="center">
                                       <Text size="xs">{prog?.modalidad || "—"}</Text>
                                       {prog && etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
                                     </Stack>
                                   </td>
-                                  <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>
+                                  <td style={{ padding: "6px 5px", verticalAlign: "middle" }}>
                                     <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
                                       <Badge size="sm" color={badgeTipoColor} variant="filled" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
                                       <Badge size="sm" variant="filled" color={mantineSemaAlerta} style={{ flexShrink: 0 }}>Alerta</Badge>
@@ -2678,7 +2681,7 @@ const ProcessesMenPage = () => {
                                       ) : null}
                                     </div>
                                   </td>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle" }}>
+                                  <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle" }}>
                                     <Stack gap={2}>
                                       <Text size="sm" ff="monospace">{r.codigo_resolucion ?? "—"}</Text>
                                       {r.fecha_resolucion && <Text size="sm" c="dimmed">{formatFechaDDMMYY(r.fecha_resolucion)}</Text>}
@@ -2689,7 +2692,7 @@ const ProcessesMenPage = () => {
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_documento_par)}</td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_digitacion_saces)}</td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_radicado_men)}</td>
-                                  <td style={{ padding: "8px 10px", fontSize: 13, verticalAlign: "middle", textAlign: "center", minWidth: 0 }}>
+                                  <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center", minWidth: 0 }}>
                                     {r.documentos?.length ? (
                                       <Stack gap={6} align="center">
                                         {(r.documentos ?? []).map((d, i) => (
