@@ -595,8 +595,9 @@ const ProcesoDetalleCard = ({
   const [resolucionDoc, setResolucionDoc]   = useState<ProcessDocument | null>(null);
   /** PDF del cierre (borrador); no sustituye la resolución vigente hasta confirmar el cierre. */
   const [cierreResolucionDoc, setCierreResolucionDoc] = useState<ProcessDocument | null>(null);
-  /** Acto administrativo MEN (caso fase 5); puede usarse como PDF de cierre si no hay otro. */
-  const [actoAdminMenDoc, setActoAdminMenDoc] = useState<ProcessDocument | null>(null);
+  /** Todos los documentos asociados al acto administrativo MEN, tanto del caso como de la actividad. */
+  const [actoAdminMenDocs, setActoAdminMenDocs] = useState<ProcessDocument[]>([]);
+  const actoAdminMenDoc = actoAdminMenDocs[0] ?? null;
   const [constanciaReformaDoc, setConstanciaReformaDoc] = useState<ProcessDocument | null>(null);
   const [procesoDocs, setProcesoDocs]       = useState<ProcessDocument[]>([]);
   const [loadingResolucionDoc, setLoadingResolucionDoc]     = useState(false);
@@ -628,17 +629,38 @@ const ProcesoDetalleCard = ({
       // 'resolucion' = vigente en proceso; 'resolucion_cierre' = borrador del modal de cierre
       setResolucionDoc(docMasReciente("resolucion"));
       setCierreResolucionDoc(docMasReciente("resolucion_cierre"));
-      const actosAdmin = data.filter(
-        (d) => d.doc_type === "proceso" && d.caso_date_key === "fecha_resolucion",
+      const actosAdminCaso = data.filter((d) => d.caso_date_key === "fecha_resolucion");
+      const actividadesActoAdmin = fases.flatMap((fase) =>
+        fase.actividades
+          .filter((act) => getCasoFechaKeyForDocumentoActividad(fase.numero, act.nombre) === "fecha_resolucion")
+          .map((act) => ({ fase, act })),
       );
-      setActoAdminMenDoc(
-        actosAdmin.length
-          ? [...actosAdmin].sort((a, b) => {
-              const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-              const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-              return tb - ta;
-            })[0]
-          : null,
+      const subactividadesActoAdmin = fases.flatMap((fase) =>
+        fase.actividades.flatMap((act) =>
+          act.subactividades
+            .filter((sub) => getCasoFechaKeyForSubactividad(fase.numero, sub.nombre) === "fecha_resolucion")
+            .map((sub) => ({ fase, act, sub })),
+        ),
+      );
+      const [docsActividades, docsSubactividades] = await Promise.all([
+        Promise.all(actividadesActoAdmin.map(async ({ fase, act }) => {
+          const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+            params: { phase_id: fase._id, actividad_id: act._id },
+          });
+          return Array.isArray(response.data) ? response.data as ProcessDocument[] : [];
+        })),
+        Promise.all(subactividadesActoAdmin.map(async ({ fase, act, sub }) => {
+          const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/process-documents`, {
+            params: { phase_id: fase._id, actividad_id: act._id, subactividad_id: sub._id },
+          });
+          return Array.isArray(response.data) ? response.data as ProcessDocument[] : [];
+        })),
+      ]);
+      setActoAdminMenDocs(
+        mergeDocsUniq(
+          actosAdminCaso,
+          [...docsActividades.flat(), ...docsSubactividades.flat()],
+        ),
       );
       setRespuestaNoRenovacionDoc(data.find(d => d.doc_type === "respuesta_no_renovacion") ?? null);
       setConstanciaReformaDoc(data.find(d => d.doc_type === "constancia_reforma") ?? null);
@@ -1387,6 +1409,9 @@ const ProcesoDetalleCard = ({
       );
       const newDoc = res.data as ProcessDocument;
       setCasoFechaDocs(prev => [newDoc, ...prev]);
+      if (casoFechaModalField === "fecha_resolucion") {
+        setActoAdminMenDocs((prev) => mergeDocsUniq([newDoc], prev));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
     finally { setUploadingCasoFechaDoc(false); }
@@ -1397,6 +1422,9 @@ const ProcesoDetalleCard = ({
     try {
       await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/process-documents/${docId}`);
       setCasoFechaDocs(prev => prev.filter(d => d._id !== docId));
+      if (casoFechaModalField === "fecha_resolucion") {
+        setActoAdminMenDocs((prev) => prev.filter((doc) => doc._id !== docId));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
   };
@@ -1635,6 +1663,9 @@ const ProcesoDetalleCard = ({
         setActDocCounts(c => ({ ...c, [actDocsTarget.act._id]: merged.length }));
         return merged;
       });
+      if (getCasoFechaKeyForDocumentoActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre) === "fecha_resolucion") {
+        setActoAdminMenDocs((prev) => mergeDocsUniq([newDoc], prev));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
     finally { setUploadingActDoc(false); }
@@ -1649,6 +1680,12 @@ const ProcesoDetalleCard = ({
         if (actDocsTarget) setActDocCounts(c => ({ ...c, [actDocsTarget.act._id]: updated.length }));
         return updated;
       });
+      if (
+        actDocsTarget
+        && getCasoFechaKeyForDocumentoActividad(actDocsTarget.fase.numero, actDocsTarget.act.nombre) === "fecha_resolucion"
+      ) {
+        setActoAdminMenDocs((prev) => prev.filter((doc) => doc._id !== docId));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
   };
@@ -1815,6 +1852,9 @@ const ProcesoDetalleCard = ({
         setSubDocCounts(c => ({ ...c, [subDocsTarget.sub._id]: merged.length }));
         return merged;
       });
+      if (getCasoFechaKeyForSubactividad(subDocsTarget.fase.numero, subDocsTarget.sub.nombre) === "fecha_resolucion") {
+        setActoAdminMenDocs((prev) => mergeDocsUniq([newDoc], prev));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
     finally { setUploadingSubDoc(false); }
@@ -1829,6 +1869,12 @@ const ProcesoDetalleCard = ({
         if (subDocsTarget) setSubDocCounts(c => ({ ...c, [subDocsTarget.sub._id]: updated.length }));
         return updated;
       });
+      if (
+        subDocsTarget
+        && getCasoFechaKeyForSubactividad(subDocsTarget.fase.numero, subDocsTarget.sub.nombre) === "fecha_resolucion"
+      ) {
+        setActoAdminMenDocs((prev) => prev.filter((doc) => doc._id !== docId));
+      }
       await refreshCasoFechaDocCounts();
     } catch (e) { console.error(e); }
   };
@@ -2523,14 +2569,18 @@ const ProcesoDetalleCard = ({
                     ? "Un solo archivo: en el historial se mostrará como resolución y como constancia de la modificación."
                     : "Este archivo se aplicará al programa al confirmar el cierre. La resolución vigente del registro no cambia hasta entonces."}
                 </Text>
-                {actoAdminMenDoc && !cierreResolucionDoc && (
-                  <Alert color="blue" variant="light" mb="xs" title="PDF del acto administrativo MEN">
+                {actoAdminMenDocs.length > 0 && (
+                  <Alert color="blue" variant="light" mb="xs" title="Documentos de «Acto administrativo MEN»">
                     <Text size="xs">
-                      Ya hay un documento en información del caso (acto administrativo MEN). Al cerrar como aprobado se usará ese PDF como resolución del trámite.
+                      Estos documentos cargados en «Acto administrativo MEN» quedan disponibles como soporte del cierre. Si adjuntas otro PDF aquí, se usará como documento de resolución del cierre.
                     </Text>
-                    <Anchor size="xs" href={actoAdminMenDoc.view_link} target="_blank" rel="noopener noreferrer" mt={4} display="block">
-                      📄 {actoAdminMenDoc.name}
-                    </Anchor>
+                    <Stack gap={4} mt="xs">
+                      {actoAdminMenDocs.map((doc) => (
+                        <Anchor key={doc._id} size="xs" href={doc.view_link} target="_blank" rel="noopener noreferrer">
+                          📄 {doc.name}
+                        </Anchor>
+                      ))}
+                    </Stack>
                   </Alert>
                 )}
                 {cierreResolucionDoc && (
@@ -2583,8 +2633,8 @@ const ProcesoDetalleCard = ({
                         ? esRenovacionReforma
                           ? "Reemplazar documento (resolución y constancia)"
                           : "Reemplazar PDF del cierre"
-                        : actoAdminMenDoc
-                          ? "Subir otro PDF (opcional; reemplaza el del acto administrativo)"
+                        : actoAdminMenDocs.length > 0
+                          ? "Adjuntar otro PDF de resolución (opcional)"
                           : esRenovacionReforma
                             ? "Adjuntar PDF con resolución y constancia (obligatorio si está aprobado)"
                             : "Adjuntar PDF del cierre (obligatorio si está aprobado)"
