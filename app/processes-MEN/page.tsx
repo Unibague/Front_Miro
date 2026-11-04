@@ -23,6 +23,7 @@ import {
   IconMessageCircle,
   IconFileTypePdf,
   IconTrash,
+  IconPencil,
 } from "@tabler/icons-react";
 
 import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcessReminderRecord, BarRow, PQR } from "./types";
@@ -124,7 +125,8 @@ function etiquetaPosgradoCorta(programa: Program): string {
   if (tipo === "Especialización") return "Esp.";
   if (tipo === "Maestría") return "Mg.";
   if (tipo === "Doctorado") return "Doc.";
-  return tipo === "Otros posgrados" ? "Pgr." : "";
+  if (tipo === "Otros posgrados") return "Pgr.";
+  return "Pre.";
 }
 
 function agruparProgramasPorNivel(programas: Program[]): Array<{ titulo: string; lista: Program[] }> {
@@ -200,6 +202,14 @@ const tdFechaTablaAlertas = {
   whiteSpace: "nowrap" as const,
   textAlign: "center" as const,
   verticalAlign: "middle" as const,
+};
+
+type DateEditTarget = {
+  resource: "process" | "program";
+  id: string;
+  field: string;
+  label: string;
+  programName: string;
 };
 
 /** Orden por vencimiento: más cercano arriba; sin fecha al final. */
@@ -425,6 +435,11 @@ const ProcessesMenPage = () => {
   const [remSubtipo, setRemSubtipo]               = useState<string>("Todos");
   const [reminders, setReminders]                 = useState<ProcessReminderRecord[]>([]);
   const [loadingReminders, setLoadingReminders] = useState(false);
+  const [dateEditTarget, setDateEditTarget] = useState<DateEditTarget | null>(null);
+  const [dateEditValue, setDateEditValue] = useState("");
+  const [savingTableDate, setSavingTableDate] = useState(false);
+  const [dateEditError, setDateEditError] = useState<string | null>(null);
+  const [selectedAlertRow, setSelectedAlertRow] = useState<string | null>(null);
 
   /* ── Modal agregar proceso ── */
   const [agregarProcesoOpen, setAgregarProcesoOpen] = useState(false);
@@ -1195,6 +1210,67 @@ const ProcessesMenPage = () => {
     }
   };
 
+  const abrirEditorFechaTabla = (
+    target: DateEditTarget,
+    currentDate: string | null | undefined,
+  ) => {
+    setDateEditTarget(target);
+    setDateEditValue(currentDate?.slice(0, 10) ?? "");
+    setDateEditError(null);
+  };
+
+  const guardarFechaTabla = async () => {
+    if (!dateEditTarget || savingTableDate || !puedeGestionarProcesosMen) return;
+    setSavingTableDate(true);
+    setDateEditError(null);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL;
+      const url = `${base}/${dateEditTarget.resource === "process" ? "processes" : "programs"}/${dateEditTarget.id}`;
+      const res = await axios.put(url, {
+        [dateEditTarget.field]: dateEditValue || null,
+      });
+
+      if (dateEditTarget.resource === "process") {
+        const updated = res.data as Process;
+        setProcesos((previous) => previous.map((item) => item._id === updated._id ? updated : item));
+      } else {
+        const updated = res.data as Program;
+        setProgramas((previous) => previous.map((item) => item._id === updated._id ? updated : item));
+      }
+
+      setDateEditTarget(null);
+    } catch (error) {
+      console.error("Error actualizando fecha desde alertas:", error);
+      setDateEditError(axios.isAxiosError(error)
+        ? error.response?.data?.error || "No se pudo guardar la fecha. Intenta de nuevo."
+        : "No se pudo guardar la fecha. Intenta de nuevo.");
+    } finally {
+      setSavingTableDate(false);
+    }
+  };
+
+  const renderFechaEditable = (
+    fecha: string | null | undefined,
+    target: DateEditTarget,
+  ) => (
+    <Group gap={2} justify="center" wrap="nowrap">
+      <Text size="xs" ta="center">{formatFechaDDMMYY(fecha)}</Text>
+      {puedeGestionarProcesosMen && (
+        <Tooltip label={`Editar ${target.label.toLowerCase()}`} withArrow>
+          <ActionIcon
+            variant="subtle"
+            color="blue"
+            size="sm"
+            aria-label={`Editar ${target.label.toLowerCase()} de ${target.programName}`}
+            onClick={() => abrirEditorFechaTabla(target, fecha)}
+          >
+            <IconPencil size={14} stroke={1.7} />
+          </ActionIcon>
+        </Tooltip>
+      )}
+    </Group>
+  );
+
   const irAGestionarProcesoDesdeModal = async (args: {
     programId?: string;
     nombrePrograma: string;
@@ -1399,6 +1475,51 @@ const ProcessesMenPage = () => {
           <Group justify="flex-end">
             <Button variant="default" disabled={eliminandoProceso} onClick={() => setAlertaAEliminar(null)}>Cancelar</Button>
             <Button color="red" loading={eliminandoProceso} onClick={() => void eliminarAlerta()}>Eliminar alerta</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={dateEditTarget !== null}
+        onClose={() => {
+          if (!savingTableDate) {
+            setDateEditTarget(null);
+            setDateEditError(null);
+          }
+        }}
+        title={`Editar ${dateEditTarget?.label ?? "fecha"}`}
+        centered
+        size="xs"
+        radius="md"
+        closeOnClickOutside={!savingTableDate}
+        closeOnEscape={!savingTableDate}
+        withCloseButton={!savingTableDate}
+      >
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">{dateEditTarget?.programName}</Text>
+          <TextInput
+            type="date"
+            label={dateEditTarget?.label}
+            value={dateEditValue}
+            onChange={(event) => setDateEditValue(event.currentTarget.value)}
+            disabled={savingTableDate}
+          />
+          <Text size="xs" c="dimmed">Deja el campo vacío para quitar la fecha.</Text>
+          {dateEditError && <Text size="sm" c="red" role="alert">{dateEditError}</Text>}
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              disabled={savingTableDate}
+              onClick={() => {
+                setDateEditTarget(null);
+                setDateEditError(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button loading={savingTableDate} onClick={() => void guardarFechaTabla()}>
+              Guardar
+            </Button>
           </Group>
         </Stack>
       </Modal>
@@ -2557,7 +2678,7 @@ const ProcessesMenPage = () => {
                                     key={h}
                                     style={{
                                       padding: "6px 5px",
-                                      textAlign: h === "Acciones" || h === "Modalidad" || isFechaCol || isDocCol ? "center" : "left",
+                                      textAlign: "center",
                                       fontSize: isFechaCol ? 12 : 13,
                                       fontWeight: 700,
                                       whiteSpace: isDocCol ? "normal" : "nowrap",
@@ -2583,14 +2704,40 @@ const ProcessesMenPage = () => {
                                 proc.tipo_proceso === "RC" ? prog.fecha_resolucion_rc
                                 : proc.tipo_proceso === "AV" ? prog.fecha_resolucion_av
                                 : null;
+                              const campoFechaActo =
+                                proc.tipo_proceso === "RC" ? "fecha_resolucion_rc"
+                                : proc.tipo_proceso === "AV" ? "fecha_resolucion_av"
+                                : null;
                               const rowBg = ROW_BG_PROCESO[proc.tipo_proceso] ?? "#fafbff";
                               const badgeColor = proc.tipo_proceso === "RC" ? "blue" : proc.tipo_proceso === "AV" ? "violet" : "teal";
                               return (
-                                <tr key={`act-${proc._id}`} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                    <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
-                                      <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
+                                <tr
+                                  key={`act-${proc._id}`}
+                                  tabIndex={0}
+                                  aria-selected={selectedAlertRow === `active-${proc._id}`}
+                                  onClick={() => setSelectedAlertRow(`active-${proc._id}`)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      setSelectedAlertRow(`active-${proc._id}`);
+                                    }
+                                  }}
+                                  style={{
+                                    borderBottom: "1px solid #e9ecef",
+                                    backgroundColor: selectedAlertRow === `active-${proc._id}`
+                                      ? proc.tipo_proceso === "AV" ? "#d0bfff" : "#dbeafe"
+                                      : rowBg,
+                                    boxShadow: selectedAlertRow === `active-${proc._id}`
+                                      ? `inset 4px 0 ${proc.tipo_proceso === "AV" ? "#7950f2" : "#228be6"}`
+                                      : undefined,
+                                    cursor: "pointer",
+                                    outline: "none",
+                                  }}
+                                >
+                                    <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word", textAlign: "center" }}>
+                                      <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {prog.nombre}
-                                      </Anchor>
+                                      </Text>
                                     </td>
                                     <td style={{ padding: "6px 4px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
                                       <Stack gap={2} align="center">
@@ -2598,8 +2745,8 @@ const ProcessesMenPage = () => {
                                         {etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
                                       </Stack>
                                     </td>
-                                    <td style={{ padding: "6px 5px", verticalAlign: "middle" }}>
-                                      <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
+                                    <td style={{ padding: "6px 5px", verticalAlign: "middle", textAlign: "center" }}>
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "nowrap", gap: 6 }}>
                                         <Badge size="sm" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
                                         {proc.subtipo && (
                                           <Badge size="sm" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(proc.subtipo)} style={{ flexShrink: 0 }}>
@@ -2608,17 +2755,23 @@ const ProcessesMenPage = () => {
                                         )}
                                       </div>
                                     </td>
-                                    <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle" }}>
-                                      <Stack gap={2}>
-                                        <Text size="sm" ff="monospace">{codigoActo}</Text>
-                                        {fechaActo && <Text size="sm" c="dimmed">{formatFechaDDMMYY(fechaActo)}</Text>}
+                                    <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>
+                                      <Stack gap={2} align="center">
+                                        <Text size="sm" ff="monospace" ta="center">{codigoActo}</Text>
+                                        {campoFechaActo && renderFechaEditable(fechaActo, {
+                                          resource: "program",
+                                          id: prog._id,
+                                          field: campoFechaActo,
+                                          label: "fecha de resolución",
+                                          programName: prog.nombre,
+                                        })}
                                       </Stack>
                                     </td>
-                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_vencimiento)}</td>
-                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_inicio)}</td>
-                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_documento_par)}</td>
-                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_digitacion_saces)}</td>
-                                    <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicado_men)}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_vencimiento, { resource: "process", id: proc._id, field: "fecha_vencimiento", label: "vencimiento", programName: prog.nombre })}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_inicio, { resource: "process", id: proc._id, field: "fecha_inicio", label: "inicio", programName: prog.nombre })}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_documento_par, { resource: "process", id: proc._id, field: "fecha_documento_par", label: "lectura de Vicerrectoría", programName: prog.nombre })}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_digitacion_saces, { resource: "process", id: proc._id, field: "fecha_digitacion_saces", label: "digitación", programName: prog.nombre })}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_radicado_men, { resource: "process", id: proc._id, field: "fecha_radicado_men", label: "radicación", programName: prog.nombre })}</td>
                                     <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
                                     <td style={{ padding: "6px 5px", textAlign: "center", verticalAlign: "middle" }}>
                                       <Group justify="center" gap="xs" wrap="nowrap">
@@ -2654,12 +2807,34 @@ const ProcessesMenPage = () => {
                               const badgeTipoColor = r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : r.tipo_proceso === "PM" ? "grape" : "teal";
                               const mantineSemaAlerta = nivelSemaforoAlerta(r);
                               return (
-                                <tr key={r._id} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                  <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                <tr
+                                  key={r._id}
+                                  tabIndex={0}
+                                  aria-selected={selectedAlertRow === `reminder-${r._id}`}
+                                  onClick={() => setSelectedAlertRow(`reminder-${r._id}`)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      setSelectedAlertRow(`reminder-${r._id}`);
+                                    }
+                                  }}
+                                  style={{
+                                    borderBottom: "1px solid #e9ecef",
+                                    backgroundColor: selectedAlertRow === `reminder-${r._id}`
+                                      ? r.tipo_proceso === "AV" ? "#d0bfff" : "#dbeafe"
+                                      : rowBg,
+                                    boxShadow: selectedAlertRow === `reminder-${r._id}`
+                                      ? `inset 4px 0 ${r.tipo_proceso === "AV" ? "#7950f2" : "#228be6"}`
+                                      : undefined,
+                                    cursor: "pointer",
+                                    outline: "none",
+                                  }}
+                                >
+                                  <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word", textAlign: "center" }}>
                                     {prog ? (
-                                      <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
+                                      <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {r.nombre_programa}
-                                      </Anchor>
+                                      </Text>
                                     ) : (
                                       <Text size="sm" fw={600}>{r.nombre_programa}</Text>
                                     )}
@@ -2670,8 +2845,8 @@ const ProcessesMenPage = () => {
                                       {prog && etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
                                     </Stack>
                                   </td>
-                                  <td style={{ padding: "6px 5px", verticalAlign: "middle" }}>
-                                    <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", gap: 6 }}>
+                                  <td style={{ padding: "6px 5px", verticalAlign: "middle", textAlign: "center" }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "nowrap", gap: 6 }}>
                                       <Badge size="sm" color={badgeTipoColor} variant="filled" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
                                       <Badge size="sm" variant="filled" color={mantineSemaAlerta} style={{ flexShrink: 0 }}>Alerta</Badge>
                                       {r.subtipo ? (
@@ -2681,10 +2856,10 @@ const ProcessesMenPage = () => {
                                       ) : null}
                                     </div>
                                   </td>
-                                  <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle" }}>
-                                    <Stack gap={2}>
-                                      <Text size="sm" ff="monospace">{r.codigo_resolucion ?? "—"}</Text>
-                                      {r.fecha_resolucion && <Text size="sm" c="dimmed">{formatFechaDDMMYY(r.fecha_resolucion)}</Text>}
+                                  <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>
+                                    <Stack gap={2} align="center">
+                                      <Text size="sm" ff="monospace" ta="center">{r.codigo_resolucion ?? "—"}</Text>
+                                      <Text size="xs" c="dimmed">{formatFechaDDMMYY(r.fecha_resolucion)}</Text>
                                     </Stack>
                                   </td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_vencimiento)}</td>
@@ -2798,21 +2973,39 @@ const ProcessesMenPage = () => {
                                   "Radicación Avance CNA",
                                   "Acciones",
                                 ].map((h) => (
-                                  <th key={h} style={{ padding: "7px 8px", textAlign: h === "Acciones" ? "right" : "left", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>{h}</th>
+                                  <th key={h} style={{ padding: "7px 8px", textAlign: "center", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {/* Proceso PM activo (para gestión) */}
                               {filasActivasPM.map(({ proc, prog }) => (
-                                <tr key={`pm-${proc._id}`} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: ROW_BG_PROCESO["PM"] }}>
-                                  <td style={{ padding: "6px 8px", fontSize: 12, maxWidth: 200, verticalAlign: "middle" }}>
-                                    <Anchor href={processesMenRoutes.program(prog._id)} size="sm" fw={600} style={{ wordBreak: "break-word" }}>
+                                <tr
+                                  key={`pm-${proc._id}`}
+                                  tabIndex={0}
+                                  aria-selected={selectedAlertRow === `pm-${proc._id}`}
+                                  onClick={() => setSelectedAlertRow(`pm-${proc._id}`)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      setSelectedAlertRow(`pm-${proc._id}`);
+                                    }
+                                  }}
+                                  style={{
+                                    borderBottom: "1px solid #e9ecef",
+                                    backgroundColor: selectedAlertRow === `pm-${proc._id}` ? "#dbeafe" : ROW_BG_PROCESO["PM"],
+                                    boxShadow: selectedAlertRow === `pm-${proc._id}` ? "inset 4px 0 #228be6" : undefined,
+                                    cursor: "pointer",
+                                    outline: "none",
+                                  }}
+                                >
+                                  <td style={{ padding: "6px 8px", fontSize: 12, maxWidth: 200, verticalAlign: "middle", textAlign: "center" }}>
+                                    <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word" }}>
                                       {prog.nombre}
-                                    </Anchor>
+                                    </Text>
                                   </td>
-                                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap", verticalAlign: "middle" }}>
-                                    <Group gap={4} wrap="nowrap" align="center">
+                                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap", verticalAlign: "middle", textAlign: "center" }}>
+                                    <Group gap={4} wrap="nowrap" align="center" justify="center">
                                       <Badge size="xs" color="grape" variant="filled">PM</Badge>
                                       <Badge size="xs" variant="light" color="cyan">Activo</Badge>
                                       {proc.parent_tipo_proceso && (
@@ -2822,11 +3015,11 @@ const ProcessesMenPage = () => {
                                       )}
                                     </Group>
                                   </td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_envio_pm_vicerrectoria)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_entrega_pm_cna)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_envio_avance_vicerrectoria)}</td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(proc.fecha_radicacion_avance_cna)}</td>
-                                  <td style={{ padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_envio_pm_vicerrectoria, { resource: "process", id: proc._id, field: "fecha_envio_pm_vicerrectoria", label: "envío del PM a Vicerrectoría", programName: prog.nombre })}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_entrega_pm_cna, { resource: "process", id: proc._id, field: "fecha_entrega_pm_cna", label: "entrega del PM al CNA", programName: prog.nombre })}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_envio_avance_vicerrectoria, { resource: "process", id: proc._id, field: "fecha_envio_avance_vicerrectoria", label: "envío de avance a Vicerrectoría", programName: prog.nombre })}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_radicacion_avance_cna, { resource: "process", id: proc._id, field: "fecha_radicacion_avance_cna", label: "radicación de avance al CNA", programName: prog.nombre })}</td>
+                                  <td style={{ padding: "6px 8px", textAlign: "center", whiteSpace: "nowrap", verticalAlign: "middle" }}>
                                     <Button size="xs" variant="light" color="grape" onClick={() => irAGestionarProcesoDesdeModal({
                                       nombrePrograma: prog.nombre,
                                       tipo: "PM",

@@ -171,6 +171,7 @@ export default function AgregarProcesoModal({
   const [modalidad, setModalidad]     = useState<string | null>(null);
   const [nivelAcad, setNivelAcad]     = useState<string | null>(null);
   const [nivelForm, setNivelForm]     = useState<string | null>(null);
+  const [enfoque, setEnfoque]         = useState<string | null>(null);
   const [numCreditos, setNumCreditos] = useState("");
   const [periodosDuracion, setPeriodosDuracion] = useState("");
   const [numSemestres, setNumSemestres] = useState("");
@@ -295,7 +296,7 @@ export default function AgregarProcesoModal({
     setHasChanges(false);
     setStep(1); setTipo(null); setSubtipo(null); setProgramaId(null);
     setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
-    setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
+    setNivelAcad(null); setNivelForm(null); setEnfoque(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
     setAdmision(null); setNumEstud("");
     setCineCampoAmplio(""); setCineCampoEspecifico(""); setCineCampoDetallado("");
     setNbcArea(""); setNbcValor("");
@@ -381,7 +382,7 @@ export default function AgregarProcesoModal({
         setStep(2);
       }
       setNombre(""); setDepCodePrograma(""); setCodigoSnies(""); setFacultad(null); setModalidad(null);
-      setNivelAcad(null); setNivelForm(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
+      setNivelAcad(null); setNivelForm(null); setEnfoque(null); setNumCreditos(""); setPeriodosDuracion(""); setNumSemestres("");
       setAdmision(null); setNumEstud("");
       setCineCampoAmplio(""); setCineCampoEspecifico(""); setCineCampoDetallado("");
       setNbcArea(""); setNbcValor("");
@@ -457,6 +458,7 @@ export default function AgregarProcesoModal({
         modalidad,
         nivel_academico: nivelAcad,
         nivel_formacion: nivelForm,
+        enfoque,
         num_creditos: numCreditos ? parseInt(numCreditos) : null,
         periodos_duracion: periodosDuracion.trim() || null,
         num_semestres: numSemestres ? parseInt(numSemestres) : null,
@@ -670,6 +672,7 @@ export default function AgregarProcesoModal({
           modalidad:          modalidad,
           nivel_academico:    nivelAcad,
           nivel_formacion:    nivelForm,
+          enfoque,
           num_creditos:       numCreditos ? parseInt(numCreditos) : null,
           periodos_duracion: periodosDuracion.trim() || null,
           num_semestres:      numSemestres ? parseInt(numSemestres) : null,
@@ -884,6 +887,9 @@ export default function AgregarProcesoModal({
               <Select label="Nivel de formación" placeholder="Selecciona"
                 data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
                 value={nivelForm} onChange={setNivelForm} />
+              <Select label="Enfoque" placeholder="Selecciona"
+                data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
+                value={enfoque} onChange={setEnfoque} clearable />
               <Select
                 label="Periodicidad de admisión"
                 placeholder="Selecciona"
@@ -1060,6 +1066,9 @@ export default function AgregarProcesoModal({
                   <Select label="Nivel de formación" placeholder="Selecciona"
                     data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
                     value={nivelForm} onChange={setNivelForm} />
+                  <Select label="Enfoque" placeholder="Selecciona"
+                    data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
+                    value={enfoque} onChange={setEnfoque} clearable />
                   <Select
                     label="Periodicidad de admisión"
                     placeholder="Selecciona"

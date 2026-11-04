@@ -52,6 +52,10 @@ function valorPeriodoDuracion(value: string | null | undefined): string {
   return !normalized || /^\d+$/.test(normalized) ? "Semestral" : normalized;
 }
 
+function etiquetaEnfoque(value: string | null | undefined): string | null | undefined {
+  return value === "Ambos" ? "Investigación y Profundización" : value;
+}
+
 function cineParaEdicion(cine: Program["cine_f"]): CineFEdit {
   return {
     campo_amplio: cine?.campo_amplio ?? "",
@@ -318,7 +322,7 @@ export default function ProgramaProcessesMenPage() {
       dep_code_programa: programa.dep_code_programa ?? "",
       codigo_snies: programa.codigo_snies ?? "",
       periodos_duracion: valorPeriodoDuracion(programa.periodos_duracion),
-      enfoque: programa.enfoque ?? "",
+      enfoque: etiquetaEnfoque(programa.enfoque) ?? "",
       cine_f: cineParaEdicion(programa.cine_f),
       nbc: nbcParaEdicion(programa.nbc),
     });
@@ -567,7 +571,7 @@ export default function ProgramaProcessesMenPage() {
           />
           <Select
             label="Enfoque"
-            data={["Investigación", "Profundización", "Ambos"]}
+            data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
             value={String(editForm.enfoque ?? "") || null}
             onChange={(value) => setEditForm((f) => ({ ...f, enfoque: value }))}
             clearable
@@ -607,7 +611,7 @@ export default function ProgramaProcessesMenPage() {
               { label: "Modalidad", value: programa.modalidad },
               { label: "Nivel académico", value: programa.nivel_academico },
               { label: "Nivel de formación", value: programa.nivel_formacion },
-              { label: "Enfoque", value: programa.enfoque },
+              { label: "Enfoque", value: etiquetaEnfoque(programa.enfoque) },
               { label: "Créditos", value: programa.num_creditos },
               { label: "Periodos de duración", value: valorPeriodoDuracion(programa.periodos_duracion) },
               { label: "Semestres", value: programa.num_semestres },

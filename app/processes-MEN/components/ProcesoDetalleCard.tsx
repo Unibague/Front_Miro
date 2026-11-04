@@ -3524,8 +3524,11 @@ const ProcesoDetalleCard = ({
                         <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
                           valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
                           style={{ width: 110 }} clearable disabled={savingDate}
-                          onKeyDown={(e) => e.preventDefault()}
-                          styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                          dateParser={dateParserEspanol} placeholder="dd/mm/aaaa"
+                          onKeyDown={proceso.tipo_proceso === "AV" ? undefined : (e) => e.preventDefault()}
+                          styles={proceso.tipo_proceso === "AV"
+                            ? undefined
+                            : { input: { caretColor: "transparent", cursor: "pointer" } }}
                         />
                       ) : (
                         <Text size="xs" fw={600} ta="center" style={{
