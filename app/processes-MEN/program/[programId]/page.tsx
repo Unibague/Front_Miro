@@ -92,9 +92,13 @@ export default function ProgramaProcessesMenPage() {
   const [loadingFasesProg, setLoadingFasesProg] = useState(false);
   const [historialRc, setHistorialRc] = useState<ProcessHistoryRecord[]>([]);
   const [historicoOpen, setHistoricoOpen] = useState(false);
-  const [observaciones, setObservaciones] = useState("");
-  const [savingObservaciones, setSavingObservaciones] = useState(false);
-  const [observacionesMsg, setObservacionesMsg] = useState<string | null>(null);
+  const [observacionResolucionTarget, setObservacionResolucionTarget] = useState<{
+    tipo: "RC" | "AV";
+    texto: string;
+  } | null>(null);
+  const [observacionResolucionTexto, setObservacionResolucionTexto] = useState("");
+  const [savingObservacionResolucion, setSavingObservacionResolucion] = useState(false);
+  const [observacionResolucionMsg, setObservacionResolucionMsg] = useState<string | null>(null);
   const { setHasChanges, confirmNavigation } = useUnsavedChanges();
 
   useEffect(() => {
@@ -131,7 +135,6 @@ export default function ProgramaProcessesMenPage() {
 
         const programaData = progRes.data;
         setPrograma(programaData);
-        setObservaciones(programaData.observaciones ?? "");
         setLoading(false);
 
         const code = programCodeKey(programaData);
@@ -393,22 +396,37 @@ export default function ProgramaProcessesMenPage() {
     }
   };
 
-  const guardarObservaciones = async () => {
-    if (!programa) return;
-    setSavingObservaciones(true);
-    setObservacionesMsg(null);
+  const abrirObservacionesResolucion = (tipo: "RC" | "AV", texto?: string) => {
+    setObservacionResolucionTarget({ tipo, texto: LABEL_PROCESO[tipo] });
+    setObservacionResolucionTexto(texto ?? "");
+    setObservacionResolucionMsg(null);
+  };
+
+  const guardarObservacionesResolucion = async () => {
+    if (!programa || !observacionResolucionTarget) return;
+    setSavingObservacionResolucion(true);
+    setObservacionResolucionMsg(null);
     try {
-      const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}`, {
-        observaciones,
-      });
-      setPrograma(res.data);
-      setObservaciones(res.data.observaciones ?? observaciones);
-      setObservacionesMsg("Observaciones guardadas.");
+      const { tipo } = observacionResolucionTarget;
+      const res = await axios.patch<{
+        program: Program;
+        advertencia: string | null;
+      }>(
+        `${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}/resoluciones/${tipo}/observaciones`,
+        { observaciones: observacionResolucionTexto },
+      );
+      setPrograma(res.data.program);
+      setObservacionResolucionMsg(res.data.advertencia ?? "Observaciones guardadas.");
+      if (res.data.advertencia) {
+        setObservacionResolucionMsg(res.data.advertencia);
+        return;
+      }
+      setObservacionResolucionTarget(null);
     } catch (e) {
       console.error(e);
-      setObservacionesMsg("No se pudieron guardar las observaciones.");
+      setObservacionResolucionMsg("No se pudieron guardar las observaciones.");
     } finally {
-      setSavingObservaciones(false);
+      setSavingObservacionResolucion(false);
     }
   };
 
@@ -740,6 +758,15 @@ export default function ProgramaProcessesMenPage() {
                   </Group>
                 </Stack>
               )}
+              <Button
+                size="xs"
+                variant="light"
+                w="fit-content"
+                mt="xs"
+                onClick={() => abrirObservacionesResolucion(t, ult?.observaciones)}
+              >
+                {ult?.observaciones?.trim() ? "Ver / editar observaciones" : "Agregar observaciones"}
+              </Button>
             </Paper>
             </Stack>
           );
@@ -860,37 +887,46 @@ export default function ProgramaProcessesMenPage() {
       </Stack>
       </Stack>
 
-      <Stack gap="sm" style={{ order: 3 }}>
-        <Divider />
-        <Text fw={700} size="sm">Observaciones</Text>
-        <Textarea
-          label="Notas de la hoja de vida"
-          placeholder="Añade observaciones relevantes sobre este programa..."
-          minRows={4}
-          autosize
-          value={observaciones}
-          onChange={(event) => {
-            setObservaciones(event.currentTarget.value);
-            setObservacionesMsg(null);
-          }}
-        />
-        <Group justify="space-between" align="center">
-          {observacionesMsg && (
-            <Text size="xs" c={observacionesMsg.startsWith("No") ? "red" : "green"}>
-              {observacionesMsg}
-            </Text>
-          )}
-          <Button size="xs" loading={savingObservaciones} onClick={() => void guardarObservaciones()}>
-            Guardar observaciones
-          </Button>
-        </Group>
-      </Stack>
-
       <Modal opened={gestionarInfoOpen} onClose={() => setGestionarInfoOpen(false)} title="Sin procesos para gestionar" centered>
         <Text size="sm">
           No hay procesos activos RC, AV, AE ni PM para este programa. Puedes crearlos desde el tablero (Agregar proceso) o desde alertas cuando corresponda.
         </Text>
         <Button mt="md" onClick={() => setGestionarInfoOpen(false)}>Entendido</Button>
+      </Modal>
+
+      <Modal
+        opened={observacionResolucionTarget !== null}
+        onClose={() => setObservacionResolucionTarget(null)}
+        title={`Observaciones — ${observacionResolucionTarget?.texto ?? "Resolución"}`}
+        centered
+        size="md"
+      >
+        <Stack>
+          <Textarea
+            label="Observaciones de esta resolución"
+            placeholder="Escribe observaciones..."
+            minRows={4}
+            autosize
+            value={observacionResolucionTexto}
+            onChange={(event) => {
+              setObservacionResolucionTexto(event.currentTarget.value);
+              setObservacionResolucionMsg(null);
+            }}
+          />
+          {observacionResolucionMsg && (
+            <Text size="xs" c={observacionResolucionMsg.startsWith("No") ? "red" : "green"}>
+              {observacionResolucionMsg}
+            </Text>
+          )}
+          <Group justify="flex-end">
+            <Button variant="default" size="xs" onClick={() => setObservacionResolucionTarget(null)}>
+              Cancelar
+            </Button>
+            <Button size="xs" loading={savingObservacionResolucion} onClick={() => void guardarObservacionesResolucion()}>
+              Guardar observaciones
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
 
       <HistoricoProgramaModal

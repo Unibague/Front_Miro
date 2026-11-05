@@ -13,6 +13,7 @@ import {
   Select,
   Stack,
   Text,
+  Textarea,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
@@ -34,6 +35,9 @@ type Props = {
 const TIPOS = ["RC", "AV"] as const;
 
 type TipoProceso = (typeof TIPOS)[number];
+type ObservacionTarget =
+  | { kind: "anterior"; id: string; titulo: string; texto: string }
+  | { kind: "historial"; id: string; titulo: string; texto: string };
 
 function labelTipo(tipo: TipoProceso): string {
   return tipo === "RC" ? "Registro calificado" : "Acreditación voluntaria";
@@ -50,6 +54,9 @@ export default function HistoricoProgramaModal({ opened, onClose, programa, prog
   const [previousDate, setPreviousDate] = useState<Date | null>(null);
   const [previousFile, setPreviousFile] = useState<File | null>(null);
   const [savingPrevious, setSavingPrevious] = useState(false);
+  const [observacionTarget, setObservacionTarget] = useState<ObservacionTarget | null>(null);
+  const [observacionTexto, setObservacionTexto] = useState("");
+  const [savingObservacion, setSavingObservacion] = useState(false);
 
   useEffect(() => {
     if (!opened) return;
@@ -153,12 +160,50 @@ export default function HistoricoProgramaModal({ opened, onClose, programa, prog
     }
   };
 
+  const saveResolutionObservation = async () => {
+    if (!observacionTarget || savingObservacion) return;
+    setSavingObservacion(true);
+    setMessage(null);
+    try {
+      if (observacionTarget.kind === "anterior") {
+        const response = await axios.patch<Program>(
+          `${process.env.NEXT_PUBLIC_API_URL}/programs/${programa._id}/resoluciones-anteriores/${observacionTarget.id}/observaciones`,
+          { observaciones: observacionTexto },
+        );
+        setResolucionesAnteriores(response.data.resoluciones_anteriores ?? []);
+      } else {
+        const response = await axios.patch<{
+          historial: ProcessHistoryRecord;
+          advertencia: string | null;
+        }>(
+          `${process.env.NEXT_PUBLIC_API_URL}/process-history/${observacionTarget.id}/observaciones-resolucion`,
+          { observaciones: observacionTexto },
+        );
+        const updated = response.data.historial;
+        setRecords((current) => current.map((record) => record._id === updated._id ? updated : record));
+        if (response.data.advertencia) {
+          setObservacionTarget(null);
+          setMessage(response.data.advertencia);
+          return;
+        }
+      }
+      setObservacionTarget(null);
+      setMessage("Observaciones de resolución guardadas.");
+    } catch (error) {
+      console.error("Error guardando observaciones de resolución:", error);
+      setMessage("No se pudieron guardar las observaciones de esta resolución.");
+    } finally {
+      setSavingObservacion(false);
+    }
+  };
+
   return (
     <Modal
       opened={opened}
       onClose={() => {
         if (!savingPrevious) {
           setAddingPrevious(false);
+          setObservacionTarget(null);
           onClose();
         }
       }}
@@ -284,6 +329,22 @@ export default function HistoricoProgramaModal({ opened, onClose, programa, prog
                             </Group>
                           </Anchor>
                         </Group>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          mt="xs"
+                          onClick={() => {
+                            setObservacionTarget({
+                              kind: "anterior",
+                              id: item._id,
+                              titulo: `${labelTipo(tipo)} — ${formatFechaDDMMYY(item.fecha_resolucion)}`,
+                              texto: item.observaciones ?? "",
+                            });
+                            setObservacionTexto(item.observaciones ?? "");
+                          }}
+                        >
+                          {item.observaciones?.trim() ? "Ver / editar observaciones" : "Agregar observaciones"}
+                        </Button>
                       </Paper>
                     ))}
                 </Stack>
@@ -329,6 +390,22 @@ export default function HistoricoProgramaModal({ opened, onClose, programa, prog
                           ) : (
                             <Text size="xs" c="dimmed">Sin resolución cargada.</Text>
                           )}
+                          <Button
+                            size="xs"
+                            variant="light"
+                            w="fit-content"
+                            onClick={() => {
+                              setObservacionTarget({
+                                kind: "historial",
+                                id: record._id,
+                                titulo: `${labelTipo(tipo)} — ${record.subtipo || "Proceso cerrado"}`,
+                                texto: record.observaciones_resolucion ?? "",
+                              });
+                              setObservacionTexto(record.observaciones_resolucion ?? "");
+                            }}
+                          >
+                            {record.observaciones_resolucion?.trim() ? "Ver / editar observaciones" : "Agregar observaciones"}
+                          </Button>
                         </Stack>
                         <Button
                           component="label"
@@ -359,6 +436,39 @@ export default function HistoricoProgramaModal({ opened, onClose, programa, prog
           ))
         )}
       </Stack>
+      <Modal
+        opened={observacionTarget !== null}
+        onClose={() => {
+          if (!savingObservacion) setObservacionTarget(null);
+        }}
+        title={`Observaciones — ${observacionTarget?.titulo ?? "Resolución"}`}
+        centered
+        size="md"
+      >
+        <Stack>
+          <Textarea
+            label="Observaciones de esta resolución"
+            placeholder="Escribe observaciones..."
+            minRows={4}
+            autosize
+            value={observacionTexto}
+            onChange={(event) => setObservacionTexto(event.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button
+              size="xs"
+              variant="default"
+              disabled={savingObservacion}
+              onClick={() => setObservacionTarget(null)}
+            >
+              Cancelar
+            </Button>
+            <Button size="xs" loading={savingObservacion} onClick={() => void saveResolutionObservation()}>
+              Guardar observaciones
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Modal>
   );
 }
