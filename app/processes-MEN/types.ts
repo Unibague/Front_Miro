@@ -11,6 +11,7 @@ export type UltimoProcesoPrograma = {
   duracion_resolucion: number | null;
   fecha_vencimiento:   string | null;
   link_documento:      string | null;
+  observaciones?: string;
 };
 
 export type ResolucionAnteriorPrograma = {
@@ -24,6 +25,7 @@ export type ResolucionAnteriorPrograma = {
   mime_type?: string | null;
   size?: number | null;
   subido_en?: string | null;
+  observaciones?: string;
 };
 
 export type CineF = {
@@ -385,6 +387,7 @@ export type ProcessHistoryRecord = {
   codigo_resolucion: string | null;
   fecha_resolucion: string | null;
   duracion_resolucion: number | null;
+  observaciones_resolucion?: string;
   fecha_vencimiento: string | null;
   fecha_inicio: string | null;
   fecha_documento_par: string | null;
