@@ -601,6 +601,7 @@ const ProcessesMenPage = () => {
     if (focusTipoQuery === "RC") setTipoProceso("Registro calificado");
     else if (focusTipoQuery === "AV") setTipoProceso("Acreditación voluntaria");
     else if (focusTipoQuery === "AE") setTipoProceso("Autoevaluación");
+    else if (focusTipoQuery === "PM") setTipoProceso("Plan de mejoramiento");
     else setTipoProceso("Todos");
     if (focusProcessQuery) setPendingProcesoScrollId(focusProcessQuery);
 
@@ -779,7 +780,7 @@ const ProcessesMenPage = () => {
     [],
   );
   const opcionesTipoProceso = useMemo(
-    () => ["Todos", ...["Acreditación voluntaria", "Autoevaluación", "Registro calificado"].sort((a, b) => a.localeCompare(b, "es"))],
+    () => ["Todos", ...["Acreditación voluntaria", "Autoevaluación", "Plan de mejoramiento", "Registro calificado"].sort((a, b) => a.localeCompare(b, "es"))],
     [],
   );
 
@@ -1299,7 +1300,7 @@ const ProcessesMenPage = () => {
     const pid = progObj?._id ?? args.programId;
 
     /* Navegar con gestionar=1 antes de setProgramas: evita que el efecto de URL mande a la ficha por error. */
-    if (pid && (args.tipo === "RC" || args.tipo === "AV" || args.tipo === "AE")) {
+    if (pid) {
       await router.replace(
         processesMenRoutes.homeWithQuery({
           programId: pid,
@@ -1331,7 +1332,7 @@ const ProcessesMenPage = () => {
       args.tipo === "RC" ? "Registro calificado" :
       args.tipo === "AV" ? "Acreditación voluntaria" :
       args.tipo === "AE" ? "Autoevaluación" :
-      "Todos"
+      "Plan de mejoramiento"
     );
     setSubtipoFiltro("Todos");
   };
@@ -2395,9 +2396,10 @@ const ProcessesMenPage = () => {
                         <Divider my="md" />
                       </Box>
                       {(() => {
-                        const mostrarRc = tipoProceso === "Todos" || tipoProceso === "Registro calificado";
-                        const mostrarAv = tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria";
-                        const mostrarAe = tipoProceso === "Todos" || tipoProceso === "Autoevaluación";
+                        const vistaPm = tipoProceso === "Plan de mejoramiento";
+                        const mostrarRc = !vistaPm && (tipoProceso === "Todos" || tipoProceso === "Registro calificado");
+                        const mostrarAv = !vistaPm && (tipoProceso === "Todos" || tipoProceso === "Acreditación voluntaria");
+                        const mostrarAe = !vistaPm && (tipoProceso === "Todos" || tipoProceso === "Autoevaluación");
                         const rc = mostrarRc
                           ? procesoRcActivoDePrograma(procesosDelProg, progCode)
                           : undefined;
@@ -2443,9 +2445,8 @@ const ProcessesMenPage = () => {
                           </>
                         );
                       })()}
-                      {procesosDelProg
-                        .filter(p => p.tipo_proceso === "PM")
-                        .map(proc => (
+                      {tipoProceso === "Plan de mejoramiento"
+                        ? procesosDelProg.filter(p => p.tipo_proceso === "PM").map(proc => (
                           <Box key={proc._id} id={`proceso-detalle-${proc._id}`} style={{ scrollMarginTop: 96 }}>
                             <ProcesoDetalleCard
                               proceso={proc}
@@ -2469,7 +2470,8 @@ const ProcessesMenPage = () => {
                               }}
                             />
                           </Box>
-                        ))}
+                        ))
+                        : null}
                     </>
                   );
                 })()}
@@ -3101,14 +3103,27 @@ const ProcessesMenPage = () => {
                       <tbody>
                         {(() => {
                           /* Construir mapa historialId → PM historial para mostrar PM ligado */
+                          const noRenovacionHistoryIds = new Set(
+                            historialProcesosOrdenado.filter(esHistorialAvNoRenovacion).map((r) => r._id),
+                          );
                           const pmHistorialMap = new Map(
                             historialProcesosOrdenado
-                              .filter((r) => r.tipo_proceso === "PM" && r.parent_history_id)
-                              .map((r) => [r.parent_history_id!, r])
+                              .filter(
+                                (r) =>
+                                  r.tipo_proceso === "PM" &&
+                                  r.parent_history_id &&
+                                  !noRenovacionHistoryIds.has(r.parent_history_id),
+                              )
+                              .map((r) => [r.parent_history_id!, r]),
                           );
                           /* Solo mostrar registros que NO sean PM independientes (los PM se muestran dentro de AV/AE) */
                           const registrosFiltrados = historialProcesosOrdenado
-                            .filter((r) => r.tipo_proceso !== "PM" || !r.parent_history_id)
+                            .filter(
+                              (r) =>
+                                r.tipo_proceso !== "PM" ||
+                                !r.parent_history_id ||
+                                noRenovacionHistoryIds.has(r.parent_history_id),
+                            )
                             .filter((r) => !historialFiltroFacultad || r.dep_code_facultad === historialFiltroFacultad)
                             .filter((r) => !historialFiltroPrograma || r.nombre_programa === historialFiltroPrograma);
 
@@ -3123,7 +3138,7 @@ const ProcessesMenPage = () => {
                           }
                           return registrosFiltrados.map((r) => {
                             const pmHist = pmHistorialMap.get(r._id);
-                            const tienepmActivo = !!r.pm_proceso_id;
+                            const tienepmActivo = !!r.pm_proceso_id && !esHistorialAvNoRenovacion(r);
                             const rowBg = ROW_BG_PROCESO[r.tipo_proceso] ?? "#fff";
                             const badgeColor = r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : r.tipo_proceso === "AE" ? "teal" : "green";
                             return (

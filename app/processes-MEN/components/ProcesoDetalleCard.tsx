@@ -71,6 +71,7 @@ import {
   type ProgramaEditReformaState,
 } from "../utils/programaEditReforma";
 import { otroProgramaConMismoCodigoInstitucional } from "../utils/programCodigoConflicto";
+import { esAvNoRenovacion } from "../utils/procesoNoRenovacion";
 
 /** Vigencia habitual en registros/acreditaciones al cerrar con resolución MEN (editable por el usuario). */
 const DURACION_VIGENCIA_CIERRE_ANOS_PRED = "7";
@@ -98,24 +99,6 @@ const esActividadInformacionCaso = (nombre: string) =>
 
 /** Actividad cerrada para avance de fase y “pendiente”. */
 const actividadResuelta = (a: Actividad) => !!a.completada || !!a.no_aplica;
-
-/** Modo efectivo del acto administrativo (tabla del caso o interruptor en la actividad). */
-const getModoActoAdminEfectivo = (act: Actividad, caso: Caso | null): string | null => {
-  if (!esActoAdministrativo(act.nombre)) return null;
-  if (caso) {
-    if (caso.resolucion_aprobada === true) return "satisfactorio";
-    if (caso.resolucion_aprobada === false) return "no_satisfactorio";
-    return null;
-  }
-  return act.acto_admin_modo ?? null;
-};
-
-/** Permite marcar “Hecho” el acto administrativo: basta con tener definido satisfactorio / no satisfactorio (no exige subactividades). */
-const puedeMarcarHechaActoAdminActividad = (act: Actividad, caso: Caso | null): boolean => {
-  if (!esActoAdministrativo(act.nombre)) return true;
-  const modo = getModoActoAdminEfectivo(act, caso);
-  return modo !== null;
-};
 
 /** Igual que en SortableActividad: subs visibles según modo del acto administrativo. */
 function getSubsVisiblesActividad(act: Actividad, caso: Caso | null): Subactividad[] {
@@ -149,7 +132,7 @@ const SortableActividad = ({
   onOpenDocsSubactividad, onOpenObsSubactividad,
   onChangeActoAdminModo,
   actoAdminModoExterno,
-  actividadDocCount, subactividadDocCounts, tooltipBloqueoHecha,
+  actividadDocCount, subactividadDocCounts,
 }: {
   act: Actividad;
   index: number;
@@ -181,7 +164,6 @@ const SortableActividad = ({
   actoAdminModoExterno?: string | null;
   actividadDocCount: number;
   subactividadDocCounts: Record<string, number>;
-  tooltipBloqueoHecha?: string | null;
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: act._id });
   const [expandSubs, setExpandSubs] = useState(false);
@@ -220,31 +202,15 @@ const SortableActividad = ({
             <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 3, color: "#adb5bd", fontSize: 16, userSelect: "none" }}>
               ⠿
             </div>
-            {tooltipBloqueoHecha ? (
-              <Tooltip label={tooltipBloqueoHecha} withArrow multiline w={260}>
-                <span style={{ display: "inline-flex", marginTop: 2, flexShrink: 0 }}>
-                  <Group gap={6} wrap="nowrap" align="flex-start">
-                    <input type="checkbox" checked={act.completada && !act.no_aplica}
-                      onChange={() => canToggleCompletada && onToggle()}
-                      disabled={!canToggleCompletada}
-                      title="Hecho"
-                      style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
-                    />
-                    <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
-                  </Group>
-                </span>
-              </Tooltip>
-            ) : (
-              <Group gap={6} wrap="nowrap" align="flex-start" style={{ marginTop: 2, flexShrink: 0 }}>
-                <input type="checkbox" checked={act.completada && !act.no_aplica}
-                  onChange={() => canToggleCompletada && onToggle()}
-                  disabled={!canToggleCompletada}
-                  title="Hecho"
-                  style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
-                />
-                <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
-              </Group>
-            )}
+            <Group gap={6} wrap="nowrap" align="flex-start" style={{ marginTop: 2, flexShrink: 0 }}>
+              <input type="checkbox" checked={act.completada && !act.no_aplica}
+                onChange={() => canToggleCompletada && onToggle()}
+                disabled={!canToggleCompletada}
+                title="Hecho"
+                style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
+              />
+              <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
+            </Group>
             {editActividadId === act._id ? (
               <Stack gap={4} style={{ flex: 1 }}>
                 <TextInput size="xs" label="Nombre de la actividad" value={editActividadNombre}
@@ -1210,7 +1176,13 @@ const ProcesoDetalleCard = ({
 
   const cargarPM = async () => {
     // Solo AV y AE tienen PM; RC no tiene
-    if (proceso.tipo_proceso !== "AV" && proceso.tipo_proceso !== "AE") return;
+    if (
+      (proceso.tipo_proceso !== "AV" && proceso.tipo_proceso !== "AE") ||
+      esAvNoRenovacion(proceso)
+    ) {
+      setPmProceso(null);
+      return;
+    }
     try {
       const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/processes`, {
         params: { program_code: proceso.program_code, tipo_proceso: "PM" },
@@ -2240,7 +2212,7 @@ const ProcesoDetalleCard = ({
                     <input
                       type="checkbox"
                       checked={caso.resolucion_aprobada === true}
-                      onChange={() => saveCasoField("resolucion_aprobada", true)}
+                      onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === true ? null : true)}
                       disabled={savingCaso}
                       style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
                     />
@@ -2250,7 +2222,7 @@ const ProcesoDetalleCard = ({
                     <input
                       type="checkbox"
                       checked={caso.resolucion_aprobada === false}
-                      onChange={() => saveCasoField("resolucion_aprobada", false)}
+                      onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === false ? null : false)}
                       disabled={savingCaso}
                       style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
                     />
@@ -3561,7 +3533,9 @@ const ProcesoDetalleCard = ({
       {bloqueInformacionCasoUi}
 
       {/* Bloque Plan de Mejoramiento — solo para AV y AE (el PM se gestiona como proceso propio) */}
-      {(proceso.tipo_proceso === "AV" || proceso.tipo_proceso === "AE") && proceso.cerrado_process_history_id && (
+      {(proceso.tipo_proceso === "AV" || proceso.tipo_proceso === "AE") &&
+        !esAvNoRenovacion(proceso) &&
+        proceso.cerrado_process_history_id && (
         <Box px="md" pt="sm" pb="sm">
           <Group justify="space-between" mb="xs" align="center">
             <Group gap="xs">
@@ -4107,13 +4081,9 @@ const ProcesoDetalleCard = ({
                   const firstIncompleteIndex = faseActual.actividades.findIndex(a => !actividadResuelta(a));
                   const isFirstIncomplete    = !actividadResuelta(act) && index === firstIncompleteIndex;
                   const esActoAdmin          = esActoAdministrativo(act.nombre);
-                  const puedeHechaActoAdmin  = puedeMarcarHechaActoAdminActividad(act, caso);
                   const puedeCompletar      = esActoAdmin || isFirstIncomplete;
-                  const canToggleCompletada  = act.no_aplica ? false : (act.completada || (puedeCompletar && puedeHechaActoAdmin));
+                  const canToggleCompletada  = act.no_aplica ? false : (act.completada || puedeCompletar);
                   const canToggleNoAplica    = act.completada ? false : (act.no_aplica || isFirstIncomplete);
-                  const tooltipBloqueoHecha  = esActoAdmin && !act.completada && !act.no_aplica && !puedeHechaActoAdmin
-                    ? "Indica si el acto administrativo fue satisfactorio o no (tabla del caso o interruptor de estado)."
-                    : null;
                   return (
                     <SortableActividad
                       key={act._id}
@@ -4126,7 +4096,6 @@ const ProcesoDetalleCard = ({
                       savingActividad={savingActividad}
                       canToggleCompletada={canToggleCompletada}
                       canToggleNoAplica={canToggleNoAplica}
-                      tooltipBloqueoHecha={tooltipBloqueoHecha}
                       onToggle={() => toggleCompletada(faseActual, act)}
                       onToggleNoAplica={() => toggleNoAplica(faseActual, act)}
                       onEdit={() => { setEditActividadId(act._id); setEditActividadNombre(act.nombre); setEditActividadResponsables(act.responsables ?? ""); }}
