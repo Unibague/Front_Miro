@@ -150,36 +150,35 @@ const AdminDependenciesPage = () => {
 
   const handleDelete = (dependency: Dependency) => {
     modals.openConfirmModal({
-      title: "Confirmar inactivación",
+      title: "Confirmar eliminación",
       children: (
         <Text size="sm">
-          ¿Deseas marcar como inactiva la dependencia &quot;{dependency.name}&quot;? No se elimina de la base de datos:
-          se conserva para los históricos y vuelve a quedar activa si el sistema externo la reporta de nuevo.
+          ¿Estás seguro de que deseas eliminar la dependencia &quot;{dependency.name}&quot;?
           {dependency.children && dependency.children.length > 0 && (
             <>
               <br /><br />
-              <strong>Esta dependencia tiene {dependency.children.length} dependencia(s) hija(s); ellas no se modifican.</strong>
+              <strong>Esta dependencia tiene {dependency.children.length} dependencia(s) hija(s) que también serán afectadas.</strong>
             </>
           )}
         </Text>
       ),
-      labels: { confirm: "Inactivar", cancel: "Cancelar" },
+      labels: { confirm: "Eliminar", cancel: "Cancelar" },
       confirmProps: { color: "red" },
       onConfirm: async () => {
         try {
-          await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/delete/${dependency._id}`, {
-            params: { userEmail: session?.user?.email, email: session?.user?.email },
+          await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/delete/${dependency._id}`, {
+            params: { userEmail: session?.user?.email },
           });
           showNotification({
-            title: "Inactivada",
-            message: "La dependencia quedó inactiva",
+            title: "Eliminado",
+            message: "Dependencia eliminada exitosamente",
             color: "green",
           });
           fetchDependencies();
         } catch (error: any) {
           showNotification({
             title: "Error",
-            message: error.response?.data?.message || error.response?.data?.error || "Error al inactivar la dependencia",
+            message: error.response?.data?.message || "Error al eliminar la dependencia",
             color: "red",
           });
         }
@@ -276,7 +275,7 @@ const AdminDependenciesPage = () => {
                   <IconEdit size={16} />
                 </ActionIcon>
               </Tooltip>
-              <Tooltip label="Inactivar dependencia">
+              <Tooltip label="Eliminar dependencia">
                 <ActionIcon
                   variant="outline"
                   color="red"
