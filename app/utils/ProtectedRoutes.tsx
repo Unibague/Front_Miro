@@ -61,7 +61,7 @@ const ROLE_KEY_VARIANTS: Record<string, Partial<Record<string, string>>> = {
 };
 
 /** Rutas que un Administrador siempre puede abrir, aunque su perfil no las incluya. */
-const ADMIN_RECOVERY_KEYS = ["configuration", "profiles"];
+const ADMIN_RECOVERY_KEYS = ["configuration", "profiles", "organigrama"];
 
 const FREE_ROUTES = /^\/(|dashboard|logs|traceability|operations|historico-docentes)(\/|$)/;
 

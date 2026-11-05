@@ -1,12 +1,12 @@
 .customGroup {
-    --group-child-width: calc(50% -(var(--mantine-spacing-md) - var(--mantine-spacing-md) / 2));
-  }
-  
-  .searchInput {
-    flex: 0.8;
-  }
-  
-  .syncButton {
-    flex: 0.2;
-  }
-  
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.syncButton {
+  flex: 0 0 auto;
+}

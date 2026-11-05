@@ -115,8 +115,13 @@ const ESTILOS_DIAGRAMA = `
 .org-caja { border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; line-height: 1.25; max-width: 210px; min-width: 120px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: transform 120ms ease, box-shadow 120ms ease; }
 .org-caja:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.22); }
 .org-caja.seleccionada { outline: 3px solid #f59f00; outline-offset: 2px; }
-.org-staff { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 6px; max-width: 320px; }
-.org-staff .org-caja { min-width: 0; font-size: 11px; padding: 4px 8px; font-weight: 500; }
+.org-staff-fila { display: flex; align-items: stretch; width: 100%; }
+.org-staff-lado { flex: 1 1 0; display: flex; align-items: center; padding: 3px 0; min-width: 130px; }
+.org-staff-lado.izq { justify-content: flex-end; }
+.org-staff-lado.der { justify-content: flex-start; }
+.org-staff-tronco { width: 2px; background: var(--org-linea); flex-shrink: 0; }
+.org-staff-brazo { width: 14px; height: 2px; background: var(--org-linea); flex-shrink: 0; }
+.org-staff-lado .org-caja { min-width: 0; max-width: 190px; font-size: 11px; padding: 5px 9px; font-weight: 500; }
 .org-lista { border-radius: 6px; padding: 8px 10px; font-size: 11px; text-align: left; min-width: 150px; max-width: 220px; }
 .org-lista-item { padding: 1px 0 1px 12px; cursor: pointer; position: relative; }
 .org-lista-item::before { content: "•"; position: absolute; left: 0; }
@@ -191,9 +196,29 @@ function NodoDiagrama({ u, seleccionado, colapsados, onSelect, onToggle }: {
       {!colapsado && staff.length > 0 && (
         <>
           <div className="org-conector" />
-          <div className="org-staff">
-            {staff.map((s) => <CajaUnidad key={s._id} u={s} seleccionado={seleccionado} onSelect={onSelect} />)}
-          </div>
+          {/* Unidades de apoyo a lado y lado de la línea central, como en el organigrama impreso */}
+          {Array.from({ length: Math.ceil(staff.length / 2) }, (_, fila) => {
+            const izq = staff[fila * 2];
+            const der = staff[fila * 2 + 1];
+            const hayMasAbajo = fila < Math.ceil(staff.length / 2) - 1 || ramas.length > 0 || hojas.length > 0;
+            return (
+              <div key={izq._id} className="org-staff-fila">
+                <div className="org-staff-lado izq">
+                  <CajaUnidad u={izq} seleccionado={seleccionado} onSelect={onSelect} />
+                  <div className="org-staff-brazo" />
+                </div>
+                <div className="org-staff-tronco" style={hayMasAbajo ? undefined : { height: "50%" }} />
+                <div className="org-staff-lado der">
+                  {der && (
+                    <>
+                      <div className="org-staff-brazo" />
+                      <CajaUnidad u={der} seleccionado={seleccionado} onSelect={onSelect} />
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
           {(ramas.length > 0 || hojas.length > 0) && <div className="org-conector" />}
         </>
       )}

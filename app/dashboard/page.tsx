@@ -88,8 +88,9 @@ const DashboardPage = () => {
   // perfiles" (y a la tarjeta "Configuración" que la contiene), sin importar
   // como este configurado su propio perfil. Sin esto, un perfil mal armado
   // podria dejar a un Administrador sin ninguna forma de corregirlo desde la
-  // interfaz.
-  const ADMIN_RECOVERY_KEYS = ["configuration", "profiles"];
+  // interfaz. El organigrama también es una vista exclusiva de Administrador
+  // que no depende del perfil.
+  const ADMIN_RECOVERY_KEYS = ["configuration", "profiles", "organigrama"];
 
   // El rol base "Usuario" no tiene una entrada propia en "Gestionar vistas"
   // (ningun perfil puede otorgar estas llaves), asi que si se dejaran sujetas
