@@ -191,6 +191,10 @@ interface PublishedTemplate {
   fecha_final?: string | Date;
   isEncargado?: boolean;
   canGenerateQr?: boolean;
+  // Plantilla sin productor encargado: cada dependencia autorizada para QR
+  // revisa y hace su propio envío final
+  isDependencyReviewer?: boolean;
+  dependencySubmitted?: boolean;
 }
 
 const ProducerTemplatesPage = () => {
@@ -1422,13 +1426,16 @@ if (field.multiple) {
     // Una vez el productor encargado hizo el envio final al SNIES, ninguna
     // dependencia puede seguir cargando, editando o reportando en cero.
     if (publishedTemplate.final_submitted) return true;
+    if (publishedTemplate.dependencySubmitted) return true;
     return new Date() > getEffectiveDeadline(publishedTemplate);
   };
 
   const rows = sortedTemplates.map((publishedTemplate) => {
     //console.log("Published Template:", publishedTemplate); // Agregar el log aquí para inspeccionar los datos
     const uploadDisable = handleDisableUpload(publishedTemplate);
-    const disabledReason = publishedTemplate.final_submitted
+    const disabledReason = publishedTemplate.dependencySubmitted
+      ? "Tu dependencia ya realizó el envío final"
+      : publishedTemplate.final_submitted
       ? "Esta plantilla ya fue enviada al SNIES"
       : uploadDisable
         ? "El periodo ya se encuentra cerrado"
@@ -1475,6 +1482,12 @@ if (field.multiple) {
                 <Text size="sm" fw={700} c={isDeadlineToday ? 'red' : 'blue'}>{dateToGMT(fecha)}</Text>
                 {isEncargado && (
                   <Badge size="xs" color="blue" variant="light">Productor encargado</Badge>
+                )}
+                {publishedTemplate.isDependencyReviewer && (
+                  <Badge size="xs" color="violet" variant="light">Revisa y envía su dependencia</Badge>
+                )}
+                {publishedTemplate.isDependencyReviewer && (
+                  <Badge size="xs" color="violet" variant="light">Revisa y envía su dependencia</Badge>
                 )}
               </Stack>
             );

@@ -23,6 +23,7 @@ import {
   IconArrowBigUpFilled,
   IconArrowLeft,
   IconArrowsTransferDown,
+  IconArrowBackUp,
   IconChecks,
   IconDownload,
   IconUpload,
@@ -151,6 +152,11 @@ interface PublishedTemplate {
   final_submitted?: boolean;
   final_submitted_date?: string;
   isEncargado?: boolean;
+  // Plantilla sin productor encargado: cada dependencia autorizada para QR
+  // revisa y hace su propio envío final
+  isDependencyReviewer?: boolean;
+  dependencySubmitted?: boolean;
+  dependencySubmittedDate?: string | null;
   fecha_final_productores?: string | Date;
   fecha_final_responsables?: string | Date;
   fecha_final?: string | Date;
@@ -236,6 +242,64 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
           fetchTemplates(page, search);
         } catch (error: any) {
           const msg = error?.response?.data?.status || "Hubo un error al realizar el envío final";
+          showNotification({ title: "Error", message: msg, color: "red" });
+        }
+      },
+    });
+  };
+
+  // Envío final de la dependencia (plantillas sin productor encargado): la
+  // información revisada de su dependencia pasa a Consulta de Información.
+  const handleDependencyFinalSubmit = async (pubTemId: string) => {
+    modals.openConfirmModal({
+      title: "Confirmar envío final de tu dependencia",
+      centered: true,
+      children: (
+        <Text size="sm">
+          ¿Ya revisaste la información de tu dependencia? Al confirmar, se enviará a <strong>Consulta de Información</strong> junto con la de las demás dependencias que ya enviaron.
+          <br /><br />
+          Después del envío tu dependencia no podrá seguir cargando ni editando, a menos que deshagas el envío.
+        </Text>
+      ),
+      labels: { confirm: "Sí, enviar", cancel: "Cancelar" },
+      confirmProps: { color: "blue" },
+      onConfirm: async () => {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/confirmFinalSubmit`, {
+            pubTem_id: pubTemId,
+            email: session?.user?.email,
+          });
+          showNotification({ title: "Envío realizado", message: "La información de tu dependencia se envió a Consulta de Información", color: "blue" });
+          fetchTemplates(page, search);
+        } catch (error: any) {
+          const msg = error?.response?.data?.status || "Hubo un error al realizar el envío final";
+          showNotification({ title: "Error", message: msg, color: "red" });
+        }
+      },
+    });
+  };
+
+  const handleUndoDependencyFinalSubmit = async (pubTemId: string) => {
+    modals.openConfirmModal({
+      title: "Deshacer envío final de tu dependencia",
+      centered: true,
+      children: (
+        <Text size="sm">
+          La información de tu dependencia saldrá de Consulta de Información y podrás volver a editarla. Los datos cargados no se pierden.
+        </Text>
+      ),
+      labels: { confirm: "Sí, deshacer", cancel: "Cancelar" },
+      confirmProps: { color: "orange" },
+      onConfirm: async () => {
+        try {
+          await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/producer/undoFinalSubmit`, {
+            pubTem_id: pubTemId,
+            email: session?.user?.email,
+          });
+          showNotification({ title: "Envío deshecho", message: "Ya puedes volver a editar la información de tu dependencia", color: "orange" });
+          fetchTemplates(page, search);
+        } catch (error: any) {
+          const msg = error?.response?.data?.status || "No se pudo deshacer el envío final";
           showNotification({ title: "Error", message: msg, color: "red" });
         }
       },
@@ -629,6 +693,7 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
     // dependencia puede seguir cargando o editando informacion (solo se
     // permite "Eliminar envío" para deshacerlo si fue un error).
     if (publishedTemplate.final_submitted) return true;
+    if (publishedTemplate.dependencySubmitted) return true;
     if (!publishedTemplate.period.is_active) return true;
     const effectiveDeadline = getEffectiveDeadline(publishedTemplate);
     if (!effectiveDeadline) return false;
@@ -685,7 +750,9 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               </Tooltip>
               <Tooltip
                 label={
-                  publishedTemplate.final_submitted
+                  publishedTemplate.dependencySubmitted
+                    ? "Tu dependencia ya realizó el envío final"
+                    : publishedTemplate.final_submitted
                     ? "Esta plantilla ya fue enviada al SNIES"
                     : uploadDisable
                       ? "El periodo ya se encuentra cerrado"
@@ -705,7 +772,9 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
               </Tooltip>
               <Tooltip
                 label={
-                  publishedTemplate.final_submitted
+                  publishedTemplate.dependencySubmitted
+                    ? "Tu dependencia ya realizó el envío final"
+                    : publishedTemplate.final_submitted
                     ? "Esta plantilla ya fue enviada al SNIES"
                     : uploadDisable
                       ? "El periodo ya se encuentra cerrado"
@@ -753,6 +822,42 @@ const ProducerUploadedTemplatesPage = ({ fetchTemp, selectedCategory, userDepend
                     disabled={!!publishedTemplate.final_submitted}
                   >
                     <IconChecks size={16} />
+                  </Button>
+                </Tooltip>
+              )}
+              {publishedTemplate.isDependencyReviewer && (
+                <Tooltip
+                  label={
+                    publishedTemplate.dependencySubmitted
+                      ? `Tu dependencia ya envió a Consulta de Información${publishedTemplate.dependencySubmittedDate ? ` (${dateToGMT(publishedTemplate.dependencySubmittedDate)})` : ""}`
+                      : "Envío final de tu dependencia a Consulta de Información"
+                  }
+                  position="top"
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant={publishedTemplate.dependencySubmitted ? "filled" : "outline"}
+                    color="blue"
+                    onClick={() => handleDependencyFinalSubmit(publishedTemplate._id)}
+                    disabled={!!publishedTemplate.dependencySubmitted}
+                  >
+                    <IconChecks size={16} />
+                  </Button>
+                </Tooltip>
+              )}
+              {publishedTemplate.isDependencyReviewer && publishedTemplate.dependencySubmitted && (
+                <Tooltip
+                  label="Deshacer el envío final de tu dependencia"
+                  position="top"
+                  transitionProps={{ transition: "fade-up", duration: 300 }}
+                >
+                  <Button
+                    variant="outline"
+                    color="orange"
+                    onClick={() => handleUndoDependencyFinalSubmit(publishedTemplate._id)}
+                    disabled={deleteDisable}
+                  >
+                    <IconArrowBackUp size={16} />
                   </Button>
                 </Tooltip>
               )}
