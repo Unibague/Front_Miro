@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase, IconSitemap } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -883,6 +883,15 @@ const DashboardPage = () => {
         description: "Actualiza el contenido informativo de la página de inicio.",
         route: "/admin/homeSettings",
         buttonLabel: "Ir a los ajustes de inicio",
+      }),
+      renderActionCard({
+        permissionKey: "organigrama",
+        roles: ["Administrador"],
+        icon: <IconSitemap size={80} />,
+        title: "Organigrama",
+        description: "Organiza la estructura institucional: unidades, facultades, escuelas, áreas y programas.",
+        route: "/configuracion/organigrama",
+        buttonLabel: "Ir al organigrama",
       }),
     ].filter(Boolean);
 

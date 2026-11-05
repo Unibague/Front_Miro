@@ -19,6 +19,7 @@ const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
   { key: "validations",               pattern: /^\/admin\/validations/ },
   { key: "users",                     pattern: /^\/admin\/users/ },
   { key: "profiles",                  pattern: /^\/configuracion\/perfiles/ },
+  { key: "organigrama",               pattern: /^\/configuracion\/organigrama/ },
   { key: "configuration",             pattern: /^\/configuracion/ },
   { key: "publishedTemplates",        pattern: /^\/templates\/published/ },
   { key: "producerTemplates",         pattern: /^\/producer\/templates/ },

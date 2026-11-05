@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert } from "@mantine/core";
-import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle, IconFileSpreadsheet } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { Container, Table, Button, Modal, TextInput, Group, Pagination, Center, Select, MultiSelect, Text, Badge, Alert, Tooltip, Stack, Accordion, ScrollArea } from "@mantine/core";
+import { IconEdit, IconRefresh, IconTrash, IconArrowBigUpFilled, IconArrowBigDownFilled, IconArrowsTransferDown, IconUsers, IconAlertTriangle, IconFileSpreadsheet, IconHistory } from "@tabler/icons-react";
 import { modals } from '@mantine/modals';
 import axios from "../config/axios";
 import { useRouter } from 'next/navigation';
@@ -26,6 +26,92 @@ interface Dependency {
   dep_father: string;
   visualizers: string[];
   active?: boolean;
+  inactive_since?: string | null;
+  replaced_by?: string | null;
+}
+
+type TipoCambioSync = "creada" | "reactivada" | "modificada" | "desactivada" | "reemplazada";
+
+interface CambioSync {
+  tipo: TipoCambioSync;
+  dep_code: string;
+  nombre: string;
+  campo?: string;
+  antes?: string | null;
+  despues?: string | null;
+  reemplazada_por?: string | null;
+  reemplazada_por_nombre?: string | null;
+}
+
+interface ResumenSync {
+  creadas: number;
+  reactivadas: number;
+  modificadas: number;
+  desactivadas: number;
+  reemplazadas: number;
+}
+
+interface RegistroSync {
+  _id?: string;
+  fecha: string;
+  origen?: string;
+  ejecutado_por?: string;
+  total_recibidas?: number;
+  resumen: ResumenSync;
+  cambios: CambioSync[];
+}
+
+const TIPO_CAMBIO_SYNC: Record<TipoCambioSync, { label: string; color: string }> = {
+  creada: { label: "Nueva", color: "teal" },
+  reactivada: { label: "Reactivada", color: "blue" },
+  modificada: { label: "Modificada", color: "yellow" },
+  desactivada: { label: "Inactivada", color: "gray" },
+  reemplazada: { label: "Reemplazada", color: "orange" },
+};
+
+const detalleCambio = (c: CambioSync) => {
+  switch (c.tipo) {
+    case "creada": return "Nueva dependencia en el sistema externo";
+    case "reactivada": return "Volvió a aparecer en el sistema externo";
+    case "modificada": return `${c.campo}: ${c.antes ?? "—"} → ${c.despues ?? "—"}`;
+    case "desactivada": return "Ya no llega del sistema externo; quedó inactiva (no se elimina)";
+    case "reemplazada": return `Quedó inactiva. La reemplaza ${c.reemplazada_por_nombre ?? ""} (código ${c.reemplazada_por})`;
+  }
+};
+
+const textoResumenSync = (r: ResumenSync) =>
+  [
+    r.creadas && `${r.creadas} nuevas`,
+    r.reactivadas && `${r.reactivadas} reactivadas`,
+    r.modificadas && `${r.modificadas} modificadas`,
+    r.reemplazadas && `${r.reemplazadas} reemplazadas`,
+    r.desactivadas && `${r.desactivadas} inactivadas`,
+  ].filter(Boolean).join(" · ") || "Sin cambios";
+
+function TablaCambiosSync({ cambios }: { cambios: CambioSync[] }) {
+  if (!cambios.length) return <Text size="sm" c="dimmed">No hubo cambios.</Text>;
+  return (
+    <Table striped withTableBorder fz="sm">
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Cambio</Table.Th>
+          <Table.Th>Código</Table.Th>
+          <Table.Th>Dependencia</Table.Th>
+          <Table.Th>Detalle</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {cambios.map((c, i) => (
+          <Table.Tr key={`${c.tipo}-${c.dep_code}-${c.campo ?? ""}-${i}`}>
+            <Table.Td><Badge size="sm" variant="light" color={TIPO_CAMBIO_SYNC[c.tipo].color}>{TIPO_CAMBIO_SYNC[c.tipo].label}</Badge></Table.Td>
+            <Table.Td>{c.dep_code}</Table.Td>
+            <Table.Td>{c.nombre}</Table.Td>
+            <Table.Td>{detalleCambio(c)}</Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
 }
 
 interface MemberOption {
@@ -74,6 +160,24 @@ const AdminDependenciesPage = () => {
   const { sortedItems: sortedDependencies, handleSort, sortConfig } = useSort<Dependency>(dependencies, { key: null, direction: "asc" });
   const router = useRouter();
   const [isDownloading, setIsDownloading] = useState(false);
+  const [estadoFiltro, setEstadoFiltro] = useState<string>("todas");
+  const [syncResultado, setSyncResultado] = useState<RegistroSync | null>(null);
+  const [historialOpened, setHistorialOpened] = useState(false);
+  const [historial, setHistorial] = useState<RegistroSync[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
+
+  const abrirHistorial = async () => {
+    setHistorialOpened(true);
+    setCargandoHistorial(true);
+    try {
+      const { data } = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/sync-logs`, { params: { limit: 30 } });
+      setHistorial(Array.isArray(data) ? data : []);
+    } catch {
+      showNotification({ title: "Error", message: "No se pudo cargar el historial de sincronizaciones", color: "red" });
+    } finally {
+      setCargandoHistorial(false);
+    }
+  };
 
   const handleDownloadExcel = async () => {
     setIsDownloading(true);
@@ -149,7 +253,7 @@ const AdminDependenciesPage = () => {
   const fetchDependencies = async (page: number, search: string) => {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/dependencies/all`, {
-        params: { page, limit: 10, search },
+        params: { page, limit: 10, search, ...(estadoFiltro !== "todas" ? { estado: estadoFiltro } : {}) },
       });
       if (response.data) {
         console.log('=== DEPENDENCIES DATA ===');
@@ -200,6 +304,17 @@ const AdminDependenciesPage = () => {
     fetchDependencies(page, search);
   }, [page]);
 
+  // Al cambiar el filtro de estado se vuelve a la primera página (no en la carga inicial)
+  const filtroInicializado = useRef(false);
+  useEffect(() => {
+    if (!filtroInicializado.current) {
+      filtroInicializado.current = true;
+      return;
+    }
+    if (page !== 1) setPage(1);
+    else fetchDependencies(1, search);
+  }, [estadoFiltro]);
+
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchDependencies(page, search);
@@ -225,7 +340,7 @@ const AdminDependenciesPage = () => {
       title: 'Confirmar Sincronización',
       children: (
         <Text size="sm">
-          ¿Estás seguro de que deseas sincronizar todas las dependencias? Se crearán o actualizarán las vigentes, se asignarán sus líderes y se eliminarán de la base de datos las que ya no existan en el sistema externo.
+          ¿Estás seguro de que deseas sincronizar todas las dependencias? Se crearán o actualizarán las vigentes y se asignarán sus líderes. Las que ya no existan en el sistema externo se marcarán como inactivas (nunca se eliminan de la base de datos). Al terminar verás qué cambió.
         </Text>
       ),
       labels: { confirm: 'Sincronizar', cancel: 'Cancelar' },
@@ -276,9 +391,12 @@ const AdminDependenciesPage = () => {
       
       showNotification({
         title: "Sincronizado",
-        message: `${syncResult.count ?? 0} dependencias sincronizadas, ${syncResult.deactivatedCount ?? 0} desactivadas (se conservan para históricos) y ${syncResult.leadersAssigned ?? 0} líderes asignados.`,
+        message: `${syncResult.count ?? 0} dependencias sincronizadas y ${syncResult.leadersAssigned ?? 0} líderes asignados. ${syncResult.resumen ? textoResumenSync(syncResult.resumen) : ""}`,
         color: "teal",
       });
+      if (Array.isArray(syncResult.cambios) && syncResult.cambios.length > 0) {
+        setSyncResultado({ fecha: new Date().toISOString(), resumen: syncResult.resumen, cambios: syncResult.cambios });
+      }
     } catch (error) {
       console.error("Error syncing dependencies:", error);
       showNotification({
@@ -567,7 +685,12 @@ const AdminDependenciesPage = () => {
         <Group gap={6}>
           <Text>{dependency.name}</Text>
           {dependency.active === false && (
-            <Badge color="gray" size="sm">Inactiva</Badge>
+            <Tooltip label={dependency.inactive_since ? `Inactiva desde el ${new Date(dependency.inactive_since).toLocaleDateString("es-CO")}` : "Inactiva"}>
+              <Badge color="gray" size="sm">Inactiva</Badge>
+            </Tooltip>
+          )}
+          {dependency.replaced_by && (
+            <Badge color="orange" variant="light" size="sm">Reemplazada por {dependency.replaced_by}</Badge>
           )}
         </Group>
       </Table.Td>
@@ -627,6 +750,25 @@ const AdminDependenciesPage = () => {
           loading={isDownloading}
         >
           Descargar Excel
+        </Button>
+        <Select
+          value={estadoFiltro}
+          onChange={(v) => setEstadoFiltro(v ?? "todas")}
+          allowDeselect={false}
+          w={150}
+          data={[
+            { value: "todas", label: "Todas" },
+            { value: "activas", label: "Activas" },
+            { value: "inactivas", label: "Inactivas" },
+          ]}
+        />
+        <Button
+          variant="outline"
+          color="gray"
+          leftSection={<IconHistory size={16} />}
+          onClick={abrirHistorial}
+        >
+          Historial de sincronizaciones
         </Button>
         <Button
           variant="light"
@@ -689,6 +831,57 @@ const AdminDependenciesPage = () => {
         </Table.Thead>
         <Table.Tbody>{rows}</Table.Tbody>
       </Table>
+      <Modal
+        opened={!!syncResultado}
+        onClose={() => setSyncResultado(null)}
+        title="Cambios de la sincronización"
+        size="xl"
+      >
+        {syncResultado && (
+          <Stack gap="sm">
+            <Text size="sm">{textoResumenSync(syncResultado.resumen)}</Text>
+            <Text size="xs" c="dimmed">Ninguna dependencia se eliminó: las que dejaron de llegar quedaron inactivas.</Text>
+            <ScrollArea.Autosize mah={480}>
+              <TablaCambiosSync cambios={syncResultado.cambios} />
+            </ScrollArea.Autosize>
+          </Stack>
+        )}
+      </Modal>
+
+      <Modal
+        opened={historialOpened}
+        onClose={() => setHistorialOpened(false)}
+        title="Historial de sincronizaciones"
+        size="xl"
+      >
+        {cargandoHistorial ? (
+          <Center py="md"><Text size="sm" c="dimmed">Cargando...</Text></Center>
+        ) : historial.length === 0 ? (
+          <Text size="sm" c="dimmed">Todavía no hay sincronizaciones con cambios registrados.</Text>
+        ) : (
+          <Accordion variant="separated">
+            {historial.map((log) => (
+              <Accordion.Item key={log._id ?? log.fecha} value={log._id ?? log.fecha}>
+                <Accordion.Control>
+                  <Group justify="space-between" wrap="nowrap" pr="sm">
+                    <Text size="sm" fw={600}>{new Date(log.fecha).toLocaleString("es-CO")}</Text>
+                    <Text size="xs" c="dimmed">{textoResumenSync(log.resumen)}</Text>
+                  </Group>
+                  {log.ejecutado_por && (
+                    <Text size="xs" c="dimmed">
+                      {log.origen === "usuarios" ? "Sincronización de usuarios" : "Sincronización de dependencias"} · {log.ejecutado_por}
+                    </Text>
+                  )}
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <TablaCambiosSync cambios={log.cambios} />
+                </Accordion.Panel>
+              </Accordion.Item>
+            ))}
+          </Accordion>
+        )}
+      </Modal>
+
       <Center>
         <Pagination
           mt={15}
