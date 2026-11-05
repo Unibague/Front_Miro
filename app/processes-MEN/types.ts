@@ -13,6 +13,19 @@ export type UltimoProcesoPrograma = {
   link_documento:      string | null;
 };
 
+export type ResolucionAnteriorPrograma = {
+  _id: string;
+  tipo_proceso: "RC" | "AV";
+  fecha_resolucion: string;
+  name: string;
+  drive_id: string;
+  view_link: string;
+  download_link?: string | null;
+  mime_type?: string | null;
+  size?: number | null;
+  subido_en?: string | null;
+};
+
 export type CineF = {
   campo_amplio:     string | null;
   campo_especifico: string | null;
@@ -55,6 +68,7 @@ export type Program = {
   // Último proceso vigente
   ultimo_rc?: UltimoProcesoPrograma | null;
   ultimo_av?: UltimoProcesoPrograma | null;
+  resoluciones_anteriores?: ResolucionAnteriorPrograma[];
   // Vigencia (actualizada por cron diario)
   tiene_rc_vigente?: boolean;
   tiene_av_vigente?: boolean;
