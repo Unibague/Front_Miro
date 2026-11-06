@@ -653,12 +653,15 @@ const ProcesoDetalleCard = ({
       const resultadoCasoDefinido =
         caso != null && (caso.resolucion_aprobada === true || caso.resolucion_aprobada === false);
       const cierreNoRenovRcSinExigirCaso =
-        proceso.tipo_proceso === "RC" && esRcSubtipoNoRenovacion(proceso.subtipo);
+        (proceso.tipo_proceso === "RC" && esRcSubtipoNoRenovacion(proceso.subtipo))
+        || esAvNoRenovacion(proceso);
       if (!resultadoCasoDefinido && !cierreNoRenovRcSinExigirCaso) {
         setConfirmarCierreSinResultadoCasoOpen(true);
         return;
       }
-      if (resultadoCasoDefinido) {
+      if (esAvNoRenovacion(proceso)) {
+        setCierreResultado("aprobado");
+      } else if (resultadoCasoDefinido) {
         setCierreResultado(caso!.resolucion_aprobada === true ? "aprobado" : "negado");
       } else {
         setCierreResultado("aprobado");
@@ -716,7 +719,10 @@ const ProcesoDetalleCard = ({
   };
 
   const cerrarProceso = async () => {
-    if (!window.confirm("¿Está seguro de que desea cerrar el proceso?")) return;
+    const mensajeConfirmacion = esCierreNoRenovacionAv
+      ? "¿Cerrar y archivar este proceso de No renovación? Antes de continuar, asegúrate de registrar las fechas en Información del caso y cargar los documentos en sus apartados correspondientes."
+      : "¿Está seguro de que desea cerrar el proceso?";
+    if (!window.confirm(mensajeConfirmacion)) return;
     setCierreError(null);
     setCerrandoProceso(true);
     try {
@@ -2258,12 +2264,16 @@ const ProcesoDetalleCard = ({
 
   const mostrarBloqueRcOficioCierre = proceso.tipo_proceso === "AV" && incluirRcOficioAlCierre;
   const etiquetasResolucionAv = proceso.tipo_proceso === "AV" && mostrarBloqueRcOficioCierre;
+  const esCierreNoRenovacionAv = esAvNoRenovacion(proceso);
   const cierreMuestraEstado =
-    (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV") && !esRcOficioPostAvGracia;
+    (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV")
+    && !esRcOficioPostAvGracia
+    && !esCierreNoRenovacionAv;
   const cierreMuestraResolucionBloque =
     (proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV")
     && cierreResultado === "aprobado"
-    && !esReformaCurricularSolo;
+    && !esReformaCurricularSolo
+    && !esCierreNoRenovacionAv;
   const esCierreNoRenovacionRc = proceso.tipo_proceso === "RC" && esRcSubtipoNoRenovacion(proceso.subtipo);
   /** Caso con resultado explícito (modal completo de cierre). */
   const casoEsSatisfactorio = caso?.resolucion_aprobada === true;
@@ -2411,7 +2421,20 @@ const ProcesoDetalleCard = ({
           )}
         </>
       )}
-
+      {esCierreNoRenovacionAv && cierreResultado === "aprobado" && (
+        <Alert color="blue" variant="light" title="Cierre de No renovación">
+          Este proceso no registra resultado Satisfactorio o No satisfactorio; se archivará como aprobado en el historial.
+          Antes de cerrarlo, registra las fechas en <strong>Información del caso</strong> y carga los documentos en sus apartados.
+          {resolucionDoc && (
+            <Text size="xs" mt="xs">
+              Resolución vigente:{" "}
+              <Anchor href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
+                {resolucionDoc.name || "Abrir PDF"}
+              </Anchor>
+            </Text>
+          )}
+        </Alert>
+      )}
       {esRenovacionReforma && cierreResultado === "aprobado" && (
         <>
           <Divider label="Ficha del programa" labelPosition="left" my="sm" />
@@ -2541,12 +2564,17 @@ const ProcesoDetalleCard = ({
                     ? "Un solo archivo: en el historial se mostrará como resolución y como constancia de la modificación."
                     : "Este archivo se aplicará al programa al confirmar el cierre. La resolución vigente del registro no cambia hasta entonces."}
                 </Text>
-                {actoAdminMenDocs.length > 0 && (
-                  <Alert color="blue" variant="light" mb="xs" title="Documentos de «Acto administrativo MEN»">
+                {(resolucionDoc || actoAdminMenDocs.length > 0) && (
+                  <Alert color="blue" variant="light" mb="xs" title="Documentos disponibles como soporte del cierre">
                     <Text size="xs">
-                      Estos documentos cargados en «Acto administrativo MEN» quedan disponibles como soporte del cierre. Si adjuntas otro PDF aquí, se usará como documento de resolución del cierre.
+                      La resolución vigente y los documentos cargados en «Acto administrativo MEN» quedan disponibles como soporte del cierre. Si adjuntas otro PDF aquí, se usará como documento de resolución del cierre.
                     </Text>
                     <Stack gap={4} mt="xs">
+                      {resolucionDoc && (
+                        <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
+                          📄 Resolución vigente: {resolucionDoc.name}
+                        </Anchor>
+                      )}
                       {actoAdminMenDocs.map((doc) => (
                         <Anchor key={doc._id} size="xs" href={doc.view_link} target="_blank" rel="noopener noreferrer">
                           📄 {doc.name}
