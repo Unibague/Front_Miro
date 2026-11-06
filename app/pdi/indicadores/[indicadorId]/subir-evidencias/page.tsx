@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon, Badge, Button, Center, Checkbox, Container, Divider,
   FileButton, Group, Loader, Modal, MultiSelect, Paper, Progress, Select, Stack,
@@ -9,7 +9,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import {
   IconArrowLeft, IconBulb, IconCheck, IconChevronDown, IconChevronUp, IconExternalLink,
-  IconForms, IconLock, IconTarget, IconTrash, IconUpload, IconAlertCircle,
+  IconForms, IconLock, IconPencil, IconTarget, IconTrash, IconUpload, IconAlertCircle,
 } from "@tabler/icons-react";
 import axios from "axios";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -302,7 +302,7 @@ export default function SubirEvidenciasPage() {
   // Indicador y cortes
   const [indicador, setIndicador] = useState<Indicador | null>(null);
   const [loadingInd, setLoadingInd] = useState(true);
-  const [cortesVigentes, setCortesVigentes] = useState<CorteVigente[]>([]);
+  const [cortesVigentesHoy, setCortesVigentes] = useState<CorteVigente[]>([]);
   const [namingGuideOpen, setNamingGuideOpen] = useState(false);
   const [mostrarTodosPeriodos, setMostrarTodosPeriodos] = useState(false);
 
@@ -324,6 +324,15 @@ export default function SubirEvidenciasPage() {
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [sentSuccessfully, setSentSuccessfully] = useState(false);
+  // Reabre un reporte ya enviado/aprobado para corregirlo; al reenviarlo vuelve a revisión del líder
+  const [editandoReporte, setEditandoReporte] = useState(false);
+  // Periodo anterior (ya reportado) que se está editando; null = se trabaja sobre el corte vigente
+  const [corteEdicion, setCorteEdicion] = useState<string | null>(null);
+  // Mientras se edita un periodo anterior, ese periodo hace las veces de corte vigente
+  // (carga su formulario, habilita su avance y es el que se reenvía).
+  const cortesVigentes = useMemo<CorteVigente[]>(() => (corteEdicion
+    ? [{ _id: `edicion-${corteEdicion}`, nombre: corteEdicion }]
+    : cortesVigentesHoy), [corteEdicion, cortesVigentesHoy]);
   const [esLiderDelIndicador, setEsLiderDelIndicador] = useState(false);
   const [mostrarModalPeriodoAtrasado, setMostrarModalPeriodoAtrasado] = useState(false);
   const [periodosAtrasados, setPeriodosAtrasados] = useState<Periodo[]>([]);
@@ -1117,6 +1126,8 @@ export default function SubirEvidenciasPage() {
       // Solo si el formulario se envió correctamente, marcar el avance como Enviado
       await guardarAvances("enviar");
       await recargarRespuestas();
+      setEditandoReporte(false);
+      setCorteEdicion(null);
       setSentSuccessfully(true);
       showNotification({
         title: autoAprobado ? "Aprobado" : "Enviado",
@@ -1138,6 +1149,37 @@ export default function SubirEvidenciasPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  // Descarta los avances escritos y deja los que están guardados en el indicador
+  const restaurarAvances = () => {
+    const strs: Record<string, string> = {};
+    (indicador?.periodos ?? []).forEach((p: Periodo) => {
+      strs[p.periodo] = p.avance != null ? normalizeDecimalComma(String(p.avance)) : "";
+    });
+    setAvancesStr(strs);
+  };
+
+  // Abre (o cambia a) la edición de un periodo ya reportado. Al cambiar de corte, el
+  // efecto de carga trae los formularios de ese periodo; si es el mismo, se recargan aquí.
+  const handleEditarPeriodo = async (periodo: string) => {
+    const corteVigenteHoy = typeof cortesVigentesHoy[0] === "string"
+      ? (cortesVigentesHoy[0] as unknown as string)
+      : (cortesVigentesHoy[0]?.nombre ?? "");
+    const siguiente = periodo === corteVigenteHoy ? null : periodo;
+    restaurarAvances();
+    setCorteEdicion(siguiente);
+    setEditandoReporte(true);
+    setSentSuccessfully(false);
+    setUsuarioEligioReportarAvance(true);
+    if (siguiente === corteEdicion) await recargarRespuestas();
+  };
+
+  const handleCancelarEdicion = async () => {
+    setEditandoReporte(false);
+    restaurarAvances();
+    if (corteEdicion) setCorteEdicion(null);
+    else await recargarRespuestas();
   };
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -1172,7 +1214,7 @@ export default function SubirEvidenciasPage() {
     formulariosIncompletos.length === 0 &&
     formulariosSinDocumento.length === 0 &&
     formulariosConEvidenciasPesadas.length === 0;
-  const bloqueado = todosEnviados && !tieneFormulariosRechazados;
+  const bloqueado = todosEnviados && !tieneFormulariosRechazados && !editandoReporte;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
@@ -1305,6 +1347,31 @@ export default function SubirEvidenciasPage() {
               </Paper>
             )}
 
+            {editandoReporte && (
+              <Paper withBorder radius="xl" p="md"
+                style={{ background: "rgba(124,58,237,0.05)", borderColor: "#7c3aed", borderLeft: "4px solid #7c3aed" }}>
+                <Group justify="space-between" wrap="nowrap" gap="sm">
+                <Group gap={8} wrap="nowrap">
+                  <IconPencil size={18} color="#7c3aed" style={{ flexShrink: 0 }} />
+                  <Text fw={700} c="violet">
+                    Estás editando el reporte {corteActivo}, que ya había sido enviado. Al reenviarlo volverá a revisión del líder del macroproyecto y luego a Planeación.
+                  </Text>
+                </Group>
+                <Button
+                  size="xs"
+                  radius="xl"
+                  variant="default"
+                  leftSection={<IconArrowLeft size={14} />}
+                  disabled={sending}
+                  onClick={handleCancelarEdicion}
+                  style={{ flexShrink: 0 }}
+                >
+                  Salir de edición
+                </Button>
+                </Group>
+              </Paper>
+            )}
+
             {/* Avance por periodo */}
             <div>
               <Title order={5} mb="sm">Avance por periodo</Title>
@@ -1318,7 +1385,7 @@ export default function SubirEvidenciasPage() {
                     .filter((p: Periodo) => {
                       // Mientras el período vigente todavía no se reporta, la sección de abajo lo maneja — excluirlo aquí
                       if (usuarioEligioReportarAvance && esPeriodoEditable(p.periodo, cortesVigentes) && !periodoYaReportado(p.estado_reporte)) return false;
-                      return mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes);
+                      return mostrarTodosPeriodos || esPeriodoEditable(p.periodo, cortesVigentes) || periodoYaReportado(p.estado_reporte);
                     })
                     .map((p: Periodo) => {
                     // Si usuarioEligioReportarAvance = false: bloquear TODO (usuario dijo "no por ahora")
@@ -1380,6 +1447,18 @@ export default function SubirEvidenciasPage() {
                                 <Badge size="xs" color="gray" variant="outline" radius="xl">
                                   Avance: 0
                                 </Badge>
+                              )}
+                              {periodoYaReportado(estadoPeriodo) && !(editandoReporte && p.periodo === corteActivo) && (
+                                <Button
+                                  size="compact-xs"
+                                  radius="xl"
+                                  variant="light"
+                                  color="violet"
+                                  leftSection={<IconPencil size={12} />}
+                                  onClick={() => handleEditarPeriodo(p.periodo)}
+                                >
+                                  Editar
+                                </Button>
                               )}
                             </Group>
                             <Text size="sm" c="dimmed" mt={4}>Meta definida: <b>{p.meta != null ? conPorcentajeSiAplica(formatNumeroEs(p.meta), indicador) : "—"}</b></Text>
@@ -2349,11 +2428,15 @@ export default function SubirEvidenciasPage() {
               <Paper withBorder radius="xl" p="lg"
                 style={{ background: "rgba(124,58,237,0.03)", borderColor: "#ede9fe" }}>
                 <Text size="sm" c="dimmed" mb="md" ta="center">
-                  {tieneFormulariosRechazados
+                  {editandoReporte
+                    ? "Actualiza el avance, el formulario y las evidencias que necesites corregir."
+                    : tieneFormulariosRechazados
                     ? "Tu envío fue rechazado. Corrige la información, actualiza los avances y vuelve a enviarlo para una nueva revisión."
                     : "Guarda los cambios para continuar después, o envía el reporte cuando todo esté listo."}
                   <b>
-                    {tieneFormulariosRechazados
+                    {editandoReporte
+                      ? " Cuando lo reenvíes, el líder será notificado para evaluarlo de nuevo."
+                      : tieneFormulariosRechazados
                       ? " Cuando vuelvas a enviarlo, tu reporte pasará nuevamente a revisión."
                       : " Una vez enviado, tu reporte pasará a revisión."}
                   </b>
@@ -2407,6 +2490,16 @@ export default function SubirEvidenciasPage() {
                   );
                 })()}
                 <Group justify="center" gap="md">
+                  {editandoReporte ? (
+                    <Button
+                      variant="default"
+                      radius="xl"
+                      disabled={sending}
+                      onClick={handleCancelarEdicion}
+                    >
+                      Cancelar edición
+                    </Button>
+                  ) : (
                   <Button
                     variant="default"
                     radius="xl"
@@ -2416,6 +2509,7 @@ export default function SubirEvidenciasPage() {
                   >
                     Guardar
                   </Button>
+                  )}
                   <Button
                     color="violet"
                     radius="xl"
@@ -2425,7 +2519,7 @@ export default function SubirEvidenciasPage() {
                     leftSection={<IconCheck size={16} />}
                     onClick={handleEnviarTodo}
                   >
-                    Enviar
+                    {editandoReporte ? "Reenviar" : "Enviar"}
                   </Button>
                 </Group>
               </Paper>
