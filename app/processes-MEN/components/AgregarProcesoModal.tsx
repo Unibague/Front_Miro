@@ -192,6 +192,7 @@ export default function AgregarProcesoModal({
 
   /* ── PDF de resolución ── */
   const [pdfFile, setPdfFile]   = useState<File | null>(null);
+  const [actaNoRenovacionFile, setActaNoRenovacionFile] = useState<File | null>(null);
   /** Si el usuario quita el PDF de la alerta sin subir otro, no se copia al crear el proceso. */
   const [omitirPdfCopiaAlerta, setOmitirPdfCopiaAlerta] = useState(false);
   const fileInputRef            = useRef<HTMLInputElement>(null);
@@ -302,6 +303,7 @@ export default function AgregarProcesoModal({
     setNbcArea(""); setNbcValor("");
     setFechaRes(""); setCodigoRes(""); setDuracionRes("");
     setPdfFile(null);
+    setActaNoRenovacionFile(null);
     setOmitirPdfCopiaAlerta(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setSaving(false); setError(null);
@@ -394,6 +396,7 @@ export default function AgregarProcesoModal({
         setDuracionRes("");
       }
       setPdfFile(null);
+      setActaNoRenovacionFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setError(null);
       setSaving(false);
@@ -546,6 +549,11 @@ export default function AgregarProcesoModal({
       }
       if (!codigoRes)    { setError("El código de resolución es obligatorio."); return; }
       if (!duracionRes && subtipo !== "Registro calificado de oficio")  { setError("La duración de la resolución es obligatoria."); return; }
+    }
+
+    if (tipo === "AV" && subtipo === "No renovación" && !actaNoRenovacionFile) {
+      setError("Adjunta el acta de aprobación de no renovación.");
+      return;
     }
 
     if (subtipo === "Registro calificado de oficio") {
@@ -716,6 +724,17 @@ export default function AgregarProcesoModal({
         const formData = new FormData();
         formData.append("file", pdfFile);
         formData.append("doc_type", "resolucion");
+        await axios.post(
+          `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${processId}`,
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+      }
+
+      if (tipo === "AV" && subtipo === "No renovación" && actaNoRenovacionFile && processId) {
+        const formData = new FormData();
+        formData.append("file", actaNoRenovacionFile);
+        formData.append("doc_type", "proceso");
         await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL}/process-documents/process/${processId}`,
           formData,
@@ -1275,6 +1294,33 @@ export default function AgregarProcesoModal({
                 })()}
 
               </>
+            )}
+
+            {tipo === "AV" && subtipo === "No renovación" && (
+              <div>
+                <Text size="sm" fw={500} mb={4}>Acta de aprobación de no renovación <Text component="span" c="red">*</Text></Text>
+                {actaNoRenovacionFile && (
+                  <Paper withBorder radius="sm" p="sm" bg="gray.0" mb="xs">
+                    <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                      <Text size="sm" fw={600} truncate maw={320}>📄 {actaNoRenovacionFile.name}</Text>
+                      <Button size="xs" variant="subtle" color="red" onClick={() => setActaNoRenovacionFile(null)}>
+                        Quitar
+                      </Button>
+                    </Group>
+                  </Paper>
+                )}
+                <DropzoneCustomComponent
+                  text={actaNoRenovacionFile
+                    ? "Arrastra otro archivo para reemplazar el acta"
+                    : "Adjunta el acta de aprobación de no renovación"}
+                  onDrop={(files) => {
+                    const file = files[0];
+                    if (!file) return;
+                    setActaNoRenovacionFile(file);
+                    setError(null);
+                  }}
+                />
+              </div>
             )}
 
             {(subtipo === "Nuevo" && tipo === "AV" && mostrarFormularioProgramaNuevo) && (
