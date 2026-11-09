@@ -11,6 +11,7 @@ import Lottie from 'lottie-react';
 import successAnimation from "../../../public/lottie/success.json";
 import { endOfDayGMT5 } from '../DateConfig';
 import { isBlankRequiredValue } from '../../utils/requiredFields';
+import { getForeignCountryErrors } from '../../utils/foreignCountryRules';
 
 const isRequiredField = (field: any, skipComment = false): boolean => {
   if (skipComment) return false;
@@ -251,8 +252,8 @@ const showRequiredUploadErrors = (details: any[]) => {
   if (typeof window !== 'undefined') window.location.href = '/logs';
 
   showNotification({
-    title: 'Campos obligatorios sin completar',
-    message: 'La plantilla no se subio. Revisa los campos marcados como obligatorios en los comentarios.',
+    title: 'Datos de la plantilla no válidos',
+    message: 'La plantilla no se subió. Revisa los campos obligatorios y los códigos de país indicados.',
     color: 'red',
     autoClose: 7000,
   });
@@ -626,26 +627,26 @@ export function DropzoneButton({
           case 'Entero': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
               parsedValue = normalizeExcelCellValue(parsedValue);
-            const intVal = parseInt(String(parsedValue));
-            return isNaN(intVal) ? String(parsedValue) : intVal;
+            const text = String(parsedValue ?? '').trim();
+            return /^-?\d+$/.test(text) && Number.isSafeInteger(Number(text)) ? Number(text) : text;
           }
 
           case 'Decimal':
           case 'Porcentaje': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
               parsedValue = normalizeExcelCellValue(parsedValue);
-            const floatVal = parseFloat(String(parsedValue));
-            return isNaN(floatVal) ? String(parsedValue) : floatVal;
+            const text = String(parsedValue ?? '').trim();
+            const number = Number(text.replace(',', '.'));
+            return text !== '' && Number.isFinite(number) ? number : text;
           }
 
           case 'Fecha':
           case 'Fecha Inicial / Fecha Final': {
             if (typeof parsedValue === 'object' && parsedValue !== null)
               parsedValue = normalizeExcelCellValue(parsedValue);
-            const dateValue = new Date(String(parsedValue));
-            return isNaN(dateValue.getTime())
-              ? String(parsedValue)
-              : dateValue.toISOString();
+            // Excel Date cells are already normalized to ISO. Keep textual dates
+            // intact so the server can reject words and impossible calendar dates.
+            return String(parsedValue ?? '').trim();
           }
 
           case 'True/False': {
@@ -867,7 +868,10 @@ export function DropzoneButton({
 
           const requiredErrors = sheetsData.flatMap((sheetData) => {
             const sheetTemplate = workbookTemplateSheets.find((s: any) => s.name === sheetData.name);
-            return buildRequiredErrorDetails(sheetData.data, sheetTemplate?.fields || [], sheetData.name, skipCommentValidation);
+            return [
+              ...buildRequiredErrorDetails(sheetData.data, sheetTemplate?.fields || [], sheetData.name, skipCommentValidation),
+              ...getForeignCountryErrors(sheetData.data, sheetTemplate?.fields || [], sheetData.name),
+            ];
           });
 
           if (requiredErrors.length > 0) {
@@ -910,7 +914,10 @@ export function DropzoneButton({
           const allowedFields = new Set<string>(expectedColumns);
           const data = readSheetRows(selectedSheet, allowedFields);
 
-          const requiredErrors = buildRequiredErrorDetails(data, allFields, undefined, skipCommentValidation);
+          const requiredErrors = [
+            ...buildRequiredErrorDetails(data, allFields, undefined, skipCommentValidation),
+            ...getForeignCountryErrors(data, allFields),
+          ];
           if (requiredErrors.length > 0) {
             showRequiredUploadErrors(requiredErrors);
             return;

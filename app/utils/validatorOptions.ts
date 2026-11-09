@@ -1,3 +1,5 @@
+import { filterForeignCountryOptions } from './foreignCountryRules';
+
 export const normalizeValidatorText = (value: unknown) =>
   String(value ?? "")
     .normalize("NFD")
@@ -5,6 +7,19 @@ export const normalizeValidatorText = (value: unknown) =>
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
+
+export const isInternationalEntityField = (fieldName: string): boolean =>
+  ['NOMBRE_ENTIDAD_FTE_INTERNAC', 'NOMBRE_ENTIDAD_FTE_INTERNACIONAL'].includes(normalizeValidatorText(fieldName).replace(/[^A-Z0-9]+/g, '_'));
+
+export const withNoApplyOption = (fieldName: string, options: string[]): string[] => {
+  options = filterForeignCountryOptions(fieldName, options);
+  const key = normalizeValidatorText(fieldName).replace(/[^A-Z0-9]+/g, '_');
+  if (options.length === 0 || (key !== 'ID_PAIS_FINANCIADOR' && !isInternationalEntityField(fieldName))) return options;
+  const result = [...options];
+  if (!result.some(option => /^0(?:\s+-\s+.*)?$/.test(option.trim()))) result.push('0');
+  if (isInternationalEntityField(fieldName) && !result.some(option => normalizeValidatorText(option) === 'N/A')) result.push('N/A');
+  return result;
+};
 
 const toOptionText = (value: any) => {
   if (value === null || value === undefined) return "";

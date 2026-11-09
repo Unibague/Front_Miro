@@ -36,6 +36,7 @@ import {
   buildSelectOptionsFromStrings,
   extractDropdownOptionsFromComment,
   resolveStoredSelectValue,
+  withNoApplyOption,
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../utils/periodUtils";
@@ -1041,7 +1042,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
         } else {
           opts = field.validate_with ? (validatorValuesMap[field.name] || []) : [];
         }
-        return { fieldName: field.name, options: buildSelectOptionsFromStrings(opts), isMultiple: field.multiple };
+        return { fieldName: field.name, options: buildSelectOptionsFromStrings(withNoApplyOption(field.name, opts)), isMultiple: field.multiple };
       });
 
     // Separar opciones para MultiSelect y Select

@@ -75,12 +75,9 @@ const SortableColumn = ({ id, className, children }: SortableColumnProps) => {
   return (
     <Box
       ref={setNodeRef}
-      mb="md"
-      m={5}
       className={className}
       style={{
-        minWidth: 200,
-        maxWidth: 250,
+        width: 240,
         position: "relative",
         zIndex: isDragging ? 2 : undefined,
         opacity: isDragging ? 0.75 : 1,
@@ -113,22 +110,29 @@ interface SortableRowActionsProps {
   id: string;
   rowIndex: number;
   onRemove: () => void;
+  children: ReactNode;
+  gridTemplateColumns: string;
 }
 
-const SortableRowActions = ({ id, rowIndex, onRemove }: SortableRowActionsProps) => {
+const SortableRowActions = ({ id, rowIndex, onRemove, children, gridTemplateColumns }: SortableRowActionsProps) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   return (
-    <Center
+    <Box
       ref={setNodeRef}
-      mb={20}
       style={{
+        display: 'grid',
+        gridTemplateColumns,
+        gap: 10,
+        alignItems: 'center',
+        minHeight: 44,
         zIndex: isDragging ? 3 : undefined,
         opacity: isDragging ? 0.75 : 1,
         transform: CSS.Transform.toString(transform),
         transition,
       }}
     >
+      {children}
       <Group gap="xs" wrap="nowrap">
         <Tooltip label="Arrastrar fila" withArrow>
           <ActionIcon
@@ -156,7 +160,7 @@ const SortableRowActions = ({ id, rowIndex, onRemove }: SortableRowActionsProps)
           </ActionIcon>
         </Tooltip>
       </Group>
-    </Center>
+    </Box>
   );
 };
 
@@ -181,6 +185,7 @@ const AdminValidationUpdatePage = () => {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+  const gridTemplateColumns = `repeat(${Math.max(columns.length, 1)}, 240px) 90px`;
 
   useEffect(() => {
     const fetchValidation = async () => {
@@ -474,7 +479,7 @@ const AdminValidationUpdatePage = () => {
                   items={columns.map(column => column.uiId)}
                   strategy={horizontalListSortingStrategy}
                 >
-                  <Group wrap="nowrap" align="start">
+                  <Box style={{ display: 'grid', gridTemplateColumns, gap: 10, alignItems: 'start', width: 'max-content' }}>
                     {columns.map((column, colIndex) => (
                       <SortableColumn
                         id={column.uiId}
@@ -515,42 +520,42 @@ const AdminValidationUpdatePage = () => {
                               </Tooltip>
                             </Group>
                           </Center>
-                          {column.values.map((value, valIndex) => (
-                            <Group grow key={rowIds[valIndex] ?? valIndex} mb="xs">
-                              <TextInput
-                                value={String(value)}
-                                placeholder="Ingresa un valor"
-                                onChange={(event) => {
-                                  const newColumns = columns.slice();
-                                  const newValue = column.type === 'Número' ? Number(event.currentTarget.value) : event.currentTarget.value;
-                                  newColumns[colIndex].values[valIndex] = newValue;
-                                  setColumns(newColumns);
-                                }}
-                              />
-                            </Group>
-                          ))}
                         </Stack>
                       </SortableColumn>
                     ))}
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleRowDragEnd}
-                    >
-                      <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-                        <Box mt={151} style={{ minWidth: 90, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                          {rowIds.map((rowId, valIndex) => (
-                            <SortableRowActions
-                              id={rowId}
-                              key={rowId}
-                              rowIndex={valIndex}
-                              onRemove={() => handleRemoveValue(valIndex)}
+                  </Box>
+                </SortableContext>
+              </DndContext>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+                <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+                  <Stack gap={8} style={{ width: 'max-content' }}>
+                    {rowIds.map((rowId, valIndex) => (
+                      <SortableRowActions
+                        id={rowId}
+                        key={rowId}
+                        rowIndex={valIndex}
+                        gridTemplateColumns={gridTemplateColumns}
+                        onRemove={() => handleRemoveValue(valIndex)}
+                      >
+                        {columns.map((column, colIndex) => (
+                          <Box px="xs" key={column.uiId}>
+                            <TextInput
+                              aria-label={`${column.name || `Columna ${colIndex + 1}`}, fila ${valIndex + 1}`}
+                              value={String(column.values[valIndex] ?? '')}
+                              placeholder="Ingresa un valor"
+                              onChange={(event) => {
+                                const value = event.currentTarget.value;
+                                setColumns(current => current.map((item, index) => index !== colIndex ? item : {
+                                  ...item,
+                                  values: item.values.map((previous, rowIndex) => rowIndex === valIndex ? value : previous),
+                                }));
+                              }}
                             />
-                          ))}
-                        </Box>
-                      </SortableContext>
-                    </DndContext>
-                  </Group>
+                          </Box>
+                        ))}
+                      </SortableRowActions>
+                    ))}
+                  </Stack>
                 </SortableContext>
               </DndContext>
             </ScrollArea>

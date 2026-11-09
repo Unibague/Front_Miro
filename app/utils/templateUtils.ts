@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { getFieldMaxLength } from "./fieldConstraints";
+import { isInternationalEntityField, withNoApplyOption } from "./validatorOptions";
+import { normalizeCountryFieldName } from "./foreignCountryRules";
 
 export const sanitizeSheetName = (name: string): string => {
   return name.replace(/[/\\?*[\]]/g, '').substring(0, 31);
@@ -12,6 +14,9 @@ export const shouldAddWorksheet = (workbook: ExcelJS.Workbook, sheetName: string
 
 interface FieldWithValidator {
   name: string;
+  datatype?: string;
+  content_type?: "" | "alphabetic" | "numeric" | "alphanumeric";
+  max_length?: number;
   validate_with?: string | { id?: string; name?: string };
   multiple?: boolean;
   comment?: string;
@@ -1331,31 +1336,30 @@ const buildTypeHintValidation = (hint: CommentTypeHint, anchorCell: string): Exc
   }
 
   if (hint.kind === "alfabetico") {
-    const allowedLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÜÑáéíóúüñ ";
+    // No enumerar letras permitidas: los nombres pueden incluir puntuación,
+    // comillas y guiones Unicode. La restricción alfabética excluye dígitos.
     return {
       type: "custom",
       allowBlank: true,
       formulae: [
-        `AND(LEN(${anchorCell})<=${hint.maxLength},SUMPRODUCT(--ISNUMBER(FIND(MID(${anchorCell},ROW(INDIRECT("1:"&LEN(${anchorCell}))),1),"${allowedLetters}")))=LEN(${anchorCell}))`,
+        `AND(LEN(${anchorCell})<=${hint.maxLength},SUMPRODUCT(--ISNUMBER(SEARCH({"0","1","2","3","4","5","6","7","8","9"},${anchorCell})))=0)`,
       ],
       showErrorMessage: true,
       errorStyle: "stop",
       errorTitle: "Valor no válido",
-      error: `Este campo debe contener solo letras y un máximo de ${hint.maxLength} caracteres.`,
+      error: `Admite letras, espacios y signos de puntuación, sin números; máximo ${hint.maxLength} caracteres.`,
     };
   }
 
-  const allowedAlphanumeric = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÜÑáéíóúüñ 0123456789";
   return {
-    type: "custom",
+    type: "textLength",
+    operator: "lessThanOrEqual",
     allowBlank: true,
-    formulae: [
-      `AND(LEN(${anchorCell})<=${hint.maxLength},SUMPRODUCT(--ISNUMBER(FIND(MID(${anchorCell},ROW(INDIRECT("1:"&LEN(${anchorCell}))),1),"${allowedAlphanumeric}")))=LEN(${anchorCell}))`,
-    ],
+    formulae: [hint.maxLength],
     showErrorMessage: true,
     errorStyle: "stop",
     errorTitle: "Valor no válido",
-    error: `Este campo debe ser alfanumérico y de máximo ${hint.maxLength} caracteres.`,
+    error: `Admite letras, números, espacios y signos de puntuación; máximo ${hint.maxLength} caracteres.`,
   };
 };
 
@@ -1668,6 +1672,32 @@ export const applyValidatorDropdowns = ({
 
   fields.forEach((field, fieldIndex) => {
     let options: string[] = [];
+    // Una descripción es texto libre: conserva su largo máximo, incluida la
+    // puntuación, aunque el comentario importado diga alfabético/alfanumérico.
+    if (normalizeToken(field.name) === 'DESCRIPCION_ACTIVIDAD') {
+      const maxLength = getFieldMaxLength(field);
+      if (maxLength) {
+        const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
+        const firstRow = Math.max(startRow, headerRow + 1);
+        (worksheet as any).dataValidations.add(`${toColumnLetter(col)}${firstRow}:${toColumnLetter(col)}${endRow}`, {
+          type: 'textLength', operator: 'lessThanOrEqual', formulae: [maxLength],
+          allowBlank: true, showErrorMessage: true, errorStyle: 'stop',
+          errorTitle: 'Descripción demasiado larga',
+          error: `Este campo admite hasta ${maxLength} caracteres, incluidos signos de puntuación.`,
+          showInputMessage: true, promptTitle: field.name.slice(0, 32),
+          prompt: 'Admite letras, números, espacios y signos de puntuación.',
+        });
+      }
+      return;
+    }
+    // Date rules must survive rebuilding the workbook's dropdown validations.
+    if (field.datatype === 'Fecha') {
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
+      for (let row = Math.max(startRow, headerRow + 1); row <= endRow; row++) {
+        applyDatatypeValidation(worksheet.getCell(row, col), field);
+      }
+      return;
+    }
 
     // 1. Extraer del comentario
     if (field.comment) {
@@ -1724,14 +1754,31 @@ export const applyValidatorDropdowns = ({
       }
     }
 
-    options = normalizeDropdownOptionTexts(options);
+    options = withNoApplyOption(field.name, normalizeDropdownOptionTexts(options));
+
+    if (normalizeCountryFieldName(field.name) === 'ID_PAIS_EXTRANJERO' && options.length === 0) {
+      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
+      const anchor = `${toColumnLetter(col)}${Math.max(startRow, headerRow + 1)}`;
+      const maxLength = getFieldMaxLength(field);
+      (worksheet as any).dataValidations.add(`${anchor}:${toColumnLetter(col)}${endRow}`, {
+        type: 'custom', allowBlank: true,
+        formulae: [`IFERROR(AND(ISNUMBER(--${anchor}),--${anchor}=INT(--${anchor}),--${anchor}>=0,--${anchor}<>170${maxLength ? `,LEN(${anchor})<=${maxLength}` : ''}),FALSE)`],
+        showErrorMessage: true, errorStyle: 'stop', errorTitle: 'País extranjero no válido',
+        error: 'Ingrese un código de país extranjero. No se admite 170 (Colombia).',
+      });
+      return;
+    }
 
     if (options.length === 0) {
       // Sin lista de opciones: si el comentario trae la convención SNIES
       // "numérico/alfabético/alfanumérico (N)", igual se aplica una
       // validación real (tipo de caracter + largo máximo) en vez de dejar
       // la celda totalmente libre.
-      const hint = parseCommentTypeHint(field.comment);
+      const commentHint = parseCommentTypeHint(field.comment);
+      const hint: CommentTypeHint | null = field.content_type
+        ? { kind: field.content_type === 'numeric' ? 'numerico' : field.content_type === 'alphabetic' ? 'alfabetico' : 'alfanumerico',
+            maxLength: getFieldMaxLength(field) ?? 800 }
+        : commentHint;
       if (!hint) return;
 
       const { col: hintCol, headerRow: hintHeaderRow } = getConfiguredFieldPosition(field, fieldIndex, fields);
@@ -1744,7 +1791,11 @@ export const applyValidatorDropdowns = ({
         : "";
       const hintPromptText = hintComment.length > 220 ? `${hintComment.slice(0, 217)}...` : hintComment;
 
-      const hintValidation = buildTypeHintValidation(hint, anchorCell);
+      const hintValidation: ExcelJS.DataValidation = isInternationalEntityField(field.name)
+        ? { type: 'textLength', operator: 'lessThanOrEqual', formulae: [getFieldMaxLength(field) ?? hint.maxLength],
+            allowBlank: true, showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Nombre demasiado largo',
+            error: `Este campo admite hasta ${getFieldMaxLength(field) ?? hint.maxLength} caracteres, incluidos signos de puntuación y N/A.` }
+        : buildTypeHintValidation(hint, anchorCell);
       if (hintPromptText) {
         hintValidation.showInputMessage = true;
         hintValidation.promptTitle = field.name.slice(0, 32);
@@ -1851,7 +1902,7 @@ export const applyValidatorDropdowns = ({
       type: "list",
       allowBlank: true,
       formulae: [listFormula],
-      showErrorMessage: !field.multiple,
+      showErrorMessage: !field.multiple || normalizeCountryFieldName(field.name) === 'ID_PAIS_EXTRANJERO',
       errorStyle: "stop",
       errorTitle: "Valor no valido",
       error: "Selecciona un valor de la lista desplegable.",
@@ -2039,7 +2090,7 @@ interface DownloadableWorksheet {
 export const applyDatatypeValidation = (cell: ExcelJS.Cell, field: DownloadableField): void => {
   switch (field.datatype) {
     case "Entero":
-      cell.dataValidation = { type: "whole", operator: "between", formulae: [1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
+      cell.dataValidation = { type: "whole", operator: "between", formulae: [normalizeToken(field.name) === 'ID_PAIS_FINANCIADOR' ? 0 : 1, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número entero." };
       break;
     case "Decimal":
       cell.dataValidation = { type: "decimal", operator: "between", formulae: [0.0, Number.MAX_SAFE_INTEGER], showErrorMessage: true, errorTitle: "Valor no válido", error: "Por favor, introduce un número decimal." };
@@ -2103,6 +2154,14 @@ export const applyDatatypeValidation = (cell: ExcelJS.Cell, field: DownloadableF
       error: `Este campo solo admite dígitos${configuredMaxLength ? ` y máximo ${configuredMaxLength} caracteres` : ""}.`,
     };
     cell.numFmt = "@";
+  }
+
+  if (["Texto Corto", "Texto Largo"].includes(field.datatype || "")
+    && (field.content_type === 'alphabetic' || field.content_type === 'alphanumeric')) {
+    cell.dataValidation = buildTypeHintValidation({
+      kind: field.content_type === 'alphabetic' ? 'alfabetico' : 'alfanumerico',
+      maxLength: configuredMaxLength ?? 800,
+    }, cell.address);
   }
 
   if (field.comment && cell.dataValidation) {

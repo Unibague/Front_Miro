@@ -33,6 +33,7 @@ import {
   buildValidatorOptions,
   getPreferredValidatorColumnName,
   resolveStoredSelectValue,
+  withNoApplyOption,
 } from "../../../../../utils/validatorOptions";
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../../utils/periodUtils";
@@ -180,7 +181,7 @@ const ProducerTemplateUpdatePage = ({
 
       const allValidatorOptionsPromises = templateResponse.data.template.fields
         .map(async (field) => {
-          const fieldDropdownOptions = buildFieldDropdownOptions(field);
+          const fieldDropdownOptions = withNoApplyOption(field.name, buildFieldDropdownOptions(field));
 
           if (!field.validate_with) {
             return {
@@ -226,7 +227,7 @@ const ProducerTemplateUpdatePage = ({
             // Prioridad: comentario/dropdown_options primero; el validador solo
             // se usa como respaldo si el campo no trae opciones en el comentario.
             const options = buildSelectOptionsFromStrings(
-              fieldDropdownOptions.length > 0 ? fieldDropdownOptions : optionStrings
+              withNoApplyOption(field.name, fieldDropdownOptions.length > 0 ? fieldDropdownOptions : optionStrings)
             );
             return { fieldName: field.name, options, isMultiple: field.multiple };
           } catch (error) {
