@@ -210,6 +210,10 @@ const AdminDependenciesPage = () => {
         return {
           "Código": dep.dep_code,
           "Nombre": dep.name,
+          "Estado": dep.active === false ? "Inactiva" : "Activa",
+          "Inactiva desde": dep.active === false && dep.inactive_since
+            ? new Date(dep.inactive_since).toLocaleDateString("es-CO")
+            : "",
           "Líder(es)": dep.responsible || "No definido",
           "Dependencia Padre": dep.dep_father || "",
           "Número de miembros": miembros.length,
@@ -223,6 +227,8 @@ const AdminDependenciesPage = () => {
       ws["!cols"] = [
         { wch: 12 },  // Código
         { wch: 40 },  // Nombre
+        { wch: 12 },  // Estado
+        { wch: 16 },  // Inactiva desde
         { wch: 35 },  // Líder(es)
         { wch: 30 },  // Dependencia Padre
         { wch: 18 },  // Número de miembros
@@ -232,9 +238,9 @@ const AdminDependenciesPage = () => {
       ];
       const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
       for (let row = range.s.r + 1; row <= range.e.r; row++) {
-        const cellMiembros = ws[XLSX.utils.encode_cell({ r: row, c: 5 })];
+        const cellMiembros = ws[XLSX.utils.encode_cell({ r: row, c: 7 })];
         if (cellMiembros) cellMiembros.s = { alignment: { wrapText: true, vertical: "top" } };
-        const cellPlantillas = ws[XLSX.utils.encode_cell({ r: row, c: 7 })];
+        const cellPlantillas = ws[XLSX.utils.encode_cell({ r: row, c: 9 })];
         if (cellPlantillas) cellPlantillas.s = { alignment: { wrapText: true, vertical: "top" } };
       }
       const wb = XLSX.utils.book_new();
@@ -684,10 +690,12 @@ const AdminDependenciesPage = () => {
       <Table.Td>
         <Group gap={6}>
           <Text>{dependency.name}</Text>
-          {dependency.active === false && (
+          {dependency.active === false ? (
             <Tooltip label={dependency.inactive_since ? `Inactiva desde el ${new Date(dependency.inactive_since).toLocaleDateString("es-CO")}` : "Inactiva"}>
               <Badge color="gray" size="sm">Inactiva</Badge>
             </Tooltip>
+          ) : (
+            <Badge color="teal" variant="light" size="sm">Activa</Badge>
           )}
           {dependency.replaced_by && (
             <Badge color="orange" variant="light" size="sm">Reemplazada por {dependency.replaced_by}</Badge>

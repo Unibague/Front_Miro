@@ -66,8 +66,19 @@ const allowedDataTypes = [
 interface Dependency {
   _id: string;
   name: string;
-  responsible: string
+  responsible: string;
+  active?: boolean;
 }
+
+interface CategoryOption {
+  _id: string;
+  name: string;
+  templates?: { templateId: string | { _id: string } | null }[];
+}
+
+// SNIES y CNA se manejan con sus switches; el resto de categorías
+// (p. ej. "Gestión interna") se eligen en el selector de categoría.
+const isSwitchCategory = (name = "") => ["SNIES", "CNA"].includes(name.trim().toUpperCase());
 
 interface Dimension {
   _id: string;
@@ -98,6 +109,31 @@ interface TemplateWorksheet {
   shared?: boolean;
 }
 
+// Valor del selector de productor encargado que representa "No aplica";
+// nunca se envia al backend (se guarda como lista vacia).
+const NO_RESPONSIBLE_PRODUCER = "__no_aplica__";
+
+// Opción del selector de dependencias: las inactivas muestran su badge.
+// El label lleva "(Inactiva)" para que también se vea en la etiqueta
+// seleccionada.
+const dependencyOptions = (deps: Dependency[] = []) =>
+  deps.map((dep) => ({
+    value: dep._id,
+    label: dep.active === false ? `${dep.name} (Inactiva)` : dep.name,
+  }));
+
+const renderDependencyOption = (deps: Dependency[]) =>
+  ({ option }: { option: { value: string; label: string } }) => {
+    const dep = deps.find((d) => d._id === option.value);
+    if (dep?.active !== false) return <Text size="sm">{option.label}</Text>;
+    return (
+      <Group gap={6} wrap="nowrap">
+        <Text size="sm">{dep.name}</Text>
+        <Badge color="gray" size="xs">Inactiva</Badge>
+      </Group>
+    );
+  };
+
 const UpdateTemplatePage = () => {
   const [name, setName] = useState("");
   const [fileName, setFileName] = useState("");
@@ -108,6 +144,11 @@ const UpdateTemplatePage = () => {
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [selectedDimensions, setSelectedDimensions] = useState<string[]>([]);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  // "Seleccionar todos" solo agrega dependencias activas; las inactivas que ya
+  // estaban asignadas se conservan.
+  const activeDependencyIds = dependencies.filter((d) => d.active !== false).map((d) => d._id);
+  const withAllActive = (current: string[]) => Array.from(new Set([...current, ...activeDependencyIds]));
+  const hasAllActive = (current: string[]) => activeDependencyIds.every((depId) => current.includes(depId));
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [validatorOptions, setValidatorOptions] = useState<ValidatorOption[]>([]);
   const [validators, setValidators] = useState<Validator[]>([]);
@@ -122,7 +163,8 @@ const UpdateTemplatePage = () => {
   const [notifyProducers, setNotifyProducers] = useState(false);
   const [isSnies, setIsSnies] = useState(false);
   const [isCna, setIsCna] = useState(false);
-  const [isOtra, setIsOtra] = useState(false);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [skipCommentValidation, setSkipCommentValidation] = useState(false);
   const [workbookSheets, setWorkbookSheets] = useState<TemplateWorksheet[]>([]);
   const [originalWorkbookBase64, setOriginalWorkbookBase64] = useState("");
@@ -393,7 +435,6 @@ const UpdateTemplatePage = () => {
             const categoryName: string = response.data.category?.name ?? "";
             setIsSnies((response.data.is_snies ?? false) || categoryName.toUpperCase().includes("SNIES"));
             setIsCna((response.data.is_cna ?? false) || categoryName.toUpperCase().includes("CNA"));
-            setIsOtra((response.data.is_otra ?? false) || categoryName.trim().toUpperCase() === "OTRA");
             setSelectedDimensions(response.data.dimensions);
             setSelectedDependencies(response.data.producers);
             
@@ -478,8 +519,28 @@ const UpdateTemplatePage = () => {
       }
     };
 
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories/all`);
+        const list: CategoryOption[] = (response.data?.categories || []).filter(
+          (c: CategoryOption) => !isSwitchCategory(c.name)
+        );
+        setCategories(list);
+        const current = list.find((c) =>
+          (c.templates || []).some((t) => {
+            const tid = typeof t.templateId === "string" ? t.templateId : t.templateId?._id;
+            return String(tid) === String(id);
+          })
+        );
+        setSelectedCategory(current?._id ?? null);
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+      }
+    };
+
     fetchDependencies();
     fetchDimensions();
+    fetchCategories();
     fetchTemplate();
     fetchValidatorOptions();
     fetchValidators();
@@ -829,7 +890,7 @@ const UpdateTemplatePage = () => {
       notify_producers: notifyProducers,
       is_snies: isSnies,
       is_cna: isCna,
-      is_otra: isOtra,
+      category: selectedCategory,
       skip_comment_validation: skipCommentValidation,
       fecha_inicio: fechaInicio,
       fecha_final_productores: fechaFinalProductores,
@@ -1334,12 +1395,15 @@ if (response.data.warning) {
             color="orange"
             size="md"
           />
-          <Switch
-            label="Otra"
-            checked={isOtra}
-            onChange={(e) => { setIsOtra(e.currentTarget.checked); setHasChanges(true); }}
-            color="grape"
-            size="md"
+          <Select
+            placeholder="Otra categoría"
+            aria-label="Categoría"
+            data={categories.map((c) => ({ value: c._id, label: c.name }))}
+            value={selectedCategory}
+            onChange={(v) => { setSelectedCategory(v); setHasChanges(true); }}
+            clearable
+            searchable
+            w={220}
           />
         </Group>
       </Group>
@@ -1400,15 +1464,15 @@ if (response.data.warning) {
                     title: "Confirmar selección",
                     children: (
                       <Text size="sm">
-                        ¿Deseas seleccionar todos los productores ({dependencies.length})?
+                        ¿Deseas seleccionar todos los productores activos ({activeDependencyIds.length})?
                       </Text>
                     ),
                     labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
                     confirmProps: { color: "blue" },
-                    onConfirm: () => setSelectedDependencies(dependencies.map((d) => d._id)),
+                    onConfirm: () => { setSelectedDependencies((prev) => withAllActive(prev)); setHasChanges(true); },
                   })
                 }
-                disabled={selectedDependencies.length === dependencies.length}
+                disabled={hasAllActive(selectedDependencies)}
               >
                 Seleccionar todos
               </Button>
@@ -1439,7 +1503,8 @@ if (response.data.warning) {
           <MultiSelect
             mb="xl"
             placeholder="Seleccionar productores"
-            data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+            data={dependencyOptions(dependencies)}
+            renderOption={renderDependencyOption(dependencies)}
             onChange={(v) => { setSelectedDependencies(v); setHasChanges(true); }}
             value={selectedDependencies}
             searchable
@@ -1485,7 +1550,8 @@ if (response.data.warning) {
           label="Dependencias autorizadas para generar QR"
           description="Además del productor encargado, estas dependencias también podrán generar el código QR de esta plantilla. Si no seleccionas ninguna, solo el encargado podrá generarlo."
           placeholder="Seleccionar dependencias"
-          data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+          data={dependencyOptions(dependencies)}
+            renderOption={renderDependencyOption(dependencies)}
           value={qrAuthorizedProducers}
           onChange={(v) => { setQrAuthorizedProducers(v); setHasChanges(true); }}
           searchable
@@ -1543,13 +1609,19 @@ if (response.data.warning) {
       <Select
         mb="md"
         label="Productor encargado"
-        description="Este productor será el encargado del envío final al SNIES. Si no se selecciona ninguno, todos los productores asignados pueden enviar."
+        description="Este productor será el encargado del envío final al módulo correspondiente. Si no aplica, todos los productores asignados pueden enviar."
         placeholder="Seleccionar productor encargado"
-        data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
-        value={responsibleProducers[0] ?? null}
-        onChange={(val) => { setResponsibleProducers(val ? [val] : []); setHasChanges(true); }}
+        data={[
+          { value: NO_RESPONSIBLE_PRODUCER, label: "No aplica" },
+          ...dependencyOptions(dependencies),
+        ]}
+        renderOption={renderDependencyOption(dependencies)}
+        value={responsibleProducers[0] ?? NO_RESPONSIBLE_PRODUCER}
+        onChange={(val) => {
+          setResponsibleProducers(val && val !== NO_RESPONSIBLE_PRODUCER ? [val] : []);
+          setHasChanges(true);
+        }}
         searchable
-        clearable
       />
       {!hasWorkbookSheets && (
         <Group justify="flex-end" mb="md">
@@ -1659,21 +1731,20 @@ if (response.data.warning) {
                         title: "Confirmar selección",
                         children: (
                           <Text size="sm">
-                            ¿Deseas seleccionar todos los productores ({dependencies.length}) para la hoja &quot;{activeSheet}&quot;?
+                            ¿Deseas seleccionar todos los productores activos ({activeDependencyIds.length}) para la hoja &quot;{activeSheet}&quot;?
                           </Text>
                         ),
                         labels: { confirm: "Seleccionar todos", cancel: "Cancelar" },
                         confirmProps: { color: "blue" },
                         onConfirm: () => {
-                          const allIds = dependencies.map((d) => d._id);
                           setWorkbookSheets(prev => prev.map(s =>
-                            s.name === activeSheet ? { ...s, producers: allIds } : s
+                            s.name === activeSheet ? { ...s, producers: withAllActive(s.producers || []) } : s
                           ));
                           setHasChanges(true);
                         },
                       })
                     }
-                    disabled={(workbookSheets.find(s => s.name === activeSheet)?.producers || []).length === dependencies.length}
+                    disabled={hasAllActive(workbookSheets.find(s => s.name === activeSheet)?.producers || [])}
                   >
                     Seleccionar todos
                   </Button>
@@ -1708,7 +1779,8 @@ if (response.data.warning) {
               </Group>
               <MultiSelect
                 placeholder="Asignar productores a esta hoja"
-                data={dependencies?.map((dep) => ({ value: dep._id, label: dep.name }))}
+                data={dependencyOptions(dependencies)}
+            renderOption={renderDependencyOption(dependencies)}
                 value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
                 onChange={(values) => {
                   setWorkbookSheets(prev => prev.map(s =>

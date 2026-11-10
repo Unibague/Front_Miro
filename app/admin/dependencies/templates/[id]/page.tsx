@@ -1,6 +1,6 @@
 "use client";
 
-import { Center, Container, Table, Badge } from "@mantine/core";
+import { Center, Container, Table, Badge, Group, Text } from "@mantine/core";
 import axios from "axios";
 import { useParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -20,6 +20,8 @@ const DependencyTemplatesPage = () => {
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [dependencyName, setDependencyName] = useState<string>("");
+  const [dependencyActive, setDependencyActive] = useState<boolean>(true);
+  const [dependencyInactiveSince, setDependencyInactiveSince] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id || !selectedPeriodId) return; // Asegurarse de que los parámetros estén definidos
@@ -44,6 +46,8 @@ const DependencyTemplatesPage = () => {
     
         // Si quieres obtener el nombre de la dependencia también
         setDependencyName(response.data.dependencyName); // Asegúrate de que 'dependencyName' exista en la respuesta
+        setDependencyActive(response.data.dependencyActive !== false);
+        setDependencyInactiveSince(response.data.dependencyInactiveSince ?? null);
     
       } catch (error) {
         console.error("Error fetching templates:", error);
@@ -58,11 +62,22 @@ const DependencyTemplatesPage = () => {
   console.log(templates); // Verifica que `templates` contiene los objetos esperados
   return (
     <Container size="xl">
-      <h2>
-        {dependencyName
-          ? `Plantillas asignadas a la dependencia ${dependencyName}`
-          : "Plantillas"}
-      </h2>
+      <Group gap="sm" align="center">
+        <h2>
+          {dependencyName
+            ? `Plantillas asignadas a la dependencia ${dependencyName}`
+            : "Plantillas"}
+        </h2>
+        {dependencyName && (
+          dependencyActive ? (
+            <Badge color="teal" variant="light">Activa</Badge>
+          ) : (
+            <Badge color="gray">
+              Inactiva{dependencyInactiveSince ? ` desde el ${new Date(dependencyInactiveSince).toLocaleDateString("es-CO")}` : ""}
+            </Badge>
+          )
+        )}
+      </Group>
       <Table striped withTableBorder mt="md">
         <Table.Thead>
           <Table.Tr>
@@ -85,6 +100,15 @@ const DependencyTemplatesPage = () => {
               </Table.Td>
             </Table.Tr>
           ))}
+          {templates.length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={2}>
+                <Text c="dimmed" ta="center" size="sm">
+                  Esta dependencia no tiene plantillas asignadas en el periodo seleccionado.
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          )}
         </Table.Tbody>
       </Table>
     </Container>

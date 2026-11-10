@@ -1486,9 +1486,6 @@ if (field.multiple) {
                 {publishedTemplate.isDependencyReviewer && (
                   <Badge size="xs" color="violet" variant="light">Revisa y envía su dependencia</Badge>
                 )}
-                {publishedTemplate.isDependencyReviewer && (
-                  <Badge size="xs" color="violet" variant="light">Revisa y envía su dependencia</Badge>
-                )}
               </Stack>
             );
           })()}
