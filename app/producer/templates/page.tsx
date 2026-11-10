@@ -306,32 +306,17 @@ const ProducerTemplatesPage = () => {
 
   const fetchUserDependencies = async () => {
     try {
+      if (!session?.user?.email) return;
+      // Principal, adicionales y dependencias donde el usuario es miembro
+      // (switch "Acceso"), en ese orden. Incluye las inactivas.
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users-with-dependencies`
+        `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/users/${encodeURIComponent(session.user.email)}/all-dependencies`
       );
-      const userData = response.data.find((user: any) => user.email === session?.user?.email);
-      if (userData) {
-        const depsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/user-dependencies/dependencies-list`
-        );
-        
-        // Separar dependencia principal de las adicionales
-        const mainDep = depsResponse.data.find((dep: any) => dep.dep_code === userData.dep_code);
-        const additionalDeps = depsResponse.data
-          .filter((dep: any) => (userData.additional_dependencies || []).includes(dep.dep_code))
-          .map((dep: any) => ({
-            value: dep.dep_code,
-            label: `${dep.dep_code} - ${dep.name}`
-          }));
-        
-        // Poner la dependencia principal primero
-        const availableDeps = [
-          { value: mainDep.dep_code, label: `${mainDep.dep_code} - ${mainDep.name}` },
-          ...additionalDeps
-        ];
-        
-        setUserDependencies(availableDeps);
-      }
+      const availableDeps = (response.data?.dependencies || []).map((dep: any) => ({
+        value: dep.dep_code,
+        label: `${dep.dep_code} - ${dep.name}`
+      }));
+      setUserDependencies(availableDeps);
     } catch (error) {
       console.error('Error fetching user dependencies:', error);
     }
