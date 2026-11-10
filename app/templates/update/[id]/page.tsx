@@ -122,17 +122,16 @@ const dependencyOptions = (deps: Dependency[] = []) =>
     label: dep.active === false ? `${dep.name} (Inactiva)` : dep.name,
   }));
 
-const renderDependencyOption = (deps: Dependency[]) =>
-  ({ option }: { option: { value: string; label: string } }) => {
-    const dep = deps.find((d) => d._id === option.value);
-    if (dep?.active !== false) return <Text size="sm">{option.label}</Text>;
-    return (
-      <Group gap={6} wrap="nowrap">
-        <Text size="sm">{dep.name}</Text>
-        <Badge color="gray" size="xs">Inactiva</Badge>
-      </Group>
-    );
-  };
+const renderDependencyOption = (deps: Dependency[], option: { value: string; label: string }) => {
+  const dep = deps.find((d) => d._id === option.value);
+  if (dep?.active !== false) return <Text size="sm">{option.label}</Text>;
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Text size="sm">{dep.name}</Text>
+      <Badge color="gray" size="xs">Inactiva</Badge>
+    </Group>
+  );
+};
 
 const UpdateTemplatePage = () => {
   const [name, setName] = useState("");
@@ -1504,7 +1503,7 @@ if (response.data.warning) {
             mb="xl"
             placeholder="Seleccionar productores"
             data={dependencyOptions(dependencies)}
-            renderOption={renderDependencyOption(dependencies)}
+            renderOption={({ option }) => renderDependencyOption(dependencies, option)}
             onChange={(v) => { setSelectedDependencies(v); setHasChanges(true); }}
             value={selectedDependencies}
             searchable
@@ -1551,7 +1550,7 @@ if (response.data.warning) {
           description="Además del productor encargado, estas dependencias también podrán generar el código QR de esta plantilla. Si no seleccionas ninguna, solo el encargado podrá generarlo."
           placeholder="Seleccionar dependencias"
           data={dependencyOptions(dependencies)}
-            renderOption={renderDependencyOption(dependencies)}
+            renderOption={({ option }) => renderDependencyOption(dependencies, option)}
           value={qrAuthorizedProducers}
           onChange={(v) => { setQrAuthorizedProducers(v); setHasChanges(true); }}
           searchable
@@ -1615,7 +1614,7 @@ if (response.data.warning) {
           { value: NO_RESPONSIBLE_PRODUCER, label: "No aplica" },
           ...dependencyOptions(dependencies),
         ]}
-        renderOption={renderDependencyOption(dependencies)}
+        renderOption={({ option }) => renderDependencyOption(dependencies, option)}
         value={responsibleProducers[0] ?? NO_RESPONSIBLE_PRODUCER}
         onChange={(val) => {
           setResponsibleProducers(val && val !== NO_RESPONSIBLE_PRODUCER ? [val] : []);
@@ -1780,7 +1779,7 @@ if (response.data.warning) {
               <MultiSelect
                 placeholder="Asignar productores a esta hoja"
                 data={dependencyOptions(dependencies)}
-            renderOption={renderDependencyOption(dependencies)}
+            renderOption={({ option }) => renderDependencyOption(dependencies, option)}
                 value={workbookSheets.find(s => s.name === activeSheet)?.producers || []}
                 onChange={(values) => {
                   setWorkbookSheets(prev => prev.map(s =>
