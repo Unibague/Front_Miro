@@ -556,10 +556,16 @@ const ProducerTemplatesPage = () => {
       })),
     });
 
-    // Mapa de ID de productor → dep_code para resolver las hojas
+    // Mapa de ID de productor → dep_code para resolver las hojas. La plantilla
+    // administrativa (freshRes) trae `producers` como IDs sin poblar, así que
+    // el dep_code se toma de las versiones publicadas, que sí vienen pobladas.
     const producerIdMap = new Map<string, string>();
-    (template.producers || []).forEach((p) => {
-      if (p._id && p.dep_code) producerIdMap.set(p._id.toString(), p.dep_code);
+    [
+      ...(publishedTemplate.template?.producers || []),
+      ...(freshTemplateResponse.data.template?.producers || []),
+      ...(template.producers || []),
+    ].forEach((p: any) => {
+      if (p?._id && p.dep_code) producerIdMap.set(p._id.toString(), p.dep_code);
     });
 
     // dep_codes del usuario actual (principal + adicionales)
