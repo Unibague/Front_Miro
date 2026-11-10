@@ -8,11 +8,19 @@ export const normalizeValidatorText = (value: unknown) =>
     .trim()
     .toUpperCase();
 
+export const isYesNoField = (field: { name?: string; comment?: unknown }): boolean =>
+  normalizeValidatorText(field.name).replace(/[^A-Z0-9]+/g, '_') === 'OTRAS_ACTIVIDADES_COOPERACION'
+  || /\bS\s*\/\s*N\b/i.test(String(field.comment ?? ''));
+
 export const isInternationalEntityField = (fieldName: string): boolean =>
   ['NOMBRE_ENTIDAD_FTE_INTERNAC', 'NOMBRE_ENTIDAD_FTE_INTERNACIONAL'].includes(normalizeValidatorText(fieldName).replace(/[^A-Z0-9]+/g, '_'));
 
 export const withNoApplyOption = (fieldName: string, options: string[]): string[] => {
   options = filterForeignCountryOptions(fieldName, options);
+  const countryKey = normalizeValidatorText(fieldName).replace(/[^A-Z0-9]+/g, '_');
+  if (/^ID_PAIS_(FINANCIADOR|INSTITUCION_ASOCIADA|EXTRANJERO)$/.test(countryKey)) {
+    options = options.filter(option => /^\d+$/.test(option.trim()) || /^\d+\s+-\s+\S/.test(option.trim()));
+  }
   const key = normalizeValidatorText(fieldName).replace(/[^A-Z0-9]+/g, '_');
   if (options.length === 0 || (key !== 'ID_PAIS_FINANCIADOR' && !isInternationalEntityField(fieldName))) return options;
   const result = [...options];
@@ -108,6 +116,7 @@ const splitInlineOptionList = (value: string) =>
 export const extractDropdownOptionsFromComment = (comment?: unknown): string[] => {
   const text = String(comment ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!text) return [];
+  if (isYesNoField({ comment: text })) return ['S', 'N'];
 
   const options: string[] = [];
   let inOptionsSection = false;
@@ -153,10 +162,12 @@ export const extractDropdownOptionsFromComment = (comment?: unknown): string[] =
 // Prioridad (sin combinar): comentario primero; si no trae lista, se usan
 // dropdown_options/excel_validation_options ya almacenadas.
 export const buildFieldDropdownOptions = (field: {
+  name?: string;
   dropdown_options?: unknown[];
   excel_validation_options?: unknown[];
   comment?: unknown;
 }): string[] => {
+  if (isYesNoField(field)) return ['S', 'N'];
   const fromComment = extractDropdownOptionsFromComment(field.comment);
   if (fromComment.length > 0) return fromComment;
 
@@ -193,6 +204,12 @@ export const resolveStoredSelectValue = (
   const normalizedText = normalizeValidatorText(text);
   const exactMatch = options.find((opt) => normalizeValidatorText(opt.value) === normalizedText);
   if (exactMatch) return exactMatch.value;
+
+  // La importación antigua usa "1 Recursos IES" y el catálogo actual
+  // "1 - Recursos IES". Comparar toda la etiqueta, nunca solo su prefijo.
+  const canonicalLabel = (value: string) => normalizeValidatorText(value).replace(/^([A-Z0-9]+)\s+-\s+/, '$1 ');
+  const labelMatch = options.find(opt => canonicalLabel(opt.value) === canonicalLabel(text));
+  if (labelMatch) return labelMatch.value;
 
   const codeMatch = options.find(
     (opt) => normalizeValidatorText(extractInitialCode(opt.value)) === normalizedText

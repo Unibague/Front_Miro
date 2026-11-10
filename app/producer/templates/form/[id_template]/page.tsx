@@ -27,21 +27,49 @@ import {
   Divider
 } from "@mantine/core";
 import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
-import { DateInput } from "@mantine/dates";
+import { DateInput, DatePickerInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../components/Validators/ValidatorModal";
 import {
+  isYesNoField,
   buildSelectOptionsFromStrings,
-  extractDropdownOptionsFromComment,
+  buildFieldDropdownOptions,
   resolveStoredSelectValue,
   withNoApplyOption,
 } from "../../../../utils/validatorOptions";
 import { isBlankRequiredValue } from "../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../utils/periodUtils";
 import { formatTemplateDateValue } from "../../../../utils/templateUtils";
-import { getFieldMaxLength } from "../../../../utils/fieldConstraints";
+import { getFieldMaxLength, getFieldContentType, acceptsFieldTextInput, normalizeAgreementCodeField } from "../../../../utils/fieldConstraints";
+import { getOnlineFieldError, getOnlineDatasetErrors, parseOnlineDate } from "../../../../utils/onlineValidation";
+
+// Convierte lo guardado en un campo de fecha a un Date válido o null. Los
+// datos pueden venir del Excel como "DD/MM/AAAA", número de serie de Excel o
+// texto libre; un Date inválido hace caer el DateInput y toda la página.
+const toValidDate = (value: unknown): Date | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") {
+    // Número de serie de Excel (días desde 1899-12-30)
+    if (value > 0 && value < 2958466) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.round(value * 86400000));
+      return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    }
+    return null;
+  }
+  const text = String(value).trim();
+  const dmy = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (dmy) {
+    const [, d, m, y] = dmy.map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
+  }
+  if (/^\d+(\.\d+)?$/.test(text)) return toValidDate(Number(text));
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 interface Field {
   name: string;
@@ -210,7 +238,7 @@ const normalizeExcelStoredValue = (value: any): any => {
 };
 
 const normalizeFieldRequired = (field: Field, skipComment = false): Field => ({
-  ...field,
+  ...normalizeAgreementCodeField(field),
   required: fieldIsRequired(field, skipComment),
 });
 
@@ -1033,7 +1061,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       // Opciones: primero el comentario, luego dropdown_options; el validador
       // conectado solo se usa como respaldo si el campo no trae opciones ahí. Sin combinar.
       const allValidatorOptions = allTemplateFields.map((field) => {
-        const fromComment = extractDropdownOptionsFromComment(field.comment);
+        const fromComment = buildFieldDropdownOptions(field);
         let opts: string[];
         if (fromComment.length > 0) {
           opts = fromComment;
@@ -1366,7 +1394,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     saveDraftRows(updated);
   };
 
-  const collectRequiredErrors = (
+  const collectValidationErrors = (
     rowsToValidate: Record<string, any>[],
     fields: Field[],
     nextErrors: Record<string, string[]>,
@@ -1375,14 +1403,21 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     let hasErrors = false;
 
     fields.forEach((field) => {
-      if (!fieldIsRequired(field)) return;
       const errorKey = getScopedFieldKey(field.name, sheetName);
-
       rowsToValidate.forEach((row, rowIndex) => {
-        if (!isBlankRequiredValue(row?.[field.name])) return;
-
-        if (!nextErrors[errorKey]) nextErrors[errorKey] = [];
-        nextErrors[errorKey][rowIndex] = "Este campo es obligatorio";
+        const message = fieldIsRequired(field) && isBlankRequiredValue(row?.[field.name])
+          ? "Este campo es obligatorio"
+          : getOnlineFieldError(field, row?.[field.name], (selectOptions[field.name] || []).map(option => option.value));
+        if (!message) return;
+        (nextErrors[errorKey] ??= [])[rowIndex] = message;
+        hasErrors = true;
+      });
+    });
+    Object.entries(getOnlineDatasetErrors(fields, rowsToValidate)).forEach(([name, messages]) => {
+      const errorKey = getScopedFieldKey(name, sheetName);
+      messages.forEach((message, index) => {
+        if (!message) return;
+        (nextErrors[errorKey] ??= [])[index] = message;
         hasErrors = true;
       });
     });
@@ -1486,18 +1521,18 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       if (useSheetSubmission) {
         accessibleSheets.forEach((sheet) => {
           const resolvedSheetRows = resolveDisplayValues(sheetRows[sheet.name] || [{}], sheet.fields || [], sheet.name);
-          if (collectRequiredErrors(resolvedSheetRows, sheet.fields || [], requiredErrors, sheet.name)) {
+          if (collectValidationErrors(resolvedSheetRows, sheet.fields || [], requiredErrors, sheet.name)) {
             hasRequiredErrors = true;
           }
         });
-      } else if (collectRequiredErrors(resolvedRows, template?.fields || [], requiredErrors)) {
+      } else if (collectValidationErrors(resolvedRows, template?.fields || [], requiredErrors)) {
         hasRequiredErrors = true;
       }
 
       if (hasRequiredErrors) {
         setErrors(requiredErrors);
         showNotification({
-          title: "Campos obligatorios sin completar",
+          title: "Revisa las validaciones de los campos",
           message: "Revisa los campos marcados en rojo antes de enviar.",
           color: "red",
           autoClose: 5000,
@@ -1582,7 +1617,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           .filter((e: any) => e.errors?.some((err: any) => err.message?.includes('obligatorio')))
           .map((e: any) => e.column);
         showNotification({
-          title: "Campos obligatorios sin completar",
+          title: "Revisa las validaciones de los campos",
           message: `Revisa los campos marcados en rojo (${camposObligatorios.length} campo${camposObligatorios.length !== 1 ? 's' : ''}).`,
           color: "red",
           autoClose: 5000,
@@ -1610,11 +1645,12 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     readOnly = false,
     sheetName?: string
   ) => {
+    field = normalizeAgreementCodeField(field);
     const inputChange = onInputChange || handleInputChange;
     const scopedFieldKey = getScopedFieldKey(field.name, sheetName);
     const rowDisplayValues = displayValues[rowIndex] || {};
     const storedDisplayValue = rowDisplayValues[scopedFieldKey] ?? (!sheetName ? rowDisplayValues[field.name] : undefined);
-    const rawError = readOnly ? undefined : errors[scopedFieldKey]?.[rowIndex];
+    const rawError = readOnly ? undefined : (errors[scopedFieldKey]?.[rowIndex] || getOnlineFieldError(field, normalizeExcelStoredValue(row[field.name]), (selectOptions[field.name] || []).map(option => option.value)));
     const fieldError = rawError?.includes('obligatorio') ? 'Este campo es obligatorio' : rawError;
     const fieldValue = normalizeExcelStoredValue(row[field.name]);
 
@@ -1657,12 +1693,14 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       disabled: readOnly,
     };
   
-    const opts = selectOptions[field.name] || [];
+    const yesNo = isYesNoField(field);
+    const localOptions = buildFieldDropdownOptions(field);
+    const opts = localOptions.length ? buildSelectOptionsFromStrings(withNoApplyOption(field.name, localOptions)) : (selectOptions[field.name] || []);
     const multiOptions = multiSelectOptions[field.name] || opts.map(opt => opt.value);
     const hasDropdownOptions = opts.length > 0 || multiOptions.length > 0;
     const formattedDateDisplay = formatTemplateDateValue(fieldValue, field.name);
 
-    if (field.multiple && (field.validate_with || hasDropdownOptions)) {
+    if (!yesNo && field.multiple && (field.validate_with || hasDropdownOptions)) {
       return wrapWithTooltip(
         <MultiSelect
           value={Array.isArray(fieldValue) ? fieldValue.map(String) : []}
@@ -1680,7 +1718,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
     }
     
     // Si el campo tiene validador pero NO es múltiple, usar Select
-    if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
+    if ((field.validate_with || hasDropdownOptions) && (!field.multiple || yesNo)) {
       const selectDisplayValue = storedDisplayValue
         ? opts.find(opt => opt.label === storedDisplayValue)?.value || fieldValue
         : (resolveStoredSelectValue(fieldValue, opts) ?? fieldValue);
@@ -1702,6 +1740,25 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
       );
     }
   
+    // Los códigos se guardan como texto para conservar ceros iniciales.
+    if (getFieldContentType(field) === 'numeric') {
+      return wrapWithTooltip(
+        <TextInput
+          {...commonProps}
+          value={fieldValue ?? ""}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={getFieldMaxLength(field)}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            if (!acceptsFieldTextInput(field, value)) return;
+            if (storedDisplayValue) clearDisplayValue();
+            inputChange(rowIndex, field.name, value);
+          }}
+        />
+      );
+    }
+
     switch (field.datatype) {
       case "Entero":
       case "Decimal":
@@ -1748,6 +1805,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             maxLength={textareaMaxLength}
             value={textareaDisplayValue}
             onChange={(e) => {
+              if (!acceptsFieldTextInput(field, e.currentTarget.value)) return;
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
               if (textareaMaxLength && e.target.value.length >= textareaMaxLength) {
                 showNotification({
@@ -1777,6 +1835,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             maxLength={textInputMaxLength}
             value={displayValue}
             onChange={(e) => {
+              if (!acceptsFieldTextInput(field, e.currentTarget.value)) return;
               // Si el usuario edita manualmente, limpiar la descripción guardada
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
               if (textInputMaxLength && e.target.value.length >= textInputMaxLength) {
@@ -1810,11 +1869,23 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
           />
         );
   
+      case "Fecha Inicial / Fecha Final": {
+        const dates = Array.isArray(fieldValue) ? fieldValue : [];
+        return wrapWithTooltip(
+          <DatePickerInput
+            {...commonProps}
+            type="range"
+            value={[parseOnlineDate(dates[0]), parseOnlineDate(dates[1])]}
+            locale="es"
+            valueFormat="DD/MM/YYYY"
+            onChange={(value) => inputChange(rowIndex, field.name, value)}
+          />
+        );
+      }
       case "Fecha":
-      case "Fecha Inicial / Fecha Final":
         const dateDisplayValue = field.validate_with && storedDisplayValue
-          ? new Date(storedDisplayValue)
-          : (fieldValue ? new Date(fieldValue) : null);
+          ? toValidDate(storedDisplayValue)
+          : toValidDate(fieldValue);
           
         return wrapWithTooltip(
           <DateInput
@@ -1822,6 +1893,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             value={dateDisplayValue}
             locale="es"
             valueFormat="DD/MM/YYYY"
+            dateParser={parseOnlineDate}
             onChange={(date) => {
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, date);
@@ -1840,6 +1912,7 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
             {...commonProps}
             value={defaultDisplayValue}
             onChange={(e) => {
+              if (!acceptsFieldTextInput(field, e.currentTarget.value)) return;
               // Si el usuario edita manualmente, limpiar la descripción guardada
               if (field.validate_with && storedDisplayValue) clearDisplayValue();
               inputChange(rowIndex, field.name, e.target.value);

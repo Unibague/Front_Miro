@@ -22,13 +22,14 @@ import {
   Select,
 } from "@mantine/core";
 import { IconTrash, IconEye, IconPlus, IconCancel, IconRefresh } from "@tabler/icons-react";
-import { DateInput } from "@mantine/dates";
+import { DateInput, DatePickerInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
 import { useSession } from "next-auth/react";
 import { ValidatorModal } from "../../../../../components/Validators/ValidatorModal";
 import {
   buildFieldDropdownOptions,
+  isYesNoField,
   buildSelectOptionsFromStrings,
   buildValidatorOptions,
   getPreferredValidatorColumnName,
@@ -38,7 +39,8 @@ import {
 import { getEffectiveRequired, isBlankRequiredValue } from "../../../../../utils/requiredFields";
 import { getSemesterFromPeriodName, getYearFromPeriodName } from "../../../../../utils/periodUtils";
 import "dayjs/locale/es";
-import { getFieldMaxLength } from "../../../../../utils/fieldConstraints";
+import { getFieldMaxLength, getFieldContentType, acceptsFieldTextInput, normalizeAgreementCodeField } from "../../../../../utils/fieldConstraints";
+import { getOnlineFieldError, getOnlineDatasetErrors, parseOnlineDate } from "../../../../../utils/onlineValidation";
 
 interface Field {
   name: string;
@@ -462,13 +464,14 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
 
     rows.forEach((row, rowIndex) => {
       template?.fields.forEach((field) => {
-        if (getEffectiveRequired(field) && isBlankRequiredValue(row[field.name])) {
-          if (!newErrors[field.name]) {
-            newErrors[field.name] = [];
-          }
-          newErrors[field.name][rowIndex] = "Este campo es obligatorio.";
-        }
+        const message = getEffectiveRequired(field) && isBlankRequiredValue(row[field.name])
+          ? "Este campo es obligatorio."
+          : getOnlineFieldError(field, row[field.name], (selectOptions[field.name] || []).map(option => option.value));
+        if (message) (newErrors[field.name] ??= [])[rowIndex] = message;
       });
+    });
+    Object.entries(getOnlineDatasetErrors(template?.fields || [], rows)).forEach(([name, messages]) => {
+      messages.forEach((message, index) => { if (message) (newErrors[name] ??= [])[index] = message; });
     });
 
     setErrors(newErrors);
@@ -551,7 +554,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
     if (!validateFields()) {
       showNotification({
         title: "Error de Validación",
-        message: "Por favor completa los campos obligatorios.",
+        message: "Revisa los campos marcados antes de enviar.",
         color: "red",
       });
       return;
@@ -606,7 +609,8 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
     row: Record<string, any>,
     rowIndex: number
   ) => {
-    const fieldError = errors[field.name]?.[rowIndex];
+    field = normalizeAgreementCodeField(field);
+    const fieldError = errors[field.name]?.[rowIndex] || getOnlineFieldError(field, row[field.name], (selectOptions[field.name] || []).map(option => option.value));
     const commonProps = {
       value: row[field.name] || "",
       onChange: (e: React.ChangeEvent<HTMLInputElement> | number) =>
@@ -617,11 +621,13 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
       error: Boolean(fieldError),
     };
 
-    const opts = selectOptions[field.name] || [];
+    const yesNo = isYesNoField(field);
+    const localOptions = buildFieldDropdownOptions(field);
+    const opts = localOptions.length ? buildSelectOptionsFromStrings(withNoApplyOption(field.name, localOptions)) : (selectOptions[field.name] || []);
     const multiOptions = multiSelectOptions[field.name] || opts.map(opt => opt.value);
     const hasDropdownOptions = opts.length > 0 || multiOptions.length > 0;
 
-    if (field.multiple && (field.validate_with || hasDropdownOptions)) {
+    if (!yesNo && field.multiple && (field.validate_with || hasDropdownOptions)) {
       return (
         <MultiSelect
           value={Array.isArray(row[field.name]) ? row[field.name].map(String) : []}
@@ -637,7 +643,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
       );
     }
 
-    if ((field.validate_with || hasDropdownOptions) && !field.multiple) {
+    if ((field.validate_with || hasDropdownOptions) && (!field.multiple || yesNo)) {
       return (
         <Select
           value={
@@ -653,6 +659,24 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
           nothingFoundMessage={opts.length === 0 ? "Cargando..." : "Sin resultados"}
           style={{ width: "100%" }}
           error={fieldError ? fieldError : undefined}
+        />
+      );
+    }
+
+    // Los códigos se guardan como texto para conservar ceros iniciales.
+    if (getFieldContentType(field) === 'numeric') {
+      return (
+        <TextInput
+          {...commonProps}
+          value={row[field.name] ?? ""}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={getFieldMaxLength(field)}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            if (!acceptsFieldTextInput(field, value)) return;
+            handleInputChange(rowIndex, field.name, value);
+          }}
         />
       );
     }
@@ -689,6 +713,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
             maxLength={textareaMaxLength}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => {
+              if (!acceptsFieldTextInput(field, e.currentTarget.value)) return;
               if (textareaMaxLength && e.target.value.length >= textareaMaxLength) {
                 showNotification({
                   id: `char-limit-${field.name}-${rowIndex}`,
@@ -712,6 +737,7 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
             maxLength={textInputMaxLength}
             value={row[field.name] === null ? "" : row[field.name]}
             onChange={(e) => {
+              if (!acceptsFieldTextInput(field, e.currentTarget.value)) return;
               if (textInputMaxLength && e.target.value.length >= textInputMaxLength) {
                 showNotification({
                   id: `char-limit-${field.name}-${rowIndex}`,
@@ -735,19 +761,30 @@ const transformData = (data: any[], template: Template): Record<string, any>[] =
             error={fieldError ? fieldError : undefined}
           />
         );
+      case "Fecha Inicial / Fecha Final": {
+        const dates = Array.isArray(row[field.name]) ? row[field.name] : [];
+        return (
+          <DatePickerInput
+            required={getEffectiveRequired(field)}
+            style={{ width: "100%" }}
+            error={fieldError || undefined}
+            type="range"
+            value={[parseOnlineDate(dates[0]), parseOnlineDate(dates[1])]}
+            locale="es"
+            valueFormat="DD/MM/YYYY"
+            onChange={(value) => handleInputChange(rowIndex, field.name, value)}
+          />
+        );
+      }
       case "Fecha":
-      case "Fecha Inicial / Fecha Final":
-        let dateValue = null;
-        if (row[field.name]) {
-          const tempDate = new Date(row[field.name]);
-          dateValue = isNaN(tempDate.getTime()) ? null : tempDate;
-        }
+        const dateValue = parseOnlineDate(row[field.name]);
         return (
           <DateInput
             {...commonProps}
             value={dateValue}
             locale="es"
             valueFormat="DD/MM/YYYY"
+            dateParser={parseOnlineDate}
             onChange={(date) => handleInputChange(rowIndex, field.name, date)}
             error={fieldError ? fieldError : undefined}
           />

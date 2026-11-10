@@ -47,12 +47,12 @@ import dynamic from "next/dynamic";
 import { useSort } from "../../hooks/useSort";
 import ProducerUploadedTemplatesPage from "./uploaded/ProducerUploadedTemplates";
 import { usePeriod } from "@/app/context/PeriodContext";
-import { getSemesterFromPeriodName, getYearFromPeriodName } from "@/app/utils/periodUtils";
 import {
   appendMissingFieldComments,
   applyFieldCommentNote,
   applyValidatorDropdowns,
   applyWorkbookSheetDropdowns,
+  clearTemplateWorkbookInputs,
   ensureMissingWorkbookSheets,
   extractWorkbookCommentsFromBase64,
   fetchValidatorOptionsForFields,
@@ -420,10 +420,7 @@ const ProducerTemplatesPage = () => {
   
 
   const handleDownload = async (publishedTemplate: PublishedTemplate, includeAllProducers = false) => {
-    const [freshTemplateResponse, userResp] = await Promise.all([
-      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`),
-      axios.get(`${process.env.NEXT_PUBLIC_API_URL}/users`, { params: { email: session?.user?.email } }),
-    ]);
+    const freshTemplateResponse = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/pTemplates/template/${publishedTemplate._id}`);
     let template: Template = freshTemplateResponse.data.template ?? publishedTemplate.template;
 
     const periodId =
@@ -459,15 +456,11 @@ const ProducerTemplatesPage = () => {
       ? await fetchValidatorOptionsForFields(allFieldsForValidators, periodId, process.env.NEXT_PUBLIC_API_URL!)
       : {};
 
-    // Datos para pre-poblar el Excel: por defecto solo lo que este productor ya
-    // envio; con includeAllProducers, se combina lo cargado por TODAS las
-    // dependencias (boton "Descargar con info de otros productores").
-    const userDepCode: string = userResp.data.dep_code || '';
+    // La descarga normal es una plantilla vacía. Solo la acción explícita
+    // de descargar información agrega registros de los productores.
     const userFilledData: FilledFieldData[] = includeAllProducers
       ? mergeFilledDataAcrossDependencies(publishedTemplate.loaded_data || [])
-      : ((publishedTemplate.loaded_data || []).find(
-          (entry) => entry.dependency === userDepCode || entry.dependency_code === userDepCode
-        )?.filled_data || []);
+      : [];
 
     // Con includeAllProducers, cada fila combinada puede venir de una dependencia
     // distinta: se arma una columna "Dependencia" por hoja (mismo orden en que
@@ -590,25 +583,6 @@ const ProducerTemplatesPage = () => {
       ws.properties.tabColor = { argb: editable ? 'FF00B050' : 'FFC00000' };
     };
 
-    const periodName = (publishedTemplate as any).period?.name as string | undefined;
-    const prefilledYear = getYearFromPeriodName(periodName) ?? new Date().getFullYear();
-    const prefilledSemester = getSemesterFromPeriodName(periodName) ?? (new Date().getMonth() < 6 ? 1 : 2);
-    const applyPeriodPrefill = (ws: ExcelJS.Worksheet, fields: Field[]) => {
-      fields.forEach((field, idx) => {
-        const col = (Number.isFinite(Number(field.column)) && Number(field.column) > 0) ? Number(field.column) : idx + 1;
-        const dataRow = (Number.isFinite(Number(field.header_row)) && Number(field.header_row) > 0) ? Number(field.header_row) + 1 : 2;
-        if (field.name.toUpperCase() === 'AÑO') {
-          const cell = ws.getCell(dataRow, col);
-          if (!cell.value) cell.value = prefilledYear;
-        }
-        if (field.name.toUpperCase() === 'SEMESTRE') {
-          const cell = ws.getCell(dataRow, col);
-          if (!cell.value) cell.value = prefilledSemester;
-        }
-      });
-    };
-
-
     if (template.original_workbook_base64) {
       const workbook = await loadWorkbookFromBase64(template.original_workbook_base64);
       const originalCommentsBySheet = await extractWorkbookCommentsFromBase64(template.original_workbook_base64);
@@ -677,16 +651,11 @@ const ProducerTemplatesPage = () => {
         });
       }
 
-      // Pre-poblar con datos ya enviados y luego AÑO/SEMESTRE en hojas editables.
-      // Con includeAllProducers se pobla toda hoja con datos, sin importar si
-      // este productor puede editarla, y sin prellenar AÑO/SEMESTRE (es una
-      // copia para consultar lo ya cargado, no para diligenciar de nuevo).
-      for (const sheet of workbookSheets) {
-        if (!includeAllProducers && !canUserEditSheet(sheet)) continue;
-        const ws = workbook.getWorksheet(sheet.name);
-        if (!ws || !sheet.fields?.length) continue;
-        populateSheetWithData(ws, sheet.fields, sheet.name);
-        if (!includeAllProducers) applyPeriodPrefill(ws, sheet.fields);
+      if (includeAllProducers) {
+        for (const sheet of workbookSheets) {
+          const ws = workbook.getWorksheet(sheet.name);
+          if (ws && sheet.fields?.length) populateSheetWithData(ws, sheet.fields, sheet.name);
+        }
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos
@@ -702,6 +671,7 @@ const ProducerTemplatesPage = () => {
       // Respetar el orden de hojas definido en el editor (incluye reordenamientos por drag-and-drop)
       reorderWorkbookSheets(workbook, workbookSheets.map((sheet) => sheet.name));
 
+      if (!includeAllProducers) clearTemplateWorkbookInputs(workbook, workbookSheets, template.fields);
       let buffer = await workbook.xlsx.writeBuffer();
       // Augmentar workbookSheets con comentarios del base64 original para campos sin comment explícito
       const augmentedForInjection = workbookSheets.map((sheet: any) => {
@@ -819,10 +789,7 @@ const ProducerTemplatesPage = () => {
           preloadedValidatorOptions,
         });
 
-        if (includeAllProducers || canUserEditSheet(sheet)) {
-          populateSheetWithData(worksheet, sheet.fields, sheet.name);
-          if (!includeAllProducers) applyPeriodPrefill(worksheet, sheet.fields);
-        }
+        if (includeAllProducers) populateSheetWithData(worksheet, sheet.fields, sheet.name);
       }
 
       // Aplicar color de pestaña y proteger hojas según permisos
@@ -836,6 +803,7 @@ const ProducerTemplatesPage = () => {
         }
       }
 
+      if (!includeAllProducers) clearTemplateWorkbookInputs(workbook, workbookSheets, template.fields, sheetNameMap);
       let buffer = await workbook.xlsx.writeBuffer();
       buffer = await injectWorkbookSheetHeaderComments(
         buffer,
@@ -1008,8 +976,9 @@ if (field.multiple) {
     });
 
     // Pre-poblar con datos ya enviados
-    populateSheetWithData(worksheet, template.fields);
+    if (includeAllProducers) populateSheetWithData(worksheet, template.fields);
 
+    if (!includeAllProducers) clearTemplateWorkbookInputs(workbook, [], template.fields);
     let buffer = await workbook.xlsx.writeBuffer();
     buffer = await injectWorkbookSheetHeaderComments(buffer, [
       { name: template.name, fields: template.fields },
