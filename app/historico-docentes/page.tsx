@@ -53,6 +53,12 @@ import { useRouter } from "next/navigation";
 import FilterSidebar from "@/app/components/FilterSidebar";
 import ConsultaInfoSidebar from "./components/ConsultaInfoSidebar";
 import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
+import {
+  describeProcessing,
+  describeUploadPercent,
+  waitForUploadProcessing,
+  type UploadStatus,
+} from "./uploadProcessing";
 
 const PAGE_SIZE = 50;
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
@@ -99,6 +105,9 @@ interface FileItem {
   anexosCount: number;
   anexosNames: string[];
   sheetsInfo: { index: number; name: string; totalRows: number }[];
+  status?: UploadStatus["status"];
+  progress?: UploadStatus["progress"];
+  error_message?: string | null;
 }
 
 interface Anexo {
@@ -170,6 +179,7 @@ export default function ConsultaInformacionPage() {
 
   // Estado de carga compartido
   const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
 
   // Edición inline de nombre
@@ -415,31 +425,46 @@ export default function ConsultaInformacionPage() {
     if (!file || !session?.user?.email) return;
     const ext = file.name.toLowerCase();
     const isPdf = ext.endsWith(".pdf");
-    const isExcel = ext.endsWith(".xlsx") || ext.endsWith(".xlsm");
+    const isExcel = ext.endsWith(".xlsx") || ext.endsWith(".xlsm") || ext.endsWith(".csv");
     if (!isPdf && !isExcel) {
-      showNotification({ title: "Formato no válido", message: "Solo se aceptan .xlsx, .xlsm o .pdf.", color: "red" });
+      showNotification({ title: "Formato no válido", message: "Solo se aceptan .xlsx, .xlsm, .csv o .pdf.", color: "red" });
       return;
     }
     if (isPdf && activeCategory !== "informes") {
       showNotification({ title: "Formato no válido", message: "Los PDF solo se pueden cargar en Informes.", color: "red" });
       return;
     }
+    const uploadCategory = activeCategory;
     setUploading(true);
+    setUploadMessage(describeUploadPercent(0));
     try {
       const formData = new FormData();
       formData.append("email", session.user.email);
-      formData.append("category", activeCategory);
-      if (activeCategory !== "snies" && selectedPeriodId) formData.append("periodId", selectedPeriodId);
+      formData.append("category", uploadCategory);
+      if (uploadCategory !== "snies" && selectedPeriodId) formData.append("periodId", selectedPeriodId);
       formData.append("excel_file", file);
-      await axios.post(`${API_BASE}/upload`, formData, { headers: { "Content-Type": "multipart/form-data" } });
-      showNotification({ title: "Archivo cargado", message: `"${file.name}" fue cargado en ${CATEGORY_LABELS[activeCategory]}.`, color: "teal" });
+      const res = await axios.post(`${API_BASE}/upload`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (e) => setUploadMessage(describeUploadPercent(e.loaded, e.total)),
+      });
       setFile(null);
-      if (activeCategory === "snies") fetchSnies(0, 1, null, "");
-      else fetchFileList(activeCategory);
-    } catch {
-      showNotification({ title: "Error", message: "No se pudo cargar el archivo.", color: "red" });
+      // El archivo queda procesándose en el servidor: se espera a que termine.
+      if (uploadCategory !== "snies") fetchFileList(uploadCategory);
+      setUploadMessage(describeProcessing(null));
+      const final = await waitForUploadProcessing(API_BASE, res.data.registro._id, (s) => setUploadMessage(describeProcessing(s)));
+      if (final.status === "listo") {
+        showNotification({ title: "Archivo cargado", message: `"${file.name}" fue cargado en ${CATEGORY_LABELS[uploadCategory]}.`, color: "teal" });
+      } else {
+        showNotification({ title: "Error", message: final.error_message || "No se pudo procesar el archivo.", color: "red" });
+      }
+      if (uploadCategory === "snies") fetchSnies(0, 1, null, "");
+      else fetchFileList(uploadCategory);
+    } catch (error) {
+      const message = axios.isAxiosError(error) && error.response?.data?.message;
+      showNotification({ title: "Error", message: message || "No se pudo cargar el archivo.", color: "red" });
     } finally {
       setUploading(false);
+      setUploadMessage(null);
     }
   };
 
@@ -968,6 +993,7 @@ export default function ConsultaInformacionPage() {
         ) : (
           visibleFiles.map((item) => {
             const isPdf = item.file_type === "pdf";
+            const isReady = !item.status || item.status === "listo";
             return (
               <Card key={item._id} withBorder padding="sm" radius="md">
                 <Group justify="space-between" wrap="nowrap">
@@ -1002,11 +1028,20 @@ export default function ConsultaInformacionPage() {
                           )}
                         </Group>
                       )}
-                      <Text size="xs" c="dimmed">
-                        {isPdf
-                          ? `PDF · ${new Date(item.createdAt).toLocaleDateString("es-CO")}`
-                          : `${item.sheetsInfo.length} hoja(s) · ${item.sheetsInfo.reduce((a, s) => a + s.totalRows, 0).toLocaleString("es-CO")} filas · ${new Date(item.createdAt).toLocaleDateString("es-CO")}`}
-                      </Text>
+                      {item.status === "procesando" ? (
+                        <Group gap={6} wrap="nowrap">
+                          <Loader size={10} color="violet" />
+                          <Text size="xs" c="violet">{describeProcessing(item)}</Text>
+                        </Group>
+                      ) : item.status === "error" ? (
+                        <Text size="xs" c="red">{item.error_message || "No se pudo procesar el archivo."}</Text>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          {isPdf
+                            ? `PDF · ${new Date(item.createdAt).toLocaleDateString("es-CO")}`
+                            : `${item.sheetsInfo.length} hoja(s) · ${item.sheetsInfo.reduce((a, s) => a + s.totalRows, 0).toLocaleString("es-CO")} filas · ${new Date(item.createdAt).toLocaleDateString("es-CO")}`}
+                        </Text>
+                      )}
                     {item.anexosCount > 0 && (
                       <Group gap={4} mt={2} wrap="wrap">
                         <IconPaperclip size={12} color="#7c3aed" />
@@ -1018,7 +1053,7 @@ export default function ConsultaInformacionPage() {
                     </div>
                   </Group>
                   <Group gap="xs" style={{ flexShrink: 0 }}>
-                    <Button size="xs" variant="light" color={isPdf ? "red" : "violet"} onClick={() => handleSelectFile(item)}>
+                    <Button size="xs" variant="light" color={isPdf ? "red" : "violet"} onClick={() => handleSelectFile(item)} disabled={!isReady}>
                       {isPdf ? "Ver" : "Consultar"}
                     </Button>
                     <Tooltip label="Descargar">
@@ -1029,6 +1064,8 @@ export default function ConsultaInformacionPage() {
                         component="a"
                         href={`${API_BASE}/download?email=${encodeURIComponent(session?.user?.email ?? "")}&id=${item._id}`}
                         download={item.file_name}
+                        disabled={!isReady}
+                        style={isReady ? undefined : { pointerEvents: "none" }}
                       >
                         <IconDownload size={15} />
                       </ActionIcon>
@@ -1118,17 +1155,19 @@ export default function ConsultaInformacionPage() {
         {isAdmin && (
           <Group gap="xs">
             <FileInput
-              placeholder={activeCategory === "informes" ? "Excel (.xlsx) o PDF" : "Seleccionar Excel (.xlsx)"}
+              placeholder={activeCategory === "informes" ? "Excel (.xlsx), CSV o PDF" : "Seleccionar Excel (.xlsx) o CSV"}
               value={file}
               onChange={setFile}
-              accept={activeCategory === "informes" ? ".xlsx,.xlsm,.pdf" : ".xlsx,.xlsm"}
+              accept={activeCategory === "informes" ? ".xlsx,.xlsm,.csv,.pdf" : ".xlsx,.xlsm,.csv"}
               leftSection={<IconUpload size={16} />}
               style={{ minWidth: 240 }}
               clearable
+              disabled={uploading}
             />
             <Button onClick={handleUpload} loading={uploading} disabled={!file} color="violet">
               Cargar en {CATEGORY_LABELS[activeCategory].split(" ")[0]}
             </Button>
+            {uploadMessage && <Text size="xs" c="dimmed">{uploadMessage}</Text>}
           </Group>
         )}
       </Group>
