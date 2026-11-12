@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { Modal, Button, Badge, Select, Container, Grid, Card, Text, Group, Title, Center, Indicator, useMantineColorScheme, Paper, Stack, ThemeIcon } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import axios from "axios";
-import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase, IconSitemap } from "@tabler/icons-react";
+import { IconHexagon3d, IconChartHistogram, IconChartBarPopular, IconBuilding, IconFileAnalytics, IconCalendarMonth, IconZoomCheck, IconUserHexagon, IconReport, IconFileUpload, IconUserStar, IconChecklist, IconClipboardData, IconReportSearch, IconFilesOff, IconCheckbox, IconHomeCog, IconClipboard, IconHierarchy2, IconMail, IconFilter, IconTarget, IconCalendarStats, IconShield, IconUsersGroup, IconDatabase, IconSitemap, IconPresentationAnalytics } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../context/RoleContext";
 import { useColorScheme } from "@mantine/hooks";
@@ -24,7 +24,7 @@ const GESTION_REPORTES_KEYS = [
   "templatesLogs", "reminders", "audit", "templatesManagement", "dependenciesHierarchy",
   "traceability", "traceabilityProductor", "validationsView",
   "historicoDocentes", "historicoDocentesResponsable", "historicoDocentesProductor",
-  "snies", "sniesProductor", "cna", "cnaProductor",
+  "snies", "sniesProductor", "cna", "cnaProductor", "kpi",
 ];
 const PDI_KEYS = [
   "pdi", "pdiResponsable", "pdiMineResponsable",
@@ -1529,6 +1529,45 @@ const DashboardPage = () => {
                             </Text>
                           </Stack>
                           <Button variant="white" color="violet" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
+                            Abrir módulo
+                          </Button>
+                        </Stack>
+                      </Card>
+                    </Grid.Col>
+                  )}
+
+                  {canSee("kpi", ["Administrador"]) && (
+                    <Grid.Col span={{ base: 12, md: 6, lg: 5 }}>
+                      <Card
+                        radius="xl"
+                        p="xl"
+                        className="module-card"
+                        onClick={() => router.push("/kpi")}
+                        style={{
+                          cursor: "pointer",
+                          height: 340,
+                          color: "white",
+                          border: "none",
+                          overflow: "hidden",
+                          transition: "transform 0.22s ease, box-shadow 0.22s ease",
+                          position: "relative" as const,
+                          background: "linear-gradient(135deg, #7f1d1d 0%, #e11d48 100%)",
+                          boxShadow: "0 18px 45px rgba(127, 29, 29, 0.22)",
+                        }}
+                      >
+                        <Stack justify="space-between" h="100%" align="center">
+                          <Stack align="center" gap="xs">
+                            <ThemeIcon size={68} radius="xl" color="rgba(255,255,255,0.18)" style={{ border: "1.5px solid rgba(255,255,255,0.25)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                              <IconPresentationAnalytics size={34} />
+                            </ThemeIcon>
+                            <Title order={3} c="white" ta="center" fw={700} style={{ letterSpacing: "-0.3px" }}>
+                              KPI
+                            </Title>
+                            <Text c="rgba(255,255,255,0.78)" ta="center" lineClamp={2} size="sm">
+                              Carga plantillas de indicadores y llénalas con la información de las plantillas del sistema.
+                            </Text>
+                          </Stack>
+                          <Button variant="white" color="red" radius="xl" size="md" fw={600} style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
                             Abrir módulo
                           </Button>
                         </Stack>

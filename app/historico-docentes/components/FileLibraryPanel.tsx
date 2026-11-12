@@ -23,6 +23,8 @@ import {
   Text,
   TextInput,
   Tooltip,
+  Alert,
+  List,
 } from "@mantine/core";
 import { showNotification } from "@mantine/notifications";
 import {
@@ -38,6 +40,8 @@ import {
   IconPaperclip,
   IconEye,
   IconDownload,
+  IconHexagon3d,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { useRole } from "@/app/context/RoleContext";
@@ -52,6 +56,19 @@ import {
 } from "../uploadProcessing";
 
 const PAGE_SIZE = 20;
+// Por encima de este tamaño no se lee el archivo en el navegador para
+// detectar si es una plantilla SNIES (se carga solo en Consulta).
+const SNIES_DETECT_MAX_BYTES = 40 * 1024 * 1024;
+
+interface SniesMatch {
+  pubTemId: string;
+  name: string;
+  period: string;
+  finalSubmitted: boolean;
+  dependenciasConDatos: number;
+  encargados: string[];
+  hojas: { hoja: string; hojaPlantilla: string | null; columnas: number; faltantes: string[]; porDependencia: boolean }[];
+}
 const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/historico-docentes`;
 
 interface SheetInfo {
@@ -213,6 +230,8 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [sniesMatch, setSniesMatch] = useState<SniesMatch | null>(null);
+  const [checkingSnies, setCheckingSnies] = useState(false);
 
   // Además del Administrador, el backend habilita la carga de Plantillas a los
   // miembros de AYUDAS EDUCATIVAS (sin importar si son Responsable o Productor)
@@ -463,6 +482,31 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
     }
   };
 
+  // Lee el nombre de cada hoja y sus primeras filas para que el backend diga
+  // si el archivo corresponde a una plantilla SNIES publicada del período.
+  const detectSnies = async (target: File): Promise<SniesMatch | null> => {
+    if (category !== "plantillas" || !uploadPermissions.snies) return null;
+    if (target.size > SNIES_DETECT_MAX_BYTES) return null;
+    try {
+      const workbook = XLSX.read(await target.arrayBuffer(), { type: "array", sheetRows: 10 });
+      const sheets = workbook.SheetNames.map((name) => ({
+        name,
+        rows: XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[name], { header: 1, defval: "", raw: false }),
+      }));
+      const res = await axios.post(`${API_BASE}/snies-match`, {
+        email: session?.user?.email,
+        periodId: selectedPeriodId || undefined,
+        dimensionId,
+        fileName: target.name,
+        sheets,
+      });
+      return res.data?.match ?? null;
+    } catch {
+      // Si no se puede verificar, el archivo se carga solo en Consulta
+      return null;
+    }
+  };
+
   const handleUpload = async () => {
     if (!file || !session?.user?.email) return;
     const ext = file.name.toLowerCase();
@@ -476,6 +520,25 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       showNotification({ title: "Formato no válido", message: "Los PDF solo se pueden cargar en Informes.", color: "red" });
       return;
     }
+    if (!selectedPeriodId) {
+      showNotification({ title: "Selecciona un período", message: "El archivo se guarda en el período seleccionado arriba. Elige uno e inténtalo de nuevo.", color: "orange" });
+      return;
+    }
+    if (!isPdf) {
+      setCheckingSnies(true);
+      const match = await detectSnies(file);
+      setCheckingSnies(false);
+      if (match) {
+        setSniesMatch(match);
+        return;
+      }
+    }
+    await uploadFile(null);
+  };
+
+  const uploadFile = async (sniesPubTemId: string | null) => {
+    if (!file || !session?.user?.email) return;
+    setSniesMatch(null);
     setUploading(true);
     setUploadMessage(describeUploadPercent(0));
     try {
@@ -484,6 +547,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       formData.append("category", category);
       formData.append("dimensionId", dimensionId);
       if (selectedPeriodId) formData.append("periodId", selectedPeriodId);
+      if (sniesPubTemId) formData.append("sniesPubTemId", sniesPubTemId);
       formData.append("excel_file", file);
       const res = await axios.post(`${API_BASE}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -497,6 +561,21 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
       const final = await waitForUploadProcessing(API_BASE, res.data.registro._id, (s) => setUploadMessage(describeProcessing(s)));
       if (final.status === "listo") {
         showNotification({ title: "Archivo cargado", message: `"${file.name}" fue cargado en este ámbito.`, color: "teal" });
+        if (final.snies_sync?.status === "ok") {
+          showNotification({
+            title: "Cargada en SNIES",
+            message: `"${final.snies_sync.name}" quedó con envío final: ${final.snies_sync.filas?.toLocaleString("es-CO")} filas. El productor encargado no tiene que enviarla.`,
+            color: "teal",
+            autoClose: 10000,
+          });
+        } else if (final.snies_sync?.status === "error") {
+          showNotification({
+            title: "No se cargó en SNIES",
+            message: `El archivo quedó en Consulta, pero no en SNIES: ${final.snies_sync.message}`,
+            color: "orange",
+            autoClose: false,
+          });
+        }
       } else {
         showNotification({ title: "Error", message: final.error_message || "No se pudo procesar el archivo.", color: "red" });
       }
@@ -859,6 +938,63 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
         )}
       </Modal>
 
+      <Modal
+        opened={sniesMatch !== null}
+        onClose={() => setSniesMatch(null)}
+        title={
+          <Group gap={8}>
+            <IconHexagon3d size={20} color="#0c7a6b" />
+            <Text fw={700}>Esta plantilla es de SNIES</Text>
+          </Group>
+        }
+        size="lg"
+        centered
+      >
+        {sniesMatch && (
+          <Stack gap="sm">
+            <Text size="sm">
+              El archivo corresponde a la plantilla SNIES <b>{sniesMatch.name}</b>
+              {sniesMatch.period ? <> del período <b>{sniesMatch.period}</b></> : null}.
+            </Text>
+            <Text size="sm">
+              Si la cargas también en SNIES, la información de este archivo queda como el <b>envío final</b> y
+              {sniesMatch.encargados.length > 0
+                ? <> el productor encargado (<b>{sniesMatch.encargados.join(", ")}</b>)</>
+                : " los productores"}{" "}
+              ya no tendrá que hacerlo.
+            </Text>
+            {(sniesMatch.dependenciasConDatos > 0 || sniesMatch.finalSubmitted) && (
+              <Alert color="yellow" icon={<IconAlertTriangle size={18} />}>
+                <Text size="sm">
+                  {sniesMatch.finalSubmitted ? "La plantilla ya tiene envío final. " : ""}
+                  Se reemplazará la información que hoy tiene en SNIES
+                  {sniesMatch.dependenciasConDatos > 0 ? ` (${sniesMatch.dependenciasConDatos} dependencia(s) con datos)` : ""}.
+                  La información anterior queda respaldada.
+                </Text>
+              </Alert>
+            )}
+            <List size="sm" spacing={4}>
+              {sniesMatch.hojas.map((hoja) => (
+                <List.Item key={hoja.hoja}>
+                  Hoja <b>{hoja.hoja}</b>
+                  {hoja.hojaPlantilla && hoja.hojaPlantilla !== hoja.hoja ? ` → ${hoja.hojaPlantilla}` : ""}: {hoja.columnas} columna(s)
+                  {hoja.porDependencia ? " · filas repartidas por la columna Dependencia" : ""}
+                  {hoja.faltantes.length > 0 && (
+                    <Text size="xs" c="orange">Campos que no vienen en el archivo (quedan vacíos): {hoja.faltantes.join(", ")}</Text>
+                  )}
+                </List.Item>
+              ))}
+            </List>
+            <Group justify="flex-end" mt="sm">
+              <Button variant="default" onClick={() => uploadFile(null)}>Solo en Consulta</Button>
+              <Button color="teal" leftSection={<IconHexagon3d size={16} />} onClick={() => uploadFile(sniesMatch.pubTemId)}>
+                Cargar también en SNIES
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
       {!selectedFile && (tabs || canUpload) && (
         <Group mb="md" justify="space-between" align="flex-end" wrap="wrap" gap="xs">
           {tabs || <div />}
@@ -874,7 +1010,7 @@ export default function FileLibraryPanel({ category, dimensionId, tabs }: FileLi
                 clearable
                 disabled={uploading}
               />
-              <Button onClick={handleUpload} loading={uploading} disabled={!file} color="violet">
+              <Button onClick={handleUpload} loading={uploading || checkingSnies} disabled={!file} color="violet">
                 Cargar en {category === "informes" ? "Informes" : "Plantillas"}
               </Button>
               {uploadMessage && <Text size="xs" c="dimmed">{uploadMessage}</Text>}

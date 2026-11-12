@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
@@ -640,8 +640,15 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
 
   
 
+  // El período se resuelve después del primer render: hasta tenerlo no se
+  // consulta, y una respuesta que llega tarde (de un período anterior) se
+  // descarta para que no reemplace la lista del período actual.
+  const templatesRequestRef = useRef(0);
+  const publishedRequestRef = useRef(0);
+
   const fetchTemplates = async () => {
-    if (!session?.user?.email) return;
+    if (!session?.user?.email || !selectedPeriodId) return;
+    const requestId = ++templatesRequestRef.current;
 
     setLoading(true);
     try {
@@ -655,6 +662,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
         },
       });
 
+      if (requestId !== templatesRequestRef.current) return;
       setTemplates(response.data.templates || []);
       setTotalPages(response.data.pages || 1);
     } catch (error) {
@@ -675,7 +683,8 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
   }, [session?.user?.email, page, search, selectedPeriodId]);
 
   const fetchPublishedTemplates = async () => {
-    if (!session?.user?.email) return;
+    if (!session?.user?.email || !selectedPeriodId) return;
+    const requestId = ++publishedRequestRef.current;
     setLoadingPTemplates(true);
     try {
       // Un Productor solo debe ver, en el módulo SNIES, las plantillas SNIES
@@ -698,6 +707,7 @@ export default function SniesTemplatesView({ mode, module = "snies" }: SniesTemp
           params: { email: session.user.email, page: 1, limit: 1000 },
         }),
       ]);
+      if (requestId !== publishedRequestRef.current) return;
       const list: any[] = ptRes.data.templates || ptRes.data || [];
       setPTemplateOptions(
         list.map((t) => ({
@@ -1941,6 +1951,11 @@ const activeMiroTemplateId =
 
       {(() => {
         const filtered = publishedTemplatesList.filter(pt => {
+          // La tabla de estados solo muestra plantillas marcadas como SNIES
+          // (existen desde 2026, cuando se creó el módulo). La lista completa
+          // sigue alimentando el selector de fuentes del formulario, porque
+          // algunas configuraciones usan plantillas anteriores sin la marca.
+          if (module === "snies" && !pt.template?.is_snies) return false;
           const nameMatch = (pt.name || pt.template?.name || '').toLowerCase().includes(ptSearch.toLowerCase());
           const statusMatch = ptStatusFilter === null
             ? true

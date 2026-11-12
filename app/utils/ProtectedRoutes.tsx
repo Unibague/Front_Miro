@@ -30,6 +30,7 @@ const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
   { key: "supportTemplates",          pattern: /^\/apoyos-plantillas/ },
   { key: "snies",                     pattern: /^\/snies/ },
   { key: "cna",                       pattern: /^\/cna/ },
+  { key: "kpi",                       pattern: /^\/kpi/ },
   { key: "pdiDashboard",              pattern: /^\/pdi\/dashboard/ },
   { key: "pdiForms",                  pattern: /^\/pdi\/formularios/ },
   { key: "pdiCharts",                 pattern: /^\/pdi\/graficas/ },
@@ -72,6 +73,8 @@ const ROLE_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [];
 const ROLE_ONLY_ROUTES: Array<{ roles: string[]; pattern: RegExp }> = [
   // Procesos de calidad MEN: solo Administrador (oculto para Responsable y Productor).
   { roles: ["Administrador"], pattern: /^\/processes-MEN/ },
+  // KPI: solo Administrador.
+  { roles: ["Administrador"], pattern: /^\/kpi/ },
 ];
 
 const ProtectedRoutes = ({ children }: { children: React.ReactNode }) => {

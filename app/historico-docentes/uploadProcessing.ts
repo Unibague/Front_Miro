@@ -10,6 +10,14 @@ export interface UploadStatus {
   status: ProcessingStatus;
   progress?: { rows: number; step: string | null };
   error_message?: string | null;
+  // Plantillas SNIES: resultado de dejar el archivo como envío final en SNIES
+  snies_sync?: {
+    status: "ok" | "error";
+    name?: string;
+    filas?: number;
+    dependencias?: number;
+    message?: string;
+  } | null;
 }
 
 const STEP_LABELS: Record<string, string> = {
@@ -17,6 +25,7 @@ const STEP_LABELS: Record<string, string> = {
   leyendo: "Leyendo filas",
   calculando: "Calculando cifras",
   finalizando: "Finalizando",
+  snies: "Cargando en SNIES",
 };
 
 const POLL_INTERVAL_MS = 3000;
