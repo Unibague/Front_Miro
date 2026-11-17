@@ -2,21 +2,67 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  Title, Button, Text, Paper, Stack, Group, Loader, Modal, TextInput, Textarea, Select, SimpleGrid, Divider, Badge,
-  ActionIcon, Tooltip, Anchor, Switch,
+  Button, Text, Paper, Stack, Group, Loader, Modal, TextInput, Textarea, Select, SimpleGrid, Badge,
+  Switch, ThemeIcon, Box, Grid,
 } from "@mantine/core";
 import { useParams, useRouter } from "next/navigation";
-import { IconChevronLeft } from "@tabler/icons-react";
+import {
+  IconSchool, IconEdit, IconInfoCircle, IconFileCertificate, IconProgress, IconHistory,
+  IconSettings, IconArrowRight, IconFileTypePdf, IconNotes, IconId, IconCircleCheck, IconCalendarTime, IconBooks,
+} from "@tabler/icons-react";
+import type { ElementType, ReactNode } from "react";
 import { paramKey } from "@/app/utils/routeParams";
 import axios, { isAxiosError } from "axios";
 import type { Program, Dependency, Process, Phase, ProcessHistoryRecord } from "../../types";
-import { LABEL_PROCESO, PERIODICIDAD_ADMISION, faseColors, etiquetaSubtipoCompacta, COLOR_PROCESO, ROW_BG_PROCESO } from "../../constants";
+import { LABEL_PROCESO, PERIODICIDAD_ADMISION, faseColors, etiquetaSubtipoCompacta } from "../../constants";
+
+/** Color del tipo de proceso (mismo esquema que tablero, alertas y gestión). */
+const TIPO_COLOR: Record<string, string> = { RC: "blue", AV: "violet", AE: "teal", PM: "grape" };
+
+/** Bloque de la ficha: tarjeta con icono y título, como las secciones de PDI. */
+function SeccionFicha({ icon: Icon, color, titulo, descripcion, accion, children }: {
+  icon: ElementType;
+  color: string;
+  titulo: string;
+  descripcion?: ReactNode;
+  accion?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Paper withBorder radius="lg" p="lg">
+      <Group justify="space-between" align="flex-start" mb="md" wrap="wrap" gap="sm">
+        <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
+          <ThemeIcon size={34} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+            <Icon size={18} />
+          </ThemeIcon>
+          <Box style={{ minWidth: 0 }}>
+            <Text fw={700} size="lg" lh={1.2}>{titulo}</Text>
+            {descripcion && <Text size="xs" c="dimmed" mt={2}>{descripcion}</Text>}
+          </Box>
+        </Group>
+        {accion}
+      </Group>
+      {children}
+    </Paper>
+  );
+}
+
+/** Par etiqueta / valor dentro de las tarjetas de resolución. */
+function DatoResolucion({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Box>
+      <Text size="xs" c="dimmed" fw={600}>{label}</Text>
+      <Text size="sm" fw={600} component="div">{children}</Text>
+    </Box>
+  );
+}
 import {
   textoCondicionFactorFase2,
   actividadEsReunionesParciales,
   actividadEsViabilidadFinanciera,
 } from "../../utils/condicionFactorFase2";
 import { formatFechaDDMMYY } from "../../utils/formatFechaCorta";
+import { nombreLegible } from "../../utils/nombreLegible";
 import { fechaVencimientoPrograma } from "../../utils/fechaVencimientoPrograma";
 import {
   esRcVigenciaTransitoriaPostAv,
@@ -29,7 +75,6 @@ import { programCodeKey } from "../../utils/programCode";
 import { filterFacultadesMen, parseDependenciesAllResponse } from "../../utils/facultadesMen";
 import { processesMenRoutes } from "../../config/routes";
 import { ClasificacionCineNbcSection, type CineFEdit, type NbcEdit } from "../../components/ClasificacionCineNbcSection";
-import { FichaCampoLectura } from "../../components/FichaCampoLectura";
 import HistoricoProgramaModal from "../../components/HistoricoProgramaModal";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
 import ModuleHeader from "../../components/ModuleHeader";
@@ -477,44 +522,38 @@ export default function ProgramaProcessesMenPage() {
   const esAcreditable = programa.es_acreditable ?? false;
 
   return (
-    <Stack p="md" pt="xl" maw={960} mx="auto">
+    <Stack p="md" pt="xl" maw={1560} mx="auto" w="100%">
       <Stack gap="sm">
         <div>
-          <Tooltip label="Volver" withArrow>
-            <ActionIcon
-              variant="default"
-              size="sm"
-              mb={8}
-              onClick={() => confirmNavigation(() => {
-                router.push(processesMenRoutes.homeWithQuery({ vista: "informacion" }));
-              }, { isBackNavigation: true })}
-              aria-label="Volver"
-            >
-              <IconChevronLeft size={16} />
-            </ActionIcon>
-          </Tooltip>
           <ModuleHeader
             title={programa.nombre}
+            icon={IconSchool}
+            color="green"
+            onBack={() => confirmNavigation(() => {
+              router.push(processesMenRoutes.homeWithQuery({ vista: "informacion" }));
+            }, { isBackNavigation: true })}
+            backLabel="Volver a información del programa"
             description="Consulta la información académica y administrativa, y el estado de los procesos de calidad del programa."
-            actions={<Group gap={6}>
-              <Badge color={estadoMenActivo ? "green" : "red"} variant="light">
-                {estadoMenActivo ? "Activo ante MEN" : "Inactivo ante MEN"}
-              </Badge>
-              <Badge color={activoUniversidad && estadoMenActivo ? "teal" : "gray"} variant="light">
-                {activoUniversidad && estadoMenActivo ? "Activo en universidad" : "Inactivo en universidad"}
-              </Badge>
-              <Badge color={esAcreditable ? "blue" : "gray"} variant="light">
-                {esAcreditable ? "Acreditable" : "No acreditable"}
-              </Badge>
-            </Group>}
+            actions={
+              <Button color="green" radius="md" leftSection={<IconSettings size={16} />} onClick={irGestionar}>
+                Gestionar procesos del programa
+              </Button>
+            }
           />
         </div>
 
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <Button onClick={irGestionar}>Gestionar procesos del programa</Button>
+        <Paper withBorder radius="lg" px="md" py="sm" mt={-8}>
+        <Group justify="space-between" align="center" wrap="wrap" gap="md">
+          <Group gap="xs" wrap="wrap">
+            <Badge size="lg" color={estadoMenActivo ? "teal" : "red"} variant="light" tt="none"
+              leftSection={estadoMenActivo ? <IconCircleCheck size={14} /> : null}>
+              {estadoMenActivo ? "Activo ante el MEN" : "Inactivo ante el MEN"}
+            </Badge>
+            <Text size="xs" c="dimmed">{nombreLegible(facName)}</Text>
+          </Group>
 
-          <Stack gap={6} style={{ minWidth: 320, marginLeft: "auto", alignItems: "flex-end" }}>
-            <Group gap="md" align="center" wrap="nowrap" justify="flex-end" style={{ marginLeft: "auto" }}>
+          <Stack gap={4} style={{ marginLeft: "auto", alignItems: "flex-end" }}>
+            <Group gap="lg" align="center" wrap="wrap" justify="flex-end">
               <Switch
                 checked={activoUniversidad}
                 disabled={!estadoMenActivo || savingToggleKey === "activo_universidad"}
@@ -550,15 +589,20 @@ export default function ProgramaProcessesMenPage() {
             )}
           </Stack>
         </Group>
+        </Paper>
       </Stack>
 
-      <Divider />
-
-      <Group justify="space-between">
-        <Text fw={600} size="sm" c="dimmed">INFORMACIÓN GENERAL</Text>
-        {!editando && <Button size="xs" variant="light" onClick={abrirEdicion}>Editar</Button>}
-      </Group>
-
+      <Grid gutter="md" align="flex-start">
+      <Grid.Col span={{ base: 12, lg: 7 }}>
+      <SeccionFicha
+        icon={IconInfoCircle}
+        color="blue"
+        titulo="Información general"
+        descripcion="Datos académicos y administrativos del programa."
+        accion={!editando && (
+          <Button size="xs" variant="light" leftSection={<IconEdit size={14} />} onClick={abrirEdicion}>Editar</Button>
+        )}
+      >
       {editando ? (
         <Stack gap="sm">
           <TextInput
@@ -618,45 +662,94 @@ export default function ProgramaProcessesMenPage() {
         </Stack>
       ) : (
         <Stack gap="md">
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-            {[
-              { label: "Código del programa", value: programa.dep_code_programa?.trim() || "—" },
-              { label: "Código SNIES", value: programa.codigo_snies },
-              { label: "Facultad", value: facName },
-              { label: "Estado ante MEN", value: programa.estado },
-              { label: "Activo en universidad", value: activoUniversidad ? "Sí" : "No" },
-              { label: "Programa acreditable", value: esAcreditable ? "Sí" : "No" },
-              { label: "Modalidad", value: programa.modalidad },
-              { label: "Nivel académico", value: programa.nivel_academico },
-              { label: "Nivel de formación", value: programa.nivel_formacion },
-              { label: "Enfoque", value: etiquetaEnfoque(programa.enfoque) },
-              { label: "Créditos", value: programa.num_creditos },
-              { label: "Periodos de duración", value: valorPeriodoDuracion(programa.periodos_duracion) },
-              { label: "Semestres", value: programa.num_semestres },
-              { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
-              { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
-              { label: "RC totales del programa", value: programa.total_rc },
-              { label: "AV totales del programa", value: programa.total_av },
-              { label: "Reformas del programa", value: cantidadReformasPrograma },
-            ].map(({ label, value }) => (
-              <FichaCampoLectura key={label} label={label} value={value} />
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm" verticalSpacing="sm">
+            {([
+              { titulo: "Identificación", icon: IconId, color: "blue", campos: [
+                { label: "Código del programa", value: programa.dep_code_programa?.trim() || "—" },
+                { label: "Código SNIES", value: programa.codigo_snies },
+                { label: "Facultad", value: nombreLegible(facName) },
+                { label: "Modalidad", value: programa.modalidad },
+              ] },
+              { titulo: "Estado", icon: IconCircleCheck, color: "teal", campos: [
+                { label: "Estado ante MEN", value: programa.estado },
+                { label: "Activo en universidad", value: activoUniversidad ? "Sí" : "No" },
+                { label: "Programa acreditable", value: esAcreditable ? "Sí" : "No" },
+              ] },
+              { titulo: "Formación", icon: IconSchool, color: "violet", campos: [
+                { label: "Nivel académico", value: programa.nivel_academico },
+                { label: "Nivel de formación", value: programa.nivel_formacion },
+                { label: "Enfoque", value: etiquetaEnfoque(programa.enfoque) },
+                { label: "Créditos", value: programa.num_creditos },
+              ] },
+              { titulo: "Duración y admisión", icon: IconCalendarTime, color: "orange", campos: [
+                { label: "Periodos de duración", value: valorPeriodoDuracion(programa.periodos_duracion) },
+                { label: "Semestres", value: programa.num_semestres },
+                { label: "Periodicidad de admisión", value: programa.admision_estudiantes },
+                { label: "Estudiantes (1er periodo)", value: programa.num_estudiantes_saces },
+              ] },
+              { titulo: "Trayectoria", icon: IconHistory, color: "grape", campos: [
+                { label: "RC totales", value: programa.total_rc },
+                { label: "AV totales", value: programa.total_av },
+                { label: "Reformas", value: cantidadReformasPrograma },
+              ] },
+              { titulo: "Clasificación CINE F 2013 AC", icon: IconBooks, color: "cyan", campos: [
+                { label: "Campo amplio", value: programa.cine_f?.campo_amplio },
+                { label: "Campo específico", value: programa.cine_f?.campo_especifico },
+                { label: "Campo detallado", value: programa.cine_f?.campo_detallado },
+              ] },
+              { titulo: "Núcleo básico del conocimiento", icon: IconBooks, color: "indigo", campos: [
+                { label: "Área de conocimiento", value: programa.nbc?.area_conocimiento },
+                { label: "NBC", value: programa.nbc?.nbc },
+              ] },
+            ] as const).map((grupo) => (
+              <Paper key={grupo.titulo} withBorder radius="md" p="sm">
+                <Group gap={8} mb={6} wrap="nowrap">
+                  <ThemeIcon size={26} radius="xl" variant="light" color={grupo.color}><grupo.icon size={15} /></ThemeIcon>
+                  <Text size="sm" fw={700}>{grupo.titulo}</Text>
+                </Group>
+                <Stack gap={0}>
+                  {grupo.campos.map((campo, idx) => (
+                    <Group
+                      key={campo.label}
+                      justify="space-between"
+                      wrap="nowrap"
+                      gap="sm"
+                      py={6}
+                      style={{ borderTop: idx === 0 ? undefined : "1px solid var(--mantine-color-default-border)" }}
+                    >
+                      <Text size="xs" c="dimmed">{campo.label}</Text>
+                      <Text size="sm" fw={600} ta="right" style={{ overflowWrap: "anywhere" }}>
+                        {campo.value === null || campo.value === undefined || campo.value === "" ? "—" : String(campo.value)}
+                      </Text>
+                    </Group>
+                  ))}
+                </Stack>
+              </Paper>
             ))}
           </SimpleGrid>
 
-          <ClasificacionCineNbcSection cine_f={programa.cine_f} nbc={programa.nbc} />
         </Stack>
       )}
+      </SeccionFicha>
+      </Grid.Col>
 
-      <Stack gap="md" style={{ order: 2 }}>
-      <Divider />
-      <Text fw={700} size="sm" mb={4}>Histórico</Text>
-      <Text fw={600} size="sm" mb={4}>Resoluciones vigentes</Text>
-      <Text size="xs" c="dimmed" mb="sm">
-        Datos del último cierre registrado sobre el programa. Si aún no hay historial cerrado en el sistema,
-        pueden mostrarse valores “planos” (SNIES/resoluciones) que existan sobre el mismo registro.
-      </Text>
+      <Grid.Col span={{ base: 12, lg: 5 }}>
+      <Stack gap="md">
 
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" mb="lg">
+      <Box style={{ order: 2 }}>
+      <SeccionFicha
+        icon={IconFileCertificate}
+        color="violet"
+        titulo="Resoluciones vigentes"
+        descripcion="Datos del último cierre registrado. Si aún no hay historial cerrado, se muestran los valores registrados en el programa (SNIES/resoluciones)."
+        accion={
+          <Button variant="light" size="xs" color="gray" leftSection={<IconHistory size={14} />} onClick={() => setHistoricoOpen(true)}>
+            Ver histórico de procesos
+          </Button>
+        }
+      >
+
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 1, xl: 2 }} spacing="md">
         {(["RC", "AV"] as const).map((t) => {
           const ult = t === "RC" ? programa.ultimo_rc : programa.ultimo_av;
           const proceso = procesosDelPrograma.find((p) => p.tipo_proceso === t);
@@ -679,24 +772,20 @@ export default function ProgramaProcessesMenPage() {
             vigenciaActivaSegunYYYYMMDDoISO(fechaVencimientoPrograma(programa, t));
           const vigenciaActiva = esVigenciaActivaPrograma(programa, t);
           const tieneDatos = !!(codigo || fecha || duracion != null || venc || link);
-          const acento = COLOR_PROCESO[t];
-          const fondo = ROW_BG_PROCESO[t];
+          const tipoColor = TIPO_COLOR[t];
           return (
             <Stack key={t} gap="xs">
             <Paper
               withBorder
               radius="md"
               p="md"
-              bg={fondo}
-              style={{
-                borderColor: t === "RC" ? "rgba(116, 192, 252, 0.35)" : "rgba(177, 151, 252, 0.4)",
-                borderLeftWidth: 5,
-                borderLeftStyle: "solid",
-                borderLeftColor: acento,
-              }}
+              style={{ borderTop: `3px solid var(--mantine-color-${tipoColor}-5)`, height: "100%" }}
             >
-              <Group justify="space-between" mb="xs" gap="xs" wrap="wrap">
-                <Text fw={700} size="sm" c="dark.8">{LABEL_PROCESO[t]}</Text>
+              <Group justify="space-between" mb="sm" gap="xs" wrap="wrap">
+                <Group gap={8} wrap="nowrap">
+                  <Badge variant="light" color={tipoColor}>{t}</Badge>
+                  <Text fw={700} size="sm">{LABEL_PROCESO[t]}</Text>
+                </Group>
                 <Group gap={6} wrap="wrap" justify="flex-end">
                   {rcTransitoria ? (
                     <>
@@ -711,18 +800,17 @@ export default function ProgramaProcessesMenPage() {
                     </>
                   ) : (
                     <Badge
-                      size="xs"
-                      variant={vigenciaActiva ? "light" : "white"}
-                      color={t === "RC" ? "blue" : "violet"}
+                      size="sm"
+                      variant={vigenciaActiva ? "dot" : "outline"}
+                      color={vigenciaActiva ? "teal" : "gray"}
                     >
                       {vigenciaActiva ? "Vigencia activa" : "Sin vigencia activa registrada"}
                     </Badge>
                   )}
                 </Group>
               </Group>
-              <Stack gap={2} mb="xs">
-                <Text size="xs"><strong>Proceso:</strong> {LABEL_PROCESO[t]}</Text>
-                <Text size="xs"><strong>Subtipo:</strong> {proceso?.subtipo?.trim() || "—"}</Text>
+              <Stack gap={2} mb="sm">
+                <Text size="xs" c="dimmed">Subtipo: <Text span size="xs" fw={600} c="var(--mantine-color-text)">{proceso?.subtipo?.trim() || "—"}</Text></Text>
                 {t === "RC" && proceso?.subtipo?.trim().toLowerCase() === "registro calificado de oficio" && (
                   <Text size="xs" c="blue"><strong>Registro calificado otorgado de oficio</strong></Text>
                 )}
@@ -738,31 +826,45 @@ export default function ProgramaProcessesMenPage() {
                 <Text size="xs" c="dimmed">Aún no hay datos de última resolución para este proceso.</Text>
               )}
               {tieneDatos && (
-                <Stack gap={4}>
-                  {codigo ? <Text size="xs"><strong>Número / código:</strong> {codigo}</Text> : null}
-                  <Text size="xs"><strong>Fecha resolución:</strong> {formatFechaDDMMYY(fecha ?? null)}</Text>
-                  {duracion != null ? (
-                    <Text size="xs"><strong>Vigencia declarada:</strong> {duracion} años</Text>
-                  ) : null}
-                  <Text size="xs">
-                    <strong>Vencimiento:</strong>{" "}
-                    {formatFechaDDMMYY(venc)}{vencCalculado != null && !vencGuardado ? " · estimado (resolución + vigencia declarada)" : ""}
-                  </Text>
-                  <Group gap={6} align="baseline" wrap="wrap">
-                    <Text size="xs" component="span"><strong>Documento resolución:</strong></Text>
-                    {link ? (
-                      <Anchor size="xs" href={link} target="_blank" rel="noopener noreferrer">Abrir PDF</Anchor>
-                    ) : (
-                      <Text size="xs" c="dimmed" component="span">Sin enlace guardado (el PDF se asocia al cerrar el proceso aprobado).</Text>
-                    )}
-                  </Group>
+                <Stack gap="sm">
+                  <SimpleGrid cols={2} spacing="sm" verticalSpacing="sm">
+                    <DatoResolucion label="Número / código">{codigo || "—"}</DatoResolucion>
+                    <DatoResolucion label="Fecha resolución">{formatFechaDDMMYY(fecha ?? null)}</DatoResolucion>
+                    <DatoResolucion label="Vigencia declarada">{duracion != null ? `${duracion} años` : "—"}</DatoResolucion>
+                    <DatoResolucion label="Vencimiento">
+                      {formatFechaDDMMYY(venc)}
+                      {vencCalculado != null && !vencGuardado && (
+                        <Text size="xs" c="dimmed" fw={400}>Estimado (resolución + vigencia)</Text>
+                      )}
+                    </DatoResolucion>
+                  </SimpleGrid>
+                  {link ? (
+                    <Button
+                      component="a"
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      w="fit-content"
+                      leftSection={<IconFileTypePdf size={14} />}
+                    >
+                      Abrir PDF de la resolución
+                    </Button>
+                  ) : (
+                    <Text size="xs" c="dimmed">Sin PDF guardado (se asocia al cerrar el proceso aprobado).</Text>
+                  )}
                 </Stack>
               )}
               <Button
                 size="xs"
-                variant="light"
+                variant="subtle"
+                color={tipoColor}
                 w="fit-content"
-                mt="xs"
+                mt="sm"
+                px={0}
+                leftSection={<IconNotes size={14} />}
                 onClick={() => abrirObservacionesResolucion(t, ult?.observaciones)}
               >
                 {ult?.observaciones?.trim() ? "Ver / editar observaciones" : "Agregar observaciones"}
@@ -772,37 +874,22 @@ export default function ProgramaProcessesMenPage() {
           );
         })}
       </SimpleGrid>
+      </SeccionFicha>
+      </Box>
 
-      <Text size="xs" c="dimmed" mt="xs" mb={4}>
-        Consulta los procesos anteriores del programa y carga o reemplaza la resolución asociada a cada cierre.
-      </Text>
-      <Button
-        variant="light"
-        size="xs"
-        mb="sm"
-        onClick={() => setHistoricoOpen(true)}
+      <Box style={{ order: 1 }}>
+      <SeccionFicha
+        icon={IconProgress}
+        color="green"
+        titulo="Procesos en curso"
+        descripcion="Haz clic en un proceso para abrirlo en la gestión. Si no hay RC o AV activo, la tarjeta indica «Sin proceso»."
+        accion={loadingFasesProg ? <Loader size="xs" /> : null}
       >
-        Ver histórico de procesos
-      </Button>
-      </Stack>
 
-      <Stack gap="md" style={{ order: 1 }}>
-      <Divider />
-      <Group justify="space-between" mb="xs" wrap="wrap" align="center">
-        <div>
-          <Text fw={700} size="sm">Procesos en curso</Text>
-          <Text size="xs" c="dimmed" maw={720}>
-            Registro calificado, acreditación voluntaria y planes de mejora con actividad en el tablero. Si no hay RC o AV activo, la tarjeta indica «Sin proceso».
-            Haz clic en una tarjeta con proceso para abrirlo en la gestión.
-          </Text>
-        </div>
-        {loadingFasesProg ? <Loader size="xs" /> : null}
-      </Group>
-
-      <Stack gap="md" mb="md">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 1, xl: 2 }} spacing="md">
         {tarjetasProceso.map((t) => {
           const p = t.proc;
-          const colorProceso = p ? (COLOR_PROCESO[p.tipo_proceso] ?? "#868e96") : "#dee2e6";
+          const colorProceso = p ? (TIPO_COLOR[p.tipo_proceso] ?? "gray") : "gray";
           const { nombreFase, actividad } = p ? faseTituloYActividad(p) : { nombreFase: "—", actividad: null as string | null };
 
           return (
@@ -811,19 +898,20 @@ export default function ProgramaProcessesMenPage() {
               withBorder
               radius="md"
               p="md"
-              bg={p ? "#fff" : "gray.0"}
               style={{
                 textAlign: "left",
-                borderLeft: `6px solid ${colorProceso}`,
+                borderLeft: `4px solid var(--mantine-color-${colorProceso}-${p ? 5 : 3})`,
+                backgroundColor: p ? undefined : "var(--mantine-color-default-hover)",
                 cursor: p ? "pointer" : "default",
-                opacity: p ? 1 : 0.95,
+                display: "flex",
+                flexDirection: "column",
               }}
               onClick={() => p && irGestionarProceso(p)}
             >
               <Group justify="space-between" align="flex-start" mb={6}>
                 <Text fw={700} size="sm" style={{ whiteSpace: "pre-line", lineHeight: 1.35 }}>{t.rotuloTipo}</Text>
                 {p ? (
-                  <Badge variant="filled" color="dark" size="xs" tt="uppercase">{p.tipo_proceso}</Badge>
+                  <Badge variant="light" color={colorProceso} size="sm" tt="uppercase">{p.tipo_proceso}</Badge>
                 ) : (
                   <Badge variant="outline" color="gray" size="xs">Sin proceso</Badge>
                 )}
@@ -839,7 +927,7 @@ export default function ProgramaProcessesMenPage() {
                 <>
                   <Text size="sm" fw={600}>{nombreFase}</Text>
                   <Text size="xs" c="dimmed" mt={2}>
-                    Actividad: <strong style={{ color: "#495057" }}>{actividad ?? "(sin actividades pendientes en esta fase)"}</strong>
+                    Actividad: <strong style={{ color: "var(--mantine-color-text)" }}>{actividad ?? "(sin actividades pendientes en esta fase)"}</strong>
                   </Text>
                   {(() => {
                     const cx = textoCondicionFactorFase2(p);
@@ -867,7 +955,7 @@ export default function ProgramaProcessesMenPage() {
                     );
                   })()}
                   <Group gap="md" mt="sm" wrap="wrap">
-                    <Text size="xs" c="dimmed">Vencimiento de la vigencia del registro calificado: <strong>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
+                    <Text size="xs" c="dimmed">Vencimiento de la vigencia: <strong style={{ color: "var(--mantine-color-text)" }}>{formatFechaDDMMYY(p.fecha_vencimiento)}</strong></Text>
                   </Group>
                   {p.tipo_proceso === "PM" && p.parent_tipo_proceso && (
                     <Text size="xs" c="orange" mt={8}>
@@ -878,14 +966,21 @@ export default function ProgramaProcessesMenPage() {
                           : p.parent_tipo_proceso}
                     </Text>
                   )}
-                  <Text size="xs" c="blue" mt="sm" fw={600}>Abrir gestión →</Text>
+                  <Group gap={4} mt="auto" pt="sm">
+                    <Text size="xs" c={colorProceso} fw={700}>Abrir gestión</Text>
+                    <IconArrowRight size={13} color={`var(--mantine-color-${colorProceso}-6)`} />
+                  </Group>
                 </>
               )}
             </Paper>
           );
         })}
+      </SimpleGrid>
+      </SeccionFicha>
+      </Box>
       </Stack>
-      </Stack>
+      </Grid.Col>
+      </Grid>
 
       <Modal opened={gestionarInfoOpen} onClose={() => setGestionarInfoOpen(false)} title="Sin procesos para gestionar" centered>
         <Text size="sm">

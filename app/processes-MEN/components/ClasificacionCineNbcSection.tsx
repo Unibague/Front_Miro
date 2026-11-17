@@ -45,7 +45,7 @@ export function ClasificacionCineNbcSection(props: ClasificacionCineNbcSectionPr
     <>
       {showDivider && <Divider label="Clasificación CINE F — NBC" labelPosition="left" />}
       <Stack gap="md">
-        <Paper withBorder radius="sm" p="sm" bg="gray.0">
+        <Paper withBorder radius="md" p="sm" style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
           <Text fw={600} size="xs" c="dimmed" mb="xs" tt="uppercase">
             CINE F — 2013 AC
           </Text>
@@ -79,7 +79,7 @@ export function ClasificacionCineNbcSection(props: ClasificacionCineNbcSectionPr
           )}
         </Paper>
 
-        <Paper withBorder radius="sm" p="sm" bg="gray.0">
+        <Paper withBorder radius="md" p="sm" style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
           <Text fw={600} size="xs" c="dimmed" mb="xs" tt="uppercase">
             NBC — Núcleo básico del conocimiento
           </Text>

@@ -1,11 +1,11 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
-import { Fragment, useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo, type ElementType } from "react";
 import {
-  Title, Select, Button, Text, Paper, Box, SimpleGrid, Group, Flex,
+  Title, Select, Button, Text, Paper, Box, SimpleGrid, Group,
   Loader, Modal, TextInput, Stack, Divider, Badge, Anchor, ScrollArea, Collapse,
-  ActionIcon, Tooltip, Table, ThemeIcon, NavLink,
+  ActionIcon, Tooltip, Table, ThemeIcon, NavLink, SegmentedControl, Alert, Progress, UnstyledButton,
 } from "@mantine/core";
 import { useRole } from "@/app/context/RoleContext";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
@@ -23,13 +23,36 @@ import {
   IconMessageCircle,
   IconFileTypePdf,
   IconTrash,
-  IconPencil,
+  IconMail,
+  IconSchool,
+  IconCircleCheck,
+  IconCircleX,
+  IconEdit,
+  IconFileCertificate,
+  IconCertificate,
+  IconPercentage,
+  IconAward,
+  IconTarget,
+  IconClipboardList,
+  IconFilter,
+  IconFilterOff,
+  IconAlertTriangle,
+  IconSearch,
+  IconAdjustmentsHorizontal,
+  IconInfoCircle,
+  IconX,
+  IconPaperclip,
+  IconBuildingCommunity,
+  IconInbox,
+  IconClock,
+  IconFileSpreadsheet,
+  IconCircleMinus,
+  IconChevronDown,
 } from "@tabler/icons-react";
 
 import type { Dependency, Program, Process, Phase, ProcessHistoryRecord, ProcessReminderRecord, BarRow, PQR } from "./types";
 import {
   LABEL_PROCESO,
-  ROW_BG_PROCESO,
   selectorStyle,
   selectorStyleFilters,
   subtipoOpcionesFiltro,
@@ -43,6 +66,7 @@ import {
   infoFasePorNumero,
 } from "./constants";
 import { formatFechaDDMMYY } from "./utils/formatFechaCorta";
+import { nombreLegible } from "./utils/nombreLegible";
 import { nivelSemaforoAlerta } from "./utils/alertaSemaforo";
 import { mismoId } from "./utils/idMongoose";
 import { procesoRcActivoDePrograma } from "./utils/procesoRcUnico";
@@ -78,6 +102,7 @@ const DropzoneCustomComponent = dynamic(
   { ssr: false },
 );
 import ProcesoDetalleCard from "./components/ProcesoDetalleCard";
+import BuzonMenView from "./components/BuzonMenView";
 import AgregarProcesoModal, { type AgregarProcesoPrefill } from "./components/AgregarProcesoModal";
 import PQRAgregarForm from "./components/PQRAgregarForm";
 import PQRActivosView from "./components/PQRActivosView";
@@ -169,8 +194,9 @@ const DocList = ({ docs }: { docs: Array<{ name: string; view_link: string; subi
   docs.length > 0 ? (
     <Stack gap={2}>
       {docs.map((d, i) => (
-        <Group key={i} gap={6} align="center">
-          <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>📎 {d.name}</Anchor>
+        <Group key={i} gap={6} align="center" wrap="nowrap">
+          <IconPaperclip size={13} color="var(--mantine-color-blue-6)" style={{ flexShrink: 0 }} />
+          <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>{d.name}</Anchor>
           {d.subido_en && <Text size="xs" c="dimmed">· {fmtFecha(d.subido_en)}</Text>}
         </Group>
       ))}
@@ -197,20 +223,30 @@ const celdaGuionCentrado = (
 
 /** Fechas en «Procesos activos y alertas» — legible sin ocupar de más. */
 const tdFechaTablaAlertas = {
-  padding: "8px 6px",
+  padding: "6px 4px",
   fontSize: 13,
   whiteSpace: "nowrap" as const,
   textAlign: "center" as const,
   verticalAlign: "middle" as const,
 };
 
-type DateEditTarget = {
+/** Una fecha editable de una fila de la tabla de alertas. */
+type CampoFechaFila = {
   resource: "process" | "program";
   id: string;
   field: string;
   label: string;
-  programName: string;
+  valor: string | null | undefined;
 };
+
+/** Edición de todas las fechas de una fila desde un solo botón «Editar». */
+type FilaEdicion = {
+  programName: string;
+  tipo: string;
+  campos: CampoFechaFila[];
+};
+
+const claveCampoFila = (c: Pick<CampoFechaFila, "resource" | "id" | "field">) => `${c.resource}:${c.id}:${c.field}`;
 
 /** Orden por vencimiento: más cercano arriba; sin fecha al final. */
 function timestampVencimiento(fecha: string | null | undefined): number {
@@ -226,6 +262,155 @@ function compararPorFechaVencimiento(
   return timestampVencimiento(a) - timestampVencimiento(b);
 }
 
+/* ── Estilos de tablas del módulo (coherentes con el resto de Miró y con modo oscuro) ── */
+const TIPO_COLOR: Record<string, string> = { RC: "blue", AV: "violet", AE: "teal", PM: "grape" };
+
+const theadRowStyle = {
+  borderBottom: "1px solid var(--mantine-color-default-border)",
+  backgroundColor: "var(--mantine-color-default-hover)",
+};
+
+const thTextStyle = {
+  color: "var(--mantine-color-dimmed)",
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.3,
+};
+
+/** Fila con franja lateral del color del tipo de proceso; `tinte` colorea las filas de alerta según el semáforo. */
+function estiloFilaTabla(tipo: string, seleccionada: boolean, tinte?: string) {
+  return {
+    borderBottom: "1px solid var(--mantine-color-default-border)",
+    backgroundColor: seleccionada ? "var(--mantine-color-blue-light)" : tinte,
+    boxShadow: `inset 4px 0 var(--mantine-color-${TIPO_COLOR[tipo] ?? "gray"}-5)`,
+    cursor: "pointer",
+    outline: "none",
+  };
+}
+
+const SEMAFORO_ALERTA_LEYENDA = [
+  { color: "green", texto: "Antes de digitación" },
+  { color: "yellow", texto: "Hasta radicado" },
+  { color: "red", texto: "Hasta vencimiento" },
+  { color: "gray", texto: "Vencida" },
+] as const;
+
+/** Texto sin tildes y en minúsculas para la búsqueda rápida. */
+const normalizarBusqueda = (texto: string) => texto.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** Cuánto falta para una fecha de vencimiento, en palabras y con color según urgencia. */
+function vencimientoRelativo(fecha: string | null | undefined): { texto: string; color: string } | null {
+  if (!fecha) return null;
+  const objetivo = new Date(`${String(fecha).slice(0, 10)}T12:00:00`).getTime();
+  if (Number.isNaN(objetivo)) return null;
+  const dias = Math.round((objetivo - Date.now()) / 86_400_000);
+  const abs = Math.abs(dias);
+  const meses = Math.round(abs / 30.4);
+  const anios = Math.round((abs / 365) * 10) / 10;
+  const cantidad = abs < 45 ? `${abs} ${abs === 1 ? "día" : "días"}`
+    : abs < 730 ? `${meses} meses`
+    : `${String(anios).replace(".", ",")} años`;
+  if (dias < 0) return { texto: `venció hace ${cantidad}`, color: "red" };
+  if (dias === 0) return { texto: "vence hoy", color: "red" };
+  return { texto: `en ${cantidad}`, color: dias <= 180 ? "orange" : dias <= 365 ? "yellow.8" : "teal" };
+}
+
+/* ── Tarjeta de indicador (estadísticas generales) ── */
+type StatTileProps = {
+  label: string;
+  value: number | string;
+  color: string;
+  icon: ElementType;
+  hint?: string;
+  onOpen: () => void;
+};
+
+const StatTile = ({ label, value, color, icon: Icon, hint, onOpen }: StatTileProps) => (
+  <Paper
+    withBorder
+    radius="lg"
+    p="md"
+    tabIndex={0}
+    role="button"
+    className="men-stat-tile"
+    data-color={color}
+    aria-label={`Ver programas: ${label}`}
+    onClick={onOpen}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onOpen();
+      }
+    }}
+    style={{
+      cursor: "pointer",
+      ["--men-tile-color" as string]: `var(--mantine-color-${color}-light)`,
+      ["--men-tile-border" as string]: `var(--mantine-color-${color}-4)`,
+      borderTop: `3px solid var(--mantine-color-${color}-5)`,
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+    }}
+  >
+    <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+      <Box style={{ minWidth: 0 }}>
+        <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: 0.4 }}>{label}</Text>
+        <Text fw={900} size="1.9rem" lh={1.1} mt={6}>{value}</Text>
+      </Box>
+      <ThemeIcon size={40} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+        <Icon size={20} />
+      </ThemeIcon>
+    </Group>
+    {hint && <Text size="xs" c="dimmed" mt={6}>{hint}</Text>}
+    <Group gap={4} mt="auto" pt="sm" className="men-stat-ver">
+      <Text size="xs" c={color} fw={600}>Ver programas</Text>
+      <IconChevronRight size={12} color={`var(--mantine-color-${color}-6)`} />
+    </Group>
+    <style>{`
+      .men-stat-tile { transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease; }
+      .men-stat-tile:hover, .men-stat-tile:focus-visible {
+        transform: translateY(-3px);
+        box-shadow: var(--mantine-shadow-md);
+        background-color: var(--men-tile-color);
+        border-color: var(--men-tile-border);
+      }
+      .men-stat-tile .men-stat-ver { transition: transform 140ms ease; }
+      .men-stat-tile:hover .men-stat-ver { transform: translateX(4px); }
+    `}</style>
+  </Paper>
+);
+
+const SeccionTitulo = ({ icon: Icon, color, titulo, descripcion }: {
+  icon: ElementType;
+  color: string;
+  titulo: string;
+  descripcion?: string;
+}) => (
+  <Group gap="sm" mb="sm" wrap="nowrap">
+    <ThemeIcon size={34} radius="xl" variant="light" color={color}>
+      <Icon size={18} />
+    </ThemeIcon>
+    <Box>
+      <Text fw={700} size="lg" lh={1.2}>{titulo}</Text>
+      {descripcion && <Text size="xs" c="dimmed">{descripcion}</Text>}
+    </Box>
+  </Group>
+);
+
+/** Encabezado común de los bloques de filtros (estadísticas, alertas e historial). */
+const FiltrosEncabezado = ({ hayFiltros, onLimpiar }: { hayFiltros: boolean; onLimpiar: () => void }) => (
+  <Group justify="space-between" mb="sm" wrap="nowrap">
+    <Group gap={6}>
+      <IconFilter size={16} color="var(--mantine-color-dimmed)" />
+      <Text size="sm" fw={700}>Filtros</Text>
+    </Group>
+    {hayFiltros && (
+      <Button size="compact-xs" variant="subtle" color="gray" leftSection={<IconFilterOff size={13} />} onClick={onLimpiar}>
+        Limpiar filtros
+      </Button>
+    )}
+  </Group>
+);
+
 /* ── Componente expandible para el historial de fases ── */
 type HistFase = ProcessHistoryRecord["fases"][number];
 const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
@@ -235,19 +420,38 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
   return (
     <Stack gap="xs">
       {fases.map(f => (
-        <Paper key={f.fase_numero} withBorder radius="sm" style={{ overflow: "hidden" }}>
+        <Paper key={f.fase_numero} withBorder radius="md" style={{ overflow: "hidden" }}>
           {/* Cabecera de fase — clic para expandir */}
           <Box
-            px="sm" py={8}
-            style={{ cursor: "pointer", backgroundColor: "#f8f9fa", borderBottom: openFase === f.fase_numero ? "1px solid #dee2e6" : "none" }}
+            px="sm" py={10}
+            style={{ cursor: "pointer", backgroundColor: openFase === f.fase_numero ? "var(--mantine-color-default-hover)" : undefined, borderBottom: openFase === f.fase_numero ? "1px solid var(--mantine-color-default-border)" : "none" }}
             onClick={() => setOpenFase(prev => prev === f.fase_numero ? null : f.fase_numero)}
           >
-            <Group justify="space-between">
-              <Group gap="xs">
-                <Text size="xs" fw={700}>{openFase === f.fase_numero ? "▾" : "▸"} Fase {f.fase_numero} — {f.fase_nombre}</Text>
-                <Badge size="xs" color={f.actividades_completadas === f.actividades_total ? "green" : "orange"} variant="light">
-                  {f.actividades_completadas}/{f.actividades_total} resueltas
+            <Group justify="space-between" wrap="nowrap" gap="sm">
+              <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                {openFase === f.fase_numero
+                  ? <IconChevronDown size={16} color="var(--mantine-color-dimmed)" />
+                  : <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />}
+                <Badge
+                  radius="sm"
+                  style={{ flexShrink: 0 }}
+                  styles={{ root: {
+                    backgroundColor: infoFasePorNumero(f.fase_numero)?.color ?? "var(--mantine-color-gray-2)",
+                    color: infoFasePorNumero(f.fase_numero)?.textColor ?? "#1a1b1e",
+                    border: `1px solid ${infoFasePorNumero(f.fase_numero)?.borderColor ?? "var(--mantine-color-default-border)"}`,
+                  } }}
+                >
+                  Fase {f.fase_numero}
                 </Badge>
+                <Text size="sm" fw={600} truncate="end">{f.fase_nombre}</Text>
+              </Group>
+              <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                <Progress
+                  value={f.actividades_total > 0 ? (f.actividades_completadas / f.actividades_total) * 100 : 0}
+                  color={f.actividades_completadas === f.actividades_total ? "teal" : "blue"}
+                  size="sm" radius="xl" w={70}
+                />
+                <Text size="xs" c="dimmed" fw={600}>{f.actividades_completadas}/{f.actividades_total}</Text>
               </Group>
             </Group>
           </Box>
@@ -257,7 +461,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
               {/* Docs de la fase */}
               {f.documentos.length > 0 && (
                 <Box mb="xs">
-                  <Text size="xs" c="dimmed" fw={600} mb={4}>Documentos de la fase</Text>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4}>Documentos de la fase</Text>
                   <DocList docs={f.documentos} />
                 </Box>
               )}
@@ -269,18 +473,23 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                   const actNa = !!act.no_aplica;
                   const actLista = act.completada || actNa;
                   return (
-                    <Paper key={ai} withBorder radius="xs" style={{ overflow: "hidden" }}>
+                    <Paper key={ai} withBorder radius="sm"
+                      style={{ overflow: "hidden", borderLeft: `3px solid var(--mantine-color-${actNa ? "orange" : actLista ? "teal" : "gray"}-5)` }}>
                       {/* Cabecera actividad */}
                       <Box
-                        px="sm" py={6}
-                        style={{ cursor: "pointer", backgroundColor: actLista ? "#f0fff4" : "#fff" }}
+                        px="sm" py={8}
+                        style={{ cursor: "pointer" }}
                         onClick={() => setOpenAct(prev => prev === actKey ? null : actKey)}
                       >
-                        <Group justify="space-between">
-                          <Group gap="xs">
-                            <Text size="xs">{openAct === actKey ? "▾" : "▸"}</Text>
-                            <input type="checkbox" checked={actLista} readOnly style={{ width: 13, height: 13 }} />
-                            <Text size="xs" fw={500} td={actLista ? "line-through" : undefined} c={actNa ? "orange" : act.completada ? "dimmed" : undefined}>
+                        <Group justify="space-between" wrap="nowrap" align="flex-start">
+                          <Group gap="xs" wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
+                            {openAct === actKey
+                              ? <IconChevronDown size={14} color="var(--mantine-color-dimmed)" style={{ marginTop: 3, flexShrink: 0 }} />
+                              : <IconChevronRight size={14} color="var(--mantine-color-dimmed)" style={{ marginTop: 3, flexShrink: 0 }} />}
+                            {actNa
+                              ? <IconCircleMinus size={16} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0, marginTop: 1 }} />
+                              : <IconCircleCheck size={16} color={`var(--mantine-color-${actLista ? "teal" : "gray"}-6)`} style={{ flexShrink: 0, marginTop: 1 }} />}
+                            <Text size="sm" fw={500} c={actNa ? "orange" : undefined}>
                               {act.nombre}
                             </Text>
                             {actNa && (
@@ -288,16 +497,16 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                             )}
                           </Group>
                           {act.fecha_completado && !actNa && (
-                            <Text size="xs" c="teal">✓ {formatFechaDDMMYY(act.fecha_completado)}</Text>
+                            <Text size="xs" c="teal" fw={600} style={{ flexShrink: 0 }}>{formatFechaDDMMYY(act.fecha_completado)}</Text>
                           )}
                         </Group>
-                        {act.responsables && <Text size="xs" c="dimmed" pl={34}>{act.responsables}</Text>}
+                        {act.responsables && <Text size="xs" c="dimmed" pl={44}>{act.responsables}</Text>}
                       </Box>
 
                       <Collapse in={openAct === actKey}>
-                        <Box px="sm" pt={6} pb="sm" style={{ backgroundColor: "#fafafa" }}>
+                        <Box px="sm" pt={6} pb="sm" style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
                           {act.observaciones && (
-                            <Paper withBorder radius="xs" p={6} mb={6} style={{ backgroundColor: "#fff9db" }}>
+                            <Paper withBorder radius="sm" p={6} mb={6} style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
                               <Text size="xs" c="dimmed">Observaciones:</Text>
                               <Text size="xs">{act.observaciones}</Text>
                             </Paper>
@@ -305,24 +514,25 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
 
                           {/* Docs de la actividad */}
                           <Box mb={act.subactividades.length > 0 ? "xs" : 0}>
-                            <Text size="xs" c="dimmed" fw={600} mb={4}>Documentos</Text>
+                            <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4}>Documentos</Text>
                             <DocList docs={act.documentos} />
                           </Box>
 
                           {/* Subactividades */}
                           {act.subactividades.length > 0 && (
                             <Stack gap={4} mt="xs">
-                              <Text size="xs" c="dimmed" fw={600}>Subactividades</Text>
+                              <Text size="xs" c="dimmed" fw={700} tt="uppercase">Subactividades</Text>
                               {act.subactividades.map((sub, si) => {
                                 const subNa = !!sub.no_aplica || actNa;
                                 const subLista = sub.completada || subNa;
                                 return (
-                                <Paper key={si} withBorder radius="xs" p={6}
-                                  style={{ backgroundColor: subLista ? "#f8f9fa" : "#fff" }}>
-                                  <Group justify="space-between" mb={sub.documentos.length > 0 || sub.observaciones ? 4 : 0}>
-                                    <Group gap="xs">
-                                      <input type="checkbox" checked={sub.completada && !subNa} readOnly style={{ width: 12, height: 12 }} />
-                                      <Text size="xs" td={subLista ? "line-through" : undefined} c={subNa ? "orange" : sub.completada ? "dimmed" : undefined}>
+                                <Paper key={si} withBorder radius="sm" px="sm" py={6}>
+                                  <Group justify="space-between" mb={sub.documentos.length > 0 || sub.observaciones ? 4 : 0} wrap="nowrap">
+                                    <Group gap="xs" wrap="nowrap">
+                                      {subNa
+                                        ? <IconCircleMinus size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0 }} />
+                                        : <IconCircleCheck size={14} color={`var(--mantine-color-${subLista ? "teal" : "gray"}-6)`} style={{ flexShrink: 0 }} />}
+                                      <Text size="xs" c={subNa ? "orange" : undefined}>
                                         {sub.nombre}
                                       </Text>
                                       {subNa && (
@@ -331,7 +541,7 @@ const HistorialFases = ({ fases }: { fases: HistFase[] }) => {
                                         </Badge>
                                       )}
                                     </Group>
-                                    {sub.fecha_completado && !subNa && <Text size="xs" c="teal">✓ {formatFechaDDMMYY(sub.fecha_completado)}</Text>}
+                                    {sub.fecha_completado && !subNa && <Text size="xs" c="teal" fw={600} style={{ flexShrink: 0 }}>{formatFechaDDMMYY(sub.fecha_completado)}</Text>}
                                   </Group>
                                   {sub.observaciones && (
                                     <Text size="xs" c="dimmed" pl={20} mb={2}>Observaciones: {sub.observaciones}</Text>
@@ -421,7 +631,7 @@ const ProcessesMenPage = () => {
   };
 
   /* ── Vista administrador: estadísticas / alertas / historial ── */
-  type AdminSection = "main" | "alertas" | "historial" | "informacion";
+  type AdminSection = "main" | "alertas" | "historial" | "informacion" | "buzon";
   const [activeSection, setActiveSection] = useState<AdminSection>("main");
   const [activeParentSection, setActiveParentSection] = useState<AdminSection | null>(null);
   const navigationSection = activeParentSection ?? activeSection;
@@ -433,17 +643,21 @@ const ProcessesMenPage = () => {
   const [remTipoPosgrado, setRemTipoPosgrado]     = useState<string>("Todos");
   const [remTipoProceso, setRemTipoProceso]       = useState<string>("Todos");
   const [remSubtipo, setRemSubtipo]               = useState<string>("Todos");
+  const [remBusqueda, setRemBusqueda]             = useState("");
+  const [remVista, setRemVista]                   = useState<"todo" | "activos" | "alertas">("todo");
+  const [remSoloAtencion, setRemSoloAtencion]     = useState(false);
+  const [remMasFiltros, setRemMasFiltros]         = useState(false);
   const [reminders, setReminders]                 = useState<ProcessReminderRecord[]>([]);
   const [loadingReminders, setLoadingReminders] = useState(false);
-  const [dateEditTarget, setDateEditTarget] = useState<DateEditTarget | null>(null);
-  const [dateEditValue, setDateEditValue] = useState("");
+  const [filaEdicion, setFilaEdicion] = useState<FilaEdicion | null>(null);
+  const [filaValores, setFilaValores] = useState<Record<string, string>>({});
   const [savingTableDate, setSavingTableDate] = useState(false);
   const [dateEditError, setDateEditError] = useState<string | null>(null);
   const [selectedAlertRow, setSelectedAlertRow] = useState<string | null>(null);
 
   /* ── Modal agregar proceso ── */
   const [agregarProcesoOpen, setAgregarProcesoOpen] = useState(false);
-  const [modalListaProgramas, setModalListaProgramas] = useState<{ titulo: string; lista: Program[] } | null>(null);
+  const [modalListaProgramas, setModalListaProgramas] = useState<{ titulo: string; lista: Program[]; color?: string } | null>(null);
 
   /* ── Ventanas de gestión ── */
   const [agregarProcesoPrefill, setAgregarProcesoPrefill] = useState<AgregarProcesoPrefill | null>(null);
@@ -1032,6 +1246,7 @@ const ProcessesMenPage = () => {
       if (remTipoProceso === "Registro calificado") return r.tipo_proceso === "RC";
       if (remTipoProceso === "Acreditación voluntaria") return r.tipo_proceso === "AV";
       if (remTipoProceso === "Autoevaluación") return r.tipo_proceso === "AE";
+      if (remTipoProceso === "Plan de mejoramiento") return r.tipo_proceso === "PM";
       return true;
     });
   }, [reminders, remTipoProceso]);
@@ -1054,6 +1269,7 @@ const ProcessesMenPage = () => {
         if (remTipoProceso === "Registro calificado" && proc.tipo_proceso !== "RC") return false;
         if (remTipoProceso === "Acreditación voluntaria" && proc.tipo_proceso !== "AV") return false;
         if (remTipoProceso === "Autoevaluación" && proc.tipo_proceso !== "AE") return false;
+        if (remTipoProceso === "Plan de mejoramiento") return false;
         if (!procesoCumpleSubtipoFiltro(proc.subtipo, proc.tipo_proceso, remSubtipo, remTipoProceso)) return false;
         if (remFacultad !== "Todos") {
           const f = facultades.find((x) => x.name === remFacultad);
@@ -1082,6 +1298,8 @@ const ProcessesMenPage = () => {
       })
       .filter((x): x is { proc: Process; prog: Program } => x != null)
       .filter(({ prog }) => {
+        /* Al elegir RC, AV o AE en «Por proceso (tipo)» no se listan los planes de mejoramiento. */
+        if (remTipoProceso !== "Todos" && remTipoProceso !== "Plan de mejoramiento") return false;
         if (remFacultad !== "Todos") {
           const f = facultades.find((x) => x.name === remFacultad);
           if (!f || prog.dep_code_facultad !== f.dep_code) return false;
@@ -1097,7 +1315,7 @@ const ProcessesMenPage = () => {
         if (porVenc !== 0) return porVenc;
         return (a.prog.nombre ?? "").localeCompare(b.prog.nombre ?? "", "es");
       });
-  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remModalidad, remTipoPosgrado, facultades]);
+  }, [procesosDelModulo, programasDelModulo, remFacultad, remPrograma, remNivel, remModalidad, remTipoPosgrado, remTipoProceso, facultades]);
 
   /** Alertas por cierre (RC/AV/AE): solo si aún no hay un proceso activo del mismo tipo en ese programa. */
   const remindersSinActivoMismoTipo = useMemo(() => {
@@ -1143,6 +1361,73 @@ const ProcessesMenPage = () => {
       }),
     [remindersSinActivoMismoTipo],
   );
+
+  const alertaRequiereAtencion = (r: ProcessReminderRecord) => {
+    const nivel = nivelSemaforoAlerta(r);
+    return nivel === "red" || nivel === "gray";
+  };
+
+  /** Filtros de programa del tablero de alertas (sin tipo, subtipo ni vista). */
+  const pasaFiltrosProgramaAlertas = (prog: Program | undefined) => {
+    if (!prog) return false;
+    if (remFacultad !== "Todos") {
+      const f = facultades.find((x) => x.name === remFacultad);
+      if (!f || prog.dep_code_facultad !== f.dep_code) return false;
+    }
+    if (remPrograma !== "Todos" && prog._id !== remPrograma) return false;
+    if (remNivel !== "Todos" && prog.nivel_academico !== remNivel) return false;
+    if (remModalidad !== "Todos" && normalizarNivelPrograma(prog.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+    if (remTipoPosgrado !== "Todos" && tipoPosgrado(prog) !== remTipoPosgrado) return false;
+    return true;
+  };
+
+  /** Totales de las tarjetas de resumen: no cambian al hacer clic en una tarjeta. */
+  const conteosResumenAlertas = (() => {
+    const activos = procesosDelModulo
+      .filter((p) => p.tipo_proceso === "RC" || p.tipo_proceso === "AV" || p.tipo_proceso === "AE")
+      .filter((p) => p.tipo_proceso !== "RC" || procesoRcActivoDePrograma(procesosDelModulo, p.program_code)?._id === p._id)
+      .filter((p) => pasaFiltrosProgramaAlertas(findProgramByCode(programasDelModulo, p.program_code)));
+    const pm = procesosDelModulo
+      .filter((p) => p.tipo_proceso === "PM")
+      .filter((p) => pasaFiltrosProgramaAlertas(findProgramByCode(programasDelModulo, p.program_code)));
+    const alertas = reminders
+      .filter((r) => r.tipo_proceso !== "PM")
+      .filter((r) => {
+        const prog = findProgramByCode(programasDelModulo, r.program_code);
+        if (remModalidad !== "Todos" && normalizarNivelPrograma(prog?.modalidad) !== normalizarNivelPrograma(remModalidad)) return false;
+        if (remTipoPosgrado !== "Todos" && (!prog || tipoPosgrado(prog) !== remTipoPosgrado)) return false;
+        return !procesosDelModulo.some((p) => p.program_code === r.program_code && p.tipo_proceso === r.tipo_proceso);
+      });
+    return {
+      RC: activos.filter((p) => p.tipo_proceso === "RC").length,
+      AV: activos.filter((p) => p.tipo_proceso === "AV").length,
+      AE: activos.filter((p) => p.tipo_proceso === "AE").length,
+      PM: pm.length,
+      alertas: alertas.length,
+      atencion: alertas.filter(alertaRequiereAtencion).length,
+    };
+  })();
+
+  /** Las tarjetas de resumen son excluyentes: elegir una quita la anterior (null = ninguna). */
+  const seleccionarTarjetaAlertas = (sel: { tipo?: string; vista?: "alertas"; atencion?: boolean } | null) => {
+    setRemTipoProceso(sel?.tipo ?? "Todos");
+    setRemSubtipo("Todos");
+    setRemVista(sel?.vista ?? (sel?.atencion ? "alertas" : "todo"));
+    setRemSoloAtencion(!!sel?.atencion);
+  };
+
+  const coincideBusquedaAlertas = (nombre: string | null | undefined) =>
+    !remBusqueda.trim() || normalizarBusqueda(nombre ?? "").includes(normalizarBusqueda(remBusqueda.trim()));
+
+  const filasActivasVisibles = (remVista === "alertas" || remSoloAtencion)
+    ? []
+    : filasProcesosActivosRcAv.filter(({ prog }) => coincideBusquedaAlertas(prog.nombre));
+  const alertasVisibles = remVista === "activos"
+    ? []
+    : remindersOrdenados.filter((r) => coincideBusquedaAlertas(r.nombre_programa) && (!remSoloAtencion || alertaRequiereAtencion(r)));
+  const pmVisibles = (remVista === "alertas" || remSoloAtencion)
+    ? []
+    : filasActivasPM.filter(({ prog }) => coincideBusquedaAlertas(prog.nombre));
 
   const pqrsOrdenados = useMemo(
     () =>
@@ -1211,66 +1496,86 @@ const ProcessesMenPage = () => {
     }
   };
 
-  const abrirEditorFechaTabla = (
-    target: DateEditTarget,
-    currentDate: string | null | undefined,
-  ) => {
-    setDateEditTarget(target);
-    setDateEditValue(currentDate?.slice(0, 10) ?? "");
+  const abrirEdicionFila = (fila: FilaEdicion) => {
+    setFilaEdicion(fila);
+    setFilaValores(Object.fromEntries(fila.campos.map((c) => [claveCampoFila(c), c.valor?.slice(0, 10) ?? ""])));
     setDateEditError(null);
   };
 
-  const guardarFechaTabla = async () => {
-    if (!dateEditTarget || savingTableDate || !puedeGestionarProcesosMen) return;
+  /** Guarda solo las fechas que cambiaron, agrupadas en una petición por proceso/programa. */
+  const guardarFila = async () => {
+    if (!filaEdicion || savingTableDate || !puedeGestionarProcesosMen) return;
+    const cambios = new Map<string, { resource: CampoFechaFila["resource"]; id: string; payload: Record<string, string | null> }>();
+    for (const c of filaEdicion.campos) {
+      const nuevo = filaValores[claveCampoFila(c)] ?? "";
+      if (nuevo === (c.valor?.slice(0, 10) ?? "")) continue;
+      const k = `${c.resource}:${c.id}`;
+      if (!cambios.has(k)) cambios.set(k, { resource: c.resource, id: c.id, payload: {} });
+      cambios.get(k)!.payload[c.field] = nuevo || null;
+    }
+    if (cambios.size === 0) {
+      setFilaEdicion(null);
+      return;
+    }
     setSavingTableDate(true);
     setDateEditError(null);
     try {
       const base = process.env.NEXT_PUBLIC_API_URL;
-      const url = `${base}/${dateEditTarget.resource === "process" ? "processes" : "programs"}/${dateEditTarget.id}`;
-      const res = await axios.put(url, {
-        [dateEditTarget.field]: dateEditValue || null,
-      });
-
-      if (dateEditTarget.resource === "process") {
-        const updated = res.data as Process;
-        setProcesos((previous) => previous.map((item) => item._id === updated._id ? updated : item));
-      } else {
-        const updated = res.data as Program;
-        setProgramas((previous) => previous.map((item) => item._id === updated._id ? updated : item));
+      for (const { resource, id, payload } of cambios.values()) {
+        const res = await axios.put(`${base}/${resource === "process" ? "processes" : "programs"}/${id}`, payload);
+        if (resource === "process") {
+          const updated = res.data as Process;
+          setProcesos((previous) => previous.map((item) => item._id === updated._id ? updated : item));
+        } else {
+          const updated = res.data as Program;
+          setProgramas((previous) => previous.map((item) => item._id === updated._id ? updated : item));
+        }
       }
-
-      setDateEditTarget(null);
+      setFilaEdicion(null);
     } catch (error) {
-      console.error("Error actualizando fecha desde alertas:", error);
+      console.error("Error actualizando fechas desde alertas:", error);
       setDateEditError(axios.isAxiosError(error)
-        ? error.response?.data?.error || "No se pudo guardar la fecha. Intenta de nuevo."
-        : "No se pudo guardar la fecha. Intenta de nuevo.");
+        ? error.response?.data?.error || "No se pudieron guardar las fechas. Intenta de nuevo."
+        : "No se pudieron guardar las fechas. Intenta de nuevo.");
     } finally {
       setSavingTableDate(false);
     }
   };
 
-  const renderFechaEditable = (
-    fecha: string | null | undefined,
-    target: DateEditTarget,
-  ) => (
-    <Group gap={2} justify="center" wrap="nowrap">
-      <Text size="xs" ta="center">{formatFechaDDMMYY(fecha)}</Text>
-      {puedeGestionarProcesosMen && (
-        <Tooltip label={`Editar ${target.label.toLowerCase()}`} withArrow>
-          <ActionIcon
-            variant="subtle"
-            color="blue"
-            size="sm"
-            aria-label={`Editar ${target.label.toLowerCase()} de ${target.programName}`}
-            onClick={() => abrirEditorFechaTabla(target, fecha)}
-          >
-            <IconPencil size={14} stroke={1.7} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-    </Group>
+  const renderFecha = (fecha: string | null | undefined) => (
+    <Text size="xs" fw={fecha ? 600 : 400} c={fecha ? undefined : "dimmed"} ta="center" style={{ whiteSpace: "nowrap" }}>
+      {formatFechaDDMMYY(fecha)}
+    </Text>
   );
+
+  const renderFechaVencimiento = (fecha: string | null | undefined) => {
+    const rel = vencimientoRelativo(fecha);
+    return (
+      <Stack gap={0} align="center">
+        {renderFecha(fecha)}
+        {rel && <Text size="xs" fw={600} c={rel.color} style={{ whiteSpace: "nowrap" }}>{rel.texto}</Text>}
+      </Stack>
+    );
+  };
+
+  const botonEditarFila = (fila: FilaEdicion) => puedeGestionarProcesosMen ? (
+    <Tooltip label="Editar fechas de esta fila" withArrow>
+      <Button
+        size="xs"
+        variant="light"
+        color="blue"
+        radius="md"
+        leftSection={<IconEdit size={14} />}
+        aria-label={`Editar fechas de ${fila.programName}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          abrirEdicionFila(fila);
+        }}
+      >
+        Editar
+      </Button>
+    </Tooltip>
+  ) : null;
 
   const irAGestionarProcesoDesdeModal = async (args: {
     programId?: string;
@@ -1481,45 +1786,56 @@ const ProcessesMenPage = () => {
       </Modal>
 
       <Modal
-        opened={dateEditTarget !== null}
+        opened={filaEdicion !== null}
         onClose={() => {
           if (!savingTableDate) {
-            setDateEditTarget(null);
+            setFilaEdicion(null);
             setDateEditError(null);
           }
         }}
-        title={`Editar ${dateEditTarget?.label ?? "fecha"}`}
+        title={<Text fw={700}>Editar fechas</Text>}
         centered
-        size="xs"
+        size="md"
         radius="md"
         closeOnClickOutside={!savingTableDate}
         closeOnEscape={!savingTableDate}
         withCloseButton={!savingTableDate}
       >
         <Stack gap="sm">
-          <Text size="sm" c="dimmed">{dateEditTarget?.programName}</Text>
-          <TextInput
-            type="date"
-            label={dateEditTarget?.label}
-            value={dateEditValue}
-            onChange={(event) => setDateEditValue(event.currentTarget.value)}
-            disabled={savingTableDate}
-          />
-          <Text size="xs" c="dimmed">Deja el campo vacío para quitar la fecha.</Text>
+          <Group gap={8}>
+            {filaEdicion && <Badge variant="light" color={TIPO_COLOR[filaEdicion.tipo] ?? "gray"}>{filaEdicion.tipo}</Badge>}
+            <Text size="sm" fw={600}>{filaEdicion?.programName}</Text>
+          </Group>
+          <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
+            {filaEdicion?.campos.map((c) => (
+              <TextInput
+                key={claveCampoFila(c)}
+                type="date"
+                label={c.label.charAt(0).toUpperCase() + c.label.slice(1)}
+                value={filaValores[claveCampoFila(c)] ?? ""}
+                onChange={(event) => {
+                  const v = event.currentTarget.value;
+                  setFilaValores((prev) => ({ ...prev, [claveCampoFila(c)]: v }));
+                }}
+                disabled={savingTableDate}
+              />
+            ))}
+          </SimpleGrid>
+          <Text size="xs" c="dimmed">Deja un campo vacío para quitar esa fecha. Solo se guardan las fechas que cambies.</Text>
           {dateEditError && <Text size="sm" c="red" role="alert">{dateEditError}</Text>}
           <Group justify="flex-end">
             <Button
               variant="default"
               disabled={savingTableDate}
               onClick={() => {
-                setDateEditTarget(null);
+                setFilaEdicion(null);
                 setDateEditError(null);
               }}
             >
               Cancelar
             </Button>
-            <Button loading={savingTableDate} onClick={() => void guardarFechaTabla()}>
-              Guardar
+            <Button loading={savingTableDate} onClick={() => void guardarFila()}>
+              Guardar cambios
             </Button>
           </Group>
         </Stack>
@@ -1589,6 +1905,10 @@ const ProcessesMenPage = () => {
                     <NavLink label="Información del programa" leftSection={<IconArchive size={16} />} color="blue"
                       active={navigationSection === "informacion"}
                       onClick={irAInformacionPrograma} style={{ borderRadius: 8 }} />
+                    <NavLink label="Buzón" leftSection={<IconMail size={16} />} color="blue"
+                      active={navigationSection === "buzon"}
+                      onClick={() => { setActiveParentSection(null); setActiveSection("buzon"); }}
+                      style={{ borderRadius: 8 }} />
                   </Stack>
                 )}
 
@@ -1607,13 +1927,12 @@ const ProcessesMenPage = () => {
                       style={{ borderRadius: 8 }} />
                     <NavLink label="PQRs activos" leftSection={<IconList size={16} />} color="teal"
                       active={pqrSeccion === "activos"} onClick={() => setPqrSeccion("activos")}
-                      style={{ borderRadius: 8 }}>
-                      {pqrs.filter((p) => !p.cerrado).length > 0 && (
-                        <Badge size="xs" color="teal" variant="filled" ml={6}>
+                      rightSection={pqrs.filter((p) => !p.cerrado).length > 0 ? (
+                        <Badge size="sm" color="teal" variant="filled" circle>
                           {pqrs.filter((p) => !p.cerrado).length}
                         </Badge>
-                      )}
-                    </NavLink>
+                      ) : null}
+                      style={{ borderRadius: 8 }} />
                     <NavLink label="Historial PQR" leftSection={<IconArchive size={16} />} color="teal"
                       active={pqrSeccion === "historial"} onClick={() => setPqrSeccion("historial")}
                       style={{ borderRadius: 8 }} />
@@ -1624,112 +1943,46 @@ const ProcessesMenPage = () => {
                 )}
               </>
             ) : (
-              <Box
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minHeight: 0,
-                  paddingBlock: 16,
-                  gap: 20,
-                }}
-              >
-                {processesMenModulo === "procesos" && (
-                  <Stack gap={14} align="center">
-                    <Tooltip label="Estadisticas generales" position="right" withArrow>
+              /* Menú contraído: mismos íconos y grupos que el menú abierto, alineados arriba */
+              <Stack gap={4} align="center" pt={4}>
+                {(processesMenModulo === "procesos"
+                  ? [
+                      { label: "Estadísticas generales", icon: IconChartBar, color: "green", activo: navigationSection === "main", onClick: () => { setActiveParentSection(null); setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); } },
+                      "divider",
+                      { label: "Alertas de procesos", icon: IconBellRinging, color: "blue", activo: navigationSection === "alertas", onClick: () => { setActiveParentSection(null); setActiveSection("alertas"); } },
+                      { label: "Historial de procesos", icon: IconHistory, color: "blue", activo: navigationSection === "historial", onClick: () => { setActiveParentSection(null); setActiveSection("historial"); } },
+                      "divider",
+                      { label: "Comunicaciones MEN", icon: IconMessageCircle, color: "teal", activo: false, onClick: () => { irAModuloMen("comunicaciones"); setPqrSeccion("activos"); } },
+                      { label: "Tareas asignadas", icon: IconList, color: "violet", activo: false, onClick: () => router.push("/processes-MEN/tasks") },
+                      { label: "Información del programa", icon: IconArchive, color: "blue", activo: navigationSection === "informacion", onClick: irAInformacionPrograma },
+                      { label: "Buzón", icon: IconMail, color: "blue", activo: navigationSection === "buzon", onClick: () => { setActiveParentSection(null); setActiveSection("buzon"); } },
+                    ]
+                  : [
+                      { label: "Agregar PQR", icon: IconPlus, color: "teal", activo: pqrSeccion === "agregar", onClick: () => setPqrSeccion("agregar") },
+                      { label: "PQRs activos", icon: IconList, color: "teal", activo: pqrSeccion === "activos", onClick: () => setPqrSeccion("activos") },
+                      { label: "Historial PQR", icon: IconArchive, color: "teal", activo: pqrSeccion === "historial", onClick: () => setPqrSeccion("historial") },
+                      "divider",
+                      { label: "Gestión de procesos MEN", icon: IconChartBar, color: "green", activo: false, onClick: () => irAModuloMen("procesos") },
+                    ]
+                ).map((item, idx) =>
+                  typeof item === "string" ? (
+                    <Divider key={`div-${idx}`} w={28} my={6} />
+                  ) : (
+                    <Tooltip key={item.label} label={item.label} position="right" withArrow>
                       <ActionIcon
-                        size="xl"
-                        variant={navigationSection === "main" ? "filled" : "default"}
-                        color="blue"
-                        onClick={() => { setActiveParentSection(null); setActiveSection("main"); setPrograma("Todos"); setNivelAcademico("Todos"); }}
+                        size={40}
+                        radius="md"
+                        variant={item.activo ? "light" : "subtle"}
+                        color={item.activo ? item.color : "gray"}
+                        aria-label={item.label}
+                        onClick={item.onClick}
                       >
-                        <IconChartBar size={20} stroke={1.5} />
+                        <item.icon size={20} stroke={1.6} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label="Alertas de procesos" position="right" withArrow>
-                      <ActionIcon
-                        size="xl"
-                        variant={navigationSection === "alertas" ? "filled" : "default"}
-                        color="blue"
-                        onClick={() => { setActiveParentSection(null); setActiveSection("alertas"); }}
-                      >
-                        <IconBellRinging size={20} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Historial de procesos" position="right" withArrow>
-                      <ActionIcon
-                        size="xl"
-                        variant={navigationSection === "historial" ? "filled" : "default"}
-                        color="blue"
-                        onClick={() => { setActiveParentSection(null); setActiveSection("historial"); }}
-                      >
-                        <IconHistory size={20} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Información del programa" position="right" withArrow>
-                      <ActionIcon
-                        size="xl"
-                        variant={navigationSection === "informacion" ? "filled" : "default"}
-                        color="blue"
-                        onClick={irAInformacionPrograma}
-                      >
-                        <IconArchive size={20} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Comunicaciones MEN (PQR)" position="right" withArrow>
-                      <ActionIcon
-                        size="lg"
-                        variant="default"
-                        color="teal"
-                        onClick={() => { irAModuloMen("comunicaciones"); setPqrSeccion("activos"); }}
-                      >
-                        <IconMessageCircle size={18} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Stack>
+                  ),
                 )}
-                {processesMenModulo === "comunicaciones" && (
-                  <Stack gap={14} align="center">
-                    <Tooltip label="Agregar PQR" position="right" withArrow>
-                      <ActionIcon
-                        size="lg"
-                        variant={pqrSeccion === "agregar" ? "filled" : "default"}
-                        color="teal"
-                        onClick={() => setPqrSeccion("agregar")}
-                      >
-                        <IconPlus size={18} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="PQRs activos" position="right" withArrow>
-                      <ActionIcon
-                        size="lg"
-                        variant={pqrSeccion === "activos" ? "filled" : "default"}
-                        color="teal"
-                        onClick={() => setPqrSeccion("activos")}
-                      >
-                        <IconList size={18} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Historial PQR" position="right" withArrow>
-                      <ActionIcon
-                        size="lg"
-                        variant={pqrSeccion === "historial" ? "filled" : "default"}
-                        color="teal"
-                        onClick={() => setPqrSeccion("historial")}
-                      >
-                        <IconArchive size={18} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Volver a gestión de procesos" position="right" withArrow>
-                      <ActionIcon size="lg" variant="default" color="blue" onClick={() => irAModuloMen("procesos")}>
-                        <IconChartBar size={18} stroke={1.5} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Stack>
-                )}
-              </Box>
+              </Stack>
             )}
           </Stack>
         ) : (
@@ -1805,58 +2058,84 @@ const ProcessesMenPage = () => {
       <Modal
         opened={modalListaProgramas !== null}
         onClose={() => setModalListaProgramas(null)}
-        title={modalListaProgramas?.titulo ?? ""}
+        centered
+        radius="lg"
         size="lg"
-        radius="md"
-        scrollAreaComponent={ScrollArea.Autosize}
+        padding={0}
+        withCloseButton={false}
       >
-        {modalListaProgramas && (
-          modalListaProgramas.lista.length === 0 ? (
-            <Text size="sm" c="dimmed">No hay programas en esta categoría con el filtro actual.</Text>
-          ) : (
-            <Table striped highlightOnHover withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Programa</Table.Th>
-                  <Table.Th w={120}>Estado MEN</Table.Th>
-                  <Table.Th w={100} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {modalListaProgramas.lista.map((p) => (
-                  <Table.Tr key={p._id}>
-                    <Table.Td>
-                      <Text size="sm" fw={500}>{p.nombre}</Text>
-                      {lineasAuxPrograma(p).map((ln, idx) => (
-                        <Text key={idx} size="xs" c="dimmed">{ln}</Text>
+        {modalListaProgramas && (() => {
+          const color = modalListaProgramas.color ?? "blue";
+          return (
+            <>
+              <Box px="lg" py="md" style={{ backgroundColor: `var(--mantine-color-${color}-light)`, borderBottom: `1px solid var(--mantine-color-${color}-2)` }}>
+                <Group justify="space-between" align="flex-start" wrap="nowrap">
+                  <Box>
+                    <Text size="xs" fw={800} tt="uppercase" c={`${color}.8`} style={{ letterSpacing: 0.4 }}>Estadísticas generales</Text>
+                    <Text fw={700} size="lg" lh={1.25} mt={2}>{modalListaProgramas.titulo}</Text>
+                    <Badge size="sm" variant="white" color={color} tt="none" mt={6}>
+                      {modalListaProgramas.lista.length} {modalListaProgramas.lista.length === 1 ? "programa" : "programas"}
+                    </Badge>
+                  </Box>
+                  <ActionIcon variant="subtle" color="gray" radius="xl" aria-label="Cerrar" onClick={() => setModalListaProgramas(null)}>
+                    <IconX size={18} />
+                  </ActionIcon>
+                </Group>
+              </Box>
+              <Box p="md">
+                {modalListaProgramas.lista.length === 0 ? (
+                  <Stack align="center" gap={6} py="lg">
+                    <ThemeIcon size={44} radius="xl" variant="light" color="gray"><IconSchool size={22} /></ThemeIcon>
+                    <Text size="sm" c="dimmed">No hay programas en esta categoría con el filtro actual.</Text>
+                  </Stack>
+                ) : (
+                  <ScrollArea.Autosize mah="60vh">
+                    <Stack gap="xs">
+                      {modalListaProgramas.lista.map((p) => (
+                        <UnstyledButton
+                          key={p._id}
+                          className="men-programa-lista"
+                          style={{ borderRadius: 10 }}
+                          onClick={() => {
+                            router.push(processesMenRoutes.program(p._id));
+                            setModalListaProgramas(null);
+                          }}
+                        >
+                          <Paper withBorder radius="md" p="sm" style={{ borderLeft: `4px solid var(--mantine-color-${color}-3)`, backgroundColor: "transparent" }}>
+                            <Group justify="space-between" wrap="nowrap" gap="sm">
+                              <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                                <ThemeIcon size={36} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+                                  <IconSchool size={18} />
+                                </ThemeIcon>
+                                <Box style={{ minWidth: 0 }}>
+                                  <Text fw={700} size="sm">{p.nombre}</Text>
+                                  <Text size="xs" c="dimmed">{lineasAuxPrograma(p).join(" · ")}</Text>
+                                </Box>
+                              </Group>
+                              <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                                {p.estado && (
+                                  <Badge size="sm" variant="dot" color={p.estado === "Activo" ? "teal" : "gray"} tt="none">{p.estado} ante MEN</Badge>
+                                )}
+                                <Text size="xs" c={`${color}.7`} fw={700}>Ver ficha</Text>
+                                <IconChevronRight size={16} color={`var(--mantine-color-${color}-7)`} />
+                              </Group>
+                            </Group>
+                          </Paper>
+                        </UnstyledButton>
                       ))}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        onClick={() => {
-                          router.push(processesMenRoutes.program(p._id));
-                          setModalListaProgramas(null);
-                        }}
-                      >
-                        Ficha
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          )
-        )}
+                    </Stack>
+                  </ScrollArea.Autosize>
+                )}
+              </Box>
+              <style>{`.men-programa-lista:hover > div { background-color: var(--mantine-color-default-hover) !important; }`}</style>
+            </>
+          );
+        })()}
       </Modal>
 
       {/* ── CONTENIDO PRINCIPAL ── */}
       <div style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0, overflow: "auto", padding: "24px", paddingTop: "30px", minHeight: "calc(100vh - 56px)" }}>
-        <Group justify="space-between" align="center" mb="xl" wrap="wrap" gap="md">
+        <Group justify="space-between" align="center" mb="lg" wrap="wrap" gap="md">
           <Group gap={10}>
             <Tooltip
               label={backButtonLabel}
@@ -1888,20 +2167,84 @@ const ProcessesMenPage = () => {
               {processesMenModulo === "comunicaciones" ? <IconMessageCircle size={22} /> : <IconChartBar size={22} />}
             </ThemeIcon>
             <Box>
-              <Title order={2} lh={1.2}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
-              <Text size="sm" fw={600} c="dimmed" mt={4}>Gestiona y da seguimiento a los procesos de calidad ante el Ministerio de Educación.</Text>
+              <Title order={3} lh={1.2}>{processesMenModulo === "comunicaciones" ? "Comunicaciones MEN" : "Procesos de calidad MEN"}</Title>
+              <Text size="xs" c="dimmed" mt={2}>
+                {processesMenModulo === "comunicaciones"
+                  ? "Registra y consulta las comunicaciones relacionadas con el Ministerio de Educación."
+                  : "Gestiona y da seguimiento a los procesos de calidad ante el Ministerio de Educación."}
+              </Text>
             </Box>
           </Group>
         </Group>
+        <Divider mb="lg" />
         {puedeGestionarProcesosMen && (
           <>
             {processesMenModulo === "comunicaciones" && (
               <Stack gap="md">
-                <Box>
-                  <Title order={2} lh={1.2}>Comunicaciones MEN</Title>
-                  <Text size="sm" fw={600} c="dimmed" mt={4}>Registra y consulta las comunicaciones relacionadas con el Ministerio de Educación.</Text>
-                  <Button mt="sm" variant="light" color="teal" onClick={() => setImportarPqrOpen(true)}>Importar PQR desde Excel</Button>
-                </Box>
+                {(() => {
+                  const activos = pqrs.filter((x) => !x.cerrado);
+                  return (
+                    <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
+                      {[
+                        { key: "activos", label: "PQRs activos", detalle: "en seguimiento", valor: activos.length, color: "teal", icon: IconInbox, onClick: () => setPqrSeccion("activos"), activo: pqrSeccion === "activos" },
+                        { key: "respuesta", label: "Sin respuesta", detalle: "activos sin fecha de respuesta", valor: activos.filter((x) => !x.fecha_respuesta).length, color: "orange", icon: IconClock, onClick: () => setPqrSeccion("activos"), activo: false },
+                        { key: "programa", label: "Ligados a programa", detalle: "de los activos", valor: activos.filter((x) => !!x.programa_id).length, color: "blue", icon: IconSchool, onClick: () => setPqrSeccion("activos"), activo: false },
+                        { key: "historial", label: "Cerrados", detalle: "en el historial", valor: pqrs.filter((x) => x.cerrado).length, color: "gray", icon: IconArchive, onClick: () => setPqrSeccion("historial"), activo: pqrSeccion === "historial" },
+                      ].map((x) => (
+                        <Paper
+                          key={x.key}
+                          radius="lg"
+                          p="md"
+                          tabIndex={0}
+                          role="button"
+                          className="men-tile"
+                          onClick={x.onClick}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              x.onClick();
+                            }
+                          }}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: `var(--mantine-color-${x.color}-light)`,
+                            border: `2px solid ${x.activo ? `var(--mantine-color-${x.color}-5)` : "transparent"}`,
+                          }}
+                        >
+                          <Group justify="space-between" wrap="nowrap" align="flex-start" gap={6}>
+                            <Text fw={900} size="1.9rem" lh={1} c={`${x.color}.8`}>{x.valor}</Text>
+                            <ThemeIcon size={34} radius="xl" variant="white" color={x.color}><x.icon size={18} /></ThemeIcon>
+                          </Group>
+                          <Text size="sm" fw={700} mt={8}>{x.label}</Text>
+                          <Text size="xs" c="dimmed">{x.detalle}</Text>
+                        </Paper>
+                      ))}
+                    </SimpleGrid>
+                  );
+                })()}
+                <style>{`.men-tile { transition: transform 120ms ease, box-shadow 120ms ease; } .men-tile:hover { transform: translateY(-2px); box-shadow: var(--mantine-shadow-sm); }`}</style>
+                <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                  <SeccionTitulo
+                    icon={pqrSeccion === "agregar" ? IconPlus : pqrSeccion === "historial" ? IconArchive : IconInbox}
+                    color={pqrSeccion === "historial" ? "gray" : "teal"}
+                    titulo={pqrSeccion === "agregar" ? "Agregar PQR" : pqrSeccion === "historial" ? "Historial de PQR" : "PQRs activos"}
+                    descripcion={pqrSeccion === "agregar"
+                      ? "Registra una nueva solicitud ante el Ministerio."
+                      : pqrSeccion === "historial"
+                        ? "Solicitudes cerradas, solo lectura."
+                        : "Solicitudes en seguimiento. Haz clic en un dato para editarlo."}
+                  />
+                  <Group gap="xs">
+                    {pqrSeccion !== "agregar" && (
+                      <Button variant="filled" color="teal" radius="md" leftSection={<IconPlus size={15} />} onClick={() => setPqrSeccion("agregar")}>
+                        Nuevo PQR
+                      </Button>
+                    )}
+                    <Button variant="light" color="teal" radius="md" leftSection={<IconFileSpreadsheet size={15} />} onClick={() => setImportarPqrOpen(true)}>
+                      Importar desde Excel
+                    </Button>
+                  </Group>
+                </Group>
                 {importarPqrOpen && <PQRImportModal
                   opened={importarPqrOpen}
                   onClose={() => setImportarPqrOpen(false)}
@@ -1912,9 +2255,11 @@ const ProcessesMenPage = () => {
                     void cargarPQRs();
                   }}
                 />}
-                <Paper withBorder radius="md" p="md" style={{ overflow: "auto" }}>
+                <Box>
                   {pqrSeccion === "agregar" && (
-                    <PQRAgregarForm programas={programas} onCreado={handlePQRCreado} showHeader />
+                    <Paper withBorder radius="lg" p="lg">
+                      <PQRAgregarForm programas={programas} onCreado={handlePQRCreado} />
+                    </Paper>
                   )}
                   {pqrSeccion === "activos" && (
                     <PQRActivosView
@@ -1927,7 +2272,7 @@ const ProcessesMenPage = () => {
                   {pqrSeccion === "historial" && (
                     <PQRHistorialView pqrs={pqrsOrdenados} programas={programas} />
                   )}
-                </Paper>
+                </Box>
               </Stack>
             )}
 
@@ -1935,7 +2280,7 @@ const ProcessesMenPage = () => {
             <>
             {activeSection === "main" && (
               <Box mb="md">
-                <Title order={2} lh={1.2}>Estadísticas generales</Title>
+                <Text fw={700} size="xl" lh={1.2}>Estadísticas generales</Text>
                 <Text size="sm" c="dimmed" mt={4}>
                   Consulta el estado general de los procesos de calidad y sus programas asociados.
                 </Text>
@@ -1943,9 +2288,9 @@ const ProcessesMenPage = () => {
             )}
             {activeSection === "informacion" && (
               <Box mb="md">
-                <Title order={2} lh={1.2}>
+                <Text fw={700} size="xl" lh={1.2}>
                   {activeParentSection === "alertas" ? "Gestión" : "Información del programa"}
-                </Title>
+                </Text>
                 <Text size="sm" c="dimmed" mt={4}>
                   {activeParentSection === "alertas"
                     ? "Gestiona el proceso seleccionado."
@@ -1955,21 +2300,31 @@ const ProcessesMenPage = () => {
             )}
             {(activeSection === "main" || activeSection === "informacion") && activeParentSection !== "alertas" && !loadingFilters && (
               activeSection === "informacion" ? (
-                <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
+                <Paper withBorder radius="lg" p="md" mb="md">
+                  <FiltrosEncabezado
+                    hayFiltros={facultad !== "Todos" || programa !== "Todos"}
+                    onLimpiar={() => {
+                      setFacultad("Todos");
+                      setPrograma("Todos");
+                      setNivelAcademico("Todos");
+                    }}
+                  />
                   <Group gap="sm" wrap="wrap" align="flex-end">
                     <Select
+                      label="Facultad"
                       placeholder="Todas las facultades"
                       data={opcionesFacultad}
                       value={facultad}
                       onChange={handleFacultadChange}
                       clearable
                       searchable={false}
-                      size="xs"
-                      w={220}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                      w={300}
+                      styles={selectorStyleFilters}
                     />
                     <Select
-                      placeholder="Todos los programas"
+                      label="Ir a la ficha de un programa"
+                      leftSection={<IconSearch size={15} />}
+                      placeholder="Buscar programa..."
                       data={opcionesPrograma}
                       value={programa}
                       onChange={(v) => {
@@ -1983,44 +2338,27 @@ const ProcessesMenPage = () => {
                       }}
                       clearable
                       searchable
-                      size="xs"
-                      w={240}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
+                      w={340}
                     />
-                    {(facultad !== "Todos" || programa !== "Todos") && (
-                      <Button
-                        size="xs"
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => {
-                          setFacultad("Todos");
-                          setPrograma("Todos");
-                          setNivelAcademico("Todos");
-                        }}
-                      >
-                        Limpiar filtros
-                      </Button>
-                    )}
                   </Group>
                 </Paper>
               ) : (
-                <Paper withBorder radius="md" p="sm" mb="md">
-                  <Flex
-                    gap={8}
-                    align="flex-end"
-                    wrap="nowrap"
-                    w="100%"
-                    style={{
-                      minWidth: 0,
-                      overflowX: "auto",
-                      paddingBottom: 2,
+                <Paper withBorder radius="lg" p="md" mb="lg">
+                  <FiltrosEncabezado
+                    hayFiltros={facultad !== "Todos" || programa !== "Todos" || nivelAcademico !== "Todos" || tipoProceso !== "Todos" || subtipoFiltro !== "Todos"}
+                    onLimpiar={() => {
+                      setFacultad("Todos");
+                      setPrograma("Todos");
+                      setNivelAcademico("Todos");
+                      setTipoProceso("Todos");
+                      setSubtipoFiltro("Todos");
                     }}
-                  >
+                  />
+                  <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 5 }} spacing="sm">
                     <Select
                       label="Facultad"
                       data={opcionesFacultad}
                       value={facultad}
-                      style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
                       onChange={handleFacultadChange}
                       searchable={false}
                       styles={selectorStyleFilters}
@@ -2029,7 +2367,6 @@ const ProcessesMenPage = () => {
                       label="Programa"
                       data={opcionesPrograma}
                       value={programa}
-                      style={{ flex: "1.4 1 150px", minWidth: 0, maxWidth: 300 }}
                       searchable
                       onChange={(v) => {
                         const n = v ?? "Todos";
@@ -2044,7 +2381,6 @@ const ProcessesMenPage = () => {
                           label="Nivel académico"
                           data={opcionesNivelAcademico}
                           value={nivelAcademico}
-                          style={{ flex: "0.9 1 108px", minWidth: 0, maxWidth: 185 }}
                           onChange={(v) => setNivelAcademico(v ?? "Todos")}
                           searchable={false}
                           styles={selectorStyleFilters}
@@ -2053,7 +2389,6 @@ const ProcessesMenPage = () => {
                           label="Tipo de proceso"
                           data={opcionesTipoProceso}
                           value={tipoProceso}
-                          style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 235 }}
                           onChange={(v) => {
                             setTipoProceso(v ?? "Todos");
                             setSubtipoFiltro("Todos");
@@ -2065,14 +2400,13 @@ const ProcessesMenPage = () => {
                           label="Subtipo"
                           data={opcionesSubtipoFiltroData}
                           value={subtipoFiltro}
-                          style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
                           onChange={(v) => setSubtipoFiltro(v ?? "Todos")}
                           searchable={false}
                           styles={selectorStyleFiltersSubtipo}
                         />
                       </>
                     )}
-                  </Flex>
+                  </SimpleGrid>
                 </Paper>
               )
             )}
@@ -2084,126 +2418,71 @@ const ProcessesMenPage = () => {
             {(activeSection === "main" || activeSection === "informacion") && !loadingFilters && (
             <>
             {activeSection === "main" && (
-              <Stack gap="lg" mb="lg">
-                <Paper
-                  radius="xl"
-                  p="md"
-                  style={{
-                    backgroundColor: "#eef9fd",
-                    border: "2px solid #a5d8ff",
-                  }}
-                >
-                  <Stack gap="sm">
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                      {[
-                        { label: "Programas vigentes", valor: totalVigentes, lista: listaRcVigente, titulo: "Programas con RC vigente" },
-                        { label: "Programas inactivos", valor: totalSinRcVigente, lista: listaSinRcVigente, titulo: "Programas sin RC vigente" },
-                        { label: "Programas en modificación", valor: listaProgEnReforma.length, lista: listaProgEnReforma, titulo: "Programas en proceso de modificación" },
-                        { label: "Programas con RC oficio", valor: totalProgRCOficio, lista: listaProgRcOficio, titulo: "Programas con RC de oficio vigente" },
-                      ].map((c) => (
-                        <Paper
-                          key={c.label}
-                          radius="lg"
-                          p="md"
-                          style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
-                          tabIndex={0}
-                          role="button"
-                          onClick={() => setModalListaProgramas({ titulo: c.titulo, lista: c.lista })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setModalListaProgramas({ titulo: c.titulo, lista: c.lista });
-                            }
-                          }}
-                        >
-                          <Text size="sm" fw={600} c="#1971c2" td="underline">{c.label}</Text>
-                          <Text size="xl" fw={700} c="#228be6" mt={4}>{c.valor}</Text>
-                        </Paper>
-                      ))}
-                    </SimpleGrid>
+              <Stack gap="xl" mb="xl">
+                <Box>
+                  <SeccionTitulo
+                    icon={IconSchool}
+                    color="blue"
+                    titulo="Programas y registro calificado"
+                    descripcion="Haz clic en un indicador para ver el listado de programas."
+                  />
+                  <SimpleGrid cols={{ base: 1, xs: 2, md: 3, xl: 5 }} spacing="md">
+                    {[
+                      { label: "Programas vigentes", valor: totalVigentes, lista: listaRcVigente, titulo: "Programas con RC vigente", color: "teal", icon: IconCircleCheck },
+                      { label: "Programas inactivos", valor: totalSinRcVigente, lista: listaSinRcVigente, titulo: "Programas sin RC vigente", color: "red", icon: IconCircleX },
+                      { label: "En modificación", valor: listaProgEnReforma.length, lista: listaProgEnReforma, titulo: "Programas en proceso de modificación", color: "orange", icon: IconEdit },
+                      { label: "Con RC de oficio", valor: totalProgRCOficio, lista: listaProgRcOficio, titulo: "Programas con RC de oficio vigente", color: "cyan", icon: IconFileCertificate },
+                      { label: "Total registrados", valor: totalProgramas, lista: programasFiltradosCompleto, titulo: "Programas registrados", color: "blue", icon: IconSchool },
+                    ].map((c) => (
+                      <StatTile
+                        key={c.label}
+                        label={c.label}
+                        value={c.valor}
+                        color={c.color}
+                        icon={c.icon}
+                        onOpen={() => setModalListaProgramas({ titulo: c.titulo, lista: c.lista, color: c.color })}
+                      />
+                    ))}
+                  </SimpleGrid>
+                </Box>
 
-                    <Paper
-                      radius="lg"
-                      p="md"
-                      style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
-                      tabIndex={0}
-                      role="button"
-                      onClick={() => setModalListaProgramas({ titulo: "Programas registrados", lista: programasFiltradosCompleto })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setModalListaProgramas({ titulo: "Programas registrados", lista: programasFiltradosCompleto });
-                        }
-                      }}
-                    >
-                      <Text size="sm" fw={600} c="#1971c2" td="underline">Total de programas registrados</Text>
-                      <Text size="xl" fw={700} c="#228be6" mt={4}>{totalProgramas}</Text>
-                    </Paper>
-                  </Stack>
-                </Paper>
-
-                <Paper
-                  radius="xl"
-                  p="md"
-                  style={{
-                    backgroundColor: "#faf0ff",
-                    border: "2px solid #d0bfff",
-                  }}
-                >
-                  <Stack gap="sm">
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                      {[
-                        { label: "Acreditados", valor: totalAcreditados, lista: listaAvVigente, titulo: "Programas con AV vigente" },
-                        { label: "% acreditados", valor: `${pctAcreditados}%`, lista: listaAvVigente, titulo: "Programas con AV vigente" },
-                        { label: "Acreditables", valor: totalAcreditables, lista: listaAcreditables, titulo: "Programas marcados como acreditables" },
-                        { label: "% acreditables", valor: `${pctAcreditables}%`, lista: listaAcreditables, titulo: "Programas marcados como acreditables" },
-                        { label: "Programas no acreditados", valor: totalNoAcreditados, lista: listaNoAcreditados, titulo: "Programas sin AV vigente" },
-                        { label: "Programas en PM", valor: totalProgConPm, lista: listaProgConPm, titulo: "Programas con plan de mejoramiento activo" },
-                      ].map((c) => (
-                        <Paper
-                          key={c.label}
-                          radius="lg"
-                          p="md"
-                          style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
-                          tabIndex={0}
-                          role="button"
-                          onClick={() => setModalListaProgramas({ titulo: c.titulo, lista: c.lista })}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              setModalListaProgramas({ titulo: c.titulo, lista: c.lista });
-                            }
-                          }}
-                        >
-                          <Text size="sm" fw={600} c="#9c36b5" td="underline">{c.label}</Text>
-                          <Text size="xl" fw={700} c="#ae3ec9" mt={4}>{c.valor}</Text>
-                        </Paper>
-                      ))}
-                    </SimpleGrid>
-
-                    <Paper
-                      radius="lg"
-                      p="md"
-                      style={{ textAlign: "center", backgroundColor: "white", cursor: "pointer" }}
-                      tabIndex={0}
-                      role="button"
-                      onClick={() => setModalListaProgramas({ titulo: "Programas base para mínimo de acreditación", lista: listaMinimoAcreditacion })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          setModalListaProgramas({ titulo: "Programas base para mínimo de acreditación", lista: listaMinimoAcreditacion });
-                        }
-                      }}
-                    >
-                      <Text size="sm" fw={600} c="#9c36b5" td="underline">Mínimo programas para acreditación de la U</Text>
-                      <Text size="xl" fw={700} c="#ae3ec9" mt={4}>{minimoProgramasAcreditacion}</Text>
-                      <Text size="xs" c="dimmed" mt={4}>
-                        Fórmula: ({totalAcreditados} acreditados + {totalAcreditables} acreditables) x 30%
-                      </Text>
-                    </Paper>
-                  </Stack>
-                </Paper>
-
+                <Box>
+                  <SeccionTitulo
+                    icon={IconAward}
+                    color="violet"
+                    titulo="Acreditación de alta calidad"
+                    descripcion="Estado de acreditación voluntaria y planes de mejoramiento."
+                  />
+                  <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
+                    {[
+                      { label: "Acreditados", valor: totalAcreditados, lista: listaAvVigente, titulo: "Programas con AV vigente", color: "violet", icon: IconAward },
+                      { label: "% acreditados", valor: `${pctAcreditados}%`, lista: listaAvVigente, titulo: "Programas con AV vigente", color: "violet", icon: IconPercentage },
+                      { label: "Acreditables", valor: totalAcreditables, lista: listaAcreditables, titulo: "Programas marcados como acreditables", color: "grape", icon: IconCertificate },
+                      { label: "% acreditables", valor: `${pctAcreditables}%`, lista: listaAcreditables, titulo: "Programas marcados como acreditables", color: "grape", icon: IconPercentage },
+                      { label: "No acreditados", valor: totalNoAcreditados, lista: listaNoAcreditados, titulo: "Programas sin AV vigente", color: "gray", icon: IconCircleX },
+                      { label: "En plan de mejoramiento", valor: totalProgConPm, lista: listaProgConPm, titulo: "Programas con plan de mejoramiento activo", color: "indigo", icon: IconClipboardList },
+                    ].map((c) => (
+                      <StatTile
+                        key={c.label}
+                        label={c.label}
+                        value={c.valor}
+                        color={c.color}
+                        icon={c.icon}
+                        onOpen={() => setModalListaProgramas({ titulo: c.titulo, lista: c.lista, color: c.color })}
+                      />
+                    ))}
+                    <Box style={{ gridColumn: "span 2" }}>
+                      <StatTile
+                        label="Mínimo de programas para acreditación institucional"
+                        value={minimoProgramasAcreditacion}
+                        color="violet"
+                        icon={IconTarget}
+                        hint={`Fórmula: (${totalAcreditados} acreditados + ${totalAcreditables} acreditables) × 30%`}
+                        onOpen={() => setModalListaProgramas({ titulo: "Programas base para mínimo de acreditación", lista: listaMinimoAcreditacion, color: "violet" })}
+                      />
+                    </Box>
+                  </SimpleGrid>
+                </Box>
               </Stack>
             )}
 
@@ -2211,51 +2490,71 @@ const ProcessesMenPage = () => {
             {activeSection === "informacion" && (
               <>
                 {facultad === "Todos" && programa === "Todos" && (
-                  <Paper withBorder radius="md" p="xl" shadow="xs">
+                  <Paper withBorder radius="lg" p="lg">
                     <Group justify="space-between" align="center" mb="md" wrap="wrap">
-                      <Title order={3} m={0}>Seleccione una facultad</Title>
-                      <Badge size="sm" variant="light" color="blue">{facultades.length} facultades</Badge>
+                      <SeccionTitulo
+                        icon={IconBuildingCommunity}
+                        color="green"
+                        titulo="Selecciona una facultad"
+                        descripcion="Elige una facultad para ver sus programas, o busca un programa arriba."
+                      />
+                      <Badge size="lg" variant="light" color="green" tt="none">{facultades.length} facultades</Badge>
                     </Group>
 
-                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
                       {facultades.map((fac) => {
                         const count = programasDelModulo.filter((p) => p.dep_code_facultad === fac.dep_code).length;
+                        const seleccionar = () => {
+                          setFacultad(fac.name);
+                          setPrograma("Todos");
+                          setNivelAcademico("Todos");
+                        };
                         return (
-                          <Button
+                          <Paper
                             key={fac.dep_code}
-                            variant="light"
-                            color="blue"
-                            justify="space-between"
-                            style={{
-                              minHeight: 72,
-                              padding: "14px 16px",
-                              textAlign: "left",
-                              whiteSpace: "normal",
-                              height: "auto",
+                            withBorder
+                            radius="md"
+                            p="md"
+                            tabIndex={0}
+                            role="button"
+                            className="men-tile"
+                            onClick={seleccionar}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                seleccionar();
+                              }
                             }}
-                            onClick={() => {
-                              setFacultad(fac.name);
-                              setPrograma("Todos");
-                              setNivelAcademico("Todos");
-                            }}
+                            style={{ cursor: "pointer", borderTop: "3px solid var(--mantine-color-green-4)" }}
                           >
-                            <Stack gap={2} align="flex-start" style={{ width: "100%" }}>
-                              <Text fw={600} size="sm" lineClamp={2}>{fac.name}</Text>
-                              <Text size="xs" c="dimmed">{count} programas</Text>
-                            </Stack>
-                          </Button>
+                            <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
+                              <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
+                                <ThemeIcon size={40} radius="xl" variant="light" color="green" style={{ flexShrink: 0 }}>
+                                  <IconBuildingCommunity size={20} />
+                                </ThemeIcon>
+                                <Box style={{ minWidth: 0 }}>
+                                  <Text fw={700} size="sm" lh={1.3}>{nombreLegible(fac.name)}</Text>
+                                  <Text size="xs" c="dimmed" mt={4}>{count} {count === 1 ? "programa" : "programas"}</Text>
+                                </Box>
+                              </Group>
+                              <IconChevronRight size={18} color="var(--mantine-color-green-6)" style={{ flexShrink: 0, marginTop: 10 }} />
+                            </Group>
+                          </Paper>
                         );
                       })}
                     </SimpleGrid>
+                    <style>{`.men-tile { transition: transform 120ms ease, box-shadow 120ms ease; } .men-tile:hover { transform: translateY(-2px); box-shadow: var(--mantine-shadow-sm); }`}</style>
                   </Paper>
                 )}
 
                 {facultad !== "Todos" && programa === "Todos" && (
-                  <Paper withBorder radius="md" p="xl" shadow="xs">
+                  <Paper withBorder radius="lg" p="lg">
                     <Group justify="space-between" align="center" mb="md" wrap="wrap">
-                      <Group gap="sm" align="center">
+                      <Group gap="sm" align="center" wrap="nowrap">
                         <ActionIcon
-                          variant="subtle"
+                          variant="light"
+                          color="green"
+                          radius="xl"
                           aria-label="Cambiar facultad"
                           onClick={() => {
                             setFacultad("Todos");
@@ -2265,28 +2564,31 @@ const ProcessesMenPage = () => {
                         >
                           <IconChevronLeft size={16} />
                         </ActionIcon>
-                        <Title order={3} m={0}>Programas de {facultad}</Title>
+                        <Box>
+                          <Text fw={700} size="lg" lh={1.2}>{nombreLegible(facultad)}</Text>
+                          <Text size="xs" c="dimmed">Selecciona un programa para ver su ficha y sus procesos.</Text>
+                        </Box>
                       </Group>
-                      <Badge size="sm" variant="light" color="blue">{programasFiltrados.length} programas</Badge>
+                      <Badge size="lg" variant="light" color="green" tt="none">{programasFiltrados.length} programas</Badge>
                     </Group>
 
                     {programasFiltrados.length === 0 ? (
                       <Text c="dimmed">No hay programas para esta facultad con el filtro actual.</Text>
                     ) : (
-                      <Table striped highlightOnHover withTableBorder>
+                      <Table highlightOnHover verticalSpacing="sm">
                         <Table.Thead>
-                          <Table.Tr>
-                            <Table.Th>Programa</Table.Th>
-                            <Table.Th w={150}>Estado MEN</Table.Th>
+                          <Table.Tr style={theadRowStyle}>
+                            <Table.Th><Text size="xs" fw={700} style={thTextStyle}>Programa</Text></Table.Th>
+                            <Table.Th w={160}><Text size="xs" fw={700} style={thTextStyle}>Estado MEN</Text></Table.Th>
                             <Table.Th w={140} />
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
                           {programasOrganizadosFacultad.map((grupo) => (
                             <Fragment key={grupo.titulo}>
-                              <Table.Tr style={{ backgroundColor: "var(--mantine-color-blue-light)" }}>
+                              <Table.Tr style={{ backgroundColor: "var(--mantine-color-green-light)" }}>
                                 <Table.Td colSpan={3}>
-                                  <Text size="sm" fw={700} c="blue.9">{grupo.titulo}</Text>
+                                  <Text size="xs" fw={800} tt="uppercase" c="green.8" style={{ letterSpacing: 0.4 }}>{grupo.titulo}</Text>
                                 </Table.Td>
                               </Table.Tr>
                               {grupo.lista.map((p) => (
@@ -2307,15 +2609,20 @@ const ProcessesMenPage = () => {
                                     ))}
                                   </Table.Td>
                                   <Table.Td>
-                                    <Text size="sm">{p.estado ? `${p.estado} ante MEN` : "—"}</Text>
+                                    {p.estado ? (
+                                      <Badge variant="dot" color={p.estado === "Activo" ? "teal" : "gray"} tt="none">{p.estado} ante MEN</Badge>
+                                    ) : <Text size="sm" c="dimmed">—</Text>}
                                   </Table.Td>
                                   <Table.Td>
                                     <Button
                                       size="xs"
                                       variant="light"
+                                      color="green"
+                                      radius="md"
+                                      rightSection={<IconChevronRight size={14} />}
                                       onClick={() => router.push(processesMenRoutes.program(p._id))}
                                     >
-                                      Ver
+                                      Ver ficha
                                     </Button>
                                   </Table.Td>
                                 </Table.Tr>
@@ -2353,47 +2660,35 @@ const ProcessesMenPage = () => {
                             </ActionIcon>
                           </Tooltip>
                         )}
-                        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md" mt="xs">
-                          <Stack gap={6} style={{ flex: 1, minWidth: 200 }}>
-                            <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
-                              <Anchor
-                                href={processesMenRoutes.program(progObj._id)}
-                                underline="always"
-                                c="dark"
-                                style={{ flex: "1 1 10rem", minWidth: 0, lineHeight: 1.25 }}
-                              >
-                                <Title order={2} component="span" style={{ margin: 0, lineHeight: 1.25 }}>
-                                  {progObj.nombre}
-                                </Title>
-                              </Anchor>
-                              <Group gap={6} align="flex-start" wrap="nowrap" style={{ flexShrink: 0, maxWidth: "min(100%, 22rem)" }}>
-                                {rcActivoEncabezado ? (
-                                  <Badge size="sm" color="blue" variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
-                                    {rcActivoEncabezado.tipo_proceso}
-                                  </Badge>
-                                ) : null}
-                                <Badge size="lg" color={progObj.estado === "Activo" ? "teal" : "gray"} variant="filled" style={{ flexShrink: 0, alignSelf: "center" }}>
-                                  {progObj.estado === "Activo" ? "ACTIVO MEN" : "INACTIVO MEN"}
-                                </Badge>
-                                {rcActivoEncabezado?.subtipo ? (
-                                  <Badge
-                                    size="sm"
-                                    variant="outline"
-                                    color="gray"
-                                    styles={stylesSubtipoBadgeTabla(rcActivoEncabezado.subtipo)}
-                                    style={{ flexShrink: 0, alignSelf: "center" }}
-                                  >
-                                    {etiquetaSubtipoCompacta(rcActivoEncabezado.subtipo)}
-                                  </Badge>
-                                ) : null}
-                              </Group>
+                        <Paper withBorder radius="lg" p="md" mt="xs">
+                          <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                            <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                              <ThemeIcon size={44} radius="xl" variant="light" color="green" style={{ flexShrink: 0 }}>
+                                <IconSchool size={22} />
+                              </ThemeIcon>
+                              <Box style={{ minWidth: 0 }}>
+                                <Text fw={800} size="xl" lh={1.2}>{progObj.nombre}</Text>
+                                <Text size="xs" c="dimmed" mt={2}>{lineasAuxPrograma(progObj).join(" · ")}</Text>
+                              </Box>
                             </Group>
-                            {lineasAuxPrograma(progObj).map((ln, i) => (
-                              <Text key={i} size="sm" c="dimmed" fw={500}>{ln}</Text>
-                            ))}
-                          </Stack>
-                        </Group>
-                        <Divider my="md" />
+                            <Group gap="xs" wrap="wrap">
+                              <Badge size="lg" variant="light" color={progObj.estado === "Activo" ? "teal" : "gray"} tt="none"
+                                leftSection={progObj.estado === "Activo" ? <IconCircleCheck size={14} /> : null}>
+                                {progObj.estado === "Activo" ? "Activo ante el MEN" : "Inactivo ante el MEN"}
+                              </Badge>
+                              {rcActivoEncabezado?.subtipo ? (
+                                <Badge size="lg" variant="outline" color="gray" tt="none"
+                                  styles={stylesSubtipoBadgeTabla(rcActivoEncabezado.subtipo)}>
+                                  RC · {etiquetaSubtipoCompacta(rcActivoEncabezado.subtipo)}
+                                </Badge>
+                              ) : null}
+                              <Button size="sm" variant="light" color="green" radius="md" rightSection={<IconChevronRight size={14} />}
+                                onClick={() => router.push(processesMenRoutes.program(progObj._id))}>
+                                Ver ficha del programa
+                              </Button>
+                            </Group>
+                          </Group>
+                        </Paper>
                       </Box>
                       {(() => {
                         const vistaPm = tipoProceso === "Plan de mejoramiento";
@@ -2526,14 +2821,20 @@ const ProcessesMenPage = () => {
             )}
 
             {activeSection === "alertas" && (
-              <Stack gap="md">
-                <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                  <Title order={2} mb={0}>Alertas de procesos</Title>
+              <Stack gap="lg">
+                <Group justify="space-between" align="flex-end" wrap="wrap" gap="sm">
+                  <Box>
+                    <Text fw={700} size="xl" lh={1.2}>Alertas de procesos</Text>
+                    <Text size="sm" c="dimmed" mt={4}>
+                      Procesos RC, AV, AE y PM en curso, y recordatorios de procesos cerrados que aún no tienen un trámite nuevo del mismo tipo.
+                    </Text>
+                  </Box>
                   <Group gap="xs" wrap="wrap" justify="flex-end">
                     <Button
                       size="sm"
                       variant="light"
                       color="blue"
+                      leftSection={<IconPlus size={15} />}
                       onClick={() => {
                         setAgregarProcesoPrefill({ soloCrearPrograma: true });
                         setAgregarProcesoOpen(true);
@@ -2544,7 +2845,8 @@ const ProcessesMenPage = () => {
                     <Button
                       size="sm"
                       variant="light"
-                      color="grape"
+                      color="violet"
+                      leftSection={<IconPlus size={15} />}
                       onClick={() => {
                         setAgregarProcesoPrefill({ modoProcesoPrimeraVezTipo: true });
                         setAgregarProcesoOpen(true);
@@ -2555,7 +2857,8 @@ const ProcessesMenPage = () => {
                     <Button
                       size="sm"
                       variant="light"
-                      color="green"
+                      color="teal"
+                      leftSection={<IconPlus size={15} />}
                       styles={{ label: { whiteSpace: "normal", lineHeight: 1.25, textAlign: "center" } }}
                       onClick={() => {
                         setAgregarProcesoPrefill({ soloReformaCurricular: true });
@@ -2566,102 +2869,175 @@ const ProcessesMenPage = () => {
                     </Button>
                   </Group>
                 </Group>
-                <Text size="sm" c="dimmed">
-                  Activos: procesos RC, AV, AE y PM en curso. Alertas: recordatorios tras cierre cuando aún no hay proceso activo del mismo tipo.
-                </Text>
-                {/* Leyenda de colores */}
-                <Stack gap={6} align="stretch">
-                  <Group gap={8} wrap="wrap">
-                    {([
-                      { tipo: "RC", label: "Registro calificado", color: ROW_BG_PROCESO.RC, border: "#74c0fc" },
-                      { tipo: "AV", label: "Acreditación voluntaria", color: ROW_BG_PROCESO.AV, border: "#b197fc" },
-                      { tipo: "PM", label: "Plan de mejoramiento", color: ROW_BG_PROCESO.PM, border: "#9775fa" },
-                      { tipo: "AE", label: "Autoevaluación", color: ROW_BG_PROCESO.AE, border: "#74c0fc" },
-                    ] as const).map((x) => (
-                      <Group key={x.tipo} gap={4} align="center">
-                        <Box style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: x.color, border: `1.5px solid ${x.border}` }} />
-                        <Text size="xs" c="dimmed">{x.label}</Text>
-                      </Group>
-                    ))}
-                  </Group>
-                  <Group gap={6} align="center" wrap="wrap">
-                    <Text size="xs" c="dimmed" fw={600} tt="uppercase">Alertas</Text>
-                    {([
-                      { c: "#2f9e44", t: "HASTA DIGITACIÓN" },
-                      { c: "#f59f00", t: "HASTA RADICADO" },
-                      { c: "#e03131", t: "HASTA VENCIMIENTO" },
-                      { c: "#868e96", t: "VENCIDA" },
-                    ] as const).map((x) => (
-                      <Group key={x.t} gap={4} align="center">
-                        <Box style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: x.c }} />
-                        <Text size="xs" c="dimmed" tt="uppercase">{x.t}</Text>
-                      </Group>
-                    ))}
-                  </Group>
-                </Stack>
-                {!loadingFilters ? (
-                  <Paper withBorder radius="md" p="sm">
-                    <Flex
-                      gap={8}
-                      align="flex-end"
-                      wrap="nowrap"
-                      w="100%"
-                      style={{ minWidth: 0, overflowX: "auto", paddingBottom: 2 }}
+
+                {/* Resumen: cada tarjeta filtra la tabla con un clic */}
+                <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }} spacing="sm">
+                  {([
+                    { key: "RC", label: "Registro calificado", detalle: "en curso", color: "blue", icon: IconFileCertificate, valor: conteosResumenAlertas.RC, activo: remTipoProceso === "Registro calificado" && remVista === "todo" && !remSoloAtencion, accion: () => seleccionarTarjetaAlertas(remTipoProceso === "Registro calificado" && remVista === "todo" && !remSoloAtencion ? null : { tipo: "Registro calificado" }) },
+                    { key: "AV", label: "Acreditación voluntaria", detalle: "en curso", color: "violet", icon: IconAward, valor: conteosResumenAlertas.AV, activo: remTipoProceso === "Acreditación voluntaria" && remVista === "todo" && !remSoloAtencion, accion: () => seleccionarTarjetaAlertas(remTipoProceso === "Acreditación voluntaria" && remVista === "todo" && !remSoloAtencion ? null : { tipo: "Acreditación voluntaria" }) },
+                    { key: "AE", label: "Autoevaluación", detalle: "en curso", color: "teal", icon: IconClipboardList, valor: conteosResumenAlertas.AE, activo: remTipoProceso === "Autoevaluación" && remVista === "todo" && !remSoloAtencion, accion: () => seleccionarTarjetaAlertas(remTipoProceso === "Autoevaluación" && remVista === "todo" && !remSoloAtencion ? null : { tipo: "Autoevaluación" }) },
+                    { key: "PM", label: "Plan de mejoramiento", detalle: "en curso", color: "grape", icon: IconTarget, valor: conteosResumenAlertas.PM, activo: remTipoProceso === "Plan de mejoramiento" && remVista === "todo" && !remSoloAtencion, accion: () => seleccionarTarjetaAlertas(remTipoProceso === "Plan de mejoramiento" && remVista === "todo" && !remSoloAtencion ? null : { tipo: "Plan de mejoramiento" }) },
+                    { key: "ALERTAS", label: "Alertas de cierre", detalle: "sin proceso nuevo", color: "orange", icon: IconBellRinging, valor: conteosResumenAlertas.alertas, activo: remVista === "alertas" && !remSoloAtencion && remTipoProceso === "Todos", accion: () => seleccionarTarjetaAlertas(remVista === "alertas" && !remSoloAtencion && remTipoProceso === "Todos" ? null : { vista: "alertas" }) },
+                    { key: "ATENCION", label: "Requieren atención", detalle: "por vencer o vencidas", color: "red", icon: IconAlertTriangle, valor: conteosResumenAlertas.atencion, activo: remSoloAtencion && remTipoProceso === "Todos", accion: () => seleccionarTarjetaAlertas(remSoloAtencion && remTipoProceso === "Todos" ? null : { atencion: true }) },
+                  ]).map((x) => (
+                    <Paper
+                      key={x.key}
+                      radius="lg"
+                      p="md"
+                      tabIndex={0}
+                      role="button"
+                      aria-pressed={x.activo}
+                      className="men-tile"
+                      onClick={x.accion}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          x.accion();
+                        }
+                      }}
+                      style={{
+                        cursor: "pointer",
+                        backgroundColor: `var(--mantine-color-${x.color}-light)`,
+                        border: `2px solid ${x.activo ? `var(--mantine-color-${x.color}-5)` : "transparent"}`,
+                        boxShadow: x.activo ? "var(--mantine-shadow-md)" : undefined,
+                      }}
                     >
+                      <Group justify="space-between" wrap="nowrap" align="flex-start" gap={6}>
+                        <Text fw={900} size="1.9rem" lh={1} c={`${x.color}.8`}>{x.valor}</Text>
+                        <ThemeIcon size={34} radius="xl" variant="white" color={x.color}><x.icon size={18} /></ThemeIcon>
+                      </Group>
+                      <Text size="sm" fw={700} mt={8} lh={1.2}>{x.label}</Text>
+                      <Text size="xs" c="dimmed">{x.activo ? "Filtrando · clic para quitar" : x.detalle}</Text>
+                    </Paper>
+                  ))}
+                </SimpleGrid>
+                <style>{`
+                  .men-tile { transition: transform 120ms ease, box-shadow 120ms ease; }
+                  .men-tile:hover { transform: translateY(-2px); box-shadow: var(--mantine-shadow-sm); }
+                  .men-fila { transition: background-color 100ms ease; }
+                  .men-fila:hover > td { background-color: var(--mantine-color-default-hover); }
+                `}</style>
+
+                {/* Barra de herramientas: búsqueda, vista y filtros avanzados */}
+                <Paper withBorder radius="lg" p="md">
+                  <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+                    <Group gap="sm" wrap="wrap" style={{ flex: 1 }}>
+                      <TextInput
+                        placeholder="Buscar programa..."
+                        leftSection={<IconSearch size={16} />}
+                        value={remBusqueda}
+                        onChange={(e) => setRemBusqueda(e.currentTarget.value)}
+                        radius="xl"
+                        w={280}
+                        rightSection={remBusqueda ? (
+                          <ActionIcon size="sm" variant="subtle" color="gray" radius="xl" aria-label="Borrar búsqueda" onClick={() => setRemBusqueda("")}>
+                            <IconFilterOff size={13} />
+                          </ActionIcon>
+                        ) : null}
+                      />
+                      <SegmentedControl
+                        radius="xl"
+                        value={remVista}
+                        onChange={(v) => { setRemVista(v as typeof remVista); if (v !== "alertas") setRemSoloAtencion(false); }}
+                        data={[
+                          { value: "todo", label: "Todo" },
+                          { value: "activos", label: `Procesos activos (${filasProcesosActivosRcAv.length + filasActivasPM.length})` },
+                          { value: "alertas", label: `Alertas (${remindersOrdenados.length})` },
+                        ]}
+                      />
+                    </Group>
+                    {(() => {
+                      const nFiltros = [remFacultad, remPrograma, remNivel, remModalidad, remTipoPosgrado, remTipoProceso, remSubtipo].filter((v) => v !== "Todos").length;
+                      return (
+                        <Group gap="xs">
+                          {(nFiltros > 0 || remBusqueda || remSoloAtencion || remVista !== "todo") && (
+                            <Button size="sm" variant="subtle" color="gray" leftSection={<IconFilterOff size={15} />}
+                              onClick={() => {
+                                setRemFacultad("Todos"); setRemPrograma("Todos"); setRemNivel("Todos"); setRemModalidad("Todos");
+                                setRemTipoPosgrado("Todos"); setRemTipoProceso("Todos"); setRemSubtipo("Todos");
+                                setRemBusqueda(""); setRemSoloAtencion(false); setRemVista("todo");
+                              }}>
+                              Limpiar todo
+                            </Button>
+                          )}
+                          <Button size="sm" radius="xl" variant={remMasFiltros || nFiltros > 0 ? "light" : "default"}
+                            leftSection={<IconAdjustmentsHorizontal size={16} />}
+                            rightSection={nFiltros > 0 ? <Badge size="xs" circle>{nFiltros}</Badge> : null}
+                            onClick={() => setRemMasFiltros((v) => !v)}>
+                            Filtros
+                          </Button>
+                        </Group>
+                      );
+                    })()}
+                  </Group>
+                  <Collapse in={remMasFiltros}>
+                {!loadingFilters ? (
+                    <SimpleGrid cols={{ base: 1, sm: 2, md: 4, xl: 7 }} spacing="sm" mt="md">
                       <Select label="Facultad" data={opcionesFacultad} value={remFacultad}
-                        style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 220 }}
                         onChange={handleRemFacultadChange} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Programa" data={opcionesRemPrograma} value={remPrograma}
-                        style={{ flex: "1.25 1 150px", minWidth: 0, maxWidth: 300 }}
                         onChange={(v) => { setRemPrograma(v ?? "Todos"); setRemSubtipo("Todos"); }} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Nivel académico" data={opcionesNivelAcademico} value={remNivel}
-                        style={{ flex: "0.95 1 108px", minWidth: 0, maxWidth: 190 }}
                         onChange={(v) => setRemNivel(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Modalidad" data={["Todos", "Presencial", "Virtual", "Híbrido"]} value={remModalidad}
-                        style={{ flex: "0.9 1 112px", minWidth: 0, maxWidth: 180 }}
                         onChange={(v) => setRemModalidad(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Tipo de posgrado" data={["Todos", "Especialización", "Maestría", "Doctorado", "Otros posgrados"]} value={remTipoPosgrado}
-                        style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 210 }}
                         onChange={(v) => setRemTipoPosgrado(v ?? "Todos")} searchable={false} styles={selectorStyleFilters} />
-                      <Select label="Por proceso (tipo)" data={opcionesTipoProceso} value={remTipoProceso}
-                        style={{ flex: "1 1 128px", minWidth: 0, maxWidth: 240 }}
+                      <Select label="Tipo de proceso" data={opcionesTipoProceso} value={remTipoProceso}
                         onChange={(v) => { setRemTipoProceso(v ?? "Todos"); setRemSubtipo("Todos"); }} searchable={false} styles={selectorStyleFilters} />
                       <Select label="Subtipo" data={opcionesRemSubtipoData} value={remSubtipo}
-                        style={{ flex: "1 1 118px", minWidth: 0, maxWidth: 200 }}
                         onChange={(v) => setRemSubtipo(v ?? "Todos")} searchable={false} styles={selectorStyleFiltersSubtipo} />
-                    </Flex>
-                  </Paper>
+                    </SimpleGrid>
                 ) : (
-                  <Loader size="sm" />
+                  <Loader size="sm" mt="md" />
                 )}
+                  </Collapse>
+                </Paper>
                 {loadingReminders ? (
                   <Loader size="sm" mx="auto" display="block" my="lg" />
                 ) : (
                   <Stack gap="xl">
                     {/* ══ TABLA 1: RC / AV / AE activos + alertas de cierre ══ */}
-                    <div>
-                      <Text size="sm" fw={600} mb={6} c="dimmed">Procesos activos y alertas de vencimiento</Text>
+                    {remTipoProceso !== "Plan de mejoramiento" && (
+                    <Paper withBorder radius="lg" style={{ overflow: "hidden" }}>
+                      <Group justify="space-between" align="center" wrap="wrap" gap="sm" p="md" pb="sm">
+                        <Group gap="sm" wrap="nowrap">
+                          <ThemeIcon size={32} radius="xl" variant="light" color="blue"><IconBellRinging size={17} /></ThemeIcon>
+                          <Box>
+                            <Text fw={700}>Procesos activos y alertas de vencimiento</Text>
+                            <Text size="xs" c="dimmed">
+                              {filasActivasVisibles.length + alertasVisibles.length} {filasActivasVisibles.length + alertasVisibles.length === 1 ? "registro" : "registros"} · ordenados por vencimiento, los más próximos primero
+                            </Text>
+                          </Box>
+                        </Group>
+                        <Group gap={6} wrap="wrap">
+                          <Text size="xs" c="dimmed" fw={600}>Semáforo:</Text>
+                          {SEMAFORO_ALERTA_LEYENDA.map((x) => (
+                            <Badge key={x.texto} size="sm" variant="light" color={x.color} leftSection={<Box style={{ width: 8, height: 8, borderRadius: 99, backgroundColor: `var(--mantine-color-${x.color}-6)` }} />} styles={{ label: { textTransform: "none" } }}>
+                              {x.texto}
+                            </Badge>
+                          ))}
+                        </Group>
+                      </Group>
                       <div style={{ width: "100%", minWidth: 0, overflowX: "auto" }}>
-                        <table style={{ width: "100%", minWidth: 1160, borderCollapse: "collapse", tableLayout: "fixed" }}>
+                        <table style={{ width: "100%", minWidth: 1180, borderCollapse: "collapse", tableLayout: "fixed" }}>
                           <colgroup>
-                            <col style={{ width: "14%" }} />
-                            <col style={{ width: "9%" }} />
-                            <col style={{ width: "16%" }} />
-                            <col style={{ width: "9.5%" }} />
-                            <col style={{ width: "6.5%" }} />
-                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "20%" }} />
+                            <col style={{ width: "13%" }} />
                             <col style={{ width: "8%" }} />
+                            <col style={{ width: "9.5%" }} />
+                            <col style={{ width: "6%" }} />
                             <col style={{ width: "6.5%" }} />
-                            <col style={{ width: "6.5%" }} />
+                            <col style={{ width: "6%" }} />
+                            <col style={{ width: "6%" }} />
                             <col style={{ width: "7.5%" }} />
-                            <col style={{ width: "10%" }} />
+                            <col style={{ width: "17.5%" }} />
                           </colgroup>
                           <thead>
-                            <tr style={{ borderBottom: "2px solid #dee2e6", backgroundColor: "#f8f9fa" }}>
+                            <tr style={theadRowStyle}>
                               {(
                                 [
                                   "Programa",
-                                  "Modalidad",
                                   "Tipo",
                                   "Acto admin.",
                                   "Venc.",
@@ -2679,9 +3055,11 @@ const ProcessesMenPage = () => {
                                   <th
                                     key={h}
                                     style={{
-                                      padding: "6px 5px",
-                                      textAlign: "center",
-                                      fontSize: isFechaCol ? 12 : 13,
+                                      ...thTextStyle,
+                                      padding: "10px 6px",
+                                      textAlign: h === "Programa" ? "left" : "center",
+                                      paddingLeft: h === "Programa" ? 14 : undefined,
+                                      fontSize: isFechaCol ? 10.5 : 11,
                                       fontWeight: 700,
                                       whiteSpace: isDocCol ? "normal" : "nowrap",
                                       lineHeight: 1.2,
@@ -2697,7 +3075,7 @@ const ProcessesMenPage = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {filasProcesosActivosRcAv.map(({ proc, prog }) => {
+                            {filasActivasVisibles.map(({ proc, prog }) => {
                               const codigoActo =
                                 proc.tipo_proceso === "RC" ? (prog.codigo_resolucion_rc ?? "—")
                                 : proc.tipo_proceso === "AV" ? (prog.codigo_resolucion_av ?? "—")
@@ -2710,11 +3088,11 @@ const ProcessesMenPage = () => {
                                 proc.tipo_proceso === "RC" ? "fecha_resolucion_rc"
                                 : proc.tipo_proceso === "AV" ? "fecha_resolucion_av"
                                 : null;
-                              const rowBg = ROW_BG_PROCESO[proc.tipo_proceso] ?? "#fafbff";
-                              const badgeColor = proc.tipo_proceso === "RC" ? "blue" : proc.tipo_proceso === "AV" ? "violet" : "teal";
+                              const badgeColor = TIPO_COLOR[proc.tipo_proceso] ?? "gray";
                               return (
                                 <tr
                                   key={`act-${proc._id}`}
+                                  className="men-fila"
                                   tabIndex={0}
                                   aria-selected={selectedAlertRow === `active-${proc._id}`}
                                   onClick={() => setSelectedAlertRow(`active-${proc._id}`)}
@@ -2724,32 +3102,19 @@ const ProcessesMenPage = () => {
                                       setSelectedAlertRow(`active-${proc._id}`);
                                     }
                                   }}
-                                  style={{
-                                    borderBottom: "1px solid #e9ecef",
-                                    backgroundColor: selectedAlertRow === `active-${proc._id}`
-                                      ? proc.tipo_proceso === "AV" ? "#d0bfff" : "#dbeafe"
-                                      : rowBg,
-                                    boxShadow: selectedAlertRow === `active-${proc._id}`
-                                      ? `inset 4px 0 ${proc.tipo_proceso === "AV" ? "#7950f2" : "#228be6"}`
-                                      : undefined,
-                                    cursor: "pointer",
-                                    outline: "none",
-                                  }}
+                                  style={estiloFilaTabla(proc.tipo_proceso, selectedAlertRow === `active-${proc._id}`)}
                                 >
-                                    <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word", textAlign: "center" }}>
-                                      <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word", fontSize: 13 }}>
+                                    <td style={{ padding: "6px 6px 6px 14px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                      <Text size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {prog.nombre}
                                       </Text>
-                                    </td>
-                                    <td style={{ padding: "6px 4px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
-                                      <Stack gap={2} align="center">
-                                        <Text size="xs">{prog.modalidad || "—"}</Text>
-                                        {etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
-                                      </Stack>
+                                      <Text size="xs" c="dimmed">
+                                        {[prog.modalidad, etiquetaPosgradoCorta(prog)].filter(Boolean).join(" · ") || "—"}
+                                      </Text>
                                     </td>
                                     <td style={{ padding: "6px 5px", verticalAlign: "middle", textAlign: "center" }}>
                                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "nowrap", gap: 6 }}>
-                                        <Badge size="sm" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
+                                        <Badge size="sm" color={badgeColor} variant="light" style={{ flexShrink: 0 }}>{proc.tipo_proceso}</Badge>
                                         {proc.subtipo && (
                                           <Badge size="sm" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(proc.subtipo)} style={{ flexShrink: 0 }}>
                                             {etiquetaSubtipoCompacta(proc.subtipo)}
@@ -2760,24 +3125,30 @@ const ProcessesMenPage = () => {
                                     <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>
                                       <Stack gap={2} align="center">
                                         <Text size="sm" ff="monospace" ta="center">{codigoActo}</Text>
-                                        {campoFechaActo && renderFechaEditable(fechaActo, {
-                                          resource: "program",
-                                          id: prog._id,
-                                          field: campoFechaActo,
-                                          label: "fecha de resolución",
-                                          programName: prog.nombre,
-                                        })}
+                                        {campoFechaActo && renderFecha(fechaActo)}
                                       </Stack>
                                     </td>
-                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_vencimiento, { resource: "process", id: proc._id, field: "fecha_vencimiento", label: "vencimiento", programName: prog.nombre })}</td>
-                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_inicio, { resource: "process", id: proc._id, field: "fecha_inicio", label: "inicio", programName: prog.nombre })}</td>
-                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_documento_par, { resource: "process", id: proc._id, field: "fecha_documento_par", label: "lectura de Vicerrectoría", programName: prog.nombre })}</td>
-                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_digitacion_saces, { resource: "process", id: proc._id, field: "fecha_digitacion_saces", label: "digitación", programName: prog.nombre })}</td>
-                                    <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_radicado_men, { resource: "process", id: proc._id, field: "fecha_radicado_men", label: "radicación", programName: prog.nombre })}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFechaVencimiento(proc.fecha_vencimiento)}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_inicio)}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_documento_par)}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_digitacion_saces)}</td>
+                                    <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_radicado_men)}</td>
                                     <td style={{ padding: "6px 5px", fontSize: 13, verticalAlign: "middle", textAlign: "center" }}>{celdaGuionCentrado}</td>
                                     <td style={{ padding: "6px 5px", textAlign: "center", verticalAlign: "middle" }}>
-                                      <Group justify="center" gap="xs" wrap="nowrap">
-                                      <Button size="sm" variant="light" onClick={() => irAGestionarProcesoDesdeModal({
+                                      <Group justify="center" gap={6} wrap="nowrap">
+                                      {botonEditarFila({
+                                        programName: prog.nombre,
+                                        tipo: proc.tipo_proceso,
+                                        campos: [
+                                          ...(campoFechaActo ? [{ resource: "program" as const, id: prog._id, field: campoFechaActo, label: "fecha de resolución", valor: fechaActo }] : []),
+                                          { resource: "process", id: proc._id, field: "fecha_vencimiento", label: "vencimiento", valor: proc.fecha_vencimiento },
+                                          { resource: "process", id: proc._id, field: "fecha_inicio", label: "inicio", valor: proc.fecha_inicio },
+                                          { resource: "process", id: proc._id, field: "fecha_documento_par", label: "lectura de Vicerrectoría", valor: proc.fecha_documento_par },
+                                          { resource: "process", id: proc._id, field: "fecha_digitacion_saces", label: "digitación", valor: proc.fecha_digitacion_saces },
+                                          { resource: "process", id: proc._id, field: "fecha_radicado_men", label: "radicación", valor: proc.fecha_radicado_men },
+                                        ],
+                                      })}
+                                      <Button size="xs" variant="filled" color={badgeColor} radius="md" onClick={() => irAGestionarProcesoDesdeModal({
                                         nombrePrograma: prog.nombre,
                                         tipo: proc.tipo_proceso as "RC" | "AV" | "AE",
                                         dep_code_programa: prog.dep_code_programa ?? undefined,
@@ -2803,14 +3174,14 @@ const ProcessesMenPage = () => {
                               );
                             })}
 
-                            {remindersOrdenados.map((r) => {
+                            {alertasVisibles.map((r) => {
                               const prog = programaDeRecordatorio(r);
-                              const rowBg = ROW_BG_PROCESO[r.tipo_proceso] ?? "#fafbff";
-                              const badgeTipoColor = r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : r.tipo_proceso === "PM" ? "grape" : "teal";
+                              const badgeTipoColor = TIPO_COLOR[r.tipo_proceso] ?? "gray";
                               const mantineSemaAlerta = nivelSemaforoAlerta(r);
                               return (
                                 <tr
                                   key={r._id}
+                                  className="men-fila"
                                   tabIndex={0}
                                   aria-selected={selectedAlertRow === `reminder-${r._id}`}
                                   onClick={() => setSelectedAlertRow(`reminder-${r._id}`)}
@@ -2820,37 +3191,23 @@ const ProcessesMenPage = () => {
                                       setSelectedAlertRow(`reminder-${r._id}`);
                                     }
                                   }}
-                                  style={{
-                                    borderBottom: "1px solid #e9ecef",
-                                    backgroundColor: selectedAlertRow === `reminder-${r._id}`
-                                      ? r.tipo_proceso === "AV" ? "#d0bfff" : "#dbeafe"
-                                      : rowBg,
-                                    boxShadow: selectedAlertRow === `reminder-${r._id}`
-                                      ? `inset 4px 0 ${r.tipo_proceso === "AV" ? "#7950f2" : "#228be6"}`
-                                      : undefined,
-                                    cursor: "pointer",
-                                    outline: "none",
-                                  }}
+                                  style={estiloFilaTabla(r.tipo_proceso, selectedAlertRow === `reminder-${r._id}`)}
                                 >
-                                  <td style={{ padding: "6px 6px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word", textAlign: "center" }}>
-                                    {prog ? (
-                                      <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word", fontSize: 13 }}>
+                                  <td style={{ padding: "6px 6px 6px 14px", fontSize: 13, verticalAlign: "middle", wordBreak: "break-word" }}>
+                                    <Group gap={6} wrap="nowrap" align="center">
+                                      <Box style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, backgroundColor: `var(--mantine-color-${mantineSemaAlerta}-6)` }} />
+                                      <Text size="sm" fw={600} style={{ wordBreak: "break-word", fontSize: 13 }}>
                                         {r.nombre_programa}
                                       </Text>
-                                    ) : (
-                                      <Text size="sm" fw={600}>{r.nombre_programa}</Text>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: "6px 4px", fontSize: 12, verticalAlign: "middle", textAlign: "center" }}>
-                                    <Stack gap={2} align="center">
-                                      <Text size="xs">{prog?.modalidad || "—"}</Text>
-                                      {prog && etiquetaPosgradoCorta(prog) && <Text size="xs" c="dimmed">{etiquetaPosgradoCorta(prog)}</Text>}
-                                    </Stack>
+                                    </Group>
+                                    <Text size="xs" c="dimmed" pl={14}>
+                                      {[prog?.modalidad, prog ? etiquetaPosgradoCorta(prog) : null].filter(Boolean).join(" · ") || "—"}
+                                    </Text>
                                   </td>
                                   <td style={{ padding: "6px 5px", verticalAlign: "middle", textAlign: "center" }}>
                                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "nowrap", gap: 6 }}>
-                                      <Badge size="sm" color={badgeTipoColor} variant="filled" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
-                                      <Badge size="sm" variant="filled" color={mantineSemaAlerta} style={{ flexShrink: 0 }}>Alerta</Badge>
+                                      <Badge size="sm" color={badgeTipoColor} variant="light" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
+                                      <Badge size="sm" variant="light" color={mantineSemaAlerta} leftSection={<IconBellRinging size={11} />} style={{ flexShrink: 0 }}>Alerta</Badge>
                                       {r.subtipo ? (
                                         <Badge size="sm" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(r.subtipo)} style={{ flexShrink: 0 }}>
                                           {etiquetaSubtipoCompacta(r.subtipo)}
@@ -2864,7 +3221,7 @@ const ProcessesMenPage = () => {
                                       <Text size="xs" c="dimmed">{formatFechaDDMMYY(r.fecha_resolucion)}</Text>
                                     </Stack>
                                   </td>
-                                  <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_vencimiento)}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFechaVencimiento(r.fecha_vencimiento)}</td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_inicio)}</td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_documento_par)}</td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.fecha_digitacion_saces)}</td>
@@ -2898,32 +3255,10 @@ const ProcessesMenPage = () => {
                                     {prog && (
                                         <Button
                                           size="xs"
-                                          variant="filled"
-                                          color={mantineSemaAlerta}
-                                          styles={{
-                                            root: {
-                                              maxWidth: "100%",
-                                              width: "100%",
-                                              minWidth: 0,
-                                              minHeight: 30,
-                                              padding: "6px 4px",
-                                              display: "inline-flex",
-                                              alignItems: "center",
-                                              justifyContent: "center",
-                                            },
-                                            inner: {
-                                              justifyContent: "center",
-                                              alignItems: "center",
-                                            },
-                                            label: {
-                                              lineHeight: 1.2,
-                                              textAlign: "center",
-                                              fontSize: 12,
-                                              display: "flex",
-                                              alignItems: "center",
-                                              justifyContent: "center",
-                                            },
-                                          }}
+                                          variant="light"
+                                          color="blue"
+                                          radius="md"
+                                          leftSection={<IconPlus size={13} />}
                                           onClick={() => abrirAgregarDesdeRecordatorio(r)}
                                         >
                                           Crear proceso
@@ -2946,26 +3281,37 @@ const ProcessesMenPage = () => {
                                 </tr>
                               );
                             })}
-                            {filasProcesosActivosRcAv.length === 0 && remindersOrdenados.length === 0 && (
+                            {filasActivasVisibles.length === 0 && alertasVisibles.length === 0 && (
                               <tr>
-                                <td colSpan={11} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
-                                  No hay procesos ni alertas con estos filtros.
+                                <td colSpan={10} style={{ padding: 32, textAlign: "center" }}>
+                                  <Stack align="center" gap={6}>
+                                    <ThemeIcon size={40} radius="xl" variant="light" color="gray"><IconSearch size={20} /></ThemeIcon>
+                                    <Text size="sm" c="dimmed">No hay procesos ni alertas con esta búsqueda o filtros.</Text>
+                                  </Stack>
                                 </td>
                               </tr>
                             )}
                           </tbody>
                         </table>
                       </div>
-                    </div>
+                    </Paper>
+                    )}
 
                     {/* ══ TABLA 2: Planes de Mejoramiento activos ══ */}
-                    {filasActivasPM.length > 0 && (
-                      <div>
-                        <Text size="sm" fw={600} mb={6} c="dimmed">Planes de Mejoramiento activos</Text>
-                        <div style={{ width: "100%" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                    {pmVisibles.length > 0 && (
+                      <Paper withBorder radius="lg" style={{ overflow: "hidden" }}>
+                        <Group gap="sm" wrap="nowrap" p="md" pb="sm">
+                          <ThemeIcon size={32} radius="xl" variant="light" color="grape"><IconClipboardList size={17} /></ThemeIcon>
+                          <Box>
+                            <Text fw={700}>Planes de mejoramiento activos</Text>
+                            <Text size="xs" c="dimmed">Fechas de entrega y avance ante Vicerrectoría y CNA.</Text>
+                          </Box>
+                          <Badge size="sm" variant="light" color="grape" ml="auto">{pmVisibles.length}</Badge>
+                        </Group>
+                        <div style={{ width: "100%", overflowX: "auto" }}>
+                          <table style={{ width: "100%", minWidth: 960, borderCollapse: "collapse", tableLayout: "fixed" }}>
                             <thead>
-                              <tr style={{ borderBottom: "2px solid #dee2e6", backgroundColor: "#f8f9fa" }}>
+                              <tr style={theadRowStyle}>
                                 {[
                                   "Programa",
                                   "Tipo / Padre",
@@ -2975,15 +3321,16 @@ const ProcessesMenPage = () => {
                                   "Radicación Avance CNA",
                                   "Acciones",
                                 ].map((h) => (
-                                  <th key={h} style={{ padding: "7px 8px", textAlign: "center", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>{h}</th>
+                                  <th key={h} style={{ ...thTextStyle, padding: "10px 8px", textAlign: h === "Programa" ? "left" : "center", paddingLeft: h === "Programa" ? 14 : undefined, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {/* Proceso PM activo (para gestión) */}
-                              {filasActivasPM.map(({ proc, prog }) => (
+                              {pmVisibles.map(({ proc, prog }) => (
                                 <tr
                                   key={`pm-${proc._id}`}
+                                  className="men-fila"
                                   tabIndex={0}
                                   aria-selected={selectedAlertRow === `pm-${proc._id}`}
                                   onClick={() => setSelectedAlertRow(`pm-${proc._id}`)}
@@ -2993,23 +3340,17 @@ const ProcessesMenPage = () => {
                                       setSelectedAlertRow(`pm-${proc._id}`);
                                     }
                                   }}
-                                  style={{
-                                    borderBottom: "1px solid #e9ecef",
-                                    backgroundColor: selectedAlertRow === `pm-${proc._id}` ? "#dbeafe" : ROW_BG_PROCESO["PM"],
-                                    boxShadow: selectedAlertRow === `pm-${proc._id}` ? "inset 4px 0 #228be6" : undefined,
-                                    cursor: "pointer",
-                                    outline: "none",
-                                  }}
+                                  style={estiloFilaTabla("PM", selectedAlertRow === `pm-${proc._id}`)}
                                 >
-                                  <td style={{ padding: "6px 8px", fontSize: 12, maxWidth: 200, verticalAlign: "middle", textAlign: "center" }}>
-                                    <Text size="sm" fw={600} c="blue" style={{ wordBreak: "break-word" }}>
+                                  <td style={{ padding: "10px 8px 10px 14px", fontSize: 12, maxWidth: 200, verticalAlign: "middle" }}>
+                                    <Text size="sm" fw={600} style={{ wordBreak: "break-word" }}>
                                       {prog.nombre}
                                     </Text>
                                   </td>
                                   <td style={{ padding: "6px 8px", whiteSpace: "nowrap", verticalAlign: "middle", textAlign: "center" }}>
                                     <Group gap={4} wrap="nowrap" align="center" justify="center">
-                                      <Badge size="xs" color="grape" variant="filled">PM</Badge>
-                                      <Badge size="xs" variant="light" color="cyan">Activo</Badge>
+                                      <Badge size="sm" color="grape" variant="light">PM</Badge>
+                                      <Badge size="sm" variant="dot" color="teal">Activo</Badge>
                                       {proc.parent_tipo_proceso && (
                                         <Badge size="xs" variant="outline" color="gray" styles={{ label: { textTransform: "none" } }}>
                                           De {proc.parent_tipo_proceso}
@@ -3017,12 +3358,23 @@ const ProcessesMenPage = () => {
                                       )}
                                     </Group>
                                   </td>
-                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_envio_pm_vicerrectoria, { resource: "process", id: proc._id, field: "fecha_envio_pm_vicerrectoria", label: "envío del PM a Vicerrectoría", programName: prog.nombre })}</td>
-                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_entrega_pm_cna, { resource: "process", id: proc._id, field: "fecha_entrega_pm_cna", label: "entrega del PM al CNA", programName: prog.nombre })}</td>
-                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_envio_avance_vicerrectoria, { resource: "process", id: proc._id, field: "fecha_envio_avance_vicerrectoria", label: "envío de avance a Vicerrectoría", programName: prog.nombre })}</td>
-                                  <td style={tdFechaTablaAlertas}>{renderFechaEditable(proc.fecha_radicacion_avance_cna, { resource: "process", id: proc._id, field: "fecha_radicacion_avance_cna", label: "radicación de avance al CNA", programName: prog.nombre })}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_envio_pm_vicerrectoria)}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_entrega_pm_cna)}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_envio_avance_vicerrectoria)}</td>
+                                  <td style={tdFechaTablaAlertas}>{renderFecha(proc.fecha_radicacion_avance_cna)}</td>
                                   <td style={{ padding: "6px 8px", textAlign: "center", whiteSpace: "nowrap", verticalAlign: "middle" }}>
-                                    <Button size="xs" variant="light" color="grape" onClick={() => irAGestionarProcesoDesdeModal({
+                                    <Group justify="center" gap={6} wrap="nowrap">
+                                    {botonEditarFila({
+                                      programName: prog.nombre,
+                                      tipo: "PM",
+                                      campos: [
+                                        { resource: "process", id: proc._id, field: "fecha_envio_pm_vicerrectoria", label: "envío del PM a Vicerrectoría", valor: proc.fecha_envio_pm_vicerrectoria },
+                                        { resource: "process", id: proc._id, field: "fecha_entrega_pm_cna", label: "entrega del PM al CNA", valor: proc.fecha_entrega_pm_cna },
+                                        { resource: "process", id: proc._id, field: "fecha_envio_avance_vicerrectoria", label: "envío de avance a Vicerrectoría", valor: proc.fecha_envio_avance_vicerrectoria },
+                                        { resource: "process", id: proc._id, field: "fecha_radicacion_avance_cna", label: "radicación de avance al CNA", valor: proc.fecha_radicacion_avance_cna },
+                                      ],
+                                    })}
+                                    <Button size="xs" variant="filled" color="grape" radius="md" onClick={() => irAGestionarProcesoDesdeModal({
                                       nombrePrograma: prog.nombre,
                                       tipo: "PM",
                                       dep_code_programa: prog.dep_code_programa ?? undefined,
@@ -3032,7 +3384,7 @@ const ProcessesMenPage = () => {
                                     </Button>
                                     <Tooltip label="Eliminar proceso" withArrow>
                                       <ActionIcon
-                                        color="red" variant="subtle" size="md" ml={4}
+                                        color="red" variant="subtle" size="md"
                                         aria-label={`Eliminar proceso PM de ${prog.nombre}`}
                                         onClick={() => {
                                           setErrorEliminarProceso(null);
@@ -3042,47 +3394,54 @@ const ProcessesMenPage = () => {
                                         <IconTrash size={16} stroke={1.5} />
                                       </ActionIcon>
                                     </Tooltip>
+                                    </Group>
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
-                      </div>
+                      </Paper>
+                    )}
+                    {remTipoProceso === "Plan de mejoramiento" && pmVisibles.length === 0 && (
+                      <Paper withBorder radius="lg" p="xl">
+                        <Text size="sm" c="dimmed" ta="center">No hay planes de mejoramiento activos con estos filtros.</Text>
+                      </Paper>
                     )}
                   </Stack>
                 )}
               </Stack>
             )}
 
+            {activeSection === "buzon" && <BuzonMenView />}
+
             {activeSection === "historial" && (
               <>
-                <Title order={2} mb="md">Historial de procesos</Title>
-                <Text size="sm" c="dimmed" mb="md">
+                <Text fw={700} size="xl" lh={1.2}>Historial de procesos</Text>
+                <Text size="sm" c="dimmed" mt={4} mb="md">
                   Consulta los procesos cerrados, sus fechas, resultados y documentos asociados.
                 </Text>
-                <Paper withBorder radius="lg" p="md" mb="md" shadow="xs">
+                <Paper withBorder radius="lg" p="md" mb="md">
+                  <FiltrosEncabezado
+                    hayFiltros={!!historialFiltroFacultad || !!historialFiltroPrograma}
+                    onLimpiar={() => { setHistorialFiltroFacultad(null); setHistorialFiltroPrograma(null); }}
+                  />
                   <Group gap="sm" wrap="wrap" align="flex-end">
-                    <Select placeholder="Todas las facultades" data={historialOpcionesFacultad}
-                      value={historialFiltroFacultad} onChange={setHistorialFiltroFacultad} clearable size="xs" w={220}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
-                    <Select placeholder="Todos los programas"
+                    <Select label="Facultad" placeholder="Todas las facultades" data={historialOpcionesFacultad}
+                      value={historialFiltroFacultad} onChange={setHistorialFiltroFacultad} clearable w={260}
+                      styles={selectorStyleFilters} />
+                    <Select label="Programa" placeholder="Todos los programas"
                       data={historialOpcionesPrograma}
-                      value={historialFiltroPrograma} onChange={setHistorialFiltroPrograma} clearable searchable size="xs" w={240}
-                      styles={{ input: { caretColor: "transparent", cursor: "pointer" } }} />
-                    {(historialFiltroFacultad || historialFiltroPrograma) && (
-                      <Button size="xs" variant="subtle" color="gray"
-                        onClick={() => { setHistorialFiltroFacultad(null); setHistorialFiltroPrograma(null); }}>
-                        Limpiar filtros
-                      </Button>
-                    )}
+                      value={historialFiltroPrograma} onChange={setHistorialFiltroPrograma} clearable searchable w={280}
+                      styles={selectorStyleFilters} />
                   </Group>
                 </Paper>
                 {loadingHistorial ? (
                   <Loader size="sm" mx="auto" display="block" my="lg" />
                 ) : (
-                  <div style={{ width: "100%" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                  <Paper withBorder radius="lg" style={{ overflow: "hidden" }}>
+                  <div style={{ width: "100%", overflowX: "auto" }}>
+                    <table style={{ width: "100%", minWidth: 980, borderCollapse: "collapse", tableLayout: "fixed" }}>
                       <colgroup>
                         <col style={{ width: "18%" }} />
                         <col style={{ width: "20%" }} />
@@ -3094,9 +3453,9 @@ const ProcessesMenPage = () => {
                         <col style={{ width: "10%" }} />
                       </colgroup>
                       <thead>
-                        <tr style={{ borderBottom: "2px solid #dee2e6", backgroundColor: "#f8f9fa" }}>
+                        <tr style={theadRowStyle}>
                           {["Programa", "Proceso", "Solicitud", "Resolución · Vigencia", "Vencimiento", "Fase al cierre", "Cerrado", ""].map((h) => (
-                            <th key={h} style={{ padding: "7px 8px", textAlign: h === "" ? "center" : "left", fontSize: 12, fontWeight: 700, verticalAlign: "middle" }}>{h}</th>
+                            <th key={h} style={{ ...thTextStyle, padding: "10px 8px", paddingLeft: h === "Programa" ? 14 : undefined, textAlign: h === "" ? "center" : "left", fontSize: 11, fontWeight: 700, verticalAlign: "middle" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -3130,7 +3489,7 @@ const ProcessesMenPage = () => {
                           if (registrosFiltrados.length === 0) {
                             return (
                               <tr>
-                                <td colSpan={8} style={{ padding: 12, textAlign: "center", color: "#868e96", fontSize: 13 }}>
+                                <td colSpan={8} style={{ padding: 24, textAlign: "center", color: "var(--mantine-color-dimmed)", fontSize: 13 }}>
                                   No hay registros en el historial
                                 </td>
                               </tr>
@@ -3139,15 +3498,14 @@ const ProcessesMenPage = () => {
                           return registrosFiltrados.map((r) => {
                             const pmHist = pmHistorialMap.get(r._id);
                             const tienepmActivo = !!r.pm_proceso_id && !esHistorialAvNoRenovacion(r);
-                            const rowBg = ROW_BG_PROCESO[r.tipo_proceso] ?? "#fff";
-                            const badgeColor = r.tipo_proceso === "RC" ? "blue" : r.tipo_proceso === "AV" ? "violet" : r.tipo_proceso === "AE" ? "teal" : "green";
+                            const badgeColor = TIPO_COLOR[r.tipo_proceso] ?? "gray";
                             return (
                               <>
-                                <tr key={r._id} style={{ borderBottom: pmHist ? "none" : "1px solid #e9ecef", backgroundColor: rowBg }}>
-                                  <td style={{ padding: "6px 8px", fontSize: 12, maxWidth: 200, verticalAlign: "middle" }}>{r.nombre_programa}</td>
+                                <tr key={r._id} style={{ ...estiloFilaTabla(r.tipo_proceso, false), cursor: "default", borderBottom: pmHist ? "none" : "1px solid var(--mantine-color-default-border)" }}>
+                                  <td style={{ padding: "10px 8px 10px 14px", fontSize: 13, fontWeight: 600, maxWidth: 200, verticalAlign: "middle" }}>{r.nombre_programa}</td>
                                   <td style={{ padding: "6px 8px", minWidth: 0, verticalAlign: "middle" }}>
                                     <Group gap={4} wrap="nowrap" align="center" style={{ width: "fit-content", maxWidth: "100%", minWidth: 0 }}>
-                                      <Badge size="xs" color={badgeColor} variant="filled" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
+                                      <Badge size="xs" color={badgeColor} variant="light" style={{ flexShrink: 0 }}>{r.tipo_proceso}</Badge>
                                       {r.subtipo && (
                                         <Badge size="xs" variant="outline" color="gray" styles={stylesSubtipoBadgeTabla(r.subtipo)} style={{ flexShrink: 0 }}>
                                           {etiquetaSubtipoCompacta(r.subtipo)}
@@ -3173,13 +3531,13 @@ const ProcessesMenPage = () => {
                                   <td style={{ padding: "6px 8px", textAlign: "center", verticalAlign: "middle" }}><FaseBadge fase={r.fase_al_cierre} /></td>
                                   <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(r.cerrado_en)}</td>
                                   <td style={{ padding: "6px 8px", textAlign: "center", verticalAlign: "middle" }}>
-                                    <Button size="xs" variant="subtle" onClick={() => setHistorialDetalle(r)}>Ver</Button>
+                                    <Button size="xs" variant="light" radius="md" onClick={() => setHistorialDetalle(r)}>Ver detalle</Button>
                                   </td>
                                 </tr>
                                 {/* Sub-fila del PM cerrado (cuando AV/AE tiene PM cerrado) */}
                                 {pmHist && (
-                                  <tr key={`pm-${pmHist._id}`} style={{ borderBottom: "1px solid #e9ecef", backgroundColor: ROW_BG_PROCESO.PM }}>
-                                    <td style={{ padding: "4px 8px 4px 24px", fontSize: 11, color: "#555" }}>
+                                  <tr key={`pm-${pmHist._id}`} style={{ ...estiloFilaTabla("PM", false), cursor: "default", backgroundColor: "var(--mantine-color-grape-light)" }}>
+                                    <td style={{ padding: "6px 8px 6px 28px", fontSize: 12, color: "var(--mantine-color-dimmed)" }}>
                                       ↳ {r.nombre_programa}
                                     </td>
                                     <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}>
@@ -3198,7 +3556,7 @@ const ProcessesMenPage = () => {
                                     </td>
                                     <td style={tdFechaTablaAlertas}>{formatFechaDDMMYY(pmHist.cerrado_en)}</td>
                                     <td style={{ padding: "4px 8px", textAlign: "center" }}>
-                                      <Button size="xs" variant="subtle" color="grape" onClick={() => setHistorialDetalle(pmHist)}>Ver</Button>
+                                      <Button size="xs" variant="light" color="grape" radius="md" onClick={() => setHistorialDetalle(pmHist)}>Ver detalle</Button>
                                     </td>
                                   </tr>
                                 )}
@@ -3209,6 +3567,7 @@ const ProcessesMenPage = () => {
                       </tbody>
                     </table>
                   </div>
+                  </Paper>
                 )}
               </>
             )}
@@ -3231,59 +3590,103 @@ const ProcessesMenPage = () => {
       <Modal
         opened={historialDetalle !== null}
         onClose={() => setHistorialDetalle(null)}
-        title={historialDetalle ? `${historialDetalle.nombre_programa} — ${LABEL_PROCESO[historialDetalle.tipo_proceso]}` : ""}
+        title={historialDetalle ? (
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon size="lg" radius="md" variant="light" color={TIPO_COLOR[historialDetalle.tipo_proceso] ?? "gray"}>
+              <IconHistory size={20} />
+            </ThemeIcon>
+            <Box>
+              <Text fw={700} size="lg" lh={1.2}>{historialDetalle.nombre_programa}</Text>
+              <Text size="xs" c="dimmed">
+                {LABEL_PROCESO[historialDetalle.tipo_proceso]}{historialDetalle.cerrado_en ? ` · Cerrado el ${formatFechaDDMMYY(historialDetalle.cerrado_en)}` : ""}
+              </Text>
+            </Box>
+          </Group>
+        ) : ""}
         size="calc(100vw - 2rem)"
         centered
-        radius="md"
+        radius="lg"
         styles={{
           content: { maxWidth: "min(96vw, 1420px)", width: "100%" },
-          body: { overflowX: "hidden" },
+          header: { borderBottom: "1px solid var(--mantine-color-default-border)" },
+          body: { overflowX: "hidden", paddingTop: 16 },
         }}>
         {historialDetalle && (
-          <Stack gap="sm">
-            <Group gap="xs" align="flex-start" wrap="wrap">
-              <Badge color="blue" variant="light" size="sm">{LABEL_PROCESO[historialDetalle.tipo_proceso]}</Badge>
-              {historialDetalle.subtipo && (
-                <Badge color="gray" variant="outline" size="sm" styles={stylesSubtipoLargo}>
-                  {etiquetaSubtipoCompacta(historialDetalle.subtipo)}
-                </Badge>
-              )}
-              {historialDetalle.condicion && (
-                <Badge color="violet" variant="light" size="sm">
-                  {historialDetalle.tipo_proceso === "RC" ? "Condición" : "Factor"} {historialDetalle.condicion}
-                </Badge>
-              )}
-              {(historialDetalle.estado_solicitud ?? "APROBADO") === "NEGADO" ? (
-                <Badge color="red" variant="light" size="sm">Solicitud negada</Badge>
-              ) : (
-                <Badge color="teal" variant="light" size="sm">Solicitud aprobada</Badge>
-              )}
-            </Group>
+          <Stack gap="md">
+            <Paper withBorder radius="lg" p="md" style={{ borderLeft: `4px solid var(--mantine-color-${TIPO_COLOR[historialDetalle.tipo_proceso] ?? "gray"}-5)` }}>
+              <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
+                <Box>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Proceso</Text>
+                  <Group gap={6} mt={4}>
+                    <Badge color={TIPO_COLOR[historialDetalle.tipo_proceso] ?? "gray"} variant="light">{historialDetalle.tipo_proceso}</Badge>
+                    {historialDetalle.condicion && (
+                      <Badge color="violet" variant="outline" size="sm">
+                        {historialDetalle.tipo_proceso === "RC" ? "Condición" : "Factor"} {historialDetalle.condicion}
+                      </Badge>
+                    )}
+                  </Group>
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Subtipo</Text>
+                  {historialDetalle.subtipo ? (
+                    <Badge color="gray" variant="outline" mt={4} styles={stylesSubtipoLargo}>
+                      {etiquetaSubtipoCompacta(historialDetalle.subtipo)}
+                    </Badge>
+                  ) : <Text size="sm" mt={4}>—</Text>}
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Resultado</Text>
+                  {(historialDetalle.estado_solicitud ?? "APROBADO") === "NEGADO" ? (
+                    <Badge color="red" variant="light" mt={4} leftSection={<IconCircleX size={12} />}>Solicitud negada</Badge>
+                  ) : (
+                    <Badge color="teal" variant="light" mt={4} leftSection={<IconCircleCheck size={12} />}>Solicitud aprobada</Badge>
+                  )}
+                </Box>
+                <Box>
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">Fase al cierre</Text>
+                  <Text size="sm" fw={600} mt={4}>
+                    {historialDetalle.fase_al_cierre != null
+                      ? (infoFasePorNumero(historialDetalle.fase_al_cierre)?.fullName ?? `Fase ${historialDetalle.fase_al_cierre}`)
+                      : "—"}
+                  </Text>
+                </Box>
+              </SimpleGrid>
+            </Paper>
 
             {historialDetalle.tipo_proceso === "AV" && historialDetalle.av_rc_oficio_modo === "pendiente" && (
-              <Text size="xs" c="dimmed">
+              <Alert variant="light" color="blue" radius="md" py="xs" icon={<IconInfoCircle size={16} />}>
+              <Text size="xs">
                 El RC anterior se prolonga en la ficha mientras se espera el RC de oficio. En el historial de Registro calificado queda una fila <strong>Vigencia transitoria</strong> (solo archivo, sin proceso gestionable).
               </Text>
+              </Alert>
             )}
             {historialDetalle.tipo_proceso === "RC" && historialDetalle.subtipo === "Vigencia transitoria" && (
-              <Text size="xs" c="dimmed">
+              <Alert variant="light" color="blue" radius="md" py="xs" icon={<IconInfoCircle size={16} />}>
+              <Text size="xs">
                 <strong>Vigencia transitoria (RC)</strong>: registro solo de archivo. No corresponde a un trámite que se cree ni se gestione aquí; prolonga en la ficha la vigencia del RC que estaba vigente al cerrar la acreditación vinculada, hasta que abras el «Registro calificado de oficio» desde la alerta de ese RC.
               </Text>
+              </Alert>
             )}
             {historialDetalle.tipo_proceso === "RC" && esSubtipoReformaCurricularSoloHistorial(historialDetalle.subtipo) && (
-              <Text size="xs" c="dimmed">
+              <Alert variant="light" color="blue" radius="md" py="xs" icon={<IconInfoCircle size={16} />}>
+              <Text size="xs">
                 <strong>Modificación</strong>: no genera resolución MEN ni alerta. La constancia y la ficha quedan en este cierre.
               </Text>
+              </Alert>
             )}
             {historialDetalle.tipo_proceso === "RC" && esSubtipoRenovacionReformaHistorial(historialDetalle.subtipo) && (
-              <Text size="xs" c="dimmed">
+              <Alert variant="light" color="blue" radius="md" py="xs" icon={<IconInfoCircle size={16} />}>
+              <Text size="xs">
                 <strong>Renovación + modificación</strong>: actualiza vigencia y genera alerta. Un mismo PDF del cierre figura como resolución y constancia.
               </Text>
+              </Alert>
             )}
             {historialDetalle.tipo_proceso === "RC" && historialDetalle.subtipo === "Registro calificado de oficio" && (
-              <Text size="xs" c="dimmed">
+              <Alert variant="light" color="blue" radius="md" py="xs" icon={<IconInfoCircle size={16} />}>
+              <Text size="xs">
                 <strong>RC de oficio</strong>: sin trámite gestionado. Solo resolución, vigencia y fecha de cierre.
               </Text>
+              </Alert>
             )}
 
             {historialDetalle.tipo_proceso === "RC" && esSubtipoReformaHistorial(historialDetalle.subtipo) && (
@@ -3301,14 +3704,14 @@ const ProcessesMenPage = () => {
 
             {historialDetalle.rc_oficio && (
               <>
-                <Divider label="Resolución — Registro calificado de oficio" labelPosition="left" />
+                <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución — Registro calificado de oficio" labelPosition="left" />
                 <SimpleGrid cols={3} spacing="sm">
                   {[
                     { label: "Código (RC de oficio)", value: historialDetalle.rc_oficio.codigo_resolucion },
                     { label: "Fecha (RC de oficio)",  value: historialDetalle.rc_oficio.fecha_resolucion ? formatFechaDDMMYY(historialDetalle.rc_oficio.fecha_resolucion) : null },
                     { label: "Duración",               value: historialDetalle.rc_oficio.duracion_resolucion != null ? `${historialDetalle.rc_oficio.duracion_resolucion} años` : null },
                   ].map(({ label, value }) => (
-                    <Paper key={label} withBorder radius="sm" p="sm">
+                    <Paper key={label} withBorder radius="md" p="sm">
                       <Text size="xs" c="dimmed" mb={2}>{label}</Text>
                       <Text size="sm" fw={600}>{value ?? "—"}</Text>
                     </Paper>
@@ -3317,7 +3720,7 @@ const ProcessesMenPage = () => {
                 {historialDetalle.rc_oficio.documentos?.length > 0 && (
                   <Stack gap={4} mt="xs">
                     {historialDetalle.rc_oficio.documentos.map((d, i) => (
-                      <Anchor key={i} href={d.view_link} target="_blank" size="sm" fw={500}>📄 {d.name}</Anchor>
+                      <Anchor key={i} href={d.view_link} target="_blank" size="sm" fw={500}><IconPaperclip size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />{d.name}</Anchor>
                     ))}
                   </Stack>
                 )}
@@ -3344,7 +3747,7 @@ const ProcessesMenPage = () => {
             <HistorialInformacionCaso record={historialDetalle} />
 
             {historialDetalle.observaciones && (
-              <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "#fff9e6" }}>
+              <Paper withBorder radius="md" p="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
                 <Text size="xs" c="dimmed" mb={2}>Observaciones generales</Text>
                 <Text size="sm">{historialDetalle.observaciones}</Text>
               </Paper>
@@ -3352,9 +3755,9 @@ const ProcessesMenPage = () => {
 
             {historialDetalle.pm_ligado && (
               <>
-                <Divider label="Plan de Mejoramiento (activo al cierre)" labelPosition="left" />
+                <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Plan de Mejoramiento (activo al cierre)" labelPosition="left" />
                 <Group gap="xs" mb={4}>
-                  <Badge color="green" variant="light" size="sm">Activo al cierre</Badge>
+                  <Badge color="grape" variant="light" size="sm">Activo al cierre</Badge>
                   {historialDetalle.pm_ligado.subtipo && (
                     <Badge color="gray" variant="outline" size="sm" styles={stylesSubtipoLargo}>
                       {etiquetaSubtipoCompacta(historialDetalle.pm_ligado.subtipo)}
@@ -3368,14 +3771,14 @@ const ProcessesMenPage = () => {
                     { label: "Envío avance a Vicerrectoría", value: historialDetalle.pm_ligado.fecha_envio_avance_vicerrectoria },
                     { label: "Radicación avance ante CNA",   value: historialDetalle.pm_ligado.fecha_radicacion_avance_cna },
                   ].map(({ label, value }) => (
-                    <Paper key={label} withBorder radius="sm" p="sm">
+                    <Paper key={label} withBorder radius="md" p="sm">
                       <Text size="xs" c="dimmed" mb={2}>{label}</Text>
-                      <Text size="sm" fw={600}>{value ?? "—"}</Text>
+                      <Text size="sm" fw={600}>{value ? formatFechaDDMMYY(value) : "—"}</Text>
                     </Paper>
                   ))}
                 </SimpleGrid>
                 {historialDetalle.pm_ligado.observaciones && (
-                  <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "#f0fff4" }}>
+                  <Paper withBorder radius="md" p="sm" style={{ backgroundColor: "var(--mantine-color-teal-light)" }}>
                     <Text size="xs" c="dimmed" mb={2}>Observaciones del plan</Text>
                     <Text size="sm">{historialDetalle.pm_ligado.observaciones}</Text>
                   </Paper>
@@ -3383,7 +3786,7 @@ const ProcessesMenPage = () => {
               </>
             )}
 
-            <Divider label="Fases y documentos" labelPosition="left" />
+            <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Fases y documentos" labelPosition="left" />
             <HistorialFases fases={historialDetalle.fases} />
           </Stack>
         )}

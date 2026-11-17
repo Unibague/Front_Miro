@@ -3,8 +3,14 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   Modal, Stack, Group, Button, Text, Paper, Select, TextInput,
-  SimpleGrid, Notification, Badge, Divider, Box, Anchor,
+  SimpleGrid, Badge, Box, Anchor, ThemeIcon, Alert, Stepper, UnstyledButton,
 } from "@mantine/core";
+import {
+  IconSchool, IconId, IconClock, IconBooks, IconInfoCircle, IconAlertTriangle, IconCheck,
+  IconArrowLeft, IconArrowRight, IconFileCertificate, IconFileTypePdf, IconTrash, IconRefresh,
+  IconCircleCheck, IconCertificate, IconClipboardCheck, IconPlus,
+} from "@tabler/icons-react";
+import type { ElementType, ReactNode } from "react";
 import { DateInput } from "@mantine/dates";
 import { dateParserEspanol, inputFechaAISO } from "../utils/parseFlexibleDate";
 import axios from "axios";
@@ -24,6 +30,45 @@ import {
 } from "../utils/nombreProgramaUnico";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import { useUnsavedChanges } from "@/app/context/UnsavedChangesContext";
+
+/* ─── Presentación del formulario ────────────────────────────────────────── */
+
+/** Bloque del formulario con icono y título, para que el usuario sepa qué está llenando. */
+function SeccionForm({ icon: Icon, color = "blue", titulo, descripcion, children }: {
+  icon: ElementType;
+  color?: string;
+  titulo: string;
+  descripcion?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Paper withBorder radius="lg" p="md">
+      <Group gap="sm" mb="sm" wrap="nowrap" align="flex-start">
+        <ThemeIcon size={32} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+          <Icon size={17} />
+        </ThemeIcon>
+        <Box>
+          <Text fw={700} size="sm" lh={1.3}>{titulo}</Text>
+          {descripcion && <Text size="xs" c="dimmed">{descripcion}</Text>}
+        </Box>
+      </Group>
+      {children}
+    </Paper>
+  );
+}
+
+/** Mensaje de ayuda: azul informativo, naranja advertencia, verde confirmación. */
+function Aviso({ color = "blue", children }: { color?: "blue" | "orange" | "teal"; children: ReactNode }) {
+  const Icono = color === "orange" ? IconAlertTriangle : color === "teal" ? IconCircleCheck : IconInfoCircle;
+  return (
+    <Alert variant="light" color={color} radius="md" py="xs" icon={<Icono size={16} />}>
+      <Text size="xs">{children}</Text>
+    </Alert>
+  );
+}
+
+const COLOR_TIPO: Record<string, string> = { RC: "blue", AV: "violet", AE: "teal" };
+const ICONO_TIPO: Record<string, ElementType> = { RC: IconFileCertificate, AV: IconCertificate, AE: IconClipboardCheck };
 
 /* ─── Definición de subtipos ─────────────────────────────────────────────── */
 const SUBTIPOS_RC = [
@@ -423,7 +468,7 @@ export default function AgregarProcesoModal({
   /** Bloque reutilizado en «Crear programa» y en paso 3 (programa nuevo). */
   const camposClasificacionEnAlta = (
     <>
-      <Divider label="Clasificación — CINE F 2013 AC" labelPosition="left" />
+      <SeccionForm icon={IconBooks} color="cyan" titulo="Clasificación CINE F 2013 AC" descripcion="Opcional. Clasificación internacional del campo de formación.">
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
         <TextInput label="Campo amplio" placeholder="Ej: Ingeniería, industria y construcción"
           value={cineCampoAmplio} onChange={e => setCineCampoAmplio(e.currentTarget.value)} />
@@ -432,13 +477,72 @@ export default function AgregarProcesoModal({
         <TextInput label="Campo detallado" placeholder="Ej: Ingeniería ambiental"
           value={cineCampoDetallado} onChange={e => setCineCampoDetallado(e.currentTarget.value)} />
       </SimpleGrid>
-      <Divider label="Clasificación — NBC (núcleo básico del conocimiento)" labelPosition="left" />
-      <SimpleGrid cols={2} spacing="sm">
+      </SeccionForm>
+      <SeccionForm icon={IconBooks} color="indigo" titulo="Núcleo básico del conocimiento (NBC)" descripcion="Opcional.">
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <TextInput label="Área de conocimiento" placeholder="Ej: Ingeniería"
           value={nbcArea} onChange={e => setNbcArea(e.currentTarget.value)} />
         <TextInput label="NBC" placeholder="Código o denominación NBC"
           value={nbcValor} onChange={e => setNbcValor(e.currentTarget.value)} />
       </SimpleGrid>
+      </SeccionForm>
+    </>
+  );
+
+  /** Datos del programa nuevo, agrupados en secciones (se usa en «Crear programa» y en el paso 3). */
+  const camposDatosPrograma = (
+    <>
+      <SeccionForm icon={IconId} color="blue" titulo="Identificación" descripcion="Los campos con * son obligatorios.">
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+          <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
+            value={nombre} onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }} required />
+          <Select label="Facultad" placeholder="Selecciona una facultad" required
+            data={facultades.map(f => ({ value: f.dep_code, label: f.name }))}
+            value={facultad} onChange={setFacultad} searchable />
+          <TextInput label="Código del programa" placeholder="Ej: 22"
+            description="Opcional. Si no lo indicas, el programa queda sin código visible."
+            value={depCodePrograma} onChange={e => setDepCodePrograma(e.currentTarget.value)} />
+          <TextInput label="Código SNIES" placeholder="Ej: 12345"
+            value={codigoSnies} onChange={e => setCodigoSnies(e.currentTarget.value)} />
+        </SimpleGrid>
+      </SeccionForm>
+      <SeccionForm icon={IconSchool} color="violet" titulo="Características académicas">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
+          <Select label="Modalidad" placeholder="Selecciona"
+            data={["Presencial", "Virtual", "Híbrido"]}
+            value={modalidad} onChange={setModalidad} />
+          <Select label="Nivel académico" placeholder="Selecciona"
+            data={["Pregrado", "Posgrado"]}
+            value={nivelAcad} onChange={setNivelAcad} />
+          <Select label="Nivel de formación" placeholder="Selecciona"
+            data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
+            value={nivelForm} onChange={setNivelForm} />
+          <Select label="Enfoque" placeholder="Selecciona"
+            data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
+            value={enfoque} onChange={setEnfoque} clearable />
+          <Select
+            label="Periodicidad de admisión"
+            placeholder="Selecciona"
+            data={[...PERIODICIDAD_ADMISION]}
+            value={admision}
+            onChange={setAdmision}
+            clearable
+          />
+        </SimpleGrid>
+      </SeccionForm>
+      <SeccionForm icon={IconClock} color="orange" titulo="Duración y estudiantes">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="sm">
+          <TextInput label="Créditos" type="number" placeholder="Ej: 173"
+            value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
+          <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
+            value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
+          <TextInput label="Semestres" type="number" placeholder="Ej: 10"
+            value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
+          <TextInput label="Estudiantes 1er periodo" type="number" placeholder="Ej: 250"
+            value={numEstud} onChange={e => setNumEstud(e.currentTarget.value)} />
+        </SimpleGrid>
+      </SeccionForm>
+      {camposClasificacionEnAlta}
     </>
   );
 
@@ -865,6 +969,9 @@ export default function AgregarProcesoModal({
       onClose={() => confirmNavigation(handleClose)}
       title={
         <Group gap="sm">
+          <ThemeIcon size="lg" radius="md" variant="light" color={esSoloCrearPrograma ? "blue" : COLOR_TIPO[tipo ?? ""] ?? "green"}>
+            {esSoloCrearPrograma ? <IconSchool size={20} /> : <IconPlus size={20} />}
+          </ThemeIcon>
           <Text fw={700} size="lg">{tituloModal}</Text>
           {!esSoloCrearPrograma && tipo && (
             <Badge color={tipo === "RC" ? "blue" : tipo === "AV" ? "violet" : "teal"} variant="light">{tipo}</Badge>
@@ -876,87 +983,52 @@ export default function AgregarProcesoModal({
           )}
         </Group>
       }
-      size="75rem" centered radius="md"
+      size="75rem" centered radius="lg"
+      styles={{
+        header: { borderBottom: "1px solid var(--mantine-color-default-border)" },
+        body: { paddingTop: 16, backgroundColor: "var(--mantine-color-default-hover)" },
+      }}
     >
       <Stack gap="md">
+        <style>{`.men-opcion { transition: transform 120ms ease, box-shadow 120ms ease; cursor: pointer; } .men-opcion:hover { transform: translateY(-2px); box-shadow: var(--mantine-shadow-sm); }`}</style>
 
         {esSoloCrearPrograma ? (
           <>
-            <Text size="sm" c="dimmed">
-              Registra los datos del programa. Al guardar se crea también el proceso <strong>RC — Nuevo</strong> (sin resolución). Para la primera acreditación voluntaria usa <strong>Nuevo proceso AV</strong> o «Agregar proceso».
-            </Text>
-            <Divider label="Datos del programa" labelPosition="left" />
-            <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
-              value={nombre} onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }} required />
-            <TextInput label="Código del programa" placeholder="Ej: 22 (opcional)"
-              description="Opcional. Si no lo indicas, el programa queda sin código visible (como el SNIES)."
-              value={depCodePrograma} onChange={e => setDepCodePrograma(e.currentTarget.value)} />
-            <TextInput label="Código SNIES" placeholder="Ej: 12345"
-              value={codigoSnies} onChange={e => setCodigoSnies(e.currentTarget.value)} />
-            <Select label="Facultad" placeholder="Selecciona una facultad" required
-              data={facultades.map(f => ({ value: f.dep_code, label: f.name }))}
-              value={facultad} onChange={setFacultad} searchable />
-            <SimpleGrid cols={2} spacing="sm">
-              <Select label="Modalidad" placeholder="Selecciona"
-                data={["Presencial", "Virtual", "Híbrido"]}
-                value={modalidad} onChange={setModalidad} />
-              <Select label="Nivel académico" placeholder="Selecciona"
-                data={["Pregrado", "Posgrado"]}
-                value={nivelAcad} onChange={setNivelAcad} />
-              <Select label="Nivel de formación" placeholder="Selecciona"
-                data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
-                value={nivelForm} onChange={setNivelForm} />
-              <Select label="Enfoque" placeholder="Selecciona"
-                data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
-                value={enfoque} onChange={setEnfoque} clearable />
-              <Select
-                label="Periodicidad de admisión"
-                placeholder="Selecciona"
-                data={[...PERIODICIDAD_ADMISION]}
-                value={admision}
-                onChange={setAdmision}
-                clearable
-              />
-              <TextInput label="Créditos" type="number" placeholder="Ej: 173"
-                value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-              <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
-                value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
-              <TextInput label="Semestres" type="number" placeholder="Ej: 10"
-                value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
-              <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"
-                value={numEstud} onChange={e => setNumEstud(e.currentTarget.value)} />
-            </SimpleGrid>
-            {camposClasificacionEnAlta}
-            {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
+            <Aviso>
+              Registra los datos del programa. Al guardar se crea también el proceso <strong>RC — Nuevo</strong> (sin resolución). Para la primera acreditación voluntaria usa <strong>Nuevo proceso AV</strong>.
+            </Aviso>
+            {camposDatosPrograma}
+            {error && <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
             <Group justify="space-between" mt="sm">
-              <Button variant="default" size="sm" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
-              <Button size="sm" loading={saving} onClick={() => void handleCrearSoloPrograma()}>Crear programa</Button>
+              <Button variant="default" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
+              <Button color="blue" leftSection={<IconCheck size={16} />} loading={saving} onClick={() => void handleCrearSoloPrograma()}>Crear programa</Button>
             </Group>
           </>
         ) : esPrimeraVezElegirTipoFlujo ? (
           <>
-            <Text size="sm" c="dimmed">
-              Acreditación voluntaria en subtipo <strong>Nuevo</strong> (sin resolución). Solo aparecen programas sin ninguna AV en historial (ni activa, ni alerta, ni cierre archivado). El registro calificado Nuevo del programa se crea con <strong>Crear programa</strong>.
-            </Text>
-            <Divider label="Programa" labelPosition="left" />
-            <Select
-              label="Programa"
-              placeholder="Busca por nombre"
-              required
-              searchable
-              data={programasListaPrimeraVez.map(p => ({ value: p._id, label: p.nombre }))}
-              value={programaId}
-              onChange={setProgramaId}
-            />
+            <Aviso>
+              Acreditación voluntaria en subtipo <strong>Nuevo</strong> (sin resolución). Solo aparecen programas que nunca han tenido una AV (ni activa, ni alerta, ni cierre archivado).
+            </Aviso>
+            <SeccionForm icon={IconSchool} color="violet" titulo="Programa" descripcion="Elige el programa que inicia su primera acreditación.">
+              <Select
+                label="Programa"
+                placeholder="Busca por nombre"
+                required
+                searchable
+                data={programasListaPrimeraVez.map(p => ({ value: p._id, label: p.nombre }))}
+                value={programaId}
+                onChange={setProgramaId}
+              />
+            </SeccionForm>
             {programasListaPrimeraVez.length === 0 && (
-              <Text size="xs" c="orange">
+              <Aviso color="orange">
                 No hay programas elegibles para un AV por primera vez (todos ya tienen historial, proceso activo o alerta de ese tipo). Para renovar u otro trámite, usa «Agregar proceso».
-              </Text>
+              </Aviso>
             )}
-            {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
+            {error && <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
             <Group justify="space-between" mt="sm">
-              <Button variant="default" size="sm" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
-              <Button size="sm" loading={saving} onClick={() => void handleCrear()}>Crear proceso</Button>
+              <Button variant="default" onClick={() => confirmNavigation(handleClose)}>Cancelar</Button>
+              <Button color="violet" leftSection={<IconCheck size={16} />} loading={saving} onClick={() => void handleCrear()}>Crear proceso</Button>
             </Group>
           </>
         ) : (
@@ -964,46 +1036,55 @@ export default function AgregarProcesoModal({
       {!esSoloReformaCurricular && (
       <>
       {/* ── Indicador de pasos ── */}
-      <Group gap={4} mb="md">
-        {([1, 2, 3] as const).map((n) => (
-          <Box
-            key={n}
-            style={{
-              flex: 1,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: step >= n ? "#228be6" : "#dee2e6",
-            }}
-          />
-        ))}
-      </Group>
-      <Text size="xs" c="dimmed" mb="md" fw={500}>
-        {`Paso ${step} de 3 — ${tituloPaso}`}
-      </Text>
+      <Paper withBorder radius="lg" p="md">
+        <Stepper active={step - 1} size="sm" color={COLOR_TIPO[tipo ?? ""] ?? "blue"} allowNextStepsSelect={false}>
+          <Stepper.Step label="Tipo de proceso" description="RC, AV o AE" />
+          <Stepper.Step label="Subtipo" description="Qué trámite es" />
+          <Stepper.Step label="Datos" description="Programa y resolución" />
+        </Stepper>
+        <Text size="xs" c="dimmed" mt="sm" ta="center">{`Paso ${step} de 3 — ${tituloPaso}`}</Text>
+      </Paper>
 
         {/* ───────────── PASO 1: TIPO ───────────── */}
         {step === 1 && (
-          <SimpleGrid cols={3} spacing="md">
-            {(["RC", "AV", "AE"] as const).map((t) => (
-              <Paper
-                key={t}
-                withBorder
-                radius="md"
-                p="lg"
-                style={{ cursor: "pointer", borderColor: tipo === t ? "#228be6" : undefined, borderWidth: 2, textAlign: "center" }}
-                onClick={() => {
-                  setTipo(t);
-                  if (t === "AE") { setSubtipo("Autoevaluación"); }
-                  setStep(t === "AE" ? 3 : 2);
-                }}
-              >
-                <Badge color={t === "RC" ? "blue" : t === "AV" ? "violet" : "teal"} size="xl" variant="light" mb="sm">{t}</Badge>
-                <Text fw={700} size="sm">{t === "RC" ? "Registro Calificado" : t === "AV" ? "Acreditación Voluntaria" : "Autoevaluación"}</Text>
-                <Text size="xs" c="dimmed" mt={4}>
-                  {t === "RC" ? "Incluye reactivación (programa Inactivo, paso 3)." : t === "AV" ? "Incluye reactivación." : "Crea PM automáticamente"}
-                </Text>
-              </Paper>
-            ))}
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+            {(["RC", "AV", "AE"] as const).map((t) => {
+              const Icono = ICONO_TIPO[t];
+              const color = COLOR_TIPO[t];
+              return (
+                <UnstyledButton
+                  key={t}
+                  onClick={() => {
+                    setTipo(t);
+                    if (t === "AE") { setSubtipo("Autoevaluación"); }
+                    setStep(t === "AE" ? 3 : 2);
+                  }}
+                >
+                  <Paper
+                    withBorder
+                    radius="lg"
+                    p="lg"
+                    className="men-opcion"
+                    style={{
+                      textAlign: "center",
+                      height: "100%",
+                      borderWidth: 2,
+                      borderColor: tipo === t ? `var(--mantine-color-${color}-5)` : undefined,
+                      backgroundColor: tipo === t ? `var(--mantine-color-${color}-light)` : undefined,
+                    }}
+                  >
+                    <ThemeIcon size={52} radius="xl" variant="light" color={color} mx="auto" mb="sm">
+                      <Icono size={26} />
+                    </ThemeIcon>
+                    <Text fw={800} size="md">{t === "RC" ? "Registro calificado" : t === "AV" ? "Acreditación voluntaria" : "Autoevaluación"}</Text>
+                    <Badge color={color} variant="light" mt={6}>{t}</Badge>
+                    <Text size="xs" c="dimmed" mt={8}>
+                      {t === "RC" ? "Renovación, modificación, reactivación y más." : t === "AV" ? "Renovación, no renovación y reactivación." : "Crea el plan de mejoramiento automáticamente."}
+                    </Text>
+                  </Paper>
+                </UnstyledButton>
+              );
+            })}
           </SimpleGrid>
         )}
 
@@ -1017,13 +1098,21 @@ export default function AgregarProcesoModal({
                   withBorder
                   radius="md"
                   p="md"
-                  style={{ cursor: "pointer", borderColor: subtipo === s.key ? "#228be6" : undefined, borderWidth: subtipo === s.key ? 2 : 1 }}
+                  className="men-opcion"
+                  style={{
+                    cursor: "pointer",
+                    borderWidth: 2,
+                    borderColor: subtipo === s.key ? `var(--mantine-color-${COLOR_TIPO[tipo] ?? "blue"}-5)` : undefined,
+                    backgroundColor: subtipo === s.key ? `var(--mantine-color-${COLOR_TIPO[tipo] ?? "blue"}-light)` : undefined,
+                  }}
                   onClick={() => setSubtipo(s.key)}
                 >
                   <Group gap="sm" align="flex-start">
-                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${subtipo === s.key ? "#228be6" : "#ced4da"}`, backgroundColor: subtipo === s.key ? "#228be6" : "white", flexShrink: 0, marginTop: 2 }} />
+                    <ThemeIcon size={22} radius="xl" variant={subtipo === s.key ? "filled" : "default"} color={COLOR_TIPO[tipo] ?? "blue"} style={{ flexShrink: 0, marginTop: 1 }}>
+                      {subtipo === s.key ? <IconCheck size={13} /> : null}
+                    </ThemeIcon>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <Text fw={600} size="sm" style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{s.titulo}</Text>
+                      <Text fw={700} size="sm" style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{s.titulo}</Text>
                       <Text size="xs" c="dimmed" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{s.desc}</Text>
                       {tipo === "RC" && s.key === "Reactivación" && (
                         <Text size="xs" c="orange" mt={4} style={{ whiteSpace: "normal", wordBreak: "break-word" }}>
@@ -1036,15 +1125,15 @@ export default function AgregarProcesoModal({
               ))}
             </Stack>
             <Group justify="space-between" mt="sm">
-              <Button variant="default" size="sm" onClick={() => {
+              <Button variant="default" leftSection={<IconArrowLeft size={16} />} onClick={() => {
                 if (prefillDesdeRecordatorio && !prefillDesdeRecordatorio.soloTipo) { handleClose(); return; }
                 if (prefillDesdeRecordatorio?.soloTipo) {
                   setStep(1); setTipo(null); setSubtipo(null);
                   return;
                 }
                 setStep(1); setSubtipo(null);
-              }}>← Atrás</Button>
-              <Button size="sm" disabled={!subtipo} onClick={() => setStep(3)}>Siguiente →</Button>
+              }}>Atrás</Button>
+              <Button color={COLOR_TIPO[tipo] ?? "blue"} rightSection={<IconArrowRight size={16} />} disabled={!subtipo} onClick={() => setStep(3)}>Siguiente</Button>
             </Group>
           </>
         )}
@@ -1052,9 +1141,9 @@ export default function AgregarProcesoModal({
       </>
       )}
       {esSoloReformaCurricular && (
-        <Text size="sm" c="dimmed" mb="md">
-          Solo si <strong>no</strong> hay otro RC activo en el programa. Proceso interno de la ficha: <strong>no elimina alertas</strong> de renovación. Elige el programa y créalo; la constancia y los cambios se registran al cerrar.
-        </Text>
+        <Aviso>
+          Solo si <strong>no</strong> hay otro RC activo en el programa. Es un proceso interno de la ficha: <strong>no elimina alertas</strong> de renovación. Elige el programa y créalo; la constancia y los cambios se registran al cerrar.
+        </Aviso>
       )}
 
         {/* ───────────── PASO 3: DATOS ───────────── */}
@@ -1064,62 +1153,20 @@ export default function AgregarProcesoModal({
             {/* RC Nuevo o AV Nuevo (flujo normal): crear programa y proceso */}
             {mostrarFormularioProgramaNuevo && (
               <>
-                <Divider label="Datos del programa" labelPosition="left" />
-                <TextInput label="Nombre del programa" placeholder="Ej: Ingeniería de Sistemas"
-                  value={nombre} onChange={e => { setNombre(e.currentTarget.value); setHasChanges(true); }} required />
-                <TextInput label="Código del programa" placeholder="Ej: 22 (opcional)"
-                  description="Opcional. Si no lo indicas, el programa queda sin código visible (como el SNIES)."
-                  value={depCodePrograma} onChange={e => setDepCodePrograma(e.currentTarget.value)} />
-                <TextInput label="Código SNIES" placeholder="Ej: 12345"
-                  value={codigoSnies} onChange={e => setCodigoSnies(e.currentTarget.value)} />
-                <Select label="Facultad" placeholder="Selecciona una facultad" required
-                  data={facultades.map(f => ({ value: f.dep_code, label: f.name }))}
-                  value={facultad} onChange={setFacultad} searchable />
-                <SimpleGrid cols={2} spacing="sm">
-                  <Select label="Modalidad" placeholder="Selecciona"
-                    data={["Presencial", "Virtual", "Híbrido"]}
-                    value={modalidad} onChange={setModalidad} />
-                  <Select label="Nivel académico" placeholder="Selecciona"
-                    data={["Pregrado", "Posgrado"]}
-                    value={nivelAcad} onChange={setNivelAcad} />
-                  <Select label="Nivel de formación" placeholder="Selecciona"
-                    data={["Técnico", "Tecnológico", "Profesional", "Especialización", "Maestría", "Doctorado"]}
-                    value={nivelForm} onChange={setNivelForm} />
-                  <Select label="Enfoque" placeholder="Selecciona"
-                    data={["Investigación", "Profundización", "Investigación y Profundización", "No aplica"]}
-                    value={enfoque} onChange={setEnfoque} clearable />
-                  <Select
-                    label="Periodicidad de admisión"
-                    placeholder="Selecciona"
-                    data={[...PERIODICIDAD_ADMISION]}
-                    value={admision}
-                    onChange={setAdmision}
-                    clearable
-                  />
-                  <TextInput label="Créditos" type="number" placeholder="Ej: 173"
-                    value={numCreditos} onChange={e => setNumCreditos(e.currentTarget.value)} />
-                  <TextInput label="Periodos de duración" placeholder="Ej: 10 o 10 semestres"
-                    value={periodosDuracion} onChange={e => setPeriodosDuracion(e.currentTarget.value)} />
-                  <TextInput label="Semestres" type="number" placeholder="Ej: 10"
-                    value={numSemestres} onChange={e => setNumSemestres(e.currentTarget.value)} />
-                  <TextInput label="Número de estudiantes en el primer periodo" type="number" placeholder="Ej: 250"
-                    value={numEstud} onChange={e => setNumEstud(e.currentTarget.value)} />
-                </SimpleGrid>
-                {camposClasificacionEnAlta}
-                <Text size="xs" c="dimmed" mt={-4}>
+                {camposDatosPrograma}
+                <Aviso>
                   {tipo === "RC"
                     ? "Se creará el programa y el proceso RC (Nuevo) sin resolución ni fechas. Podrás editar las fechas después."
                     : "Se creará el programa y el proceso AV (Nuevo) sin resolución. Todas las fechas quedan en blanco y son editables."}
-                </Text>
+                </Aviso>
               </>
             )}
 
             {/* Subtipos que usan programa ya existente */}
             {!mostrarFormularioProgramaNuevo && (
-              <>
-                <Divider label="Programa" labelPosition="left" />
+              <SeccionForm icon={IconSchool} color={COLOR_TIPO[tipo ?? ""] ?? "blue"} titulo="Programa" descripcion="Programa al que pertenece este proceso.">
                 {programaBloqueadoPorPrefill && programaSel ? (
-                  <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "#f8f9fa" }}>
+                  <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
                     <Text size="xs" c="dimmed" mb={4}>Programa (fijado desde recordatorio)</Text>
                     <Text size="sm" fw={600}>{programaSel.nombre}</Text>
                     {programaSel.estado && (
@@ -1140,50 +1187,52 @@ export default function AgregarProcesoModal({
                       onChange={setProgramaId}
                     />
                     {programasDisponibles.length === 0 && (
-                      <Text size="xs" c="orange">
+                      <Box mt="xs">
+                      <Aviso color="orange">
                         {tipo === "RC"
                           ? (subtipo === "Reactivación"
                             ? "No hay programas Inactivos sin RC activo. La reactivación de RC aplica tras no renovación (programa Inactivo) y sin otro registro en curso."
                             : "Ningún programa disponible: todos tienen ya un Registro Calificado activo (solo uno a la vez, incluye reformas). Cierra el RC vigente para poder crear otro.")
                           : `Todos los programas ya tienen un proceso de ${tipo} activo.`}
-                      </Text>
+                      </Aviso>
+                      </Box>
                     )}
                   </>
                 )}
-              </>
+              </SeccionForm>
             )}
 
             {reactivacionRcProgramaActivo && (
-              <Text size="xs" c="orange">
+              <Aviso color="orange">
                 Este programa está <strong>Activo</strong>. La reactivación de RC solo aplica a programas <strong>Inactivos</strong> (p. ej. tras una no renovación). Elige otro programa o subtipo.
-              </Text>
+              </Aviso>
             )}
 
             {subtipo === "Reforma curricular" && (
-              <Text size="xs" c="dimmed">
-                No se usa resolución vigente ni autocalculo de fechas. Las fechas del proceso quedan en blanco y se completan manualmente en la gestión.
-              </Text>
+              <Aviso>
+                No se usa resolución vigente ni autocálculo de fechas. Las fechas del proceso quedan en blanco y se completan manualmente en la gestión.
+              </Aviso>
             )}
 
             {/* Datos de resolución */}
             {NECESITA_RESOLUCION.has(subtipo) && (
-              <>
-                <Divider label="Resolución vigente" labelPosition="left" />
+              <SeccionForm icon={IconFileCertificate} color={COLOR_TIPO[tipo ?? ""] ?? "blue"} titulo="Resolución vigente" descripcion="Con estos datos se calculan automáticamente las fechas del proceso.">
+                <Stack gap="xs">
                 {prefillDesdeRecordatorio?.reminderRowId && (fechaRes || codigoRes || duracionRes) && (
-                  <Text size="xs" c="teal">
+                  <Aviso color="teal">
                     Resolución tomada de la alerta o del programa; revísala si la nueva resolución es distinta.
-                  </Text>
+                  </Aviso>
                 )}
                 {prefillDesdeRecordatorio?.reminderRowId && !fechaRes && !codigoRes && !duracionRes && (
-                  <Text size="xs" c="orange">
+                  <Aviso color="orange">
                     No hay resolución en la alerta ni en el programa. Complétala de manera manual (o cierra el proceso anterior indicando fecha, código y vigencia para que se genere la alerta).
-                  </Text>
+                  </Aviso>
                 )}
                 {subtipo === "No renovación" && (
-                  <Text size="xs" c="dimmed">Este proceso quedará en plan de contingencia permanente (solo documentos). Solo se calcula la fecha de vencimiento.</Text>
+                  <Aviso>Este proceso quedará en plan de contingencia permanente (solo documentos). Solo se calcula la fecha de vencimiento.</Aviso>
                 )}
                 {ES_AUTOCALCULO.has(subtipo) && (
-                  <Text size="xs" c="dimmed">
+                  <Aviso>
                     {subtipo === "Renovación + reforma"
                       ? "Requiere alerta de RC o resolución vigente en el programa. El sistema auto-calculará todas las fechas del proceso."
                       : subtipo === "Registro calificado de oficio"
@@ -1191,9 +1240,9 @@ export default function AgregarProcesoModal({
                           ? "Tras la acreditación con vigencia de gracia: ingresa la resolución de oficio (fecha, código y PDF). Vigencia 7 años; la gestión del trámite será solo confirmación y cierre."
                           : "Vigencia fija en 7 años. El proceso queda en fase única para gestión liviana y se crea la alerta RC (recordatorio renovación) con la misma resolución y calendario."
                         : "El sistema auto-calculará todas las fechas del proceso a partir de la resolución."}
-                  </Text>
+                  </Aviso>
                 )}
-                <SimpleGrid cols={3} spacing="sm">
+                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
                   <DateInput
                     label="Fecha de resolución"
                     value={fechaRes ? (dateParserEspanol(fechaRes) ?? new Date(`${fechaRes.slice(0, 10)}T12:00:00`)) : null}
@@ -1230,7 +1279,7 @@ export default function AgregarProcesoModal({
                   };
                   return (
                 <div>
-                  <Text size="sm" fw={500} mb={4}>PDF de resolución</Text>
+                  <Text size="sm" fw={600} mb={6} mt="xs">PDF de la resolución</Text>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1243,16 +1292,16 @@ export default function AgregarProcesoModal({
                     }}
                   />
                   {(pdfFile || muestraDocAlerta) && (
-                  <Paper withBorder radius="sm" p="sm" bg="gray.0" mb="xs">
+                  <Paper withBorder radius="md" p="sm" mb="xs" style={{ backgroundColor: "var(--mantine-color-teal-light)", borderColor: "var(--mantine-color-teal-3)" }}>
                     {pdfFile ? (
                       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
                         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                          <Text size="sm" fw={600} truncate maw={280}>📄 {pdfFile.name}</Text>
+                          <Group gap={6} wrap="nowrap"><IconFileTypePdf size={18} color="var(--mantine-color-red-6)" /><Text size="sm" fw={600} truncate maw={280}>{pdfFile.name}</Text></Group>
                           <Text size="xs" c="dimmed">Archivo nuevo (reemplaza el de la alerta)</Text>
                         </Stack>
                         <Group gap={6} wrap="nowrap">
-                          <Button size="xs" variant="light" onClick={abrirSelectorPdf}>Cambiar</Button>
-                          <Button size="xs" variant="subtle" color="red" onClick={quitarPdf}>Quitar</Button>
+                          <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={abrirSelectorPdf}>Cambiar</Button>
+                          <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={14} />} onClick={quitarPdf}>Quitar</Button>
                         </Group>
                       </Group>
                     ) : muestraDocAlerta ? (
@@ -1272,8 +1321,8 @@ export default function AgregarProcesoModal({
                           <Text size="xs" c="dimmed">Se reutilizará al crear el proceso (desde la alerta).</Text>
                         </Stack>
                         <Group gap={6} wrap="nowrap">
-                          <Button size="xs" variant="light" onClick={abrirSelectorPdf}>Cambiar</Button>
-                          <Button size="xs" variant="subtle" color="red" onClick={quitarPdf}>Quitar</Button>
+                          <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={abrirSelectorPdf}>Cambiar</Button>
+                          <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={14} />} onClick={quitarPdf}>Quitar</Button>
                         </Group>
                       </Group>
                     ) : null}
@@ -1292,18 +1341,17 @@ export default function AgregarProcesoModal({
                 </div>
                   );
                 })()}
-
-              </>
+                </Stack>
+              </SeccionForm>
             )}
 
             {tipo === "AV" && subtipo === "No renovación" && (
-              <div>
-                <Text size="sm" fw={500} mb={4}>Acta de aprobación de no renovación <Text component="span" c="red">*</Text></Text>
+              <SeccionForm icon={IconFileTypePdf} color="orange" titulo="Acta de aprobación de no renovación *" descripcion="Documento obligatorio para este subtipo.">
                 {actaNoRenovacionFile && (
-                  <Paper withBorder radius="sm" p="sm" bg="gray.0" mb="xs">
+                  <Paper withBorder radius="md" p="sm" mb="xs" style={{ backgroundColor: "var(--mantine-color-teal-light)", borderColor: "var(--mantine-color-teal-3)" }}>
                     <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                      <Text size="sm" fw={600} truncate maw={320}>📄 {actaNoRenovacionFile.name}</Text>
-                      <Button size="xs" variant="subtle" color="red" onClick={() => setActaNoRenovacionFile(null)}>
+                      <Group gap={6} wrap="nowrap"><IconFileTypePdf size={18} color="var(--mantine-color-red-6)" /><Text size="sm" fw={600} truncate maw={320}>{actaNoRenovacionFile.name}</Text></Group>
+                      <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={14} />} onClick={() => setActaNoRenovacionFile(null)}>
                         Quitar
                       </Button>
                     </Group>
@@ -1320,13 +1368,13 @@ export default function AgregarProcesoModal({
                     setError(null);
                   }}
                 />
-              </div>
+              </SeccionForm>
             )}
 
             {(subtipo === "Nuevo" && tipo === "AV" && mostrarFormularioProgramaNuevo) && (
-              <Text size="xs" c="dimmed" mt={4}>
+              <Aviso>
                 AV Nuevo: sin resolución ni fecha de vencimiento. Todas las fechas quedan en blanco y son editables manualmente.
-              </Text>
+              </Aviso>
             )}
 
             {procesoActivo && programaSel && tipo && onNavigateToGestion && (
@@ -1350,12 +1398,12 @@ export default function AgregarProcesoModal({
             )}
             </Stack>
 
-            {error && <Notification color="red" withCloseButton={false}>{error}</Notification>}
+            {error && <Alert color="red" variant="light" radius="md" icon={<IconAlertTriangle size={16} />}>{error}</Alert>}
 
             <Group justify="space-between" mt="sm">
               <Button
                 variant="default"
-                size="sm"
+                leftSection={<IconArrowLeft size={16} />}
                 onClick={() => {
                   setError(null);
                   if (esSoloReformaCurricular) {
@@ -1365,10 +1413,11 @@ export default function AgregarProcesoModal({
                   setStep(2);
                 }}
               >
-                ← Atrás
+                {esSoloReformaCurricular ? "Cancelar" : "Atrás"}
               </Button>
               <Button
-                size="sm"
+                color={COLOR_TIPO[tipo ?? ""] ?? "green"}
+                leftSection={<IconCheck size={16} />}
                 loading={saving}
                 disabled={reactivacionRcProgramaActivo}
                 onClick={() => void handleCrear()}

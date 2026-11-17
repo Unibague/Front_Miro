@@ -4,13 +4,13 @@ import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react"
 import {
   Text, Button, Paper, Group, Select, Modal, Stack, TextInput, Badge,
   Box, Table, ScrollArea, SimpleGrid, Anchor, Divider, Loader, Progress,
-  ActionIcon, Switch, Tooltip, Alert, Textarea, ThemeIcon,
+  ActionIcon, Switch, Tooltip, Alert, Textarea, ThemeIcon, Checkbox,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { IconChevronDown, IconChevronUp, IconGripVertical, IconPlus, IconTrash, IconEdit, IconFile, IconMessageCircle, IconChevronLeft, IconChevronRight, IconHistory, IconCalendar, IconCheck, IconX, IconAlertTriangle, IconUpload, IconExternalLink, IconLink, IconUnlink, IconChecklist } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronUp, IconGripVertical, IconPlus, IconTrash, IconEdit, IconFile, IconMessageCircle, IconChevronLeft, IconChevronRight, IconHistory, IconCalendar, IconCheck, IconX, IconAlertTriangle, IconUpload, IconExternalLink, IconLink, IconUnlink, IconChecklist, IconPaperclip, IconArrowUp, IconArrowDown, IconArrowBackUp, IconCircleCheck, IconChecks, IconFileText, IconFolderOpen } from "@tabler/icons-react";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import {
   DndContext,
@@ -44,9 +44,9 @@ import {
 } from "../utils/casoActividadMap";
 import { dateParserEspanol } from "../utils/parseFlexibleDate";
 import {
-  LABEL_PROCESO, COLOR_PROCESO,
+  LABEL_PROCESO,
   COLUMNAS_FECHA_RC_PM, COLUMNAS_FECHA_AV, COLUMNAS_FECHA_PM,
-  faseColors,
+  infoFasePorNumero,
   etiquetaSubtipoCompacta,
   stylesSubtipoLargo,
 } from "../constants";
@@ -101,6 +101,44 @@ const esActividadInformacionCaso = (nombre: string) =>
 const actividadResuelta = (a: Actividad) => !!a.completada || !!a.no_aplica;
 
 /** Igual que en SortableActividad: subs visibles según modo del acto administrativo. */
+const TIPO_COLOR_MANTINE: Record<string, string> = { RC: "blue", AV: "violet", AE: "teal", PM: "grape" };
+
+/** Fecha con botón «Editar» a la derecha (mismo patrón que la tabla de alertas). */
+function FechaConEditar({ fecha, onEditar, soloLectura = false, titulo, color = "blue" }: {
+  fecha: string | null | undefined;
+  onEditar: () => void;
+  soloLectura?: boolean;
+  titulo?: string;
+  color?: string;
+}) {
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Text
+        size="sm"
+        fw={700}
+        title={titulo}
+        style={{
+          whiteSpace: "nowrap",
+          color: fecha ? `var(--mantine-color-${color}-7)` : "var(--mantine-color-dimmed)",
+        }}
+      >
+        {fecha ? formatFechaDDMMYY(fecha) : "Sin fecha"}
+      </Text>
+      {!soloLectura && (
+        <Button
+          size="compact-xs"
+          variant="light"
+          color={color}
+          radius="xl"
+          onClick={(e) => { e.stopPropagation(); onEditar(); }}
+        >
+          Editar
+        </Button>
+      )}
+    </Group>
+  );
+}
+
 function getSubsVisiblesActividad(act: Actividad, caso: Caso | null): Subactividad[] {
   if (!act.subactividades?.length) return [];
   const esActAdmin = esActoAdministrativo(act.nombre);
@@ -195,22 +233,43 @@ const SortableActividad = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#ffffff" }}>
+      <Paper
+        withBorder
+        radius="md"
+        p="md"
+        style={{
+          borderLeft: `4px solid var(--mantine-color-${act.no_aplica ? "orange" : act.completada ? "teal" : "blue"}-5)`,
+          backgroundColor: act.no_aplica || act.completada ? "var(--mantine-color-default-hover)" : undefined,
+        }}
+      >
         {/* Fila principal de la actividad */}
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Group gap="sm" align="flex-start" style={{ flex: 1 }}>
-            <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 3, color: "#adb5bd", fontSize: 16, userSelect: "none" }}>
-              ⠿
-            </div>
-            <Group gap={6} wrap="nowrap" align="flex-start" style={{ marginTop: 2, flexShrink: 0 }}>
-              <input type="checkbox" checked={act.completada && !act.no_aplica}
-                onChange={() => canToggleCompletada && onToggle()}
-                disabled={!canToggleCompletada}
-                title="Hecho"
-                style={{ cursor: canToggleCompletada ? "pointer" : "not-allowed", width: 16, height: 16, marginTop: 2 }}
-              />
-              <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", marginTop: 2 }}>Hecho</Text>
-            </Group>
+            <Tooltip label="Arrastra para reordenar" withArrow>
+              <div {...attributes} {...listeners} style={{ cursor: "grab", paddingTop: 2, color: "var(--mantine-color-dimmed)", userSelect: "none", display: "flex" }}>
+                <IconGripVertical size={16} />
+              </div>
+            </Tooltip>
+            <ThemeIcon
+              size={26}
+              radius="xl"
+              variant={act.completada || act.no_aplica ? "filled" : "light"}
+              color={act.no_aplica ? "orange" : act.completada ? "teal" : "blue"}
+              style={{ flexShrink: 0, fontSize: 12, fontWeight: 800 }}
+            >
+              {act.completada && !act.no_aplica ? <IconCheck size={15} /> : index + 1}
+            </ThemeIcon>
+            <Checkbox
+              checked={act.completada && !act.no_aplica}
+              onChange={() => canToggleCompletada && onToggle()}
+              disabled={!canToggleCompletada}
+              label="Hecho"
+              color="teal"
+              size="sm"
+              mt={1}
+              styles={{ label: { fontSize: 12, color: "var(--mantine-color-dimmed)", paddingLeft: 6 }, body: { alignItems: "center" } }}
+              style={{ flexShrink: 0 }}
+            />
             {editActividadId === act._id ? (
               <Stack gap={4} style={{ flex: 1 }}>
                 <TextInput size="xs" label="Nombre de la actividad" value={editActividadNombre}
@@ -225,13 +284,19 @@ const SortableActividad = ({
             ) : (
               <div style={{ flex: 1 }}>
                 <Group gap={6} align="center" wrap="wrap">
-                  <Text size="sm" td={(act.completada || act.no_aplica) ? "line-through" : undefined} c={act.no_aplica ? "orange" : act.completada ? "dimmed" : "#000"}>{act.nombre}</Text>
-                  {act.no_aplica && <Badge size="xs" color="orange" variant="light">N/A</Badge>}
+                  <Text size="sm" fw={700} c={act.no_aplica ? "orange.7" : undefined}>{act.nombre}</Text>
+                  {act.no_aplica && <Badge size="xs" color="orange" variant="light">No aplica</Badge>}
+                  {act.completada && !act.no_aplica && <Badge size="xs" color="teal" variant="light">Hecha</Badge>}
                 </Group>
-                <Text size="xs" c={act.responsables ? "dimmed" : "#bbb"} fs={act.responsables ? undefined : "italic"}>
-                  {act.responsables || "Sin encargado — clic en ✏ para asignar"}
+                <Text size="xs" c="dimmed" fs={act.responsables ? undefined : "italic"}>
+                  {act.responsables ? `Encargado: ${act.responsables}` : "Sin encargado asignado"}
                 </Text>
-                {act.fecha_completado && <Text size="xs" c="teal">✓ {act.fecha_completado}</Text>}
+                {act.fecha_completado && (
+                  <Group gap={4} mt={2}>
+                    <IconCircleCheck size={13} color="var(--mantine-color-teal-6)" />
+                    <Text size="xs" c="teal" fw={600}>Completada el {formatFechaDDMMYY(act.fecha_completado)}</Text>
+                  </Group>
+                )}
                 {/* Estado para "Acto administrativo" */}
                 {esActoAdmin && (
                   <Group gap="xs" mt={6} align="center">
@@ -268,18 +333,31 @@ const SortableActividad = ({
           </Group>
           {editActividadId !== act._id && (
             <Group gap={4} wrap="nowrap" align="center" style={{ flexShrink: 0 }}>
-              <Button size="xs" variant="subtle" color="gray" title="Observaciones" onClick={onOpenObsActividad}>
-                Observaciones:{act.observaciones ? " ●" : ""}
-              </Button>
-              <Button size="xs" variant="subtle" color="gray" title="Documentos"
-                onClick={onOpenDocsActividad}>
-                📎{actividadDocCount > 0 ? ` ${actividadDocCount}` : ""}
-              </Button>
-              <Button size="xs" variant="subtle" color="blue" onClick={onEdit}>✏</Button>
-              <Button size="xs" variant="subtle" color="red" onClick={onDelete}>🗑</Button>
+              <Tooltip label={act.observaciones ? "Ver observaciones" : "Agregar observaciones"} withArrow>
+                <Button size="compact-sm" variant={act.observaciones ? "light" : "subtle"} color={act.observaciones ? "blue" : "gray"}
+                  leftSection={<IconMessageCircle size={14} />} onClick={onOpenObsActividad}>
+                  Observaciones
+                </Button>
+              </Tooltip>
+              <Tooltip label="Documentos de la actividad" withArrow>
+                <Button size="compact-sm" variant={actividadDocCount > 0 ? "light" : "subtle"} color={actividadDocCount > 0 ? "blue" : "gray"}
+                  leftSection={<IconPaperclip size={14} />} onClick={onOpenDocsActividad}>
+                  {actividadDocCount > 0 ? actividadDocCount : "Docs"}
+                </Button>
+              </Tooltip>
+              <Tooltip label="Editar nombre y encargado" withArrow>
+                <ActionIcon variant="subtle" color="blue" aria-label="Editar actividad" onClick={onEdit}>
+                  <IconEdit size={16} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Eliminar actividad" withArrow>
+                <ActionIcon variant="subtle" color="red" aria-label="Eliminar actividad" onClick={onDelete}>
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </Tooltip>
               <Switch
                 size="xs"
-                label="N/A"
+                label="No aplica"
                 labelPosition="left"
                 checked={!!act.no_aplica}
                 onChange={(e) => {
@@ -297,21 +375,30 @@ const SortableActividad = ({
 
         {/* Botón expandir subactividades */}
         {editActividadId !== act._id && (
-          <Box mt={6} ml={40}>
-            <Button
-              size="xs" variant="subtle" color="gray"
-              onClick={() => setExpandSubs(v => !v)}
-            >
-              {expandSubs ? "▾" : "▸"} Subactividades
+          <Box mt={8} ml={68}>
+            {(() => {
+              const resueltasSubs = subsVisibles.filter(s => s.completada || s.no_aplica || act.no_aplica).length;
+              return (
+                <Group gap="sm" wrap="nowrap">
+                  <Button
+                    size="compact-sm" variant="light" color="gray" radius="xl"
+                    leftSection={expandSubs ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                    onClick={() => setExpandSubs(v => !v)}
+                  >
+                    {expandSubs ? "Ocultar subactividades" : "Ver subactividades"}
+                  </Button>
                   {subsVisibles.length > 0 && (
-                <Badge size="xs" ml={4} color="gray" variant="outline">
-                  {subsVisibles.filter(s => s.completada || s.no_aplica || act.no_aplica).length}/{subsVisibles.length}
-                </Badge>
-              )}
-            </Button>
+                    <Group gap={6} wrap="nowrap">
+                      <Progress value={(resueltasSubs / subsVisibles.length) * 100} color={resueltasSubs === subsVisibles.length ? "teal" : "blue"} size="sm" radius="xl" w={80} />
+                      <Text size="xs" c="dimmed" fw={600}>{resueltasSubs}/{subsVisibles.length}</Text>
+                    </Group>
+                  )}
+                </Group>
+              );
+            })()}
 
             {expandSubs && (
-              <Stack gap={4} mt={6}>
+              <Stack gap={6} mt={8} pl="sm" style={{ borderLeft: "2px solid var(--mantine-color-default-border)" }}>
                 {subsVisibles.length === 0 && esActoAdmin && modoActual === null && (
                   <Text size="xs" c="dimmed" fs="italic" ml={4}>Selecciona un estado arriba para ver las subactividades.</Text>
                 )}
@@ -321,38 +408,38 @@ const SortableActividad = ({
                   const subNaEfectivo = subNaPropia || heredaNaActividad;
                   const subResuelta = !!sub.completada || subNaEfectivo;
                   return (
-                  <Paper key={sub._id} withBorder radius="xs" p={6}
-                    style={{ background: subResuelta ? "#f8f9fa" : undefined }}>
+                  <Paper key={sub._id} withBorder radius="md" px="sm" py={8}
+                    style={{ background: subResuelta ? "var(--mantine-color-default-hover)" : undefined }}>
                     <Group justify="space-between" wrap="nowrap" align="flex-start">
                       <Group gap="xs" style={{ flex: 1, minWidth: 0 }} align="flex-start">
-                        <input type="checkbox" checked={sub.completada && !subNaEfectivo}
+                        <Checkbox
+                          checked={sub.completada && !subNaEfectivo}
                           onChange={() => onToggleSubactividad(sub)}
                           disabled={subNaEfectivo}
-                          title="Hecho"
-                          style={{
-                            marginTop: 4,
-                            cursor: subNaEfectivo ? "not-allowed" : "pointer",
-                            width: 14, height: 14, flexShrink: 0,
-                          }}
+                          aria-label="Hecho"
+                          color="teal"
+                          size="xs"
+                          mt={2}
+                          style={{ flexShrink: 0 }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <Group gap={4} wrap="wrap" align="center">
-                            <Text size="xs" td={subResuelta ? "line-through" : undefined}
-                              c={subNaEfectivo ? "orange" : sub.completada ? "dimmed" : undefined}>{sub.nombre}</Text>
+                            <Text size="sm" fw={500} c={subNaEfectivo ? "orange.7" : undefined}>{sub.nombre}</Text>
                             {subNaEfectivo && (
                               <Badge size="xs" color="orange" variant="light">
-                                {heredaNaActividad && !subNaPropia ? "N/A (actividad)" : "N/A"}
+                                {heredaNaActividad && !subNaPropia ? "No aplica (actividad)" : "No aplica"}
                               </Badge>
                             )}
                           </Group>
                           {sub.fecha_completado && !subNaEfectivo && (
-                            <Text size="xs" c="teal">✓ {sub.fecha_completado}</Text>
+                            <Text size="xs" c="teal">Completada el {formatFechaDDMMYY(sub.fecha_completado)}</Text>
                           )}
                         </div>
                       </Group>
                       <Group gap={4} wrap="nowrap" align="center" style={{ flexShrink: 0 }}>
-                        <Button size="xs" variant="subtle" color="gray" p={2}
+                        <ActionIcon size="sm" variant="subtle" color="gray"
                           disabled={subIdx === 0 || heredaNaActividad}
+                          aria-label="Mover arriba"
                           title="Mover arriba"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
@@ -360,9 +447,10 @@ const SortableActividad = ({
                             const prevVisIdx = subIdx > 0 ? act.subactividades.findIndex(s => s._id === subsVisibles[subIdx - 1]._id) : -1;
                             if (prevVisIdx >= 0) { const tmp = ids[prevVisIdx]; ids[prevVisIdx] = ids[visIdx]; ids[visIdx] = tmp; }
                             onReorderSubactividades(ids);
-                          }}>↑</Button>
-                        <Button size="xs" variant="subtle" color="gray" p={2}
+                          }}><IconArrowUp size={14} /></ActionIcon>
+                        <ActionIcon size="sm" variant="subtle" color="gray"
                           disabled={subIdx === subsVisibles.length - 1 || heredaNaActividad}
+                          aria-label="Mover abajo"
                           title="Mover abajo"
                           onClick={() => {
                             const ids = act.subactividades.map(s => s._id);
@@ -370,21 +458,27 @@ const SortableActividad = ({
                             const nextVisIdx = subIdx < subsVisibles.length - 1 ? act.subactividades.findIndex(s => s._id === subsVisibles[subIdx + 1]._id) : -1;
                             if (nextVisIdx >= 0) { const tmp = ids[nextVisIdx]; ids[nextVisIdx] = ids[visIdx]; ids[visIdx] = tmp; }
                             onReorderSubactividades(ids);
-                          }}>↓</Button>
-                        <Button size="xs" variant="subtle" color="gray" title="Observaciones"
-                          onClick={() => onOpenObsSubactividad(sub)}>
-                          Observaciones:{sub.observaciones ? " ●" : ""}
-                        </Button>
-                        <Button size="xs" variant="subtle" color="gray" title="Documentos"
-                          onClick={() => onOpenDocsSubactividad(sub)}>
-                          📎{subactividadDocCounts[sub._id] > 0 ? ` ${subactividadDocCounts[sub._id]}` : ""}
-                        </Button>
-                        <Button size="xs" variant="subtle" color="red"
-                          disabled={heredaNaActividad}
-                          onClick={() => onDeleteSubactividad(sub._id)}>🗑</Button>
+                          }}><IconArrowDown size={14} /></ActionIcon>
+                        <Tooltip label={sub.observaciones ? "Ver observaciones" : "Agregar observaciones"} withArrow>
+                          <ActionIcon size="sm" variant={sub.observaciones ? "light" : "subtle"} color={sub.observaciones ? "blue" : "gray"}
+                            aria-label="Observaciones" onClick={() => onOpenObsSubactividad(sub)}>
+                            <IconMessageCircle size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Documentos de la subactividad" withArrow>
+                          <Button size="compact-xs" variant={subactividadDocCounts[sub._id] > 0 ? "light" : "subtle"} color={subactividadDocCounts[sub._id] > 0 ? "blue" : "gray"}
+                            leftSection={<IconPaperclip size={13} />} onClick={() => onOpenDocsSubactividad(sub)}>
+                            {subactividadDocCounts[sub._id] > 0 ? subactividadDocCounts[sub._id] : "Docs"}
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="Eliminar subactividad" withArrow>
+                          <ActionIcon size="sm" variant="subtle" color="red" aria-label="Eliminar subactividad"
+                            disabled={heredaNaActividad}
+                            onClick={() => onDeleteSubactividad(sub._id)}><IconTrash size={14} /></ActionIcon>
+                        </Tooltip>
                         <Switch
                           size="xs"
-                          label="N/A"
+                          label="No aplica"
                           labelPosition="left"
                           checked={subNaEfectivo}
                           onChange={(e) => {
@@ -403,11 +497,14 @@ const SortableActividad = ({
 
                 {/* Agregar subactividad */}
                 <Group gap="xs" mt={2}>
-                  <TextInput size="xs" placeholder="Nueva subactividad..." value={nuevaSub}
+                  <TextInput size="xs" radius="md" placeholder="Nombre de la nueva subactividad..." value={nuevaSub}
+                    leftSection={<IconPlus size={14} />}
                     onChange={e => setNuevaSub(e.currentTarget.value)}
                     onKeyDown={e => e.key === "Enter" && handleAddSub()}
                     style={{ flex: 1 }} />
-                  <Button size="xs" variant="light" onClick={handleAddSub}>+</Button>
+                  <Button size="xs" variant="light" radius="md" leftSection={<IconPlus size={14} />} onClick={handleAddSub} disabled={!nuevaSub.trim()}>
+                    Agregar
+                  </Button>
                 </Group>
               </Stack>
             )}
@@ -2129,125 +2226,88 @@ const ProcesoDetalleCard = ({
       const obsK = `obs_${field}` as keyof Caso;
       const tieneObs = !!String((caso[obsK] as string | undefined) ?? "").trim();
       return (
-        <Table.Td key={field} style={{ verticalAlign: "middle", minWidth: 108, maxWidth: 132, padding: "8px 6px", ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
-          <Stack gap={2} align="center">
+        <Paper key={field} withBorder radius="md" p="sm"
+          style={{ borderTop: `3px solid var(--mantine-color-${isApelacion ? "orange" : "blue"}-3)`, display: "flex", flexDirection: "column", gap: 8, ...(bgColor ? { backgroundColor: bgColor } : {}) }}>
+          <Text size="xs" fw={700} lh={1.3}>{CASO_FECHA_LABELS[field]}</Text>
+          <Box>
             {esNoAplica ? (
-              <Text fw={600} ta="center" style={{ ...cellFont, color: "#e67700" }}>N/A</Text>
+              <Badge size="sm" variant="light" color="orange">N/A</Badge>
             ) : isEditing ? (
               <DateInput value={dateVal} onChange={val => saveCasoDate(field, val)}
                 valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingCasoDateKey(null)}
-                style={{ width: 118 }} clearable disabled={savingCaso}
+                clearable disabled={savingCaso}
                 dateParser={dateParserEspanol}
                 placeholder="dd/mm/aaaa"
                 styles={{ input: { fontSize: 12, minHeight: 28 } }} />
             ) : (
-              <Text fw={600} ta="center" style={{
-                ...cellFont,
-                cursor: "pointer", padding: "2px 6px", borderRadius: 4,
-                border: isApelacion ? "1px dashed #fd7014" : "1px dashed #4dabf7",
-                backgroundColor: isApelacion ? "#fff3e0" : "#e7f5ff",
-                color: fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
-              }}
-                title="Clic para editar fecha" onClick={() => setEditingCasoDateKey(field)}>
-                {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-              </Text>
+              <FechaConEditar
+                fecha={fecha}
+                color={isApelacion ? "orange" : "blue"}
+                onEditar={() => setEditingCasoDateKey(field)}
+              />
             )}
-            <Text
-              size="xs"
-              ta="center"
-              td="underline"
-              style={{ cursor: "pointer", lineHeight: 1.25, color: nDocs > 0 || tieneObs ? "#1971c2" : "#74c0fc" }}
-              onClick={e => { e.stopPropagation(); void abrirCasoFechaModal(field); }}
-            >
-              {nDocs > 0 || tieneObs ? "ver Obs. y Docs." : "Obs. y Docs."}
-            </Text>
-          </Stack>
-        </Table.Td>
+          </Box>
+          <Button size="compact-xs" variant={nDocs > 0 || tieneObs ? "light" : "subtle"} color={nDocs > 0 || tieneObs ? "blue" : "gray"}
+            leftSection={<IconPaperclip size={12} />} mt="auto" style={{ alignSelf: "flex-start" }}
+            onClick={e => { e.stopPropagation(); void abrirCasoFechaModal(field); }}>
+            {nDocs > 0 ? `Obs. y docs. (${nDocs})` : tieneObs ? "Ver obs. y docs." : "Obs. y docs."}
+          </Button>
+        </Paper>
       );
     };
 
     return (
-      <ScrollArea type="auto" scrollbars="y" offsetScrollbars style={{ width: "100%" }}>
-        <Table withTableBorder withColumnBorders style={{ width: "100%", tableLayout: "fixed" }}>
-          <Table.Thead>
-            <Table.Tr>
-              {/* Código del caso como primera columna */}
-              <Table.Th style={{ backgroundColor: "#f8f9fa", width: 120, padding: "8px 6px", verticalAlign: "top" }}>
-                <Text fw={700} ta="center" style={headStyle}>Código del caso</Text>
-              </Table.Th>
-              {COLS_FECHAS.map(col => (
-                <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa", padding: "8px 6px", verticalAlign: "top", maxWidth: 140 }}>
-                  <Text fw={700} ta="center" style={headStyle}>{col.label}</Text>
-                </Table.Th>
-              ))}
-              {muestraEstadoSolicitud && (
-              <Table.Th style={{ backgroundColor: "#f8f9fa", width: 118, maxWidth: 124, padding: "8px 6px", verticalAlign: "top" }}>
-                <Text fw={700} ta="center" style={headStyle}>Estado de la solicitud</Text>
-              </Table.Th>
-              )}
-              {mostrarApelacion && (
-                <>
-                  <Table.Th style={{ backgroundColor: "#fff3e0", padding: "8px 6px", verticalAlign: "top", maxWidth: 132 }}>
-                    <Text fw={700} ta="center" style={headStyle}>{CASO_FECHA_LABELS.fecha_resolucion_apelacion}</Text>
-                  </Table.Th>
-                  <Table.Th style={{ backgroundColor: "#fff3e0", padding: "8px 6px", verticalAlign: "top", maxWidth: 132 }}>
-                    <Text fw={700} ta="center" style={headStyle}>{CASO_FECHA_LABELS.fecha_respuesta_men}</Text>
-                  </Table.Th>
-                </>
-              )}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            <Table.Tr>
-              {/* Input código */}
-              <Table.Td style={{ verticalAlign: "middle", padding: "8px 6px" }}>
-                <TextInput
-                  size="xs" placeholder="Ej: 2024-RC-001" ta="center"
-                  value={caso.codigo_caso ?? ""}
-                  onChange={e => setCaso({ ...caso, codigo_caso: e.currentTarget.value })}
-                  onBlur={() => saveCasoField("codigo_caso", caso.codigo_caso)}
-                  disabled={savingCaso}
-                  styles={{ input: { textAlign: "center", fontSize: 12, minHeight: 30 } }}
-                />
-              </Table.Td>
-              {COLS_FECHAS.map(col => renderDateCell(col.key))}
-              {muestraEstadoSolicitud && (
-              <Table.Td style={{ verticalAlign: "middle", width: 118, maxWidth: 124, padding: "6px 4px" }}>
-                <Stack gap={4} align="stretch" justify="center">
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer", ...cellFont, lineHeight: 1.25 }}>
-                    <input
-                      type="checkbox"
-                      checked={caso.resolucion_aprobada === true}
-                      onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === true ? null : true)}
-                      disabled={savingCaso}
-                      style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
-                    />
-                    <span>Satisfactorio</span>
-                  </label>
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 6, cursor: "pointer", ...cellFont, lineHeight: 1.25 }}>
-                    <input
-                      type="checkbox"
-                      checked={caso.resolucion_aprobada === false}
-                      onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === false ? null : false)}
-                      disabled={savingCaso}
-                      style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}
-                    />
-                    <span>No satisfactorio</span>
-                  </label>
-                </Stack>
-              </Table.Td>
-              )}
-              {mostrarApelacion && renderDateCell("fecha_resolucion_apelacion", "#fff8f0")}
-              {mostrarApelacion && renderDateCell("fecha_respuesta_men", "#fff8f0")}
-            </Table.Tr>
-          </Table.Tbody>
-        </Table>
-      </ScrollArea>
+      <SimpleGrid cols={{ base: 1, xs: 2, md: 3, xl: 1 + COLS_FECHAS.length + (muestraEstadoSolicitud ? 1 : 0) + (mostrarApelacion ? 2 : 0) > 6 ? 4 : 1 + COLS_FECHAS.length + (muestraEstadoSolicitud ? 1 : 0) }} spacing="sm">
+        {/* Código del caso */}
+        <Paper withBorder radius="md" p="sm" style={{ borderTop: "3px solid var(--mantine-color-gray-3)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <Text size="xs" fw={700}>Código del caso</Text>
+          <TextInput
+            size="xs" placeholder="Ej: 2024-RC-001"
+            value={caso.codigo_caso ?? ""}
+            onChange={e => setCaso({ ...caso, codigo_caso: e.currentTarget.value })}
+            onBlur={() => saveCasoField("codigo_caso", caso.codigo_caso)}
+            disabled={savingCaso}
+            styles={{ input: { fontWeight: 700 } }}
+          />
+        </Paper>
+        {COLS_FECHAS.map(col => renderDateCell(col.key))}
+        {muestraEstadoSolicitud && (
+          <Paper withBorder radius="md" p="sm"
+            style={{
+              borderTop: `3px solid var(--mantine-color-${caso.resolucion_aprobada === true ? "teal" : caso.resolucion_aprobada === false ? "red" : "gray"}-3)`,
+              display: "flex", flexDirection: "column", gap: 8,
+            }}>
+            <Text size="xs" fw={700}>Estado de la solicitud</Text>
+            <Checkbox
+              size="xs"
+              color="teal"
+              label="Satisfactorio"
+              checked={caso.resolucion_aprobada === true}
+              onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === true ? null : true)}
+              disabled={savingCaso}
+            />
+            <Checkbox
+              size="xs"
+              color="red"
+              label="No satisfactorio"
+              checked={caso.resolucion_aprobada === false}
+              onChange={() => saveCasoField("resolucion_aprobada", caso.resolucion_aprobada === false ? null : false)}
+              disabled={savingCaso}
+            />
+          </Paper>
+        )}
+        {mostrarApelacion && renderDateCell("fecha_resolucion_apelacion", "var(--mantine-color-orange-light)")}
+        {mostrarApelacion && renderDateCell("fecha_respuesta_men", "var(--mantine-color-orange-light)")}
+      </SimpleGrid>
     );
   };
 
   /* ── Datos derivados ── */
-  const color           = COLOR_PROCESO[proceso.tipo_proceso] ?? "#868e96";
+  const tipoColor       = TIPO_COLOR_MANTINE[proceso.tipo_proceso] ?? "gray";
+  const estiloEncabezadoTipo: CSSProperties = {
+    backgroundColor: `var(--mantine-color-${tipoColor}-light)`,
+    borderBottom: `3px solid var(--mantine-color-${tipoColor}-5)`,
+  };
   const vigenteRcAv =
     proceso.tipo_proceso === "RC" || proceso.tipo_proceso === "AV"
       ? getResolucionVigenteDisplay(programa, proceso.tipo_proceso)
@@ -2572,12 +2632,12 @@ const ProcesoDetalleCard = ({
                     <Stack gap={4} mt="xs">
                       {resolucionDoc && (
                         <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                          📄 Resolución vigente: {resolucionDoc.name}
+                          <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Resolución vigente: {resolucionDoc.name}
                         </Anchor>
                       )}
                       {actoAdminMenDocs.map((doc) => (
                         <Anchor key={doc._id} size="xs" href={doc.view_link} target="_blank" rel="noopener noreferrer">
-                          📄 {doc.name}
+                          <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{doc.name}
                         </Anchor>
                       ))}
                     </Stack>
@@ -2590,13 +2650,13 @@ const ProcesoDetalleCard = ({
                         <Group gap="xs" wrap="wrap">
                           <Text size="xs" fw={600}>Resolución MEN:</Text>
                           <Anchor size="xs" href={cierreResolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
-                            📄 {cierreResolucionDoc.name}
+                            <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cierreResolucionDoc.name}
                           </Anchor>
                         </Group>
                         <Group gap="xs" wrap="wrap">
                           <Text size="xs" fw={600}>Constancia de la modificación:</Text>
                           <Anchor size="xs" href={cierreResolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
-                            📄 {cierreResolucionDoc.name}
+                            <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cierreResolucionDoc.name}
                           </Anchor>
                         </Group>
                       </>
@@ -2604,7 +2664,7 @@ const ProcesoDetalleCard = ({
                       <Group gap="xs" align="center" wrap="wrap">
                         <Text size="xs" fw={600}>Archivo del cierre:</Text>
                         <Anchor size="xs" href={cierreResolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
-                          📄 {cierreResolucionDoc.name}
+                          <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cierreResolucionDoc.name}
                         </Anchor>
                       </Group>
                     )}
@@ -2751,7 +2811,7 @@ const ProcesoDetalleCard = ({
       )}
 
       {cierreMuestraResolucionBloque && proceso.tipo_proceso === "AV" && (
-        <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "#f3f0ff" }}>
+        <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "var(--mantine-color-violet-light)" }}>
           <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -2778,7 +2838,7 @@ const ProcesoDetalleCard = ({
       )}
 
       {cierreMuestraResolucionBloque && proceso.tipo_proceso === "AV" && (
-        <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "#fff8ec" }}>
+        <Paper withBorder p="sm" radius="sm" style={{ backgroundColor: "var(--mantine-color-orange-light)" }}>
           <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
             <input
               type="checkbox"
@@ -2881,7 +2941,7 @@ const ProcesoDetalleCard = ({
           style={{
             width: "100%",
             borderRadius: 8,
-            border: "1px solid #dee2e6",
+            border: "1px solid var(--mantine-color-default-border)",
             padding: "8px 12px",
             fontSize: 14,
             resize: "vertical",
@@ -2916,7 +2976,7 @@ const ProcesoDetalleCard = ({
               {casoFechaDocs.map((doc) => (
                 <Group key={doc._id} justify="space-between" align="center">
                   <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">
-                    📄 {doc.name}
+                    <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{doc.name}
                   </Anchor>
                   <Button size="xs" variant="outline" color="red" onClick={() => void eliminarCasoFechaDoc(doc._id)}>
                     Eliminar
@@ -2931,8 +2991,11 @@ const ProcesoDetalleCard = ({
   );
 
   const bloqueInformacionCasoUi = muestraBloqueCaso ? (
-    <Box px="md" pt="sm" pb="sm" style={{ borderTop: "1px solid #dee2e6" }}>
-      <Text size="sm" fw={600} mb="xs">Información del caso</Text>
+    <Box px="md" pt="md" pb="md" style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}>
+      <Group gap={8} mb="sm">
+        <IconFileText size={16} color="var(--mantine-color-blue-6)" />
+        <Text fw={700}>Información del caso</Text>
+      </Group>
       {caso ? (
         renderCasoTabla()
       ) : (
@@ -2953,7 +3016,7 @@ const ProcesoDetalleCard = ({
   );
 
   const btnHistorialActivo = fases.length > 0 ? (
-      <Button size="xs" variant="white" color="dark" onClick={() => setHistorialActivoOpen(true)}>
+      <Button size="xs" variant="white" color="dark" radius="md" leftSection={<IconHistory size={14} />} onClick={() => setHistorialActivoOpen(true)}>
         Historial activo
       </Button>
     ) : null;
@@ -2994,12 +3057,12 @@ const ProcesoDetalleCard = ({
   /* ── Fase 7: No renovación (proceso permanente, solo documentos) ── */
   if (proceso.fase_actual === 7) {
     return (
-      <Paper withBorder radius="md" mb="md" style={{ overflow: "hidden" }}>
+      <Paper withBorder radius="lg" mb="lg" shadow="xs" style={{ overflow: "hidden" }}>
 
         {/* Header — igual que la vista completa pero sin botón de editar meses */}
-        <div style={{ backgroundColor: color, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ ...estiloEncabezadoTipo, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <Group gap="xs">
-            <Text fw={700} c="#333" size="md">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
+            <Text fw={700} size="md" c={`${tipoColor}.8`}>{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
             <Badge color="gray" variant="filled" size="sm">No renovación</Badge>
           </Group>
           <Group gap="xs">
@@ -3012,7 +3075,7 @@ const ProcesoDetalleCard = ({
         </div>
 
         {/* Fila de resolución + PDF */}
-        <Box px="md" pt="sm" pb="xs" style={{ borderBottom: "1px solid #dee2e6" }}>
+        <Box px="md" pt="sm" pb="xs" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
           <Group gap="xl" align="flex-start">
             <div>
               <Text size="xs" c="dimmed" fw={600}>Resolución vigente</Text>
@@ -3032,7 +3095,7 @@ const ProcesoDetalleCard = ({
               <Group gap={6} mt={2}>
                 {resolucionDoc && (
                   <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer" fw={500}>
-                    📄 Ver PDF
+                    <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Ver PDF
                   </Anchor>
                 )}
                 <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc}
@@ -3049,7 +3112,7 @@ const ProcesoDetalleCard = ({
             <Table withTableBorder withColumnBorders style={{ minWidth: 800 }}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa", padding: "8px 6px" }}>
+                  <Table.Th style={{ width: 140, backgroundColor: "var(--mantine-color-default-hover)", padding: "8px 6px" }}>
                     <Text size="xs" fw={700} ta="center">Resolución vigente</Text>
                   </Table.Th>
                   {columnasFechaRcPmVisibles.map(col => {
@@ -3059,7 +3122,7 @@ const ProcesoDetalleCard = ({
                       col.key === "fecha_digitacion_saces" ? offsets.digitacion :
                       col.key === "fecha_radicado_men" ? offsets.radicado : null;
                     return (
-                      <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa", padding: "8px 6px", minWidth: 120 }}>
+                      <Table.Th key={col.key} style={{ backgroundColor: "var(--mantine-color-default-hover)", padding: "8px 6px", minWidth: 120 }}>
                         <Text size="xs" fw={700} ta="center" style={{ whiteSpace: "normal" }}>{col.label}</Text>
                         {col.key !== "fecha_vencimiento" && offsetValue != null && (
                           <Text size="xs" c="dimmed" ta="center">({offsetValue} meses antes del vencimiento)</Text>
@@ -3102,7 +3165,7 @@ const ProcesoDetalleCard = ({
                     const esSoloLectura = esSoloLecturaCeldaFecha(col.key);
                     const obsValor = proceso[col.obsKey as keyof Process] as string ?? "";
                     return (
-                      <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 120, padding: "8px 6px" }}>
+                      <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 150, padding: "8px 6px" }}>
                         <Stack gap={4} align="center">
                           {isEditing && !esSoloLectura ? (
                             <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
@@ -3110,19 +3173,14 @@ const ProcesoDetalleCard = ({
                               style={{ width: 130 }} clearable disabled={savingDate}
                               dateParser={dateParserEspanol} placeholder="dd/mm/aaaa" />
                           ) : (
-                            <Text size="xs" fw={600} ta="center" style={{
-                              cursor: esSoloLectura ? "default" : "pointer", padding: "2px 8px", borderRadius: 4,
-                              border: esSoloLectura ? "1px solid #dee2e6" : "1px dashed #4dabf7",
-                              backgroundColor: esSoloLectura ? "#f8f9fa" : "#e7f5ff",
-                              color: fecha ? "#1c7ed6" : "#adb5bd",
-                            }}
-                              title={esSoloLectura ? (esRegistroCalificadoDeOficio ? "RC de oficio: la resolución y la vigencia se registran al cerrar el proceso (fecha, código y PDF)." : (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente")) : "Clic para editar fecha"}
-                              onClick={() => { if (!esSoloLectura) setEditingDateKey(col.key); }}
-                            >
-                              {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-                            </Text>
+                            <FechaConEditar
+                              fecha={fecha}
+                              soloLectura={esSoloLectura}
+                              titulo={esSoloLectura ? (esRegistroCalificadoDeOficio ? "RC de oficio: la resolución y la vigencia se registran al cerrar el proceso (fecha, código y PDF)." : (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente")) : undefined}
+                              onEditar={() => setEditingDateKey(col.key)}
+                            />
                           )}
-                          <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
+                          <Text size="xs" c={obsValor ? "blue.7" : "blue.4"} td="underline"
                             style={{ cursor: "pointer", textAlign: "center" }}
                             onClick={() => abrirObsFecha(col.obsKey, col.label)}>
                             {obsValor ? "Ver observaciones" : "Observaciones"}
@@ -3153,10 +3211,10 @@ const ProcesoDetalleCard = ({
           {/* Acciones */}
           <Group gap="xs" mb="sm">
             <Button size="xs" variant="light" onClick={() => setFase7DocsOpen(true)}>
-              📎 {procesoDocs.length > 0 ? `Documentos del proceso (${procesoDocs.length})` : "Subir documentos"}
+              <IconPaperclip size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />{procesoDocs.length > 0 ? `Documentos del proceso (${procesoDocs.length})` : "Subir documentos"}
             </Button>
             <Button size="xs" variant="light" onClick={abrirObs}>
-              {proceso.observaciones ? "✏ Observaciones" : "+ Observaciones"}
+              {proceso.observaciones ? "Ver observaciones" : "Agregar observaciones"}
             </Button>
           </Group>
 
@@ -3166,7 +3224,7 @@ const ProcesoDetalleCard = ({
               {procesoDocs.map(doc => (
                 <Group key={doc._id} gap={6} align="center">
                   <Anchor size="xs" href={doc.view_link} target="_blank" rel="noopener noreferrer">
-                    📄 {doc.name}
+                    <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{doc.name}
                   </Anchor>
                   <Button
                     size="xs" variant="subtle" color="red" p={2}
@@ -3180,7 +3238,7 @@ const ProcesoDetalleCard = ({
                       } catch (e) { console.error(e); }
                       finally { setDeletingDocId(null); }
                     }}>
-                    🗑
+                    <IconTrash size={14} />
                   </Button>
                 </Group>
               ))}
@@ -3189,7 +3247,7 @@ const ProcesoDetalleCard = ({
 
           {/* Observaciones visibles */}
           {proceso.observaciones && (
-            <Paper withBorder radius="sm" p="xs" mt="xs" style={{ backgroundColor: "#fff9db" }}>
+            <Paper withBorder radius="sm" p="xs" mt="xs" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
               <Text size="xs" c="dimmed" mb={2}>Observaciones</Text>
               <Text size="sm">{proceso.observaciones}</Text>
             </Paper>
@@ -3209,7 +3267,7 @@ const ProcesoDetalleCard = ({
                   <div>
                     <Text size="xs" fw={600} mb={2}>Archivo actual</Text>
                     <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                      📄 {resolucionDoc.name}
+                      <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{resolucionDoc.name}
                     </Anchor>
                   </div>
                   <Button
@@ -3224,7 +3282,7 @@ const ProcesoDetalleCard = ({
                       } catch (e) { console.error(e); }
                       finally { setDeletingDocId(null); }
                     }}>
-                    🗑 Eliminar
+                    <IconTrash size={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />Eliminar
                   </Button>
                 </Group>
               </Paper>
@@ -3283,7 +3341,7 @@ const ProcesoDetalleCard = ({
                   {procesoDocs.map(doc => (
                     <Group key={doc._id} justify="space-between" align="center">
                       <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">
-                        📄 {doc.name}
+                        <IconFileText size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{doc.name}
                       </Anchor>
                       <Button
                         size="xs" variant="subtle" color="red" p={4}
@@ -3297,7 +3355,7 @@ const ProcesoDetalleCard = ({
                           } catch (e) { console.error(e); }
                           finally { setDeletingDocId(null); }
                         }}>
-                        🗑
+                        <IconTrash size={14} />
                       </Button>
                     </Group>
                   ))}
@@ -3312,7 +3370,7 @@ const ProcesoDetalleCard = ({
           title="Observaciones generales" centered size="sm" radius="md" zIndex={300}>
           <Stack gap="sm">
             <textarea value={obsTexto} onChange={e => setObsTexto(e.target.value)} rows={5}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
               placeholder="Escribe las observaciones del proceso..." />
             <Group justify="flex-end">
               <Button variant="default" size="sm" onClick={() => setObsOpen(false)}>Cancelar</Button>
@@ -3360,7 +3418,7 @@ const ProcesoDetalleCard = ({
           title={`Observaciones — ${obsDateLabel}`} centered size="md" radius="md" zIndex={300}>
           <Stack>
             <textarea value={obsDateTexto} onChange={e => setObsDateTexto(e.target.value)} rows={5}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
               placeholder="Escribe la observación para esta fecha..." />
             <Group justify="flex-end">
               <Button variant="default" size="sm" onClick={() => setObsDateOpen(false)}>Cancelar</Button>
@@ -3378,38 +3436,43 @@ const ProcesoDetalleCard = ({
   }
   /* ── Vista completa ── */
   return (
-    <Paper withBorder radius="md" mb="md" style={{ overflow: "hidden" }}>
+    <Paper withBorder radius="lg" mb="lg" shadow="xs" style={{ overflow: "hidden" }}>
 
       {/* Header */}
-      <div style={{ backgroundColor: color, padding: "10px 16px", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "flex-start", gap: 8 }}>
+      <Group justify="space-between" align="center" wrap="wrap" gap="sm" px="md" py="sm" style={estiloEncabezadoTipo}>
+        <Group gap="sm" wrap="nowrap">
+          <ThemeIcon size={40} radius="xl" variant="white" color={tipoColor}>
+            <IconChecklist size={20} />
+          </ThemeIcon>
+          <Box>
+            <Group gap={8} wrap="wrap">
+              <Text fw={800} size="lg" lh={1.2} c={`${tipoColor}.8`}>{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
+              <Badge variant="white" color={tipoColor} size="sm" tt="none">{proceso.tipo_proceso}</Badge>
+            </Group>
+            {proceso.subtipo ? (
+              <Text size="xs" fw={600} c={`${tipoColor}.7`}>{proceso.subtipo}</Text>
+            ) : (
+              <Text size="xs" c="dimmed" fs="italic">Sin subtipo</Text>
+            )}
+          </Box>
+        </Group>
+        <Group gap="xs" wrap="wrap" justify="flex-end">
+          {btnHistorialActivo}
           {esProcesoPm && proceso.parent_process_id && (
-            <Button size="xs" variant="white" color="dark" onClick={() => abrirModalMesesPlan(proceso)}>
+            <Button size="xs" variant="white" color="dark" radius="md" leftSection={<IconCalendar size={14} />} onClick={() => abrirModalMesesPlan(proceso)}>
               Editar meses del plan
             </Button>
           )}
           {!esProcesoPm && (proceso.tipo_proceso !== "RC" || !esRegistroCalificadoDeOficio) && (
-            <Button size="xs" variant="white" color="dark" onClick={() => setOffsetsModalOpen(true)}>Editar meses</Button>
+            <Button size="xs" variant="white" color="dark" radius="md" leftSection={<IconCalendar size={14} />} onClick={() => setOffsetsModalOpen(true)}>Editar meses</Button>
           )}
-          <Button size="xs" variant="white" color="red" onClick={abrirModalCerrar}>Cerrar proceso</Button>
-        </div>
-        <Text fw={700} c="#333" size="md" ta="center">{LABEL_PROCESO[proceso.tipo_proceso]}</Text>
-        <Group gap="xs" justify="flex-end" wrap="nowrap">
-          {btnHistorialActivo}
-          {proceso.subtipo ? (
-            <Badge variant="light" color="dark" size="sm"
-              style={{ backgroundColor: "rgba(255,255,255,0.85)", color: "#333", fontSize: 11 }}>
-              {proceso.subtipo}
-            </Badge>
-          ) : (
-            <Text size="xs" c="#555" fs="italic">Sin subtipo</Text>
-          )}
+          <Button size="xs" variant="filled" color="red" radius="md" leftSection={<IconCircleCheck size={14} />} onClick={abrirModalCerrar}>Cerrar proceso</Button>
         </Group>
-      </div>
+      </Group>
 
       {esRegistroCalificadoDeOficio && !esRcOficioPostAvGracia && (
         <Alert color="blue" variant="light" radius={0} px="md" py="sm"
-          style={{ borderBottom: "1px solid #dee2e6", borderTop: "none" }}
+          style={{ borderBottom: "1px solid var(--mantine-color-default-border)", borderTop: "none" }}
           title="Registro calificado de oficio">
           La <strong>resolución</strong>, el <strong>PDF</strong> y la <strong>vigencia</strong> (7 años) se cargaron al crear el proceso; no hay gestión de trámite ni fases.
           Usa <strong>Cerrar proceso</strong> cuando corresponda archivar el registro.
@@ -3424,139 +3487,122 @@ const ProcesoDetalleCard = ({
         />
       )}
 
-      {/* Tabla de fechas */}
-      <ScrollArea>
-        <Table withTableBorder withColumnBorders style={{ minWidth: 720 }}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
-                <Text size="xs" fw={700} ta="center">{esProcesoPm ? "Referencia AV" : "Resolución vigente"}</Text>
-              </Table.Th>
-              {columnasFechaTablaPrincipal.map(col => {
-                const offsetValue =
-                  col.key === "fecha_inicio"           ? offsets.inicio :
-                  col.key === "fecha_documento_par"    ? offsets.docPar :
-                  col.key === "fecha_digitacion_saces" ? offsets.digitacion :
-                  col.key === "fecha_radicado_men"     ? offsets.radicado : null;
-                const labelKey = esProcesoPm
-                  ? (col.key.replace("fecha_", "label_") as keyof Process)
-                  : null;
-                const labelPersonalizado = labelKey
-                  ? (proceso[labelKey] as string | null | undefined)
-                  : null;
-                const labelFinal = labelPersonalizado ?? col.label;
-                return (
-                  <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
-                    <Text size="xs" fw={700} ta="center">{labelFinal}</Text>
-                    {esProcesoPm && !labelPersonalizado && col.sub ? (
-                      <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
-                    ) : col.key === "fecha_vencimiento" ? (
-                      <Text size="xs" c="dimmed" ta="center">({col.sub})</Text>
-                    ) : (
-                      !esProcesoPm
-                      && proceso.subtipo !== "Nuevo"
-                      && proceso.subtipo !== "Primera vez"
-                      && (
-                        <Text size="xs" c="dimmed" ta="center">
-                          {offsetValue != null ? `(${offsetValue} meses antes del vencimiento)` : ""}
-                        </Text>
-                      )
-                    )}
-                  </Table.Th>
-                );
-              })}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            <Table.Tr>
-              <Table.Td style={{ verticalAlign: "top", minWidth: 112, padding: "8px 4px" }}>
-                <Stack gap={4} align="center">
-                  {muestraResolucionVigenteInexistente ? (
-                    <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
-                  ) : (
-                    <>
-                      <Text size="xs" fw={600} ta="center">
-                        {resolucionFecha ? formatFechaDDMMYY(resolucionFecha) : "—"}
-                      </Text>
-                      <Text size="xs" c="dimmed" ta="center">{resolucionCodigo ?? "—"}</Text>
-                      {linkPdfResolucionVigente && (
-                        <Anchor size="xs" href={linkPdfResolucionVigente} target="_blank" rel="noopener noreferrer" ta="center">
-                          Ver PDF vigente
-                        </Anchor>
-                      )}
-                      {!esProcesoPm && (
-                      <Button size="xs" variant="subtle" color="blue" loading={loadingResolucionDoc} onClick={() => setResolucionDocModalOpen(true)}>
-                        {resolucionDoc ? "Cambiar PDF en proceso" : "Adjuntar PDF al proceso"}
-                      </Button>
-                      )}
-                      {resolucionDoc && resolucionDoc.view_link !== linkPdfResolucionVigente && (
-                        <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
-                          PDF adjunto al trámite
-                        </Anchor>
-                      )}
-                    </>
+      {/* Fechas del proceso */}
+      <Box px="md" pt="md" pb="md">
+        <Group gap={8} mb="sm">
+          <IconCalendar size={16} color={`var(--mantine-color-${tipoColor}-6)`} />
+          <Text fw={700}>Fechas del proceso</Text>
+        </Group>
+        <SimpleGrid cols={{ base: 1, xs: 2, md: 3, xl: Math.min(columnasFechaTablaPrincipal.length + 1, 6) }} spacing="sm">
+          {/* Resolución vigente / referencia AV */}
+          <Paper radius="md" p="sm" style={{ backgroundColor: `var(--mantine-color-${tipoColor}-light)`, border: `1px solid var(--mantine-color-${tipoColor}-2)` }}>
+            <Text size="xs" fw={700} c={`${tipoColor}.8`} tt="uppercase" style={{ letterSpacing: 0.3 }}>
+              {esProcesoPm ? "Referencia AV" : "Resolución vigente"}
+            </Text>
+            {muestraResolucionVigenteInexistente ? (
+              <Text size="sm" c="dimmed" fw={600} fs="italic" mt={6}>Inexistente</Text>
+            ) : (
+              <Stack gap={4} mt={6}>
+                <Group gap={6} wrap="nowrap">
+                  <IconFileText size={15} color={`var(--mantine-color-${tipoColor}-6)`} />
+                  <Text size="sm" fw={700}>{resolucionCodigo ?? "—"}</Text>
+                </Group>
+                <Text size="xs" c="dimmed">Fecha: <Text span size="xs" fw={600} c="var(--mantine-color-text)">{resolucionFecha ? formatFechaDDMMYY(resolucionFecha) : "—"}</Text></Text>
+                <Group gap={4} wrap="wrap" mt={2}>
+                  {linkPdfResolucionVigente && (
+                    <Button component="a" href={linkPdfResolucionVigente} target="_blank" rel="noopener noreferrer"
+                      size="compact-xs" variant="white" color={tipoColor} leftSection={<IconExternalLink size={12} />}>
+                      Ver PDF vigente
+                    </Button>
                   )}
-                </Stack>
-              </Table.Td>
-              {columnasFechaTablaPrincipal.map(col => {
-                const fecha        = proceso[col.key as keyof Process] as string | null;
-                const isEditing    = editingDateKey === col.key;
-                const dateVal      = fecha ? new Date(fecha + "T12:00:00") : null;
-                const esSoloLectura = esProcesoPm
-                  ? false
-                  : proceso.tipo_proceso === "AV"
-                    ? col.key === "fecha_vencimiento"
-                    : esSoloLecturaCeldaFecha(col.key);
-                const obsValor     = proceso[col.obsKey as keyof Process] as string ?? "";
-                const labelKey = esProcesoPm
-                  ? (col.key.replace("fecha_", "label_") as keyof Process)
+                  {!esProcesoPm && (
+                    <Button size="compact-xs" variant="subtle" color={tipoColor} leftSection={<IconUpload size={12} />}
+                      loading={loadingResolucionDoc} onClick={() => setResolucionDocModalOpen(true)}>
+                      {resolucionDoc ? "Cambiar PDF" : "Adjuntar PDF"}
+                    </Button>
+                  )}
+                </Group>
+                {resolucionDoc && resolucionDoc.view_link !== linkPdfResolucionVigente && (
+                  <Anchor size="xs" href={resolucionDoc.view_link} target="_blank" rel="noopener noreferrer">
+                    PDF adjunto al trámite
+                  </Anchor>
+                )}
+              </Stack>
+            )}
+          </Paper>
+
+          {columnasFechaTablaPrincipal.map(col => {
+            const offsetValue =
+              col.key === "fecha_inicio"           ? offsets.inicio :
+              col.key === "fecha_documento_par"    ? offsets.docPar :
+              col.key === "fecha_digitacion_saces" ? offsets.digitacion :
+              col.key === "fecha_radicado_men"     ? offsets.radicado : null;
+            const labelKey = esProcesoPm
+              ? (col.key.replace("fecha_", "label_") as keyof Process)
+              : null;
+            const labelPersonalizado = labelKey
+              ? (proceso[labelKey] as string | null | undefined)
+              : null;
+            const labelFinal = labelPersonalizado ?? col.label;
+            const subtitulo = esProcesoPm && !labelPersonalizado && col.sub
+              ? col.sub
+              : col.key === "fecha_vencimiento"
+                ? col.sub
+                : (!esProcesoPm && proceso.subtipo !== "Nuevo" && proceso.subtipo !== "Primera vez" && offsetValue != null)
+                  ? `${offsetValue} meses antes del vencimiento`
                   : null;
-                const labelObs = labelKey
-                  ? ((proceso[labelKey] as string | null | undefined) ?? col.label)
-                  : col.label;
-                return (
-                  <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 112, padding: "8px 4px" }}>
-                    <Stack gap={4} align="center">
-                      {/* Fecha vencimiento inexistente para Nuevo / Primera vez */}
-                      {!esProcesoPm && col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez") ? (
-                        <Text size="xs" c="dimmed" fw={600} ta="center" fs="italic">Inexistente</Text>
-                      ) : isEditing && !esSoloLectura ? (
-                        <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
-                          valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
-                          style={{ width: 110 }} clearable disabled={savingDate}
-                          dateParser={dateParserEspanol} placeholder="dd/mm/aaaa"
-                          onKeyDown={proceso.tipo_proceso === "AV" ? undefined : (e) => e.preventDefault()}
-                          styles={proceso.tipo_proceso === "AV"
-                            ? undefined
-                            : { input: { caretColor: "transparent", cursor: "pointer" } }}
-                        />
-                      ) : (
-                        <Text size="xs" fw={600} ta="center" style={{
-                          cursor: esSoloLectura ? "default" : "pointer", padding: "2px 8px", borderRadius: 4,
-                          border: esSoloLectura ? "1px solid #dee2e6" : "1px dashed #4dabf7",
-                          backgroundColor: esSoloLectura ? "#f8f9fa" : "#e7f5ff",
-                          color: fecha ? "#1c7ed6" : "#adb5bd",
-                        }}
-                          title={esSoloLectura ? (esRegistroCalificadoDeOficio ? "RC de oficio: la resolución y la vigencia se registran al cerrar el proceso (fecha, código y PDF)." : (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente")) : (esProcesoPm ? "Clic para editar esta fecha del plan" : "Clic para editar fecha")}
-                          onClick={() => { if (!esSoloLectura) setEditingDateKey(col.key); }}
-                        >
-                          {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-                        </Text>
-                      )}
-                      {!( !esProcesoPm && col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez")) && (
-                        <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
-                          style={{ cursor: "pointer" }} onClick={() => abrirObsFecha(col.obsKey, labelObs)}>
-                          {obsValor ? "Ver observaciones" : "Observaciones"}
-                        </Text>
-                      )}
-                    </Stack>
-                  </Table.Td>
-                );
-              })}
-            </Table.Tr>
-          </Table.Tbody>
-        </Table>
-      </ScrollArea>
+            const fecha        = proceso[col.key as keyof Process] as string | null;
+            const isEditing    = editingDateKey === col.key;
+            const dateVal      = fecha ? new Date(fecha + "T12:00:00") : null;
+            const esSoloLectura = esProcesoPm
+              ? false
+              : proceso.tipo_proceso === "AV"
+                ? col.key === "fecha_vencimiento"
+                : esSoloLecturaCeldaFecha(col.key);
+            const obsValor     = proceso[col.obsKey as keyof Process] as string ?? "";
+            const vencInexistente = !esProcesoPm && col.key === "fecha_vencimiento" && (proceso.subtipo === "Nuevo" || proceso.subtipo === "Primera vez");
+            return (
+              <Paper key={col.key} withBorder radius="md" p="sm"
+                style={{ borderTop: `3px solid var(--mantine-color-${tipoColor}-3)`, display: "flex", flexDirection: "column", gap: 8 }}>
+                <Box>
+                  <Text size="xs" fw={700} lh={1.3}>{labelFinal}</Text>
+                  {subtitulo && <Text size="xs" c="dimmed" lh={1.3}>{subtitulo}</Text>}
+                </Box>
+                <Box>
+                  {vencInexistente ? (
+                    <Text size="sm" c="dimmed" fw={600} fs="italic">Inexistente</Text>
+                  ) : isEditing && !esSoloLectura ? (
+                    <DateInput value={dateVal} onChange={(val) => saveDate(col.key, val)}
+                      valueFormat="DD/MM/YYYY" size="xs" autoFocus onBlur={() => setEditingDateKey(null)}
+                      clearable disabled={savingDate}
+                      dateParser={dateParserEspanol} placeholder="dd/mm/aaaa"
+                      onKeyDown={proceso.tipo_proceso === "AV" ? undefined : (e) => e.preventDefault()}
+                      styles={proceso.tipo_proceso === "AV"
+                        ? undefined
+                        : { input: { caretColor: "transparent", cursor: "pointer" } }}
+                    />
+                  ) : (
+                    <FechaConEditar
+                      fecha={fecha}
+                      soloLectura={esSoloLectura}
+                      color={esProcesoPm ? "grape" : "blue"}
+                      titulo={esSoloLectura ? (esRegistroCalificadoDeOficio ? "RC de oficio: la resolución y la vigencia se registran al cerrar el proceso (fecha, código y PDF)." : (col.key === "fecha_vencimiento" ? "Calculada a partir de la resolución" : "Fecha calculada automáticamente")) : undefined}
+                      onEditar={() => setEditingDateKey(col.key)}
+                    />
+                  )}
+                </Box>
+                {!vencInexistente && (
+                  <Button size="compact-xs" variant={obsValor ? "light" : "subtle"} color={obsValor ? "blue" : "gray"}
+                    leftSection={<IconMessageCircle size={12} />} mt="auto" style={{ alignSelf: "flex-start" }}
+                    onClick={() => abrirObsFecha(col.obsKey, labelPersonalizado ?? col.label)}>
+                    {obsValor ? "Ver observaciones" : "Observaciones"}
+                  </Button>
+                )}
+              </Paper>
+            );
+          })}
+        </SimpleGrid>
+      </Box>
 
       {bloqueInformacionCasoUi}
 
@@ -3613,7 +3659,7 @@ const ProcesoDetalleCard = ({
               <Table withTableBorder withColumnBorders style={{ minWidth: 800 }}>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th style={{ width: 140, backgroundColor: "#f8f9fa" }}>
+                    <Table.Th style={{ width: 140, backgroundColor: "var(--mantine-color-default-hover)" }}>
                       <Text size="xs" fw={700} ta="center">Hito del Plan</Text>
                     </Table.Th>
                     {COLUMNAS_FECHA_PM.map(col => {
@@ -3622,7 +3668,7 @@ const ProcesoDetalleCard = ({
                       const labelPersonalizado = pmProceso[labelKey] as string | null | undefined;
                       const labelFinal = labelPersonalizado ?? col.label;
                       return (
-                        <Table.Th key={col.key} style={{ backgroundColor: "#f8f9fa" }}>
+                        <Table.Th key={col.key} style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
                           <Text size="xs" fw={700} ta="center">{labelFinal}</Text>
                           {!labelPersonalizado && col.sub && <Text size="xs" c="dimmed" ta="center">{col.sub}</Text>}
                         </Table.Th>
@@ -3643,7 +3689,7 @@ const ProcesoDetalleCard = ({
                       const labelKey  = col.key.replace("fecha_", "label_") as keyof Process;
                       const labelFinal = (pmProceso[labelKey] as string | null | undefined) ?? col.label;
                       return (
-                        <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 140 }}>
+                        <Table.Td key={col.key} style={{ verticalAlign: "top", minWidth: 160 }}>
                           <Stack gap={4} align="center">
                             {isEditing ? (
                               <DateInput value={dateVal} onChange={(val) => savePmDate(col.key, val)}
@@ -3653,16 +3699,13 @@ const ProcesoDetalleCard = ({
                                 styles={{ input: { caretColor: "transparent", cursor: "pointer" } }}
                               />
                             ) : (
-                              <Text size="xs" fw={600} ta="center" style={{
-                                cursor: "pointer", padding: "2px 8px", borderRadius: 4,
-                                border: "1px dashed #4dabf7", backgroundColor: "#e7f5ff",
-                                color: fecha ? "#1c7ed6" : "#adb5bd",
-                              }}
-                                title="Clic para editar fecha" onClick={() => setEditingPmDateKey(col.key)}>
-                                {fecha ? formatFechaDDMMYY(fecha) : <span style={{ color: "#adb5bd" }}>Sin fecha</span>}
-                              </Text>
+                              <FechaConEditar
+                                fecha={fecha}
+                                color="grape"
+                                onEditar={() => setEditingPmDateKey(col.key)}
+                              />
                             )}
-                            <Text size="xs" c={obsValor ? "#1971c2" : "#74c0fc"} td="underline"
+                            <Text size="xs" c={obsValor ? "blue.7" : "blue.4"} td="underline"
                               style={{ cursor: "pointer" }} onClick={() => abrirObsPmFecha(col.obsKey, labelFinal)}>
                               {obsValor ? "Ver observaciones" : "Observaciones"}
                             </Text>
@@ -3681,25 +3724,29 @@ const ProcesoDetalleCard = ({
         </Box>
       )}
 
-      {/* Footer: fase actual */}
-      <div style={{ padding: "12px 16px", borderTop: "1px solid #dee2e6", display: "flex", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
-          <Group gap="sm" align="center">
-            <div style={{ backgroundColor: faseColors[proceso.fase_actual]?.color ?? "#ced4da", borderRadius: 6, padding: "2px 10px" }}>
-              <Text size="xs" fw={600} c="#333">Fase {proceso.fase_actual}</Text>
-            </div>
-            {faseActual && <Text size="xs" c="dimmed">{faseActual.nombre}</Text>}
-          </Group>
-          {ultimaActiva && faseActual && (
-            <>
-              <Group gap="xs" mt={6} align="center">
-                <Text size="xs" c="#555">Actividad actual: <strong>{ultimaActiva.nombre}</strong></Text>
-                <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                  Ver actividades ({faseActual.actividades.length})
-                </Button>
-              </Group>
+      {/* Footer: actividad actual (izquierda) · fase y documentos (derecha) */}
+      <Box px="md" py="sm" style={{ borderTop: "1px solid var(--mantine-color-default-border)", backgroundColor: "var(--mantine-color-default-hover)" }}>
+        <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+          <Box style={{ flex: 1, minWidth: 260 }}>
+            {faseActual && (
+              <>
+                <Text size="xs" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: 0.4 }}>Actividad actual</Text>
+                <Group gap="sm" align="center" wrap="wrap" mt={4}>
+                  {ultimaActiva ? (
+                    <Text fw={700}>{ultimaActiva.nombre}</Text>
+                  ) : (
+                    <Group gap={6}>
+                      <IconCircleCheck size={18} color="var(--mantine-color-teal-6)" />
+                      <Text fw={700} c="teal">Todas las actividades completadas</Text>
+                    </Group>
+                  )}
+                  <Button size="xs" variant="light" color="blue" radius="md" leftSection={<IconChecklist size={15} />}
+                    onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
+                    Ver actividades ({faseActual.actividades.length})
+                  </Button>
+                </Group>
               {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
-                <Paper withBorder p="sm" radius="sm" mt={8} style={{ backgroundColor: "#fff9db", maxWidth: 520 }}>
+                <Paper withBorder p="sm" radius="sm" mt="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)", maxWidth: 520 }}>
                   <Text size="xs" fw={600} mb={4}>
                     {etiquetaFactorCondicion} en revisión — reuniones parciales de avance
                   </Text>
@@ -3719,22 +3766,26 @@ const ProcesoDetalleCard = ({
                   />
                 </Paper>
               )}
-            </>
-          )}
-          {!ultimaActiva && faseActual && (
-            <Group gap="xs" mt={6}>
-              <Text size="xs" c="green" fw={600}>✓ Todas las actividades completadas</Text>
-              <Button size="sm" variant="light" color="blue" leftSection={<IconChecklist size={16} />} onClick={() => { setPosicionActividad(String(faseActual.actividades.length)); setChecklistOpen(true); }}>
-                Ver actividades ({faseActual.actividades.length})
-              </Button>
+              </>
+            )}
+          </Box>
+          <Stack gap={6} align="flex-end">
+            <Group gap={8} wrap="nowrap">
+              <Text size="xs" c="dimmed" fw={600}>Fase actual</Text>
+              <Badge
+                radius="sm"
+                styles={{ root: { backgroundColor: infoFasePorNumero(proceso.fase_actual)?.color ?? "var(--mantine-color-gray-3)", color: infoFasePorNumero(proceso.fase_actual)?.textColor ?? "#1a1b1e" } }}
+              >
+                Fase {proceso.fase_actual}
+              </Badge>
+              {faseActual && <Text size="sm" fw={600}>{faseActual.nombre}</Text>}
             </Group>
-          )}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <Text size="xs" c="dimmed">Documentos — Fase {proceso.fase_actual}</Text>
-          <Button size="xs" variant="outline" color="gray" onClick={cargarDocumentos}>📎 Ver / cargar documentos</Button>
-        </div>
-      </div>
+            <Button size="xs" variant="default" radius="md" leftSection={<IconPaperclip size={14} />} onClick={cargarDocumentos}>
+              Ver documentos
+            </Button>
+          </Stack>
+        </Group>
+      </Box>
 
       {/* ── Modales ── */}
 
@@ -3815,7 +3866,7 @@ const ProcesoDetalleCard = ({
         title={`Observaciones generales — ${LABEL_PROCESO[proceso.tipo_proceso]}`} centered size="md" radius="md">
         <Stack>
           <textarea value={obsTexto} onChange={e => setObsTexto(e.target.value)} rows={6}
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
             placeholder="Escribe las observaciones del proceso aquí..." />
           <Group justify="flex-end">
             <Button variant="default" size="sm" onClick={() => setObsOpen(false)}>Cancelar</Button>
@@ -3828,7 +3879,7 @@ const ProcesoDetalleCard = ({
         title={`Observaciones — ${obsDateLabel}`} centered size="md" radius="md">
         <Stack>
           <textarea value={obsDateTexto} onChange={e => setObsDateTexto(e.target.value)} rows={5}
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
             placeholder="Escribe la observación para esta fecha..." />
           <Group justify="flex-end">
             <Button variant="default" size="sm" onClick={() => setObsDateOpen(false)}>Cancelar</Button>
@@ -3841,7 +3892,7 @@ const ProcesoDetalleCard = ({
         title={`Observaciones PM — ${obsPmDateLabel}`} centered size="md" radius="md">
         <Stack>
           <textarea value={obsPmDateTexto} onChange={e => setObsPmDateTexto(e.target.value)} rows={5}
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
             placeholder="Escribe la observación para esta fecha del plan..." />
           <Group justify="flex-end">
             <Button variant="default" size="sm" onClick={() => setObsPmDateOpen(false)}>Cancelar</Button>
@@ -3890,38 +3941,63 @@ const ProcesoDetalleCard = ({
       </Modal>
 
       <Modal opened={docsOpen} onClose={() => setDocsOpen(false)}
-        title={faseActual ? `Documentos — ${faseActual.nombre}` : "Documentos de fase"} centered size="lg" radius="md">
+        title={
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon color="blue" variant="light" size="lg" radius="md"><IconFolderOpen size={20} /></ThemeIcon>
+            <Box>
+              <Text fw={700} size="sm">Documentos de la fase</Text>
+              <Text size="xs" c="dimmed">{faseActual ? `${faseActual.nombre} · Fase ${proceso.fase_actual}` : "Sin fase actual"}</Text>
+            </Box>
+          </Group>
+        }
+        centered size="lg" radius="lg">
         {!faseActual ? (
           <Text size="sm" c="dimmed">No hay fase actual seleccionada.</Text>
         ) : (
           <Stack gap="md">
-            <DropzoneCustomComponent
-              text={uploadingDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo a esta fase"}
-              loading={uploadingDoc}
-              onDrop={subirDocumento}
-            />
-            <Divider label="Documentos de esta fase" labelPosition="center" />
+            <Group justify="space-between">
+              <Text size="sm" fw={700}>Archivos de la fase</Text>
+              {!loadingDocs && <Badge variant="light" color="gray">{docs.length}</Badge>}
+            </Group>
             {loadingDocs ? (
               <Group justify="center"><Loader size="sm" /></Group>
             ) : docs.length === 0 ? (
-              <Text size="sm" c="dimmed" ta="center">No hay documentos cargados para esta fase.</Text>
+              <Paper withBorder radius="md" p="lg" style={{ borderStyle: "dashed" }}>
+                <Stack align="center" gap={6}>
+                  <ThemeIcon size={40} radius="xl" variant="light" color="gray"><IconFileText size={20} /></ThemeIcon>
+                  <Text size="sm" c="dimmed" ta="center">Aún no hay documentos en esta fase.</Text>
+                  <Text size="xs" c="dimmed" ta="center">Los documentos se cargan desde cada actividad o subactividad.</Text>
+                </Stack>
+              </Paper>
             ) : (
-              <ScrollArea style={{ maxHeight: 260 }}>
+              <ScrollArea.Autosize mah={300}>
                 <Stack gap="xs">
                   {docs.map(doc => (
-                    <Group key={doc._id} justify="space-between" align="center">
-                      <div style={{ maxWidth: "70%" }}>
-                        <Text size="sm" fw={500} truncate="end">{doc.name}</Text>
-                        {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
-                      </div>
-                      <Group gap="xs">
-                        <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">{doc.name || "Abrir anexo"}</Anchor>
-                        <Button size="xs" variant="outline" color="red" onClick={() => eliminarDocumento(doc._id)}>Eliminar</Button>
+                    <Paper key={doc._id} withBorder radius="md" px="sm" py="xs">
+                      <Group justify="space-between" align="center" wrap="nowrap">
+                        <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                          <ThemeIcon size={32} radius="md" variant="light" color="blue" style={{ flexShrink: 0 }}><IconFileText size={17} /></ThemeIcon>
+                          <Box style={{ minWidth: 0 }}>
+                            <Text size="sm" fw={600} truncate="end">{doc.name || "Documento"}</Text>
+                            {doc.size != null && <Text size="xs" c="dimmed">{(doc.size / (1024 * 1024)).toFixed(2)} MB</Text>}
+                          </Box>
+                        </Group>
+                        <Group gap={4} wrap="nowrap">
+                          <Button component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer"
+                            size="xs" variant="light" radius="md" leftSection={<IconExternalLink size={14} />}>
+                            Abrir
+                          </Button>
+                          <Tooltip label="Eliminar documento" withArrow>
+                            <ActionIcon variant="subtle" color="red" aria-label="Eliminar documento" onClick={() => eliminarDocumento(doc._id)}>
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
                       </Group>
-                    </Group>
+                    </Paper>
                   ))}
                 </Stack>
-              </ScrollArea>
+              </ScrollArea.Autosize>
             )}
           </Stack>
         )}
@@ -3932,7 +4008,7 @@ const ProcesoDetalleCard = ({
         title={`Observaciones — ${actObsTarget?.act.nombre ?? ""}`} centered size="md" radius="md" zIndex={400}>
         <Stack>
           <textarea value={actObsTexto} onChange={e => setActObsTexto(e.target.value)} rows={5}
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
             placeholder="Escribe observaciones para esta actividad..." />
           <Group justify="flex-end">
             <Button variant="default" size="sm" onClick={() => setActObsOpen(false)}>Cancelar</Button>
@@ -3981,7 +4057,7 @@ const ProcesoDetalleCard = ({
         title={`Observaciones — ${subObsTarget?.sub.nombre ?? ""}`} centered size="md" radius="md" zIndex={400}>
         <Stack>
           <textarea value={subObsTexto} onChange={e => setSubObsTexto(e.target.value)} rows={5}
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #dee2e6", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
+            style={{ width: "100%", borderRadius: 8, border: "1px solid var(--mantine-color-default-border)", padding: "8px 12px", fontSize: 14, resize: "vertical" }}
             placeholder="Escribe observaciones para esta subactividad..." />
           <Group justify="flex-end">
             <Button variant="default" size="sm" onClick={() => setSubObsOpen(false)}>Cancelar</Button>
@@ -4060,8 +4136,8 @@ const ProcesoDetalleCard = ({
         centered size="min(96vw, 1120px)" radius="lg"
         styles={{
           content: { width: "100%" },
-          header: { padding: "18px 24px", borderBottom: "1px solid #e9ecef" },
-          body: { backgroundColor: "#f3f6fa", padding: "20px 24px 24px" },
+          header: { padding: "18px 24px", borderBottom: "1px solid var(--mantine-color-default-border)" },
+          body: { backgroundColor: "var(--mantine-color-default-hover)", padding: "20px 24px 24px" },
         }}>
         {faseActual && (
           <Stack gap="sm">
@@ -4070,8 +4146,8 @@ const ProcesoDetalleCard = ({
               const completadas = faseActual.actividades.filter(actividadResuelta).length;
               const porcentaje = totalActividades > 0 ? Math.round((completadas / totalActividades) * 100) : 0;
               return (
-                <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
-                  <Group justify="space-between" align="flex-start" mb={6}>
+                <Paper withBorder radius="md" p="md">
+                  <Group justify="space-between" align="flex-start" mb={8}>
                     <Box>
                       <Text size="sm" fw={700}>{faseActual.nombre}</Text>
                       <Text size="xs" c="dimmed">Seguimiento de actividades y subactividades</Text>
@@ -4080,12 +4156,12 @@ const ProcesoDetalleCard = ({
                       {completadas}/{totalActividades} completadas
                     </Badge>
                   </Group>
-                  <Progress value={porcentaje} color={porcentaje === 100 ? "teal" : "blue"} size="sm" radius="xl" />
+                  <Progress value={porcentaje} color={porcentaje === 100 ? "teal" : "blue"} size="md" radius="xl" />
                 </Paper>
               );
             })()}
             {muestraSelectorReuniones && etiquetaFactorCondicion && opcionesFactorCondicion.length > 0 && (
-              <Paper withBorder p="sm" radius="md" style={{ backgroundColor: "#fff9db" }}>
+              <Paper withBorder p="sm" radius="md" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
                 <Text size="xs" fw={600} mb={4}>
                   {etiquetaFactorCondicion} en revisión — reuniones parciales de avance
                 </Text>
@@ -4101,7 +4177,7 @@ const ProcesoDetalleCard = ({
                 />
               </Paper>
             )}
-            <Paper withBorder radius="md" p="md" shadow="xs" style={{ backgroundColor: "#fff" }}>
+            <Paper withBorder radius="md" p="md">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => handleDragEnd(e, faseActual)}>
               <SortableContext items={faseActual.actividades.map(a => a._id)} strategy={verticalListSortingStrategy}>
                 <Stack gap="sm">
@@ -4159,18 +4235,20 @@ const ProcesoDetalleCard = ({
             <Group justify="flex-end" mt="xs" wrap="wrap">
               {proceso.fase_actual > (esProcesoPm ? 1 : 0) && (
                 <Button
-                  size="xs"
+                  size="sm"
                   color="orange"
-                  variant="light"
+                  variant="subtle"
+                  leftSection={<IconArrowBackUp size={16} />}
                   onClick={() => setFaseParaRevertir(faseActual)}
                 >
-                  ← Volver a fase anterior
+                  Volver a fase anterior
                 </Button>
               )}
               <Button
-                size="xs"
+                size="sm"
                 color="blue"
                 variant="light"
+                leftSection={<IconChecks size={16} />}
                 loading={marcandoTodoFase}
                 onClick={() => marcarTodoFase(faseActual)}
               >
@@ -4189,25 +4267,28 @@ const ProcesoDetalleCard = ({
               ) : (
                 faseActual.numero < 5 && (
                   <Button
-                    size="xs"
-                    color="green"
-                    variant="light"
+                    size="sm"
+                    color="teal"
+                    variant="filled"
+                    leftSection={<IconCircleCheck size={16} />}
                     loading={finalizandoFase}
                     onClick={() => finalizarFase(faseActual)}
                   >
-                    ✓ Finalizar fase
+                    Finalizar fase
                   </Button>
                 )
               )}
             </Group>
 
-            <Divider label="Agregar actividad" labelPosition="center" />
-            <Group gap="xs">
-              <TextInput size="xs" placeholder="Nombre de la nueva actividad..." value={nuevaActividad}
-                onChange={e => setNuevaActividad(e.currentTarget.value)}
-                style={{ flex: 1 }} onKeyDown={e => e.key === "Enter" && agregarActividad(faseActual)} />
-              <Button size="xs" loading={savingActividad} onClick={() => agregarActividad(faseActual)}>Agregar</Button>
-            </Group>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={6}>Agregar actividad</Text>
+              <Group gap="xs">
+                <TextInput size="sm" placeholder="Nombre de la nueva actividad..." value={nuevaActividad}
+                  onChange={e => setNuevaActividad(e.currentTarget.value)}
+                  style={{ flex: 1 }} onKeyDown={e => e.key === "Enter" && agregarActividad(faseActual)} />
+                <Button size="sm" leftSection={<IconPlus size={16} />} loading={savingActividad} onClick={() => agregarActividad(faseActual)}>Agregar</Button>
+              </Group>
+            </Paper>
           </Stack>
         )}
       </Modal>

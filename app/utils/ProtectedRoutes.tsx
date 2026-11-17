@@ -39,7 +39,7 @@ const VIEW_PERMISSION_ROUTES: Array<{ key: string; pattern: RegExp }> = [
   { key: "dateReviewProgram",          pattern: /^\/processes-MEN\/program/ },
   { key: "dateReviewAdmin",            pattern: /^\/processes-MEN\/admin/ },
   { key: "dateReviewResponsible",      pattern: /^\/processes-MEN\/responsible/ },
-  { key: "dateReviewTasks",            pattern: /^\/processes-MEN\/tasks/ },
+  // Tareas asignadas no tiene llave propia en el catálogo de vistas: usa la del módulo MEN ("dateReview").
   { key: "dateReview",                 pattern: /^\/processes-MEN/ },
 ];
 

@@ -98,15 +98,15 @@ function MetaResolucion({
 }) {
   return (
     <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm">
-      <Paper withBorder radius="sm" p="sm">
+      <Paper withBorder radius="md" p="sm">
         <Text size="xs" c="dimmed" mb={4}>Código resolución</Text>
         <Text size="sm" fw={600}>{codigo?.trim() ? codigo : "—"}</Text>
       </Paper>
-      <Paper withBorder radius="sm" p="sm">
+      <Paper withBorder radius="md" p="sm">
         <Text size="xs" c="dimmed" mb={4}>Fecha resolución</Text>
         <Text size="sm" fw={600}>{fecha ? formatFechaDDMMYY(fecha) : "—"}</Text>
       </Paper>
-      <Paper withBorder radius="sm" p="sm">
+      <Paper withBorder radius="md" p="sm">
         <Text size="xs" c="dimmed" mb={4}>Duración</Text>
         <Text size="sm" fw={600}>
           {duracion != null && !Number.isNaN(duracion) ? `${duracion} años` : "—"}
@@ -216,7 +216,7 @@ export default function HistorialResolucionSeccion({
 
     return (
       <>
-        <Divider label="Resolución vigente al momento del trámite" labelPosition="left" />
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución vigente al momento del trámite" labelPosition="left" />
         <Stack gap="sm">
           {docVig ? (
             <TarjetaDocumento
@@ -231,17 +231,17 @@ export default function HistorialResolucionSeccion({
             </Paper>
           )}
           <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="sm">
-            <Paper withBorder radius="sm" p="sm">
+            <Paper withBorder radius="md" p="sm">
               <Text size="xs" c="dimmed" mb={4}>Código</Text>
               <Text size="sm" fw={600}>{vig?.codigo_resolucion ?? "—"}</Text>
             </Paper>
-            <Paper withBorder radius="sm" p="sm">
+            <Paper withBorder radius="md" p="sm">
               <Text size="xs" c="dimmed" mb={4}>Fecha de resolución</Text>
               <Text size="sm" fw={600}>
                 {vig?.fecha_resolucion ? formatFechaDDMMYY(vig.fecha_resolucion) : "—"}
               </Text>
             </Paper>
-            <Paper withBorder radius="sm" p="sm">
+            <Paper withBorder radius="md" p="sm">
               <Text size="xs" c="dimmed" mb={4}>Fecha de vencimiento</Text>
               <Text size="sm" fw={600}>
                 {vig?.fecha_vencimiento
@@ -254,7 +254,7 @@ export default function HistorialResolucionSeccion({
           </SimpleGrid>
         </Stack>
 
-        <Divider label="Respuesta al cierre (no renovación)" labelPosition="left" mt="sm" />
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Respuesta al cierre (no renovación)" labelPosition="left" mt="sm" />
         <Stack gap="sm">
           {(record.documentos_proceso ?? [])[0] ? (
             <TarjetaDocumento
@@ -265,13 +265,13 @@ export default function HistorialResolucionSeccion({
             />
           ) : null}
           <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
-            <Paper withBorder radius="sm" p="sm">
+            <Paper withBorder radius="md" p="sm">
               <Text size="xs" c="dimmed" mb={4}>Fecha de respuesta</Text>
               <Text size="sm" fw={600}>
                 {record.fecha_resolucion ? formatFechaDDMMYY(record.fecha_resolucion) : "—"}
               </Text>
             </Paper>
-            <Paper withBorder radius="sm" p="sm">
+            <Paper withBorder radius="md" p="sm">
               <Text size="xs" c="dimmed" mb={4}>Fase al cierre</Text>
               <Text size="sm" fw={600}>
                 {infoFasePorNumero(7)?.fullName ?? "Plan de contingencia (no renovación)"}
@@ -287,7 +287,7 @@ export default function HistorialResolucionSeccion({
   if (esReformaSolaHist) {
     return (
       <>
-        <Divider label="Documento del cierre" labelPosition="left" />
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Documento del cierre" labelPosition="left" />
         <Text size="xs" c="dimmed" mb="xs">
           Constancia de aprobación del Ministerio. Actualiza la ficha del programa;{" "}
           <strong>no</strong> reemplaza la resolución RC vigente.
@@ -308,7 +308,7 @@ export default function HistorialResolucionSeccion({
 
           {vigenteReforma ? (
             <>
-              <Divider label="Resolución vigente al momento de la modificación" labelPosition="left" />
+              <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución vigente al momento de la modificación" labelPosition="left" />
               <BloqueVigenteReforma
                 vig={vigenteReforma}
                 nota="Referencia del RC que seguía vigente cuando se gestionó la modificación (código, fechas y PDF)."
@@ -325,7 +325,7 @@ export default function HistorialResolucionSeccion({
     return (
       <>
         <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-          <Divider label="Resolución y documentos del cierre" labelPosition="left" style={{ flex: 1 }} />
+          <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución y documentos del cierre" labelPosition="left" style={{ flex: 1 }} />
           {puedeCambiarPdf && (
             <Button size="xs" variant="light" onClick={onCambiarPdf}>
               Cambiar PDF
@@ -344,7 +344,7 @@ export default function HistorialResolucionSeccion({
 
           {vigenteReforma ? (
             <>
-              <Divider label="Resolución vigente antes del cierre" labelPosition="left" />
+              <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución vigente antes del cierre" labelPosition="left" />
               <BloqueVigenteReforma
                 vig={vigenteReforma}
                 nota="RC que estaba vigente al abrir el trámite, antes de la nueva resolución del cierre."
@@ -354,7 +354,7 @@ export default function HistorialResolucionSeccion({
 
           {docPdfCierre || record.codigo_resolucion || record.fecha_resolucion ? (
             <>
-              <Divider label="Nueva resolución MEN (cierre)" labelPosition="left" />
+              <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Nueva resolución MEN (cierre)" labelPosition="left" />
               <Text size="xs" c="dimmed" mb="xs">
                 Resolución otorgada al cerrar la renovación con modificación; pasa a ser la vigente del programa.
               </Text>
@@ -390,7 +390,7 @@ export default function HistorialResolucionSeccion({
   return (
     <>
       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-        <Divider label="Resolución" labelPosition="left" style={{ flex: 1 }} />
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Resolución" labelPosition="left" style={{ flex: 1 }} />
         {puedeCambiarPdf && (
           <Button size="xs" variant="light" onClick={onCambiarPdf}>
             Cambiar PDF
@@ -413,7 +413,7 @@ export default function HistorialResolucionSeccion({
             color="violet"
           />
         ) : puedeCambiarPdf ? (
-          <Paper withBorder p="md" radius="md" style={{ borderStyle: "dashed", backgroundColor: "#f8f9fa" }}>
+          <Paper withBorder p="md" radius="md" style={{ borderStyle: "dashed", backgroundColor: "var(--mantine-color-default-hover)" }}>
             <Text size="sm" c="dimmed" ta="center">
               No hay PDF de resolución archivado. Usa «Cambiar PDF» para adjuntarlo.
             </Text>

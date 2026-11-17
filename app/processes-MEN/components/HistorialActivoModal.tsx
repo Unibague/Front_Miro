@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Modal, Stack, Paper, Box, Group, Text, Badge, Collapse, Loader, Anchor } from "@mantine/core";
+import { Modal, Stack, Paper, Box, Group, Text, Badge, Collapse, Loader, Anchor, ThemeIcon, Progress } from "@mantine/core";
+import { IconChevronDown, IconChevronRight, IconCircleCheck, IconCircleMinus, IconHistory, IconPaperclip } from "@tabler/icons-react";
 import axios from "axios";
 import type { Process, Phase, Actividad, ProcessDocument } from "../types";
-import { faseColors } from "../constants";
+import { infoFasePorNumero } from "../constants";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 
 const actividadResuelta = (a: Actividad) => !!a.completada || !!a.no_aplica;
@@ -106,15 +107,34 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
     return out;
   }, [fases, proceso.fase_actual]);
 
-  const labelFase = (num: number) =>
-    faseColors.find((fc) => fc.fase === num)?.fullName ?? `Fase ${num}`;
+  /** Enlace a un documento con icono de clip y fecha de carga. */
+  const DocLink = ({ d }: { d: ProcessDocument }) => (
+    <Group gap={6} align="center" wrap="nowrap">
+      <IconPaperclip size={13} color="var(--mantine-color-blue-6)" style={{ flexShrink: 0 }} />
+      <Anchor href={d.view_link} target="_blank" size="xs" fw={500} truncate="end">
+        {d.name}
+      </Anchor>
+      {d.createdAt && <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>· {fmtDocFecha(d.createdAt)}</Text>}
+    </Group>
+  );
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Historial activo" size="lg" radius="md">
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      size="lg"
+      radius="lg"
+      title={
+        <Group gap="sm" wrap="nowrap">
+          <ThemeIcon color="blue" variant="light" size="lg" radius="md"><IconHistory size={20} /></ThemeIcon>
+          <Box>
+            <Text fw={700} size="sm">Historial activo</Text>
+            <Text size="xs" c="dimmed">Fases superadas y actividades hechas en la fase actual · solo lectura</Text>
+          </Box>
+        </Group>
+      }
+    >
       <Stack gap="sm">
-        <Text size="sm" c="dimmed">
-          Fases ya superadas y actividades completadas en la fase actual. Solo lectura: actividades, subactividades y enlaces a documentos.
-        </Text>
         {loading ? (
           <Loader size="sm" mx="auto" />
         ) : filasFases.length === 0 ? (
@@ -130,30 +150,39 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
               const esPasada = fase.numero < proceso.fase_actual;
 
               return (
-                <Paper key={fase._id} withBorder radius="sm" style={{ overflow: "hidden" }}>
+                <Paper key={fase._id} withBorder radius="md" style={{ overflow: "hidden" }}>
                   <Box
                     px="sm"
-                    py={8}
+                    py={10}
                     style={{
                       cursor: "pointer",
-                      backgroundColor: "#f8f9fa",
-                      borderBottom: openFase === fase.numero ? "1px solid #dee2e6" : "none",
+                      backgroundColor: openFase === fase.numero ? "var(--mantine-color-default-hover)" : undefined,
+                      borderBottom: openFase === fase.numero ? "1px solid var(--mantine-color-default-border)" : "none",
                     }}
                     onClick={() => setOpenFase((prev) => (prev === fase.numero ? null : fase.numero))}
                   >
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap="xs">
-                        <Text size="xs" fw={700}>
-                          {openFase === fase.numero ? "▾" : "▸"} {labelFase(fase.numero)} — {fase.nombre}
-                        </Text>
-                        <Badge size="xs" color={resueltas === total && total > 0 ? "green" : "orange"} variant="light">
-                          {resueltas}/{total} resueltas
+                    <Group justify="space-between" wrap="nowrap" gap="sm">
+                      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                        {openFase === fase.numero
+                          ? <IconChevronDown size={16} color="var(--mantine-color-dimmed)" />
+                          : <IconChevronRight size={16} color="var(--mantine-color-dimmed)" />}
+                        <Badge
+                          radius="sm"
+                          style={{ flexShrink: 0 }}
+                          styles={{ root: { backgroundColor: infoFasePorNumero(fase.numero)?.color ?? "var(--mantine-color-gray-3)", color: infoFasePorNumero(fase.numero)?.textColor ?? "#1a1b1e" } }}
+                        >
+                          Fase {fase.numero}
                         </Badge>
+                        <Text size="sm" fw={600} truncate="end">{fase.nombre}</Text>
                         {!esPasada && (
-                          <Badge size="xs" color="gray" variant="outline">
-                            fase actual (solo hechas)
+                          <Badge size="xs" color="blue" variant="light" style={{ flexShrink: 0 }}>
+                            Fase actual
                           </Badge>
                         )}
+                      </Group>
+                      <Group gap={8} wrap="nowrap" style={{ flexShrink: 0 }}>
+                        <Progress value={total > 0 ? (resueltas / total) * 100 : 0} color={resueltas === total && total > 0 ? "teal" : "blue"} size="sm" radius="xl" w={70} />
+                        <Text size="xs" c="dimmed" fw={600}>{resueltas}/{total}</Text>
                       </Group>
                     </Group>
                   </Box>
@@ -162,22 +191,11 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                     <Box px="sm" pt="xs" pb="sm">
                       {phaseDocs.length > 0 && (
                         <Box mb="xs">
-                          <Text size="xs" c="dimmed" fw={600} mb={4}>
+                          <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4}>
                             Documentos de la fase
                           </Text>
                           <Stack gap={2}>
-                            {phaseDocs.map((d) => (
-                              <Group key={d._id} gap={6} align="center">
-                                <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>
-                                  📎 {d.name}
-                                </Anchor>
-                                {d.createdAt && (
-                                  <Text size="xs" c="dimmed">
-                                    · {fmtDocFecha(d.createdAt)}
-                                  </Text>
-                                )}
-                              </Group>
-                            ))}
+                            {phaseDocs.map((d) => <DocLink key={d._id} d={d} />)}
                           </Stack>
                         </Box>
                       )}
@@ -193,22 +211,30 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                           );
 
                           return (
-                            <Paper key={act._id} withBorder radius="xs" style={{ overflow: "hidden" }}>
+                            <Paper
+                              key={act._id}
+                              withBorder
+                              radius="sm"
+                              style={{ overflow: "hidden", borderLeft: `3px solid var(--mantine-color-${actNa ? "orange" : actLista ? "teal" : "gray"}-5)` }}
+                            >
                               <Box
                                 px="sm"
-                                py={6}
-                                style={{ cursor: "pointer", backgroundColor: actLista ? "#f0fff4" : "#fff" }}
+                                py={8}
+                                style={{ cursor: "pointer" }}
                                 onClick={() => setOpenAct((prev) => (prev === actKey ? null : actKey))}
                               >
-                                <Group justify="space-between">
-                                  <Group gap="xs">
-                                    <Text size="xs">{openAct === actKey ? "▾" : "▸"}</Text>
-                                    <input type="checkbox" checked={actLista} readOnly style={{ width: 13, height: 13 }} />
+                                <Group justify="space-between" wrap="nowrap" align="flex-start">
+                                  <Group gap="xs" wrap="nowrap" align="flex-start" style={{ minWidth: 0 }}>
+                                    {openAct === actKey
+                                      ? <IconChevronDown size={14} color="var(--mantine-color-dimmed)" style={{ marginTop: 2, flexShrink: 0 }} />
+                                      : <IconChevronRight size={14} color="var(--mantine-color-dimmed)" style={{ marginTop: 2, flexShrink: 0 }} />}
+                                    {actNa
+                                      ? <IconCircleMinus size={16} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0 }} />
+                                      : <IconCircleCheck size={16} color={`var(--mantine-color-${actLista ? "teal" : "gray"}-6)`} style={{ flexShrink: 0 }} />}
                                     <Text
-                                      size="xs"
+                                      size="sm"
                                       fw={500}
-                                      td={actLista ? "line-through" : undefined}
-                                      c={actNa ? "orange" : act.completada ? "dimmed" : undefined}
+                                      c={actNa ? "orange" : undefined}
                                     >
                                       {act.nombre}
                                     </Text>
@@ -219,22 +245,22 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                                     )}
                                   </Group>
                                   {act.fecha_completado && !actNa && (
-                                    <Text size="xs" c="teal">
-                                      ✓ {formatFechaDDMMYY(act.fecha_completado)}
+                                    <Text size="xs" c="teal" fw={600} style={{ flexShrink: 0 }}>
+                                      {formatFechaDDMMYY(act.fecha_completado)}
                                     </Text>
                                   )}
                                 </Group>
                                 {act.responsables && (
-                                  <Text size="xs" c="dimmed" pl={34}>
+                                  <Text size="xs" c="dimmed" pl={44}>
                                     {act.responsables}
                                   </Text>
                                 )}
                               </Box>
 
                               <Collapse in={openAct === actKey}>
-                                <Box px="sm" pt={6} pb="sm" style={{ backgroundColor: "#fafafa" }}>
+                                <Box px="sm" pt={6} pb="sm" style={{ backgroundColor: "var(--mantine-color-default-hover)" }}>
                                   {act.observaciones && (
-                                    <Paper withBorder radius="xs" p={6} mb={6} style={{ backgroundColor: "#fff9db" }}>
+                                    <Paper withBorder radius="sm" p={6} mb={6} style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
                                       <Text size="xs" c="dimmed">
                                         Observaciones:
                                       </Text>
@@ -243,23 +269,12 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                                   )}
 
                                   <Box mb={act.subactividades.length > 0 ? "xs" : 0}>
-                                    <Text size="xs" c="dimmed" fw={600} mb={4}>
+                                    <Text size="xs" c="dimmed" fw={700} tt="uppercase" mb={4}>
                                       Documentos
                                     </Text>
                                     {actDocs.length > 0 ? (
                                       <Stack gap={2}>
-                                        {actDocs.map((d) => (
-                                          <Group key={d._id} gap={6} align="center">
-                                            <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>
-                                              📎 {d.name}
-                                            </Anchor>
-                                            {d.createdAt && (
-                                              <Text size="xs" c="dimmed">
-                                                · {fmtDocFecha(d.createdAt)}
-                                              </Text>
-                                            )}
-                                          </Group>
-                                        ))}
+                                        {actDocs.map((d) => <DocLink key={d._id} d={d} />)}
                                       </Stack>
                                     ) : hayDocsEnSubs ? (
                                       <Text size="xs" c="dimmed">
@@ -274,7 +289,7 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
 
                                   {act.subactividades.length > 0 && (
                                     <Stack gap={4} mt="xs">
-                                      <Text size="xs" c="dimmed" fw={600}>
+                                      <Text size="xs" c="dimmed" fw={700} tt="uppercase">
                                         Subactividades
                                       </Text>
                                       {act.subactividades.map((sub) => {
@@ -282,14 +297,15 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                                         const subLista = sub.completada || subNa;
                                         const subDocs = grouped.bySub.get(String(sub._id)) ?? [];
                                         return (
-                                          <Paper key={sub._id} withBorder radius="xs" p={6} style={{ backgroundColor: subLista ? "#f8f9fa" : "#fff" }}>
-                                            <Group justify="space-between" mb={subDocs.length > 0 || sub.observaciones ? 4 : 0}>
-                                              <Group gap="xs">
-                                                <input type="checkbox" checked={sub.completada && !subNa} readOnly style={{ width: 12, height: 12 }} />
+                                          <Paper key={sub._id} withBorder radius="sm" px="sm" py={6}>
+                                            <Group justify="space-between" mb={subDocs.length > 0 || sub.observaciones ? 4 : 0} wrap="nowrap">
+                                              <Group gap="xs" wrap="nowrap">
+                                                {subNa
+                                                  ? <IconCircleMinus size={14} color="var(--mantine-color-orange-6)" style={{ flexShrink: 0 }} />
+                                                  : <IconCircleCheck size={14} color={`var(--mantine-color-${subLista ? "teal" : "gray"}-6)`} style={{ flexShrink: 0 }} />}
                                                 <Text
                                                   size="xs"
-                                                  td={subLista ? "line-through" : undefined}
-                                                  c={subNa ? "orange" : sub.completada ? "dimmed" : undefined}
+                                                  c={subNa ? "orange" : undefined}
                                                 >
                                                   {sub.nombre}
                                                 </Text>
@@ -300,8 +316,8 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                                                 )}
                                               </Group>
                                               {sub.fecha_completado && !subNa && (
-                                                <Text size="xs" c="teal">
-                                                  ✓ {formatFechaDDMMYY(sub.fecha_completado)}
+                                                <Text size="xs" c="teal" fw={600} style={{ flexShrink: 0 }}>
+                                                  {formatFechaDDMMYY(sub.fecha_completado)}
                                                 </Text>
                                               )}
                                             </Group>
@@ -313,18 +329,7 @@ export default function HistorialActivoModal({ opened, onClose, proceso, fases }
                                             {subDocs.length > 0 && (
                                               <Box pl={20}>
                                                 <Stack gap={2}>
-                                                  {subDocs.map((d) => (
-                                                    <Group key={d._id} gap={6} align="center">
-                                                      <Anchor href={d.view_link} target="_blank" size="xs" fw={500}>
-                                                        📎 {d.name}
-                                                      </Anchor>
-                                                      {d.createdAt && (
-                                                        <Text size="xs" c="dimmed">
-                                                          · {fmtDocFecha(d.createdAt)}
-                                                        </Text>
-                                                      )}
-                                                    </Group>
-                                                  ))}
+                                                  {subDocs.map((d) => <DocLink key={d._id} d={d} />)}
                                                 </Stack>
                                               </Box>
                                             )}

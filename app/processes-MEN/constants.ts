@@ -1,14 +1,19 @@
 import type { CasoFechaKey } from "./types";
 
+/**
+ * Fases 0–5: gama verde pastel (color del módulo MEN), de más suave a más intensa a medida que avanza el proceso.
+ * Contingencia (durazno) y Plan de mejoramiento (lila) salen de la secuencia.
+ * Al ser pastel, siempre se acompañan de número/etiqueta y `borderColor`; `textColor` es el texto legible encima.
+ */
 export const faseColors = [
-  { fase: 0, color: "#ced4da", label: "Fase 0", fullName: "Fase 0 - Apertura" },
-  { fase: 1, color: "#ff6b6b", label: "Fase 1", fullName: "Fase 1 - Preparación" },
-  { fase: 2, color: "#ffa94d", label: "Fase 2", fullName: "Fase 2 - Estructuración" },
-  { fase: 3, color: "#ffd43b", label: "Fase 3", fullName: "Fase 3 - Verificación y Formalización" },
-  { fase: 4, color: "#74c0fc", label: "Fase 4", fullName: "Fase 4 - Radicación" },
-  { fase: 5, color: "#a9e34b", label: "Fase 5", fullName: "Fase 5 - Evaluación" },
-  { fase: 7, color: "#20c997", label: "Contingencia", fullName: "Plan de contingencia (no renovación)" },
-  { fase: 8, color: "#9775fa", label: "Plan de mejoramiento", fullName: "Plan de mejoramiento (fase 8 en flujo AV — tramo de PM)." },
+  { fase: 0, color: "#e3f5e7", borderColor: "#bfe5c8", textColor: "#14532d", label: "Fase 0", fullName: "Fase 0 - Apertura" },
+  { fase: 1, color: "#cdeed5", borderColor: "#a6dcb3", textColor: "#14532d", label: "Fase 1", fullName: "Fase 1 - Preparación" },
+  { fase: 2, color: "#b4e4c0", borderColor: "#8dd09f", textColor: "#14532d", label: "Fase 2", fullName: "Fase 2 - Estructuración" },
+  { fase: 3, color: "#98d8a9", borderColor: "#72c28a", textColor: "#123f24", label: "Fase 3", fullName: "Fase 3 - Verificación y Formalización" },
+  { fase: 4, color: "#7dca93", borderColor: "#5bb276", textColor: "#0f3520", label: "Fase 4", fullName: "Fase 4 - Radicación" },
+  { fase: 5, color: "#63bb7d", borderColor: "#46a062", textColor: "#0b2a18", label: "Fase 5", fullName: "Fase 5 - Evaluación" },
+  { fase: 7, color: "#ffe3cc", borderColor: "#ffc999", textColor: "#9a3412", label: "Contingencia", fullName: "Plan de contingencia (no renovación)" },
+  { fase: 8, color: "#f1ddf7", borderColor: "#dcb6ea", textColor: "#6b2178", label: "Plan de mejoramiento", fullName: "Plan de mejoramiento (fase 8 en flujo AV — tramo de PM)." },
 ];
 
 /** Meta de fase por número guardado en BD (no indexar `faseColors[fase]`: el array no coincide con el número de fase). */
@@ -242,48 +247,32 @@ export const COLS_9 = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 export const selectorStyle = {
   root: {
-    backgroundColor: "var(--mantine-color-blue-light)",
-    borderRadius: "10px",
-    padding: "8px 10px 10px",
+    minWidth: 0,
   },
   label: {
-    color: "var(--mantine-color-blue-light-color)",
+    fontSize: 12,
     fontWeight: 600 as const,
-    textAlign: "center" as const,
-    width: "100%",
-    display: "block",
-    marginBottom: "6px",
+    color: "var(--mantine-color-dimmed)",
+    marginBottom: 4,
   },
   input: {
-    backgroundColor: "white",
-    border: "none",
-    borderRadius: "6px",
-    textAlign: "center" as const,
-    color: "#333",
+    borderRadius: 8,
     caretColor: "transparent",
     cursor: "pointer",
   },
   option: {
-    borderBottom: "1px solid #dee2e6",
-    paddingTop: "8px",
-    paddingBottom: "8px",
+    borderRadius: 6,
+    paddingTop: "7px",
+    paddingBottom: "7px",
   },
 };
 
 /** Base de filtros (solo depende de `selectorStyle`); evita TDZ si alguien reordena exports respecto a `selectorStyleFiltersSubtipo`. */
 const selectorStyleFiltersShared = {
   ...selectorStyle,
-  root: {
-    ...selectorStyle.root,
-    padding: "7px 8px 9px",
-  },
-  label: {
-    ...selectorStyle.label,
-    marginBottom: 4,
-  },
 };
 
-/** Misma apariencia que `selectorStyle`, con un poco menos de padding horizontal (filas de filtros del tablero). */
+/** Misma apariencia que `selectorStyle` (filas de filtros del tablero). */
 export const selectorStyleFilters = selectorStyleFiltersShared;
 
 /** Fila de filtros: subtipo con etiqueta larga — el input cerrado usa elipsis; las opciones del menú pueden partirse en varias líneas. */

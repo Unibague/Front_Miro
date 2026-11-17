@@ -2,20 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Title, Text, Paper, Box, Stack, Group, Loader, Badge, Anchor,
+  Text, Paper, Box, Stack, Group, Loader, Badge, Anchor,
   Select, Collapse, Divider, ThemeIcon, Container, Textarea, Button,
   ActionIcon, Tooltip,
-  NavLink,
+  NavLink, Progress,
 } from "@mantine/core";
 import {
   IconChevronDown, IconChevronRight, IconCircleCheck,
-  IconCircle, IconAlertCircle, IconBan, IconClipboardList, IconChevronLeft,
+  IconCircle, IconAlertCircle, IconBan, IconClipboardList, IconChevronLeft, IconChartBar,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import { useRole } from "@/app/context/RoleContext";
 import type { Dependency, Program, Process, Phase } from "../types";
-import { LABEL_PROCESO, faseColors, COLOR_PROCESO, ROW_BG_PROCESO } from "../constants";
+import { LABEL_PROCESO, faseColors } from "../constants";
 import { formatFechaDDMMYY } from "../utils/formatFechaCorta";
 import { procesoRcActivoDePrograma } from "../utils/procesoRcUnico";
 import { programCodeKey } from "../utils/programCode";
@@ -109,14 +109,14 @@ function FaseRow({ fase, faseActual }: { fase: Phase; faseActual: number }) {
   const esActual = fase.numero === faseActual;
 
   return (
-    <Paper withBorder radius="sm" style={{ overflow: "hidden" }}>
+    <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
       <Box
         px="sm"
         py={8}
         style={{
           cursor: "pointer",
-          backgroundColor: esActual ? "var(--mantine-color-blue-light)" : "#f8f9fa",
-          borderBottom: open ? "1px solid #dee2e6" : "none",
+          backgroundColor: esActual ? "var(--mantine-color-blue-light)" : "var(--mantine-color-default-hover)",
+          borderBottom: open ? "1px solid var(--mantine-color-default-border)" : "none",
         }}
         onClick={() => setOpen((o) => !o)}
       >
@@ -157,8 +157,6 @@ function FaseRow({ fase, faseActual }: { fase: Phase; faseActual: number }) {
 
 function ProcesoCard({ proc, fases }: { proc: Process; fases: Phase[] }) {
   const [open, setOpen] = useState(false);
-  const color = COLOR_PROCESO[proc.tipo_proceso] ?? "#868e96";
-  const bg = ROW_BG_PROCESO[proc.tipo_proceso] ?? "#fafbff";
   const pct = pctFase(fases);
   const nombreFase = nombreFaseActual(proc, fases);
   const badgeColor =
@@ -172,13 +170,13 @@ function ProcesoCard({ proc, fases }: { proc: Process; fases: Phase[] }) {
       withBorder
       radius="md"
       mb="sm"
-      style={{ borderLeft: `5px solid ${color}`, background: bg, overflow: "hidden" }}
+      style={{ borderLeft: `4px solid var(--mantine-color-${badgeColor}-5)`, overflow: "hidden" }}
     >
       <Box px="md" py="sm" style={{ cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             {open ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-            <Badge size="sm" variant="filled" color={badgeColor}>{proc.tipo_proceso}</Badge>
+            <Badge size="sm" variant="light" color={badgeColor}>{proc.tipo_proceso}</Badge>
             <Text
               size="sm"
               fw={600}
@@ -192,9 +190,12 @@ function ProcesoCard({ proc, fases }: { proc: Process; fases: Phase[] }) {
               </Badge>
             )}
           </Group>
-          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
-            <Text size="xs" c="dimmed">{pct}% completado</Text>
-            <Text size="xs" c="dimmed">Vence: {formatFechaDDMMYY(proc.fecha_vencimiento)}</Text>
+          <Group gap="md" wrap="nowrap" style={{ flexShrink: 0 }}>
+            <Group gap={6} wrap="nowrap" w={150}>
+              <Progress value={pct} color={badgeColor} size="sm" radius="xl" style={{ flex: 1 }} />
+              <Text size="xs" fw={600}>{pct}%</Text>
+            </Group>
+            <Text size="xs" c="dimmed">Vence: <strong>{formatFechaDDMMYY(proc.fecha_vencimiento)}</strong></Text>
           </Group>
         </Group>
         <Text size="xs" c="dimmed" mt={4} pl={24}>{nombreFase}</Text>
@@ -469,7 +470,9 @@ export default function ProcessesMenResponsiblePage() {
           <Tooltip label={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"} withArrow>
             <ActionIcon
               variant="light"
-              color="blue"
+              color="green"
+              radius="xl"
+              size="lg"
               onClick={() => setSidebarCollapsed((value) => !value)}
               aria-label={sidebarCollapsed ? "Mostrar filtros" : "Ocultar filtros"}
             >
@@ -479,11 +482,11 @@ export default function ProcessesMenResponsiblePage() {
         </Group>
         {!sidebarCollapsed && (
           <Stack gap="md">
-            <Group gap="xs">
-              <ThemeIcon size={30} radius="md" color="blue" variant="light">
-                <IconClipboardList size={17} />
+            <Group gap={8}>
+              <ThemeIcon size={32} radius="xl" color="green" variant="light">
+                <IconChartBar size={18} />
               </ThemeIcon>
-              <Text size="sm" fw={700}>Panel MEN</Text>
+              <Text size="xs" fw={700} c="green" tt="uppercase">Panel MEN</Text>
             </Group>
             <Divider />
             <Text size="xs" c="dimmed" fw={700} tt="uppercase">Procesos</Text>
@@ -532,6 +535,8 @@ export default function ProcessesMenResponsiblePage() {
       <Stack gap="lg">
         <ModuleHeader
           title="Procesos de calidad MEN"
+          icon={IconChartBar}
+          color="green"
           description={
             <>
               Consulta el estado de las fases y actividades de los programas de tu facultad o dependencia.
@@ -545,9 +550,9 @@ export default function ProcessesMenResponsiblePage() {
         {/* Tareas asignadas */}
         {tasks.length > 0 && (
           <Paper withBorder radius="lg" p="md">
-            <Group gap="xs" mb="sm">
-              <IconClipboardList size={20} />
-              <Title order={4}>Tareas asignadas</Title>
+            <Group gap="sm" mb="sm">
+              <ThemeIcon size={32} radius="xl" variant="light" color="violet"><IconClipboardList size={17} /></ThemeIcon>
+              <Text fw={700} size="lg">Tareas asignadas</Text>
               <Badge size="sm" color="blue" variant="light">
                 {tasks.filter((t) => !t.completada).length} pendientes
               </Badge>
@@ -560,8 +565,8 @@ export default function ProcessesMenResponsiblePage() {
                   radius="md"
                   p="sm"
                   style={{
-                    borderLeft: `4px solid ${task.completada ? "#40c057" : "#228be6"}`,
-                    background: task.completada ? "#f0fff4" : undefined,
+                    borderLeft: `4px solid var(--mantine-color-${task.completada ? "teal" : "yellow"}-5)`,
+                    background: task.completada ? "var(--mantine-color-teal-light)" : undefined,
                   }}
                 >
                   <Group justify="space-between" wrap="nowrap" gap="xs">
@@ -650,7 +655,7 @@ export default function ProcessesMenResponsiblePage() {
 
         {/* Lista de programas */}
         {programasFiltrados.length === 0 ? (
-          <Paper withBorder radius="md" p="xl">
+          <Paper withBorder radius="lg" p="xl">
             <Text c="dimmed" ta="center">
               No se encontraron programas con los filtros actuales.
             </Text>
@@ -675,15 +680,15 @@ export default function ProcessesMenResponsiblePage() {
                           href={processesMenRoutes.program(prog._id)}
                           fw={700}
                           size="md"
-                          c="dark"
+                          c="var(--mantine-color-text)"
                           underline="hover"
                         >
                           {prog.nombre}
                         </Anchor>
                         <Badge
-                          size="xs"
+                          size="sm"
                           color={prog.estado === "Activo" ? "teal" : "gray"}
-                          variant="filled"
+                          variant="light"
                         >
                           {prog.estado}
                         </Badge>

@@ -12,33 +12,48 @@
 }
 
 .dropzone {
-  border-width: 1px;
-  padding: 1rem;
-  border-radius: var(--mantine-radius-md);
-  padding-bottom: 50px;
-  border-style: dashed;
-  background-color: light-dark(
-    var(--mantine-color-gray-3),
-    var(--mantine-color-dark-5)
-  );
-  height: 8rem;
+  position: relative;
+  width: 100%;
+  min-height: 11rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-md);
+  border: 2px dashed var(--mantine-color-blue-3);
+  background-color: var(--mantine-color-blue-light);
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.dropzone:hover {
+  border-color: var(--mantine-color-blue-5);
+  background-color: var(--mantine-color-blue-light-hover);
+}
+
+.dropzone[data-accept] {
+  border-color: var(--mantine-color-teal-5);
+  background-color: var(--mantine-color-teal-light);
+}
+
+.dropzone[data-reject] {
+  border-color: var(--mantine-color-red-5);
+  background-color: var(--mantine-color-red-light);
 }
 
 .loading {
   border-color: var(--mantine-color-blue-5);
-  background-color: var(--mantine-color-blue-light);
   cursor: progress;
 }
 
 .progress {
   position: absolute;
-  right: 12px;
-  bottom: 8px;
-  left: 12px;
+  right: 16px;
+  bottom: 12px;
+  left: 16px;
 }
 
 .icon {
-  color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+  box-shadow: var(--mantine-shadow-xs);
 }
 
 .control {

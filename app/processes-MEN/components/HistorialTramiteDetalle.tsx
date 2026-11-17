@@ -3,14 +3,19 @@
 import { useState } from "react";
 import {
   Anchor,
+  Badge,
   Box,
+  Button,
   Collapse,
   Divider,
+  Group,
   Paper,
+  SimpleGrid,
   Stack,
-  Table,
   Text,
 } from "@mantine/core";
+import { IconCalendar, IconMessageCircle, IconPaperclip, IconCircleCheck, IconCircleX, IconFlag, IconHash } from "@tabler/icons-react";
+import type { ElementType, ReactNode } from "react";
 import type { CasoFechaKey, CasoSnapshotHistorial, ProcessHistoryRecord } from "../types";
 import {
   CASO_FECHA_LABELS,
@@ -38,23 +43,34 @@ function esHistorialAvNoRenovacion(r: ProcessHistoryRecord): boolean {
 
 type DocSnap = { name: string; view_link: string; subido_en?: string | null };
 
-const TABLA_STYLE = { width: "100%", tableLayout: "fixed" as const };
-const TH_STYLE = {
-  backgroundColor: "#f8f9fa",
-  verticalAlign: "top" as const,
-  padding: "6px 4px",
-  wordBreak: "break-word" as const,
-  hyphens: "auto" as const,
-};
-const TD_STYLE = {
-  verticalAlign: "top" as const,
-  padding: "10px 6px",
-  wordBreak: "break-word" as const,
-};
-const HEAD_TEXT = { fontSize: 12, lineHeight: 1.3, fontWeight: 700 };
-/** Fechas y badges — alineado con gestión activa (~12–13px). */
-const FECHA_CELL = { fontSize: 13, lineHeight: 1.35, fontWeight: 600 };
-const LINK_CELL = { fontSize: 12, lineHeight: 1.35 };
+/** Tarjeta de un dato del trámite: etiqueta arriba, valor destacado y acciones (observaciones / documentos) abajo. */
+function TarjetaDato({
+  label,
+  valor,
+  color = "blue",
+  icon: Icon = IconCalendar,
+  children,
+}: {
+  label: string;
+  valor: ReactNode;
+  color?: string;
+  icon?: ElementType;
+  children?: ReactNode;
+}) {
+  return (
+    <Paper withBorder radius="md" p="sm" style={{ borderTop: `3px solid var(--mantine-color-${color}-3)`, display: "flex", flexDirection: "column", gap: 6 }}>
+      <Text size="xs" c="dimmed" fw={600} lh={1.3}>{label}</Text>
+      <Group gap={6} wrap="nowrap" align="center">
+        <Icon size={15} color={`var(--mantine-color-${color}-6)`} style={{ flexShrink: 0 }} />
+        <Text size="sm" fw={700} component="div">{valor}</Text>
+      </Group>
+      {children}
+    </Paper>
+  );
+}
+
+/** Columnas de la cuadrícula de tarjetas según cuántos datos hay. */
+const colsTarjetas = (n: number) => ({ base: 2, sm: Math.min(n, 3), lg: Math.min(n, 6) });
 
 /** Solo observaciones (fechas del trámite del proceso). */
 function CeldaObservaciones({
@@ -70,21 +86,14 @@ function CeldaObservaciones({
 }) {
   const texto = obs.trim();
   const abierto = openKey === detalleKey;
-  if (!texto) {
-    return <Text style={{ ...FECHA_CELL, fontWeight: 400 }} c="dimmed" ta="center">—</Text>;
-  }
+  if (!texto) return null;
   return (
     <Stack gap={4} align="stretch" w="100%">
-      <Text
-        ta="center"
-        td="underline"
-        style={{ ...LINK_CELL, cursor: "pointer", color: "#1971c2" }}
-        onClick={() => onToggle(detalleKey)}
-      >
+      <Button size="compact-xs" variant="light" color="blue" leftSection={<IconMessageCircle size={12} />} onClick={() => onToggle(detalleKey)}>
         {abierto ? "Ocultar" : "Observaciones"}
-      </Text>
+      </Button>
       <Collapse in={abierto}>
-        <Paper withBorder radius="xs" p={8} style={{ backgroundColor: "#fff9db" }}>
+        <Paper withBorder radius="sm" p={8} style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
           <Text size="sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{texto}</Text>
         </Paper>
       </Collapse>
@@ -115,24 +124,17 @@ function CeldaCasoDetalle({
   const obsAbierto = openObsKey === `${detalleKey}-obs`;
   const docsAbierto = openDocsKey === `${detalleKey}-docs`;
 
-  if (!textoObs && !tieneDocs) {
-    return <Text style={{ ...FECHA_CELL, fontWeight: 400 }} c="dimmed" ta="center">—</Text>;
-  }
+  if (!textoObs && !tieneDocs) return null;
 
   return (
     <Stack gap={4} align="stretch" w="100%">
       {textoObs ? (
         <>
-          <Text
-            ta="center"
-            td="underline"
-            style={{ ...LINK_CELL, cursor: "pointer", color: "#1971c2" }}
-            onClick={() => onToggleObs(`${detalleKey}-obs`)}
-          >
+          <Button size="compact-xs" variant="light" color="blue" leftSection={<IconMessageCircle size={12} />} onClick={() => onToggleObs(`${detalleKey}-obs`)}>
             {obsAbierto ? "Ocultar" : "Observaciones"}
-          </Text>
+          </Button>
           <Collapse in={obsAbierto}>
-            <Paper withBorder radius="xs" p={8} style={{ backgroundColor: "#fff9db" }}>
+            <Paper withBorder radius="sm" p={8} style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
               <Text size="sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{textoObs}</Text>
             </Paper>
           </Collapse>
@@ -140,19 +142,14 @@ function CeldaCasoDetalle({
       ) : null}
       {tieneDocs ? (
         <>
-          <Text
-            ta="center"
-            td="underline"
-            style={{ ...LINK_CELL, cursor: "pointer", color: "#1971c2" }}
-            onClick={() => onToggleDocs(`${detalleKey}-docs`)}
-          >
-            {docsAbierto ? "Ocultar" : `Docs. (${docs.length})`}
-          </Text>
+          <Button size="compact-xs" variant="light" color="teal" leftSection={<IconPaperclip size={12} />} onClick={() => onToggleDocs(`${detalleKey}-docs`)}>
+            {docsAbierto ? "Ocultar" : `Documentos (${docs.length})`}
+          </Button>
           <Collapse in={docsAbierto}>
             <Stack gap={2}>
               {docs.map((d, i) => (
                 <Anchor key={i} href={d.view_link} target="_blank" size="sm" style={{ wordBreak: "break-word" }}>
-                  📎 {d.name}
+                  {d.name}
                 </Anchor>
               ))}
             </Stack>
@@ -179,57 +176,20 @@ export function HistorialFechasTramiteDetalle({ record }: { record: ProcessHisto
   if (record.tipo_proceso === "PM") {
     return (
       <>
-        <Divider label="Fechas del trámite" labelPosition="left" />
-        <Box style={{ overflow: "hidden" }}>
-          <Table withTableBorder withColumnBorders style={TABLA_STYLE}>
-            <Table.Thead>
-              <Table.Tr>
-                {COLUMNAS_FECHA_PM.map((col) => (
-                  <Table.Th key={col.key} style={TH_STYLE}>
-                    <Text ta="center" style={HEAD_TEXT}>{col.label}</Text>
-                  </Table.Th>
-                ))}
-                <Table.Th style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>Fase al cierre</Text>
-                </Table.Th>
-                <Table.Th style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>Cerrado el</Text>
-                </Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              <Table.Tr>
-                {COLUMNAS_FECHA_PM.map((col) => {
-                  const fecha = record[col.key as keyof ProcessHistoryRecord] as string | null;
-                  const obs = String(record[col.obsKey as keyof ProcessHistoryRecord] ?? "");
-                  return (
-                    <Table.Td key={col.key} style={TD_STYLE}>
-                      <Stack gap={4} align="center">
-                        <Text ta="center" style={FECHA_CELL}>
-                          {fecha ? formatFechaDDMMYY(fecha) : "—"}
-                        </Text>
-                        <CeldaObservaciones
-                          obs={obs}
-                          detalleKey={`pm-${col.key}`}
-                          openKey={openDetalle}
-                          onToggle={toggle}
-                        />
-                      </Stack>
-                    </Table.Td>
-                  );
-                })}
-                <Table.Td style={TD_STYLE}>
-                  <Text ta="center" style={FECHA_CELL}>{labelFaseCierre(record)}</Text>
-                </Table.Td>
-                <Table.Td style={TD_STYLE}>
-                  <Text ta="center" style={FECHA_CELL}>
-                    {record.cerrado_en ? formatFechaDDMMYY(record.cerrado_en) : "—"}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            </Table.Tbody>
-          </Table>
-        </Box>
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Fechas del trámite" labelPosition="left" />
+        <SimpleGrid cols={colsTarjetas(COLUMNAS_FECHA_PM.length + 2)} spacing="sm">
+          {COLUMNAS_FECHA_PM.map((col) => {
+            const fecha = record[col.key as keyof ProcessHistoryRecord] as string | null;
+            const obs = String(record[col.obsKey as keyof ProcessHistoryRecord] ?? "");
+            return (
+              <TarjetaDato key={col.key} label={col.label} valor={fecha ? formatFechaDDMMYY(fecha) : "—"} color="grape">
+                <CeldaObservaciones obs={obs} detalleKey={`pm-${col.key}`} openKey={openDetalle} onToggle={toggle} />
+              </TarjetaDato>
+            );
+          })}
+          <TarjetaDato label="Fase al cierre" valor={labelFaseCierre(record)} color="violet" icon={IconFlag} />
+          <TarjetaDato label="Cerrado el" valor={record.cerrado_en ? formatFechaDDMMYY(record.cerrado_en) : "—"} color="teal" icon={IconCircleCheck} />
+        </SimpleGrid>
       </>
     );
   }
@@ -253,7 +213,7 @@ export function HistorialFechasTramiteDetalle({ record }: { record: ProcessHisto
   return (
     <>
       <Divider
-        label={esRcOficio ? "Vigencia y cierre" : "Fechas del trámite"}
+        styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label={esRcOficio ? "Vigencia y cierre" : "Fechas del trámite"}
         labelPosition="left"
       />
       {esRcOficio && (
@@ -266,62 +226,23 @@ export function HistorialFechasTramiteDetalle({ record }: { record: ProcessHisto
           Modificación: fechas gestionadas manualmente; lo relevante es la ficha y la constancia.
         </Text>
       )}
-      <Box style={{ overflow: "hidden" }}>
-        <Table withTableBorder withColumnBorders style={TABLA_STYLE}>
-          <Table.Thead>
-            <Table.Tr>
-              {columnasVisibles.map((col) => (
-                <Table.Th key={col.key} style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>{col.label}</Text>
-                </Table.Th>
-              ))}
-              {mostrarFaseAlCierre && (
-                <Table.Th style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>Fase al cierre</Text>
-                </Table.Th>
+      <SimpleGrid cols={colsTarjetas(columnasVisibles.length + (mostrarFaseAlCierre ? 2 : 1))} spacing="sm">
+        {columnasVisibles.map((col) => {
+          const fecha = record[col.key as keyof ProcessHistoryRecord] as string | null;
+          const obs = String(record[col.obsKey as keyof ProcessHistoryRecord] ?? "");
+          return (
+            <TarjetaDato key={col.key} label={col.label} valor={fecha ? formatFechaDDMMYY(fecha) : "—"}>
+              {!esRcOficio && (
+                <CeldaObservaciones obs={obs} detalleKey={`tram-${col.key}`} openKey={openDetalle} onToggle={toggle} />
               )}
-              <Table.Th style={TH_STYLE}>
-                <Text ta="center" style={HEAD_TEXT}>Cerrado el</Text>
-              </Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            <Table.Tr>
-              {columnasVisibles.map((col) => {
-                const fecha = record[col.key as keyof ProcessHistoryRecord] as string | null;
-                const obs = String(record[col.obsKey as keyof ProcessHistoryRecord] ?? "");
-                return (
-                  <Table.Td key={col.key} style={TD_STYLE}>
-                    <Stack gap={4} align="center">
-                      <Text ta="center" style={FECHA_CELL}>
-                        {fecha ? formatFechaDDMMYY(fecha) : "—"}
-                      </Text>
-                      {!esRcOficio && (
-                        <CeldaObservaciones
-                          obs={obs}
-                          detalleKey={`tram-${col.key}`}
-                          openKey={openDetalle}
-                          onToggle={toggle}
-                        />
-                      )}
-                    </Stack>
-                  </Table.Td>
-                );
-              })}
-              {mostrarFaseAlCierre && (
-                <Table.Td style={TD_STYLE}>
-                  <Text ta="center" style={FECHA_CELL}>{labelFaseCierre(record)}</Text>
-                </Table.Td>
-              )}
-              <Table.Td style={TD_STYLE}>
-                <Text ta="center" style={FECHA_CELL}>
-                  {record.cerrado_en ? formatFechaDDMMYY(record.cerrado_en) : "—"}
-                </Text>
-              </Table.Td>
-            </Table.Tr>
-          </Table.Tbody>
-        </Table>
-      </Box>
+            </TarjetaDato>
+          );
+        })}
+        {mostrarFaseAlCierre && (
+          <TarjetaDato label="Fase al cierre" valor={labelFaseCierre(record)} color="violet" icon={IconFlag} />
+        )}
+        <TarjetaDato label="Cerrado el" valor={record.cerrado_en ? formatFechaDDMMYY(record.cerrado_en) : "—"} color="teal" icon={IconCircleCheck} />
+      </SimpleGrid>
     </>
   );
 }
@@ -366,7 +287,7 @@ export function HistorialInformacionCaso({ record }: { record: ProcessHistoryRec
   if (!caso) {
     return (
       <>
-        <Divider label="Información del caso" labelPosition="left" />
+        <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Información del caso" labelPosition="left" />
         <Text size="xs" c="dimmed" fs="italic">
           Este cierre se archivó antes de guardar el detalle del caso. Revisa las fases del trámite para observaciones y documentos de actividades.
         </Text>
@@ -389,114 +310,53 @@ export function HistorialInformacionCaso({ record }: { record: ProcessHistoryRec
   const muestraEstado = !esAvNoRenov;
   const mostrarApelacion = !esAvNoRenov && caso.resolucion_aprobada === false;
 
-  const cellFont = { fontSize: 13, lineHeight: 1.35, fontWeight: 600 };
-
-  const renderFechaCelda = (field: CasoFechaKey, bg?: string) => {
+  const renderFechaCelda = (field: CasoFechaKey) => {
     const fecha = caso[field] as string | null | undefined;
     const esNoAplica = fechaCasoEsNoAplica(record, field);
     const isApelacion = field === "fecha_resolucion_apelacion" || field === "fecha_respuesta_men";
     return (
-      <Table.Td
+      <TarjetaDato
         key={field}
-        style={{
-          ...TD_STYLE,
-          ...(bg ? { backgroundColor: bg } : {}),
-        }}
+        label={CASO_FECHA_LABELS[field]}
+        color={isApelacion ? "orange" : "blue"}
+        valor={esNoAplica
+          ? <Badge size="sm" variant="light" color="orange">N/A</Badge>
+          : fecha ? formatFechaDDMMYY(fecha) : <Text span size="sm" c="dimmed" fw={400}>Sin fecha</Text>}
       >
-        <Stack gap={4} align="stretch">
-          <Text
-            fw={600}
-            ta="center"
-            style={{
-              ...cellFont,
-              padding: "4px 8px",
-              borderRadius: 4,
-              border: isApelacion ? "1px dashed #fd7014" : "1px dashed #4dabf7",
-              backgroundColor: isApelacion ? "#fff3e0" : "#e7f5ff",
-              color: esNoAplica ? "#e67700" : fecha ? (isApelacion ? "#e67700" : "#1c7ed6") : "#adb5bd",
-            }}
-          >
-            {esNoAplica ? "N/A" : fecha ? formatFechaDDMMYY(fecha) : "Sin fecha"}
-          </Text>
-          <CeldaCasoDetalle
-            obs={obsCaso(caso, field)}
-            docs={docsCaso(caso, field)}
-            detalleKey={`caso-${field}`}
-            openObsKey={openObs}
-            openDocsKey={openDocs}
-            onToggleObs={toggleObs}
-            onToggleDocs={toggleDocs}
-          />
-        </Stack>
-      </Table.Td>
+        <CeldaCasoDetalle
+          obs={obsCaso(caso, field)}
+          docs={docsCaso(caso, field)}
+          detalleKey={`caso-${field}`}
+          openObsKey={openObs}
+          openDocsKey={openDocs}
+          onToggleObs={toggleObs}
+          onToggleDocs={toggleDocs}
+        />
+      </TarjetaDato>
     );
   };
 
   return (
     <>
-      <Divider label="Información del caso" labelPosition="left" />
-      <Box style={{ overflow: "hidden" }}>
-        <Table withTableBorder withColumnBorders style={TABLA_STYLE}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th style={TH_STYLE}>
-                <Text ta="center" style={HEAD_TEXT}>Código del caso</Text>
-              </Table.Th>
-              {colsFechas.map((col) => (
-                <Table.Th key={col.key} style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>{col.label}</Text>
-                </Table.Th>
-              ))}
-              {muestraEstado && (
-                <Table.Th style={TH_STYLE}>
-                  <Text ta="center" style={HEAD_TEXT}>Estado solicitud</Text>
-                </Table.Th>
-              )}
-              {mostrarApelacion && (
-                <>
-                  <Table.Th style={{ ...TH_STYLE, backgroundColor: "#fff3e0" }}>
-                    <Text ta="center" style={HEAD_TEXT}>
-                      {CASO_FECHA_LABELS.fecha_resolucion_apelacion}
-                    </Text>
-                  </Table.Th>
-                  <Table.Th style={{ ...TH_STYLE, backgroundColor: "#fff3e0" }}>
-                    <Text ta="center" style={HEAD_TEXT}>
-                      {CASO_FECHA_LABELS.fecha_respuesta_men}
-                    </Text>
-                  </Table.Th>
-                </>
-              )}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            <Table.Tr>
-              <Table.Td style={TD_STYLE}>
-                <Text ta="center" style={FECHA_CELL}>
-                  {caso.codigo_caso?.trim() ? caso.codigo_caso : "—"}
-                </Text>
-              </Table.Td>
-              {colsFechas.map((col) => renderFechaCelda(col.key))}
-              {muestraEstado && (
-                <Table.Td style={TD_STYLE}>
-                  <Stack gap={2} align="center" justify="center">
-                    {caso.resolucion_aprobada === true && (
-                      <Text style={FECHA_CELL} c="teal" ta="center">Satisfactorio</Text>
-                    )}
-                    {caso.resolucion_aprobada === false && (
-                      <Text style={FECHA_CELL} c="red" ta="center">No satisfactorio</Text>
-                    )}
-                    {caso.resolucion_aprobada == null && (
-                      <Text style={{ ...FECHA_CELL, fontWeight: 400 }} c="dimmed" ta="center">Sin definir</Text>
-                    )}
-                  </Stack>
-                </Table.Td>
-              )}
-              {mostrarApelacion && renderFechaCelda("fecha_resolucion_apelacion", "#fff8f0")}
-              {mostrarApelacion && renderFechaCelda("fecha_respuesta_men", "#fff8f0")}
-            </Table.Tr>
-          </Table.Tbody>
-        </Table>
-      </Box>
+      <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Información del caso" labelPosition="left" />
+      <SimpleGrid cols={colsTarjetas(1 + colsFechas.length + (muestraEstado ? 1 : 0) + (mostrarApelacion ? 2 : 0))} spacing="sm">
+        <TarjetaDato label="Código del caso" valor={caso.codigo_caso?.trim() ? caso.codigo_caso : "—"} color="gray" icon={IconHash} />
+        {colsFechas.map((col) => renderFechaCelda(col.key))}
+        {muestraEstado && (
+          <TarjetaDato
+            label="Estado de la solicitud"
+            color={caso.resolucion_aprobada === true ? "teal" : caso.resolucion_aprobada === false ? "red" : "gray"}
+            icon={caso.resolucion_aprobada === false ? IconCircleX : IconCircleCheck}
+            valor={caso.resolucion_aprobada === true
+              ? <Text span c="teal.7" fw={700}>Satisfactorio</Text>
+              : caso.resolucion_aprobada === false
+                ? <Text span c="red.7" fw={700}>No satisfactorio</Text>
+                : <Text span c="dimmed" fw={400}>Sin definir</Text>}
+          />
+        )}
+        {mostrarApelacion && renderFechaCelda("fecha_resolucion_apelacion")}
+        {mostrarApelacion && renderFechaCelda("fecha_respuesta_men")}
+      </SimpleGrid>
     </>
   );
 }

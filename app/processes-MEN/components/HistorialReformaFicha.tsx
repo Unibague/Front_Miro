@@ -19,7 +19,7 @@ export default function HistorialReformaFicha({
     formatoCodigoProgramaUsuario(ficha.dep_code_programa ?? codigoProgramaRespaldo);
   return (
     <Stack gap="sm">
-      <Divider label="Ficha del programa al cierre" labelPosition="left" color="orange" />
+      <Divider styles={{ label: { fontSize: 13, fontWeight: 700, color: "var(--mantine-color-text)" } }} label="Ficha del programa al cierre" labelPosition="left" />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         <FichaCampoLectura
           label="Código del programa"
@@ -51,7 +51,7 @@ export function HistorialReformaCambios({
 }) {
   if (!cambios.length) {
     return (
-      <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "#fff8f0", borderColor: "#fd7e14" }}>
+      <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-orange-light)", borderColor: "var(--mantine-color-orange-3)" }}>
         <Text size="xs" c="dimmed">
           No hubo cambios respecto a la ficha anterior al cerrar este proceso.
         </Text>
@@ -59,7 +59,7 @@ export function HistorialReformaCambios({
     );
   }
   return (
-    <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "#fff8f0", borderColor: "#fd7e14" }}>
+    <Paper withBorder radius="sm" p="sm" style={{ backgroundColor: "var(--mantine-color-orange-light)", borderColor: "var(--mantine-color-orange-3)" }}>
       <Text size="xs" c="orange" fw={700} mb="xs">
         Campos que cambiaron respecto a la ficha anterior:
       </Text>
@@ -67,9 +67,9 @@ export function HistorialReformaCambios({
         {cambios.map((c, i) => (
           <Text key={i} size="xs">
             <strong>{c.label}:</strong>{" "}
-            <span style={{ textDecoration: "line-through", color: "#868e96" }}>{c.antes ?? "—"}</span>
+            <span style={{ textDecoration: "line-through", color: "var(--mantine-color-dimmed)" }}>{c.antes ?? "—"}</span>
             {" → "}
-            <span style={{ color: "#2b8a3e", fontWeight: 600 }}>{c.despues ?? "—"}</span>
+            <span style={{ color: "var(--mantine-color-teal-7)", fontWeight: 600 }}>{c.despues ?? "—"}</span>
           </Text>
         ))}
       </Stack>

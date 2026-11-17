@@ -23,7 +23,7 @@ type FichaCampoLecturaProps = {
 /** Cuadro compacto de solo lectura (misma altura mínima que el resto de la ficha). */
 export function FichaCampoLectura({ label, value }: FichaCampoLecturaProps) {
   return (
-    <Paper withBorder radius="sm" p="sm" style={{ minHeight: 72 }}>
+    <Paper withBorder radius="md" p="sm" style={{ minHeight: 72 }}>
       <Text size="xs" c="dimmed" mb={2}>
         {label}
       </Text>
@@ -41,7 +41,7 @@ type FichaCampoLecturaNodeProps = {
 
 export function FichaCampoLecturaNode({ label, children }: FichaCampoLecturaNodeProps) {
   return (
-    <Paper withBorder radius="sm" p="sm" style={{ minHeight: 72 }}>
+    <Paper withBorder radius="md" p="sm" style={{ minHeight: 72 }}>
       <Text size="xs" c="dimmed" mb={2}>
         {label}
       </Text>

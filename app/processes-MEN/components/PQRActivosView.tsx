@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import {
-  Stack, Text, Group, Button, Table,
-  Textarea, Anchor, Divider, Badge, Modal,
+  Stack, Text, Group, Button, Table, TextInput, ScrollArea, Paper, Box, ThemeIcon, ActionIcon, Tooltip,
+  Textarea, Divider, Badge, Modal,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import "@mantine/dates/styles.css";
+import {
+  IconSearch, IconPaperclip, IconMessageCircle, IconCircleCheck, IconFileText, IconExternalLink, IconTrash,
+  IconFolderOpen, IconInbox, IconSchool, IconBuildingBank, IconCalendar, IconPencil,
+} from "@tabler/icons-react";
 import axios from "axios";
 import DropzoneCustomComponent from "@/app/components/DropzoneCustomDrop/DropzoneCustomDrop";
 import type { PQR, Program, ProcessDocument } from "../types";
@@ -21,9 +25,6 @@ export type PQRActivosViewProps = {
   onCerrar: (id: string) => void;
 };
 
-const TH_BG = "#dbe4ff";
-const TR_BG = "#f8f9ff";
-
 const FIELD_LABELS: Record<string, string> = {
   nombre_solicitud:      "Solicitud",
   hora:                  "Hora",
@@ -32,6 +33,17 @@ const FIELD_LABELS: Record<string, string> = {
   observacion_respuesta: "Observación / Respuesta",
   cedula_encargado:     "Cédula del encargado",
 };
+
+const TH_STYLE = {
+  color: "var(--mantine-color-dimmed)",
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: "uppercase" as const,
+  letterSpacing: 0.3,
+  backgroundColor: "var(--mantine-color-default-hover)",
+};
+
+const normalizar = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: PQRActivosViewProps) {
   const [confirmarCierreId, setConfirmarCierreId] = useState<string | null>(null);
@@ -50,6 +62,7 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
   const [loadingDocs, setLoadingDocs]   = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
 
   const getNombrePrograma = (id?: string | null) =>
     id ? (programas.find(p => p._id === id)?.nombre ?? null) : null;
@@ -131,153 +144,183 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
 
   const TEXT_LIMIT = 22;
 
-  const textCell = (pqr: PQR, field: keyof PQR) => {
+  /** Valor editable: se resalta al pasar el mouse y abre el editor con un clic. */
+  const textCell = (pqr: PQR, field: keyof PQR, opts?: { fw?: number; size?: string }) => {
     const value = pqr[field] as string | null | undefined;
-    const isLong = value && value.length > TEXT_LIMIT;
-
-    if (isLong) {
-      return (
-        <Group justify="center">
-          <Button size="xs" variant="light" color="blue" px={6}
-            onClick={() => abrirTexto(pqr, field as string)}>
-            Ver
-          </Button>
-        </Group>
-      );
-    }
-
+    const isLong = !!value && value.length > TEXT_LIMIT && field !== "nombre_solicitud";
     return (
-      <Text size="xs" style={{
-        cursor: "pointer", padding: "2px 6px", borderRadius: 4,
-        border: "1px dashed #ced4da", display: "block",
-        color: value ? "#212529" : "#adb5bd",
-      }}
-        title="Clic para editar"
-        onClick={() => abrirTexto(pqr, field as string)}>
-        {value || "—"}
-      </Text>
+      <Tooltip label={`Editar ${(FIELD_LABELS[field as string] ?? String(field)).toLowerCase()}`} withArrow openDelay={400}>
+        <Text
+          size={opts?.size ?? "xs"}
+          fw={opts?.fw}
+          className="men-editable"
+          c={value ? undefined : "dimmed"}
+          fs={value ? undefined : "italic"}
+          lineClamp={field === "nombre_solicitud" ? 2 : 1}
+          onClick={() => abrirTexto(pqr, field as string)}
+        >
+          {value ? (isLong ? `${value.slice(0, TEXT_LIMIT)}…` : value) : "Agregar"}
+        </Text>
+      </Tooltip>
     );
   };
 
   const dateCell = (pqr: PQR, field: keyof PQR, label: string) => {
     const value = pqr[field] as string | null | undefined;
     return (
-      <Text size="xs" ta="center" style={{
-        cursor: "pointer", padding: "2px 4px", borderRadius: 4,
-        border: "1px dashed #4dabf7", backgroundColor: "#e7f5ff",
-        color: value ? "#1c7ed6" : "#adb5bd", display: "block",
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-      }}
-        title="Clic para editar fecha"
-        onClick={() => abrirFecha(pqr, field as string, label)}>
-        {value ? formatFechaDDMMYY(value) : "Sin fecha"}
-      </Text>
-    );
-  };
-
-  const obsCell = (pqr: PQR) => {
-    const value = pqr.observacion_respuesta;
-    return (
-      <Button size="xs" variant={value ? "light" : "subtle"} color={value ? "blue" : "gray"}
-        px={6} onClick={() => abrirTexto(pqr, "observacion_respuesta")}
-        title={value ?? "Sin observaciones"}>
-        {value ? "Ver" : "—"}
-      </Button>
+      <Tooltip label={`Editar ${label.toLowerCase()}`} withArrow openDelay={400}>
+        <Badge
+          variant={value ? "light" : "outline"}
+          color={value ? "teal" : "gray"}
+          radius="sm"
+          tt="none"
+          leftSection={<IconCalendar size={12} />}
+          style={{ cursor: "pointer" }}
+          onClick={() => abrirFecha(pqr, field as string, label)}
+        >
+          {value ? formatFechaDDMMYY(value) : "Sin fecha"}
+        </Badge>
+      </Tooltip>
     );
   };
 
   const activosPqrs = pqrs.filter(p => !p.cerrado);
+  const visibles = activosPqrs.filter((p) => {
+    if (!busqueda.trim()) return true;
+    const q = normalizar(busqueda.trim());
+    return [p.nombre_solicitud, p.numero_radicado, p.cedula_encargado, getNombrePrograma(p.programa_id)]
+      .some((v) => v && normalizar(String(v)).includes(q));
+  });
 
   return (
     <>
-      <Stack gap="sm" style={{ width: "100%" }}>
+      <Stack gap="md" style={{ width: "100%" }}>
+        <Group justify="space-between" wrap="wrap" gap="sm">
+          <TextInput
+            placeholder="Buscar por solicitud, radicado, cédula o programa..."
+            leftSection={<IconSearch size={16} />}
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.currentTarget.value)}
+            radius="xl"
+            w={380}
+          />
+          <Badge size="lg" variant="light" color="teal" tt="none">
+            {visibles.length} {visibles.length === 1 ? "PQR activo" : "PQRs activos"}
+          </Badge>
+        </Group>
+
         {activosPqrs.length === 0 ? (
-          <Text size="sm" c="dimmed" ta="center" py="xl">
-            No hay PQRs activos. Usa «+ Agregar PQR» en el menú para crear uno.
-          </Text>
+          <Paper withBorder radius="lg" p="xl" style={{ borderStyle: "dashed" }}>
+            <Stack align="center" gap={6}>
+              <ThemeIcon size={48} radius="xl" variant="light" color="teal"><IconInbox size={24} /></ThemeIcon>
+              <Text fw={600}>No hay PQRs activos</Text>
+              <Text size="sm" c="dimmed">Usa «Agregar PQR» en el menú para registrar una nueva solicitud.</Text>
+            </Stack>
+          </Paper>
         ) : (
-          <Table withTableBorder withColumnBorders style={{ width: "100%", tableLayout: "fixed" }}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "17%" }}><Text size="xs" fw={700}>Solicitud</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "12%" }}><Text size="xs" fw={700} ta="center">Referente</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "10%" }}><Text size="xs" fw={700} ta="center">Cédula encargado</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "8%" }}><Text size="xs" fw={700} ta="center">Fecha rad.</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "6%" }}><Text size="xs" fw={700} ta="center">Hora</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "8%" }}><Text size="xs" fw={700} ta="center">N° radicado</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "10%" }}><Text size="xs" fw={700} ta="center">Medio</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "8%" }}><Text size="xs" fw={700} ta="center">Fecha resp.</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "6%" }}><Text size="xs" fw={700} ta="center">Obs.</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "5%" }}><Text size="xs" fw={700} ta="center">Docs</Text></Table.Th>
-                <Table.Th style={{ backgroundColor: TH_BG, width: "5%" }}><Text size="xs" fw={700} ta="center">Acciones</Text></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {activosPqrs.map((pqr, idx) => (
-                <Table.Tr key={pqr._id} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : TR_BG }}>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {textCell(pqr, "nombre_solicitud")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {pqr.programa_id ? (
-                      <Text size="xs" style={{ color: "#1971c2", wordBreak: "break-word" }}>
-                        {getNombrePrograma(pqr.programa_id) ?? "Programa"}
-                      </Text>
-                    ) : (
-                      <Badge size="xs" color="teal" variant="light">MEN directo</Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {textCell(pqr, "cedula_encargado")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {dateCell(pqr, "fecha_radicacion", "Fecha de radicación")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {textCell(pqr, "hora")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {textCell(pqr, "numero_radicado")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {textCell(pqr, "medio_realizado")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 8px" }}>
-                    {dateCell(pqr, "fecha_respuesta", "Fecha de respuesta")}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 4px", textAlign: "center" }}>
-                    {obsCell(pqr)}
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 4px", textAlign: "center" }}>
-                    <Button size="xs" variant="subtle" color="gray" px={4} onClick={() => abrirDocs(pqr._id)}>
-                      📎
-                    </Button>
-                  </Table.Td>
-                  <Table.Td style={{ verticalAlign: "middle", padding: "6px 4px", textAlign: "center" }}>
-                    <Button size="xs" variant="light" color="orange" px={4}
-                      onClick={() => setConfirmarCierreId(pqr._id)}>
-                      Cerrar
-                    </Button>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+          <Paper withBorder radius="lg" style={{ overflow: "hidden" }}>
+            <ScrollArea type="auto">
+              <Table verticalSpacing="sm" horizontalSpacing="sm" style={{ minWidth: 1000 }}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ ...TH_STYLE, width: "30%" }}>Solicitud</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center" }}>Fecha rad.</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center" }}>Hora</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center" }}>N° radicado</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center" }}>Medio</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center" }}>Fecha resp.</Table.Th>
+                    <Table.Th style={{ ...TH_STYLE, textAlign: "center", width: 210 }}>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {visibles.length === 0 && (
+                    <Table.Tr>
+                      <Table.Td colSpan={7}>
+                        <Text size="sm" c="dimmed" ta="center" py="md">No hay PQRs que coincidan con la búsqueda.</Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                  {visibles.map((pqr) => {
+                    const programa = getNombrePrograma(pqr.programa_id);
+                    return (
+                      <Table.Tr key={pqr._id} className="men-fila-pqr" style={{ boxShadow: "inset 4px 0 var(--mantine-color-teal-4)" }}>
+                        <Table.Td style={{ paddingLeft: 16 }}>
+                          {textCell(pqr, "nombre_solicitud", { fw: 700, size: "sm" })}
+                          <Group gap={6} mt={4} wrap="wrap">
+                            {pqr.programa_id ? (
+                              <Badge size="sm" variant="light" color="blue" tt="none" leftSection={<IconSchool size={11} />}>
+                                {programa ?? "Programa"}
+                              </Badge>
+                            ) : (
+                              <Badge size="sm" variant="light" color="teal" tt="none" leftSection={<IconBuildingBank size={11} />}>
+                                MEN directo
+                              </Badge>
+                            )}
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">C.C.</Text>
+                              {textCell(pqr, "cedula_encargado")}
+                            </Group>
+                          </Group>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>{dateCell(pqr, "fecha_radicacion", "Fecha de radicación")}</Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>{textCell(pqr, "hora")}</Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>{textCell(pqr, "numero_radicado")}</Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>{textCell(pqr, "medio_realizado")}</Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>{dateCell(pqr, "fecha_respuesta", "Fecha de respuesta")}</Table.Td>
+                        <Table.Td>
+                          <Group gap={6} justify="center" wrap="nowrap">
+                            <Tooltip label={pqr.observacion_respuesta ? "Ver observación / respuesta" : "Agregar observación / respuesta"} withArrow>
+                              <ActionIcon
+                                variant={pqr.observacion_respuesta ? "light" : "subtle"}
+                                color={pqr.observacion_respuesta ? "blue" : "gray"}
+                                size="lg"
+                                aria-label="Observación"
+                                onClick={() => abrirTexto(pqr, "observacion_respuesta")}
+                              >
+                                <IconMessageCircle size={17} />
+                              </ActionIcon>
+                            </Tooltip>
+                            <Tooltip label="Documentos del PQR" withArrow>
+                              <ActionIcon variant="subtle" color="gray" size="lg" aria-label="Documentos" onClick={() => abrirDocs(pqr._id)}>
+                                <IconPaperclip size={17} />
+                              </ActionIcon>
+                            </Tooltip>
+                            <Button size="xs" variant="light" color="orange" radius="md" leftSection={<IconCircleCheck size={14} />}
+                              onClick={() => setConfirmarCierreId(pqr._id)}>
+                              Cerrar
+                            </Button>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+            </ScrollArea>
+          </Paper>
         )}
+        <Text size="xs" c="dimmed">
+          <IconPencil size={12} style={{ verticalAlign: "-2px" }} /> Haz clic en cualquier dato de la tabla para editarlo.
+        </Text>
       </Stack>
+      <style>{`
+        .men-editable { cursor: pointer; padding: 2px 6px; border-radius: 6px; display: inline-block; transition: background-color 100ms ease; }
+        .men-editable:hover { background-color: var(--mantine-color-blue-light); }
+        .men-fila-pqr:hover > td { background-color: var(--mantine-color-default-hover); }
+      `}</style>
 
       <Modal
         opened={!!confirmarCierreId}
         onClose={() => setConfirmarCierreId(null)}
-        title="Cerrar PQR"
-        centered size="sm" radius="md" zIndex={300}>
+        title={<Text fw={700}>Cerrar PQR</Text>}
+        centered size="sm" radius="lg" zIndex={300}>
         <Stack gap="md">
           <Text size="sm">
-            ¿Estás seguro de que deseas cerrar este PQR? Se moverá al <strong>historial</strong> y no podrá editarse.
+            ¿Seguro que deseas cerrar este PQR? Se moverá al <strong>historial</strong> y ya no podrá editarse.
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setConfirmarCierreId(null)}>Cancelar</Button>
-            <Button color="orange" onClick={() => { onCerrar(confirmarCierreId!); setConfirmarCierreId(null); }}>
+            <Button color="orange" leftSection={<IconCircleCheck size={16} />} onClick={() => { onCerrar(confirmarCierreId!); setConfirmarCierreId(null); }}>
               Sí, cerrar PQR
             </Button>
           </Group>
@@ -287,8 +330,8 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
       <Modal
         opened={!!editModal}
         onClose={() => setEditModal(null)}
-        title={editModal?.label ?? "Editar"}
-        centered size="sm" radius="md" zIndex={300}>
+        title={<Text fw={700}>{editModal?.label ?? "Editar"}</Text>}
+        centered size="md" radius="lg" zIndex={300}>
         <Stack gap="sm">
           <Textarea
             placeholder={`Escribe ${editModal?.label.toLowerCase()}...`}
@@ -299,7 +342,7 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setEditModal(null)}>Cancelar</Button>
-            <Button loading={saving} onClick={guardarTexto}>Guardar</Button>
+            <Button color="teal" loading={saving} onClick={guardarTexto}>Guardar</Button>
           </Group>
         </Stack>
       </Modal>
@@ -307,8 +350,8 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
       <Modal
         opened={!!dateEditModal}
         onClose={() => setDateEditModal(null)}
-        title={dateEditModal?.label ?? "Editar fecha"}
-        centered size="xs" radius="md" zIndex={300}>
+        title={<Text fw={700}>{dateEditModal?.label ?? "Editar fecha"}</Text>}
+        centered size="xs" radius="lg" zIndex={300}>
         <Stack gap="sm">
           <DateInput
             value={dateValue}
@@ -316,11 +359,12 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
             valueFormat="DD/MM/YYYY"
             dateParser={dateParserEspanol}
             clearable
+            leftSection={<IconCalendar size={16} />}
             placeholder="dd/mm/aaaa o elegir en el calendario"
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDateEditModal(null)}>Cancelar</Button>
-            <Button loading={savingDate} onClick={guardarFecha}>Guardar</Button>
+            <Button color="teal" loading={savingDate} onClick={guardarFecha}>Guardar</Button>
           </Group>
         </Stack>
       </Modal>
@@ -328,7 +372,16 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
       <Modal
         opened={!!docsModalPqrId}
         onClose={() => { setDocsModalPqrId(null); setDocs([]); }}
-        title="Documentos del PQR" centered size="md" radius="md" zIndex={300}>
+        title={
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon color="teal" variant="light" size="lg" radius="md"><IconFolderOpen size={20} /></ThemeIcon>
+            <Box>
+              <Text fw={700} size="sm">Documentos del PQR</Text>
+              <Text size="xs" c="dimmed" lineClamp={1}>{pqrs.find(p => p._id === docsModalPqrId)?.nombre_solicitud ?? ""}</Text>
+            </Box>
+          </Group>
+        }
+        centered size="lg" radius="lg" zIndex={300}>
         <Stack gap="md">
           <DropzoneCustomComponent
             text={uploadingDoc ? "Subiendo documento..." : "Haz clic o arrastra un archivo para subirlo"}
@@ -340,28 +393,44 @@ export default function PQRActivosView({ pqrs, programas, onUpdate, onCerrar }: 
               <PQRImportDetails pqr={pqrs.find(pqr => pqr._id === docsModalPqrId)!} />
             </>
           )}
+          <Group justify="space-between">
+            <Text size="sm" fw={700}>Archivos cargados</Text>
+            {!loadingDocs && <Badge variant="light" color="gray">{docs.length}</Badge>}
+          </Group>
           {loadingDocs ? (
             <Text size="sm" c="dimmed" ta="center">Cargando documentos...</Text>
           ) : docs.length > 0 ? (
-            <>
-              <Divider label="Documentos subidos" labelPosition="center" />
-              <Stack gap="xs">
-                {docs.map(doc => (
-                  <Group key={doc._id} justify="space-between" align="center">
-                    <Anchor size="sm" href={doc.view_link} target="_blank" rel="noopener noreferrer">
-                      📄 {doc.name}
-                    </Anchor>
-                    <Button size="xs" variant="subtle" color="red" p={4}
-                      loading={deletingDocId === doc._id}
-                      onClick={() => eliminarDoc(doc._id)}>
-                      🗑
-                    </Button>
+            <Stack gap="xs">
+              {docs.map(doc => (
+                <Paper key={doc._id} withBorder radius="md" px="sm" py="xs">
+                  <Group justify="space-between" align="center" wrap="nowrap">
+                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                      <ThemeIcon size={32} radius="md" variant="light" color="teal" style={{ flexShrink: 0 }}><IconFileText size={17} /></ThemeIcon>
+                      <Text size="sm" fw={600} truncate="end">{doc.name}</Text>
+                    </Group>
+                    <Group gap={4} wrap="nowrap">
+                      <Button component="a" href={doc.view_link} target="_blank" rel="noopener noreferrer"
+                        size="xs" variant="light" color="teal" radius="md" leftSection={<IconExternalLink size={14} />}>
+                        Abrir
+                      </Button>
+                      <Tooltip label="Eliminar documento" withArrow>
+                        <ActionIcon variant="subtle" color="red" aria-label="Eliminar documento"
+                          loading={deletingDocId === doc._id} onClick={() => eliminarDoc(doc._id)}>
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
                   </Group>
-                ))}
-              </Stack>
-            </>
+                </Paper>
+              ))}
+            </Stack>
           ) : (
-            <Text size="xs" c="dimmed" ta="center">Sin documentos subidos.</Text>
+            <Paper withBorder radius="md" p="lg" style={{ borderStyle: "dashed" }}>
+              <Stack align="center" gap={6}>
+                <ThemeIcon size={40} radius="xl" variant="light" color="gray"><IconFileText size={20} /></ThemeIcon>
+                <Text size="sm" c="dimmed">Aún no hay documentos en este PQR.</Text>
+              </Stack>
+            </Paper>
           )}
         </Stack>
       </Modal>

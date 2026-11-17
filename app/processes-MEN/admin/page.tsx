@@ -6,6 +6,7 @@ import {
   Table, Badge, Divider, Anchor, Box, Tabs,
 } from "@mantine/core";
 import ModuleHeader from "../components/ModuleHeader";
+import { IconUpload } from "@tabler/icons-react";
 
 type ImportadoRow = {
   fila: number;
@@ -204,10 +205,12 @@ export default function AdminImportPage() {
       <Stack gap="lg">
         <ModuleHeader
           title="Carga masiva — Procesos de calidad MEN"
-          description={<>Herramienta de administración. No compartir enlace. <Anchor href="/processes-MEN">← Volver</Anchor></>}
+          icon={IconUpload}
+          color="green"
+          onBack={() => { window.location.href = "/processes-MEN"; }}
+          backLabel="Volver a procesos MEN"
+          description="Herramienta de administración. No compartir enlace."
         />
-
-        <Divider />
 
         <Tabs defaultValue="programas">
           <Tabs.List>

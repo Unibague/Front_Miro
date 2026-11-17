@@ -1,9 +1,6 @@
 import { Dropzone } from "@mantine/dropzone";
-import { Group, Progress, Text } from "@mantine/core";
-import { IconCloudUpload, IconDownload, IconX } from "@tabler/icons-react";
-import { rem } from "@mantine/core";
-import { showNotification } from "@mantine/notifications";
-import { useMantineTheme } from "@mantine/core";
+import { Group, Progress, Stack, Text, ThemeIcon, Badge } from "@mantine/core";
+import { IconCloudUpload, IconCheck, IconX, IconPaperclip } from "@tabler/icons-react";
 import classes from "./DropzoneCustom.module.css"
 
 interface DropzoneComponentProps {
@@ -12,9 +9,8 @@ interface DropzoneComponentProps {
   loading?: boolean;
 }
 
+/** Zona para subir archivos: arrastrar y soltar o clic para buscar. */
 const DropzoneCustomComponent = ({ onDrop, text, loading = false }: DropzoneComponentProps) => {
-  const theme = useMantineTheme();
-
   return (
     <Dropzone
       disabled={loading}
@@ -22,39 +18,49 @@ const DropzoneCustomComponent = ({ onDrop, text, loading = false }: DropzoneComp
         onDrop(files); // Usar la función onDrop pasada por props
       }}
       className={`${classes.dropzone} ${loading ? classes.loading : ""}`}
-      radius="md"
-      mx="auto"
-      mt="xs"
+      radius="lg"
       aria-busy={loading}
     >
-      <div style={{ cursor: "pointer" }}>
-        <Group justify="center" pt="md">
-          <Dropzone.Accept>
-            <IconDownload
-              style={{ width: rem(40), height: rem(40) }}
-              color={theme.colors.blue[6]}
-              stroke={1.5}
-            />
-          </Dropzone.Accept>
-          <Dropzone.Reject>
-            <IconX
-              style={{ width: rem(40), height: rem(40) }}
-              color={theme.colors.red[6]}
-              stroke={1.5}
-            />
-          </Dropzone.Reject>
-          <Dropzone.Idle>
-            <IconCloudUpload
-              style={{ width: rem(40), height: rem(40) }}
-              stroke={1.5}
-            />
-          </Dropzone.Idle>
-        </Group>
-        <Text ta="center" fz="sm" c="dimmed" pb="sm">
+      <Stack align="center" gap={6} style={{ pointerEvents: "none" }}>
+        <Dropzone.Accept>
+          <ThemeIcon size={56} radius="xl" variant="light" color="teal">
+            <IconCheck size={28} stroke={1.8} />
+          </ThemeIcon>
+        </Dropzone.Accept>
+        <Dropzone.Reject>
+          <ThemeIcon size={56} radius="xl" variant="light" color="red">
+            <IconX size={28} stroke={1.8} />
+          </ThemeIcon>
+        </Dropzone.Reject>
+        <Dropzone.Idle>
+          <ThemeIcon size={56} radius="xl" variant="white" color="blue" className={classes.icon}>
+            <IconCloudUpload size={28} stroke={1.6} />
+          </ThemeIcon>
+        </Dropzone.Idle>
+
+        <Dropzone.Accept>
+          <Text fw={700} c="teal.7">Suelta el archivo para subirlo</Text>
+        </Dropzone.Accept>
+        <Dropzone.Reject>
+          <Text fw={700} c="red.7">Este archivo no se puede subir</Text>
+        </Dropzone.Reject>
+        <Dropzone.Idle>
+          <Text fw={700}>{loading ? "Subiendo archivo…" : "Arrastra tu archivo aquí"}</Text>
+        </Dropzone.Idle>
+
+        <Text ta="center" fz="sm" c="dimmed" maw={420}>
           {text}
         </Text>
-        {loading && <Progress className={classes.progress} value={100} animated aria-label="Carga en curso" />}
-      </div>
+
+        {!loading && (
+          <Group gap={6} mt={4}>
+            <Badge size="lg" radius="xl" variant="filled" color="blue" tt="none" leftSection={<IconPaperclip size={14} />}>
+              Seleccionar archivo
+            </Badge>
+          </Group>
+        )}
+      </Stack>
+      {loading && <Progress className={classes.progress} value={100} animated radius="xl" aria-label="Carga en curso" />}
     </Dropzone>
   );
 };

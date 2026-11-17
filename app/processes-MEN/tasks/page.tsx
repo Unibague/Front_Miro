@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useMemo } from "react";
 import {
-  Title, Text, Paper, Stack, Group, Button, TextInput, Textarea,
-  Select, Badge, Modal, ActionIcon, Loader, Divider, Box, NavLink, ThemeIcon, Tooltip,
+  Text, Paper, Stack, Group, Button, TextInput, Textarea, SimpleGrid,
+  Select, Badge, Modal, ActionIcon, Loader, Divider, Box, NavLink, ThemeIcon, Tooltip, SegmentedControl,
 } from "@mantine/core";
 import {
-  IconPlus, IconTrash, IconEdit, IconCircleCheck, IconCircle, IconArrowLeft,
+  IconPlus, IconTrash, IconEdit, IconCircleCheck, IconClock, IconAlertTriangle,
   IconChartBar, IconMessageCircle, IconList, IconChevronLeft, IconChevronRight,
+  IconFilter, IconBuilding, IconMail, IconCalendarDue,
 } from "@tabler/icons-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -57,6 +58,7 @@ export default function TasksAdminPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filtroDep, setFiltroDep] = useState<string | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<"todas" | "pendientes" | "vencidas" | "completadas">("todas");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Cargar tareas y dependencias
@@ -93,10 +95,27 @@ export default function TasksAdminPage() {
     [depOptions],
   );
 
-  const tasksFiltradas = useMemo(
+  const hoyYmd = new Date().toISOString().split("T")[0];
+  const estaVencida = (t: Task) => !t.completada && !!t.fecha_limite && t.fecha_limite.slice(0, 10) < hoyYmd;
+
+  const tasksPorDep = useMemo(
     () => filtroDep ? tasks.filter((t) => t.dep_code === filtroDep) : tasks,
     [tasks, filtroDep],
   );
+
+  const resumen = useMemo(() => ({
+    total: tasksPorDep.length,
+    pendientes: tasksPorDep.filter((t) => !t.completada).length,
+    vencidas: tasksPorDep.filter(estaVencida).length,
+    completadas: tasksPorDep.filter((t) => t.completada).length,
+  }), [tasksPorDep]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tasksFiltradas = useMemo(() => {
+    if (filtroEstado === "pendientes") return tasksPorDep.filter((t) => !t.completada);
+    if (filtroEstado === "vencidas") return tasksPorDep.filter(estaVencida);
+    if (filtroEstado === "completadas") return tasksPorDep.filter((t) => t.completada);
+    return tasksPorDep;
+  }, [tasksPorDep, filtroEstado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const abrirCrear = () => {
     setEditTask(null);
@@ -224,10 +243,10 @@ export default function TasksAdminPage() {
         ) : (
           <Stack gap={0} mt={8}>
             <Group gap={8} px={8} pb={8}>
-              <ThemeIcon size={32} radius="xl" color="violet" variant="light">
-                <IconList size={18} />
+              <ThemeIcon size={32} radius="xl" color="green" variant="light">
+                <IconChartBar size={18} />
               </ThemeIcon>
-              <Text size="xs" fw={700} c="violet" tt="uppercase">Procesos MEN</Text>
+              <Text size="xs" fw={700} c="green" tt="uppercase">Panel MEN</Text>
             </Group>
             <Divider />
             <NavLink label="Gestión de procesos MEN" leftSection={<IconChartBar size={16} />} color="blue"
@@ -240,85 +259,180 @@ export default function TasksAdminPage() {
         )}
       </Box>
 
-      <Stack p="md" gap="lg" style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0 }}>
+      <Stack gap="lg" style={{ marginLeft: `${sidebarW + 1}px`, flex: 1, minWidth: 0, padding: "30px 24px 24px" }}>
         <ModuleHeader
           title="Tareas asignadas"
+          icon={IconList}
+          color="violet"
+          onBack={() => router.push(processesMenRoutes.home)}
+          backLabel="Volver a procesos MEN"
           description="Crea y asigna tareas de seguimiento a líderes de dependencia y responsables."
           actions={
-            <>
-              <ActionIcon variant="subtle" aria-label="Volver" onClick={() => router.push(processesMenRoutes.home)}>
-                <IconArrowLeft size={18} />
-              </ActionIcon>
-              <Button leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
-                Asignar tarea
-              </Button>
-            </>
+            <Button color="violet" leftSection={<IconPlus size={16} />} onClick={abrirCrear}>
+              Asignar tarea
+            </Button>
           }
         />
 
-      <Select
-        placeholder="Filtrar por dependencia"
-        data={filtroDepOptions}
-        value={filtroDep ?? ""}
-        onChange={(v) => setFiltroDep(v || null)}
-        clearable
-        searchable
-        style={{ maxWidth: 340 }}
-      />
+        <SimpleGrid cols={{ base: 2, md: 4 }} spacing="sm">
+          {([
+            { key: "todas", label: "Total", valor: resumen.total, color: "blue", icon: IconList },
+            { key: "pendientes", label: "Pendientes", valor: resumen.pendientes, color: "yellow", icon: IconClock },
+            { key: "vencidas", label: "Vencidas", valor: resumen.vencidas, color: "red", icon: IconAlertTriangle },
+            { key: "completadas", label: "Completadas", valor: resumen.completadas, color: "teal", icon: IconCircleCheck },
+          ] as const).map((x) => {
+            const activo = filtroEstado === x.key;
+            return (
+              <Paper
+                key={x.key}
+                withBorder
+                radius="lg"
+                p="sm"
+                tabIndex={0}
+                role="button"
+                aria-pressed={activo}
+                onClick={() => setFiltroEstado(x.key)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setFiltroEstado(x.key);
+                  }
+                }}
+                style={{
+                  cursor: "pointer",
+                  borderLeft: `4px solid var(--mantine-color-${x.color}-5)`,
+                  backgroundColor: activo ? `var(--mantine-color-${x.color}-light)` : undefined,
+                }}
+              >
+                <Group justify="space-between" wrap="nowrap">
+                  <Text size="xs" c="dimmed" fw={700} tt="uppercase">{x.label}</Text>
+                  <ThemeIcon size={26} radius="xl" variant="light" color={x.color}><x.icon size={15} /></ThemeIcon>
+                </Group>
+                <Text fw={900} size="1.6rem" lh={1.1} mt={4}>{x.valor}</Text>
+              </Paper>
+            );
+          })}
+        </SimpleGrid>
+
+        <Paper withBorder radius="lg" p="md">
+          <Group gap={6} mb="sm">
+            <IconFilter size={16} color="var(--mantine-color-dimmed)" />
+            <Text size="sm" fw={700}>Filtros</Text>
+          </Group>
+          <Group gap="md" align="flex-end" wrap="wrap">
+            <Select
+              label="Dependencia"
+              placeholder="Todas las dependencias"
+              data={filtroDepOptions}
+              value={filtroDep ?? ""}
+              onChange={(v) => setFiltroDep(v || null)}
+              clearable
+              searchable
+              w={340}
+            />
+            <Box>
+              <Text size="sm" fw={500} mb={4}>Estado</Text>
+              <SegmentedControl
+                value={filtroEstado}
+                onChange={(v) => setFiltroEstado(v as typeof filtroEstado)}
+                color="violet"
+                data={[
+                  { value: "todas", label: "Todas" },
+                  { value: "pendientes", label: "Pendientes" },
+                  { value: "vencidas", label: "Vencidas" },
+                  { value: "completadas", label: "Completadas" },
+                ]}
+              />
+            </Box>
+          </Group>
+        </Paper>
 
       {tasksFiltradas.length === 0 ? (
-        <Paper withBorder p="xl" radius="md">
-          <Text c="dimmed" ta="center">No hay tareas asignadas.</Text>
+        <Paper withBorder p="xl" radius="lg">
+          <Stack align="center" gap="xs">
+            <ThemeIcon size={44} radius="xl" variant="light" color="gray"><IconList size={22} /></ThemeIcon>
+            <Text c="dimmed" ta="center">
+              {tasks.length === 0 ? "Aún no hay tareas asignadas." : "No hay tareas con estos filtros."}
+            </Text>
+            {tasks.length === 0 && (
+              <Button variant="light" color="violet" leftSection={<IconPlus size={15} />} onClick={abrirCrear}>
+                Asignar la primera tarea
+              </Button>
+            )}
+          </Stack>
         </Paper>
       ) : (
         <Stack gap="sm">
-          {tasksFiltradas.map((t) => (
-            <Paper key={t._id} withBorder radius="md" p="md"
-              style={{ borderLeft: `4px solid ${t.completada ? "#40c057" : "#228be6"}` }}>
-              <Group justify="space-between" wrap="wrap" gap="xs">
-                <Group gap="xs" align="center">
-                  {t.completada
-                    ? <IconCircleCheck size={18} color="#40c057" />
-                    : <IconCircle size={18} color="#868e96" />}
-                  <Text fw={600} size="sm" td={t.completada ? "line-through" : undefined}>
-                    {t.titulo}
-                  </Text>
-                  <Badge size="xs" color={t.completada ? "green" : "blue"} variant="light">
-                    {t.completada ? "Completada" : "Pendiente"}
-                  </Badge>
+          {tasksFiltradas.map((t) => {
+            const vencida = estaVencida(t);
+            const color = t.completada ? "teal" : vencida ? "red" : "yellow";
+            return (
+            <Paper key={t._id} withBorder radius="lg" p="md"
+              style={{ borderLeft: `4px solid var(--mantine-color-${color}-5)` }}>
+              <Group justify="space-between" wrap="wrap" gap="xs" align="flex-start">
+                <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                  <ThemeIcon size={30} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+                    {t.completada ? <IconCircleCheck size={17} /> : vencida ? <IconAlertTriangle size={17} /> : <IconClock size={17} />}
+                  </ThemeIcon>
+                  <Box style={{ minWidth: 0 }}>
+                    <Group gap="xs" align="center">
+                      <Text fw={700} td={t.completada ? "line-through" : undefined}>
+                        {t.titulo}
+                      </Text>
+                      <Badge size="sm" color={color} variant="light">
+                        {t.completada ? "Completada" : vencida ? "Vencida" : "Pendiente"}
+                      </Badge>
+                    </Group>
+                    {t.descripcion && <Text size="sm" c="dimmed" mt={2}>{t.descripcion}</Text>}
+                  </Box>
                 </Group>
                 <Group gap={6}>
-                  <ActionIcon variant="subtle" onClick={() => abrirEditar(t)}><IconEdit size={16} /></ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={() => eliminar(t._id)}><IconTrash size={16} /></ActionIcon>
+                  <Button size="xs" variant="light" color="blue" radius="md" leftSection={<IconEdit size={14} />} onClick={() => abrirEditar(t)}>
+                    Editar
+                  </Button>
+                  <Tooltip label="Eliminar tarea" withArrow>
+                    <ActionIcon variant="subtle" color="red" size="lg" aria-label={`Eliminar tarea ${t.titulo}`} onClick={() => eliminar(t._id)}>
+                      <IconTrash size={17} />
+                    </ActionIcon>
+                  </Tooltip>
                 </Group>
               </Group>
 
-              {t.descripcion && <Text size="xs" c="dimmed" mt={4}>{t.descripcion}</Text>}
-
-              <Group gap="md" mt={6} wrap="wrap">
-                <Text size="xs" c="dimmed">
-                  <strong>Dependencia:</strong> {t.nombre_dependencia || t.dep_code}
-                </Text>
+              <Group gap="lg" mt="sm" wrap="wrap" pl={42}>
+                <Group gap={4} wrap="nowrap">
+                  <IconBuilding size={14} color="var(--mantine-color-dimmed)" />
+                  <Text size="xs" c="dimmed">{t.nombre_dependencia || t.dep_code}</Text>
+                </Group>
                 {t.email_responsable && (
-                  <Text size="xs" c="dimmed"><strong>Responsable:</strong> {t.email_responsable}</Text>
+                  <Group gap={4} wrap="nowrap">
+                    <IconMail size={14} color="var(--mantine-color-dimmed)" />
+                    <Text size="xs" c="dimmed">{t.email_responsable}</Text>
+                  </Group>
                 )}
                 {t.fecha_limite && (
-                  <Text size="xs" c={!t.completada && t.fecha_limite < new Date().toISOString().split("T")[0] ? "red" : "dimmed"}>
-                    <strong>Límite:</strong> {formatFechaDDMMYY(t.fecha_limite)}
-                  </Text>
+                  <Group gap={4} wrap="nowrap">
+                    <IconCalendarDue size={14} color={vencida ? "var(--mantine-color-red-6)" : "var(--mantine-color-dimmed)"} />
+                    <Text size="xs" c={vencida ? "red" : "dimmed"} fw={vencida ? 600 : undefined}>
+                      Límite: {formatFechaDDMMYY(t.fecha_limite)}
+                    </Text>
+                  </Group>
                 )}
                 {t.completada && t.fecha_completada && (
-                  <Text size="xs" c="teal"><strong>Completada:</strong> {formatFechaDDMMYY(t.fecha_completada)}</Text>
+                  <Group gap={4} wrap="nowrap">
+                    <IconCircleCheck size={14} color="var(--mantine-color-teal-6)" />
+                    <Text size="xs" c="teal">Completada: {formatFechaDDMMYY(t.fecha_completada)}</Text>
+                  </Group>
                 )}
               </Group>
 
               {t.observacion_respuesta && (
-                <Paper withBorder radius="sm" p={6} mt={6} style={{ background: "#f0fff4" }}>
-                  <Text size="xs" c="dimmed"><strong>Respuesta:</strong> {t.observacion_respuesta}</Text>
+                <Paper radius="md" p="xs" mt="sm" ml={42} style={{ background: "var(--mantine-color-teal-light)" }}>
+                  <Text size="xs"><strong>Respuesta:</strong> {t.observacion_respuesta}</Text>
                 </Paper>
               )}
             </Paper>
-          ))}
+            );
+          })}
         </Stack>
       )}
 
@@ -369,7 +483,7 @@ export default function TasksAdminPage() {
           {error && <Text size="sm" c="red">{error}</Text>}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => { setHasChanges(false); setModalOpen(false); }}>Cancelar</Button>
-            <Button loading={saving} onClick={guardar}>Guardar</Button>
+            <Button color="violet" loading={saving} onClick={guardar}>Guardar</Button>
           </Group>
         </Stack>
       </Modal>

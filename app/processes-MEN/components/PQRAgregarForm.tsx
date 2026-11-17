@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Stack, TextInput, Switch, Select, Button, Group, Text } from "@mantine/core";
+import { Stack, TextInput, Select, Button, Group, Text, SegmentedControl, SimpleGrid, Box, ThemeIcon, Alert } from "@mantine/core";
+import { IconPlus, IconFileText, IconId, IconSchool, IconBuildingBank, IconAlertCircle } from "@tabler/icons-react";
 import axios from "axios";
 import type { Program, PQR } from "../types";
 
@@ -56,46 +57,72 @@ export default function PQRAgregarForm({ programas, onCreado, showHeader, onCanc
   return (
     <Stack gap="md">
       {showHeader && (
-        <Text fw={600} size="sm">Nueva solicitud PQR</Text>
+        <Group gap="sm" wrap="nowrap">
+          <ThemeIcon size={38} radius="xl" variant="light" color="teal"><IconPlus size={20} /></ThemeIcon>
+          <Box>
+            <Text fw={700} size="lg" lh={1.2}>Nueva solicitud PQR</Text>
+            <Text size="xs" c="dimmed">Registra una petición, queja o reclamo ante el Ministerio de Educación.</Text>
+          </Box>
+        </Group>
       )}
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" verticalSpacing="md">
       <TextInput
         label="Nombre / descripción de la solicitud"
         placeholder="Ej: Solicitud acto administrativo de Ing. Civil"
+        leftSection={<IconFileText size={16} />}
         value={nombre}
         onChange={e => setNombre(e.currentTarget.value)}
         required
         onKeyDown={e => e.key === "Enter" && void handleCrear()}
       />
-      <Switch
-        label="¿Ligado a un programa académico?"
-        checked={ligado}
-        onChange={(e) => {
-          const checked = e.currentTarget.checked;
-          setLigado(checked);
-          if (!checked) setProgramaId(null);
-        }}
-      />
-      <TextInput
-        label="Cédula del encargado"
-        placeholder="Ej: 1.234.567.890"
-        value={cedulaEncargado}
-        onChange={e => setCedulaEncargado(e.currentTarget.value)}
-      />
-      {ligado && (
-        <Select
-          label="Programa"
-          placeholder="Busca y selecciona un programa..."
-          data={programaOpts}
-          value={programaId}
-          onChange={setProgramaId}
-          searchable
-          clearable
+      <Box>
+        <Text size="sm" fw={500} mb={6}>¿A quién corresponde?</Text>
+        <SegmentedControl
+          fullWidth
+          radius="md"
+          color="teal"
+          value={ligado ? "programa" : "men"}
+          onChange={(v) => {
+            const esPrograma = v === "programa";
+            setLigado(esPrograma);
+            if (!esPrograma) setProgramaId(null);
+          }}
+          data={[
+            { value: "men", label: <Group gap={6} justify="center" wrap="nowrap"><IconBuildingBank size={15} /><span>Directo con el MEN</span></Group> },
+            { value: "programa", label: <Group gap={6} justify="center" wrap="nowrap"><IconSchool size={15} /><span>Ligado a un programa</span></Group> },
+          ]}
         />
+      </Box>
+        {ligado && (
+          <Select
+            label="Programa"
+            placeholder="Busca y selecciona un programa..."
+            leftSection={<IconSchool size={16} />}
+            data={programaOpts}
+            value={programaId}
+            onChange={setProgramaId}
+            searchable
+            clearable
+          />
+        )}
+        <TextInput
+          label="Cédula del encargado"
+          placeholder="Ej: 1.234.567.890"
+          leftSection={<IconId size={16} />}
+          value={cedulaEncargado}
+          onChange={e => setCedulaEncargado(e.currentTarget.value)}
+        />
+      </SimpleGrid>
+      {error && (
+        <Alert color="red" variant="light" radius="md" icon={<IconAlertCircle size={16} />} py="xs">
+          {error}
+        </Alert>
       )}
-      {error && <Text size="xs" c="red">{error}</Text>}
       <Group justify="flex-end" mt="xs">
         {onCancel && <Button variant="default" onClick={onCancel}>Cancelar</Button>}
-        <Button loading={loading} onClick={() => void handleCrear()}>Crear PQR</Button>
+        <Button color="teal" leftSection={<IconPlus size={16} />} loading={loading} onClick={() => void handleCrear()}>
+          Crear PQR
+        </Button>
       </Group>
     </Stack>
   );

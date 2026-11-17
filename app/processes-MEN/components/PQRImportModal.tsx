@@ -51,7 +51,7 @@ export default function PQRImportModal({ opened, onClose, onImported, programas 
     } finally { setBusy(false); }
   };
 
-  return <Modal opened={opened} onClose={() => { if (!busy) onClose(); }} title="Importar PQR desde Excel" size="min(1200px, 95vw)" centered zIndex={300} closeOnClickOutside={!busy} closeOnEscape={!busy} withCloseButton={!busy}>
+  return <Modal opened={opened} onClose={() => { if (!busy) onClose(); }} title={<Text fw={700}>Importar PQR desde Excel</Text>} size="min(1200px, 95vw)" radius="lg" centered zIndex={300} closeOnClickOutside={!busy} closeOnEscape={!busy} withCloseButton={!busy}>
     <Stack gap="md">
       <Text size="sm">Se reconocen las columnas del formato PQR MEN. Revisa los datos antes de guardar. Los PQR existentes se omiten y los nuevos quedan activos, aunque tengan respuesta.</Text>
       <FileInput label="Archivo Excel (.xlsx, máximo 5 MB)" placeholder="Seleccionar archivo" accept=".xlsx" value={file} disabled={busy} clearable onChange={value => {
