@@ -11,6 +11,7 @@ import {
   IconSettings, IconArrowRight, IconFileTypePdf, IconNotes, IconId, IconCircleCheck, IconCalendarTime, IconBooks,
 } from "@tabler/icons-react";
 import type { ElementType, ReactNode } from "react";
+import classes from "./ProgramFicha.module.css";
 import { paramKey } from "@/app/utils/routeParams";
 import axios, { isAxiosError } from "axios";
 import type { Program, Dependency, Process, Phase, ProcessHistoryRecord } from "../../types";
@@ -20,22 +21,25 @@ import { LABEL_PROCESO, PERIODICIDAD_ADMISION, faseColors, etiquetaSubtipoCompac
 const TIPO_COLOR: Record<string, string> = { RC: "blue", AV: "violet", AE: "teal", PM: "grape" };
 
 /** Bloque de la ficha: tarjeta con icono y título, como las secciones de PDI. */
-function SeccionFicha({ icon: Icon, color, titulo, descripcion, accion, children }: {
+function SeccionFicha({ icon: Icon, color, titulo, descripcion, accion, children, variante, etiqueta }: {
   icon: ElementType;
   color: string;
   titulo: string;
   descripcion?: ReactNode;
   accion?: ReactNode;
   children: ReactNode;
+  variante?: "general" | "procesos" | "resoluciones";
+  etiqueta?: string;
 }) {
   return (
-    <Paper withBorder radius="lg" p="lg">
-      <Group justify="space-between" align="flex-start" mb="md" wrap="wrap" gap="sm">
+    <Paper withBorder radius="lg" p="lg" className={variante ? classes[variante] : undefined}>
+      <Group justify="space-between" align="flex-start" mb="md" wrap="wrap" gap="sm" className={variante ? classes.sectionHeader : undefined}>
         <Group gap="sm" wrap="nowrap" align="flex-start" style={{ minWidth: 0, flex: 1 }}>
-          <ThemeIcon size={34} radius="xl" variant="light" color={color} style={{ flexShrink: 0 }}>
+          <ThemeIcon size={variante ? 40 : 34} radius={variante ? "md" : "xl"} variant={variante === "procesos" ? "filled" : "light"} color={color} style={{ flexShrink: 0 }}>
             <Icon size={18} />
           </ThemeIcon>
           <Box style={{ minWidth: 0 }}>
+            {etiqueta && <Text size="xs" fw={700} tt="uppercase" c={color} mb={4} style={{ letterSpacing: "0.08em" }}>{etiqueta}</Text>}
             <Text fw={700} size="lg" lh={1.2}>{titulo}</Text>
             {descripcion && <Text size="xs" c="dimmed" mt={2}>{descripcion}</Text>}
           </Box>
@@ -598,6 +602,8 @@ export default function ProgramaProcessesMenPage() {
         icon={IconInfoCircle}
         color="blue"
         titulo="Información general"
+        variante="general"
+        etiqueta="Datos del programa"
         descripcion="Datos académicos y administrativos del programa."
         accion={!editando && (
           <Button size="xs" variant="light" leftSection={<IconEdit size={14} />} onClick={abrirEdicion}>Editar</Button>
@@ -741,6 +747,7 @@ export default function ProgramaProcessesMenPage() {
         icon={IconFileCertificate}
         color="violet"
         titulo="Resoluciones vigentes"
+        variante="resoluciones"
         descripcion="Datos del último cierre registrado. Si aún no hay historial cerrado, se muestran los valores registrados en el programa (SNIES/resoluciones)."
         accion={
           <Button variant="light" size="xs" color="gray" leftSection={<IconHistory size={14} />} onClick={() => setHistoricoOpen(true)}>
@@ -882,8 +889,14 @@ export default function ProgramaProcessesMenPage() {
         icon={IconProgress}
         color="green"
         titulo="Procesos en curso"
-        descripcion="Haz clic en un proceso para abrirlo en la gestión. Si no hay RC o AV activo, la tarjeta indica «Sin proceso»."
-        accion={loadingFasesProg ? <Loader size="xs" /> : null}
+        variante="procesos"
+        etiqueta="Seguimiento de trámites"
+        descripcion="Consulta la fase y la actividad pendiente de cada proceso activo."
+        accion={loadingFasesProg ? <Loader size="xs" /> : (
+          <Badge color="green" variant="light" size="lg" tt="none">
+            {tarjetasProceso.filter((t) => t.proc).length} en curso
+          </Badge>
+        )}
       >
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 1, xl: 2 }} spacing="md">
@@ -898,6 +911,7 @@ export default function ProgramaProcessesMenPage() {
               withBorder
               radius="md"
               p="md"
+              className={p ? classes.activeProcess : classes.emptyProcess}
               style={{
                 textAlign: "left",
                 borderLeft: `4px solid var(--mantine-color-${colorProceso}-${p ? 5 : 3})`,
@@ -922,9 +936,13 @@ export default function ProgramaProcessesMenPage() {
                 </Text>
               )}
               {!p ? (
-                <Text size="sm" c="dimmed">No hay proceso activo de este tipo para el programa.</Text>
+                <Stack gap={6} mt="xs">
+                  <ThemeIcon color="gray" variant="light" radius="xl" size={30}><IconProgress size={17} /></ThemeIcon>
+                  <Text size="sm" c="dimmed">No hay un trámite en curso.</Text>
+                </Stack>
               ) : (
                 <>
+                  <Text size="xs" fw={700} c={colorProceso} tt="uppercase" mt="xs">Fase actual</Text>
                   <Text size="sm" fw={600}>{nombreFase}</Text>
                   <Text size="xs" c="dimmed" mt={2}>
                     Actividad: <strong style={{ color: "var(--mantine-color-text)" }}>{actividad ?? "(sin actividades pendientes en esta fase)"}</strong>

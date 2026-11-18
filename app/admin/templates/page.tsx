@@ -37,6 +37,7 @@ import ConfigAuditModal from "@/app/components/ConfigAuditModal";
 import { modals } from "@mantine/modals";
 import { useViewPermission } from "@/app/hooks/useViewPermission";
 import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
+import BulkDuplicateTemplatesModal from "./BulkDuplicateTemplatesModal";
 
 interface Field {
   name: string;
@@ -833,6 +834,7 @@ const AdminTemplatesPage = () => {
   const [duplicateTarget, setDuplicateTarget] = useState<Template | null>(null);
   const [duplicateTargetPeriodId, setDuplicateTargetPeriodId] = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState(false);
+  const [bulkDuplicateOpened, setBulkDuplicateOpened] = useState(false);
 
   const { sortedItems: sortedTemplates, handleSort, sortConfig } = useSort<Template>(templates, { key: null, direction: "asc" });
 
@@ -903,6 +905,7 @@ const AdminTemplatesPage = () => {
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/templates/duplicate`, {
         id: duplicateTarget._id,
         targetPeriodId: duplicateTargetPeriodId,
+        sourcePeriodId: selectedPeriodId,
         email: session?.user?.email,
       });
       showNotification({
@@ -1923,6 +1926,11 @@ const AdminTemplatesPage = () => {
         <Button onClick={() => router.push('/templates/create')} leftSection={<IconCirclePlus/>} disabled={!canManage}>
           Crear Nueva Plantilla
         </Button>
+        <Button variant="light" color="orange" leftSection={<IconCopy size={16} />}
+          disabled={!canManage || !selectedPeriodId || !session?.user?.email}
+          onClick={() => setBulkDuplicateOpened(true)}>
+          Duplicar plantillas masivas
+        </Button>
         <Button
     onClick={() => router.push('/templates/categories')}  
     leftSection={<IconArrowsTransferDown size={16} />}
@@ -2157,6 +2165,12 @@ const AdminTemplatesPage = () => {
           </Button>
         </Group>
       </Modal>
+
+      {bulkDuplicateOpened && selectedPeriodId && session?.user?.email && (
+        <BulkDuplicateTemplatesModal sourcePeriodId={selectedPeriodId} periods={availablePeriods}
+          email={session.user.email} onClose={() => setBulkDuplicateOpened(false)}
+          onDuplicated={() => { void fetchTemplates(page, search); }} />
+      )}
 
       <ConfigAuditModal
         opened={auditModalOpened}
