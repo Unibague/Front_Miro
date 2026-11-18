@@ -47,7 +47,6 @@ import {
   IconFolderShare,
   IconPencil,
   IconSettings,
-  IconWand,
   IconPresentationAnalytics,
   IconRefresh,
   IconTrash,
@@ -73,12 +72,16 @@ interface HojaConfig {
   fuente: string | null;
   sugerida: string | null;
   encabezados: string[];
+  // Por cada archivo, la hoja de ese archivo que mejor corresponde a esta hoja
+  porArchivo: Record<string, string>;
 }
 
 interface FuenteOpcion {
   value: string;
   label: string;
   group: string;
+  hoja: string;
+  archivos: string[];
 }
 
 // La vista previa solo muestra las primeras filas de cada hoja: las plantillas
@@ -114,12 +117,15 @@ interface HojaResumen {
   columnas: number;
   sinCoincidencia: string[];
   formulasExtendidas: string[];
+  // Hoja demasiado grande para Excel: Miró hizo sus cálculos y no copió sus filas
+  calculada?: boolean;
 }
 
 interface Resumen {
   hojas: HojaResumen[];
   hojasSinCambios: string[];
   advertencias: string[];
+  calculo?: { celdas: number; hojas: string[] } | null;
 }
 
 interface Resultado {
@@ -241,6 +247,7 @@ export default function KpiPage() {
   const [configHojas, setConfigHojas] = useState<HojaConfig[]>([]);
   const [configFuentes, setConfigFuentes] = useState<FuenteOpcion[]>([]);
   const [configValores, setConfigValores] = useState<Record<string, string | null>>({});
+  const [configArchivos, setConfigArchivos] = useState<Record<string, string | null>>({});
   const [configLoading, setConfigLoading] = useState(false);
   const [configGuardando, setConfigGuardando] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -572,6 +579,11 @@ export default function KpiPage() {
       setConfigHojas(data.hojas ?? []);
       setConfigFuentes(data.fuentes ?? []);
       setConfigValores(Object.fromEntries((data.hojas ?? []).map((hoja: HojaConfig) => [hoja.hoja, hoja.fuente])));
+      // Archivo de la fuente ya configurada (para mostrarlo en la primera lista)
+      setConfigArchivos(Object.fromEntries((data.hojas ?? []).map((hoja: HojaConfig) => [
+        hoja.hoja,
+        (data.fuentes ?? []).find((fuente: FuenteOpcion) => fuente.value === hoja.fuente)?.archivos[0] ?? null,
+      ])));
     } catch (error) {
       showNotification({
         title: "Error",
@@ -582,16 +594,6 @@ export default function KpiPage() {
     } finally {
       setConfigLoading(false);
     }
-  };
-
-  const aplicarSugerencias = () => {
-    setConfigValores((prev) => {
-      const next = { ...prev };
-      configHojas.forEach((hoja) => {
-        if (!next[hoja.hoja] && hoja.sugerida) next[hoja.hoja] = hoja.sugerida;
-      });
-      return next;
-    });
   };
 
   const guardarConfiguracion = async () => {
@@ -618,12 +620,27 @@ export default function KpiPage() {
   };
 
   // Opciones agrupadas (Bases externas / Consulta de Información) para el Select
-  const fuentesAgrupadas = Object.entries(
-    configFuentes.reduce<Record<string, Array<{ value: string; label: string }>>>((groups, fuente) => {
-      (groups[fuente.group] ??= []).push({ value: fuente.value, label: fuente.label });
+  // Primera lista: archivos (Bases externas / Consulta de Información)
+  const archivosAgrupados = Object.entries(
+    configFuentes.reduce<Record<string, Set<string>>>((groups, fuente) => {
+      fuente.archivos.forEach((archivo) => (groups[fuente.group] ??= new Set()).add(archivo));
       return groups;
     }, {})
-  ).map(([group, items]) => ({ group, items }));
+  ).map(([group, archivos]) => ({
+    group,
+    items: [...archivos].sort((a, b) => a.localeCompare(b, "es")).map((archivo) => ({ value: archivo, label: archivo })),
+  }));
+  // Segunda lista: hojas del archivo elegido
+  const hojasDeArchivo = (archivo: string | null) =>
+    configFuentes
+      .filter((fuente) => archivo && fuente.archivos.includes(archivo))
+      .map((fuente) => ({ value: fuente.value, label: fuente.hoja }));
+  const elegirArchivo = (hoja: HojaConfig, archivo: string | null) => {
+    setConfigArchivos((prev) => ({ ...prev, [hoja.hoja]: archivo }));
+    // Miró elige sola la hoja del archivo que corresponde (por encabezados y nombre)
+    const hojaSugerida = archivo ? hoja.porArchivo?.[archivo] ?? hojasDeArchivo(archivo)[0]?.value ?? null : null;
+    setConfigValores((prev) => ({ ...prev, [hoja.hoja]: hojaSugerida }));
+  };
   const etiquetaFuente = (value: string | null) => configFuentes.find((fuente) => fuente.value === value)?.label;
   const hojasConfiguradas = Object.values(configValores).filter(Boolean).length;
 
@@ -909,8 +926,17 @@ export default function KpiPage() {
                               <Paper key={hoja.hoja} withBorder radius="md" p="xs">
                                 <Group justify="space-between" wrap="nowrap" gap="xs">
                                   <Text size="sm" fw={600} truncate>{hoja.hoja}</Text>
-                                  <Badge variant="light" color="red" style={{ flexShrink: 0 }}>{hoja.filas} filas</Badge>
+                                  <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+                                    {hoja.calculada && <Badge variant="light" color="grape">Calculada en Miró</Badge>}
+                                    <Badge variant="light" color="red">{hoja.filas.toLocaleString("es-CO")} filas</Badge>
+                                  </Group>
                                 </Group>
+                                {hoja.calculada && (
+                                  <Text size="xs" c="dimmed">
+                                    Por su tamaño, Miró hizo los cálculos de esta hoja: sus filas quedan en el Excel con los
+                                    valores ya calculados (sin fórmulas), para que el archivo abra rápido.
+                                  </Text>
+                                )}
                                 <Text size="xs" c="dimmed">
                                   Origen: {hoja.plantilla}
                                 </Text>
@@ -925,6 +951,12 @@ export default function KpiPage() {
                                 )}
                               </Paper>
                             ))}
+                            {resultado.resumen.calculo && resultado.resumen.calculo.celdas > 0 && (
+                              <Text size="xs" c="dimmed">
+                                Celdas calculadas en Miró: {resultado.resumen.calculo.celdas.toLocaleString("es-CO")} (en{" "}
+                                {resultado.resumen.calculo.hojas.join(", ")}). Las demás fórmulas se recalculan al abrir el archivo.
+                              </Text>
+                            )}
                             {resultado.resumen.hojasSinCambios.length > 0 && (
                               <Text size="xs" c="dimmed">
                                 Hojas que se dejaron igual (cálculos, tableros, gráficos): {resultado.resumen.hojasSinCambios.join(", ")}
@@ -1103,26 +1135,16 @@ export default function KpiPage() {
         ) : (
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
-              Elige con qué información se llena cada hoja de datos. Deja vacías las hojas de cálculo, parámetros y
-              resultados: esas no se tocan.
+              Para cada hoja de datos elige el archivo: Miró busca dentro de él la hoja que corresponde (puedes cambiarla).
+              Deja en “No llenar” las hojas de cálculo, parámetros y resultados: esas no se tocan.
             </Text>
-            <Group justify="space-between">
-              <Text size="sm">{hojasConfiguradas} de {configHojas.length} hojas se llenarán</Text>
-              <Button
-                variant="subtle"
-                size="compact-sm"
-                leftSection={<IconWand size={14} />}
-                disabled={!configHojas.some((hoja) => hoja.sugerida && !configValores[hoja.hoja])}
-                onClick={aplicarSugerencias}
-              >
-                Aplicar sugerencias
-              </Button>
-            </Group>
+            <Text size="sm">{hojasConfiguradas} de {configHojas.length} hojas se llenarán</Text>
             <ScrollArea h="55vh" type="auto" offsetScrollbars>
               <Stack gap={6}>
                 {configHojas.map((hoja) => {
                   const valor = configValores[hoja.hoja] ?? null;
                   const sugerencia = hoja.sugerida && hoja.sugerida !== valor ? etiquetaFuente(hoja.sugerida) : null;
+                  const repetida = valor ? configHojas.filter((otra) => configValores[otra.hoja] === valor).length > 1 : false;
                   return (
                     <Paper key={hoja.hoja} withBorder radius="md" p="xs">
                       <Group justify="space-between" wrap="nowrap" align="flex-start" gap="sm">
@@ -1133,23 +1155,50 @@ export default function KpiPage() {
                               component="button"
                               type="button"
                               size="xs"
-                              onClick={() => setConfigValores((prev) => ({ ...prev, [hoja.hoja]: hoja.sugerida }))}
+                              onClick={() => {
+                                setConfigValores((prev) => ({ ...prev, [hoja.hoja]: hoja.sugerida }));
+                                setConfigArchivos((prev) => ({
+                                  ...prev,
+                                  [hoja.hoja]: configFuentes.find((fuente) => fuente.value === hoja.sugerida)?.archivos[0] ?? null,
+                                }));
+                              }}
                             >
                               Sugerida: {sugerencia}
                             </Anchor>
                           )}
+                          {repetida && (
+                            <Text size="xs" c="orange">
+                              Esta misma fuente está elegida en otra hoja: revisa que sea la correcta.
+                            </Text>
+                          )}
                         </div>
-                        <Select
-                          w={340}
-                          placeholder="No llenar"
-                          data={fuentesAgrupadas}
-                          value={valor}
-                          onChange={(value) => setConfigValores((prev) => ({ ...prev, [hoja.hoja]: value }))}
-                          searchable
-                          clearable
-                          nothingFoundMessage="Sin resultados"
-                          comboboxProps={{ withinPortal: true }}
-                        />
+                        <Stack gap={4} w={360} style={{ flexShrink: 0 }}>
+                          <Select
+                            size="xs"
+                            placeholder="No llenar"
+                            aria-label={`Archivo para ${hoja.hoja}`}
+                            data={archivosAgrupados}
+                            value={configArchivos[hoja.hoja] ?? null}
+                            onChange={(archivo) => elegirArchivo(hoja, archivo)}
+                            searchable
+                            clearable
+                            nothingFoundMessage="Sin resultados"
+                            comboboxProps={{ withinPortal: true }}
+                          />
+                          {configArchivos[hoja.hoja] && (
+                            <Select
+                              size="xs"
+                              aria-label={`Hoja del archivo para ${hoja.hoja}`}
+                              leftSection={<Text size="xs" c="dimmed" pl={6}>Hoja</Text>}
+                              leftSectionWidth={44}
+                              data={hojasDeArchivo(configArchivos[hoja.hoja])}
+                              value={valor}
+                              onChange={(value) => setConfigValores((prev) => ({ ...prev, [hoja.hoja]: value }))}
+                              allowDeselect={false}
+                              comboboxProps={{ withinPortal: true }}
+                            />
+                          )}
+                        </Stack>
                       </Group>
                     </Paper>
                   );
