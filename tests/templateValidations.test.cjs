@@ -293,10 +293,11 @@ test('Excel: reconstruir varias hojas no pierde reglas ni mantiene nombres de li
   assert.match(downloaded.getWorksheet('Primera').getCell('A4').dataValidation.formulae[0], /SUBSTITUTE/);
   assert.equal(downloaded.getWorksheet('Primera').getCell('B4').dataValidation.type, 'list');
   const multiple = downloaded.getWorksheet('Segunda').getCell('B4').dataValidation;
-  assert.equal(multiple.type, 'custom');
+  assert.equal(multiple.type, 'list');
   assert.equal(multiple.showErrorMessage, true);
-  assert.match(multiple.formulae[0], /COUNTIF/);
-  assert.match(multiple.formulae[0], /SUBSTITUTE/);
+  assert.equal(multiple.errorStyle, 'stop');
+  assert.match(multiple.formulae[0], /^_MIRO_LIST_/);
+  assert.equal(sheets[1].fields[1].multiple, true);
   const created = createFieldsWorksheet(book, 'Nueva', [{ name: 'CODIGO', datatype: 'Texto Largo', comment: 'Numérico (3)' }], 4);
   assert.match(created.getCell('A2').worksheet.dataValidations.model['A2:A4'].formulae[0], /SUBSTITUTE/);
 });
@@ -325,7 +326,7 @@ test('Excel: las fórmulas largas usan soporte y ninguna validación supera 255 
   const book = new ExcelJS.Workbook();
   const sheet = book.addWorksheet("Convenios O'Brien");
   applyValidatorDropdowns({ workbook: book, worksheet: sheet, fields: [
-    { name: 'OPCIONES', column: 28, header_row: 1000, multiple: true, dropdown_options: ['1 - Nacional', '2 - Internacional'] },
+    { name: 'CODIGO', column: 28, header_row: 1000, datatype: 'Texto Largo', content_type: 'numeric', max_length: 30 },
   ], validators: [], endRow: 1002 });
   const downloaded = new ExcelJS.Workbook();
   await downloaded.xlsx.load(await book.xlsx.writeBuffer());

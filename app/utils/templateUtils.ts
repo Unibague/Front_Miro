@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { normalizeAgreementCodeField } from "./fieldConstraints";
 import JSZip from "jszip";
-import { applyExcelFieldValidation, applyExcelDatasetValidation, excelValidationFormula, excelMultiSelectFormula, highlightExcelValidation, compactExcelValidationFormulas } from "./excelFieldValidation";
+import { applyExcelFieldValidation, applyExcelDatasetValidation, excelValidationFormula, highlightExcelValidation, compactExcelValidationFormulas } from "./excelFieldValidation";
 import { getEffectiveRequired } from "./requiredFields";
 import { withNoApplyOption, isYesNoField } from "./validatorOptions";
 import { normalizeCountryFieldName } from "./foreignCountryRules";
@@ -1815,14 +1815,8 @@ export const applyValidatorDropdowns = ({
       validation.prompt = promptText;
     }
     const anchor = `${toColumnLetter(templateCol)}${firstDataRow}`;
-    if (field.multiple && !isYesNoField(field)) {
-      validation.type = 'custom';
-      validation.formulae = [excelMultiSelectFormula(listFormula, anchor)];
-      validation.error = 'Ingrese opciones válidas del catálogo, separadas por coma.';
-      validation.showInputMessage = true;
-      validation.promptTitle = field.name.slice(0, 32);
-      validation.prompt = ('Selección múltiple: valores separados por coma. Opciones: ' + options.join('; ')).slice(0, 255);
-    }
+    // Excel siempre ofrece una opción por celda con lista desplegable.
+    // `multiple` se conserva para los formularios y las respuestas existentes.
     if (normalizeCountryFieldName(field.name) === 'ID_PAIS_EXTRANJERO') {
       validation.errorTitle = 'País extranjero no válido';
       validation.error = 'El código 170 corresponde a Colombia y no es válido como país extranjero. Seleccione un país distinto de Colombia de la lista.';
