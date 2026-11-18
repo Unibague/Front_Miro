@@ -55,11 +55,17 @@ async function proxy(req: NextRequest, params: { path: string[] }) {
   }
 
   const data = await res.arrayBuffer();
+  const responseHeaders = new Headers({
+    "Content-Type": res.headers.get("Content-Type") ?? "application/json",
+  });
+  // Descargas: nombre del archivo y resúmenes que el backend manda en encabezados (ej. KPI)
+  ["Content-Disposition", "Access-Control-Expose-Headers", "X-KPI-Resumen"].forEach((name) => {
+    const value = res.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  });
   return new NextResponse(data, {
     status: res.status,
-    headers: {
-      "Content-Type": res.headers.get("Content-Type") ?? "application/json",
-    },
+    headers: responseHeaders,
   });
 }
 
