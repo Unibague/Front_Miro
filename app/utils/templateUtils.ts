@@ -742,11 +742,15 @@ const ensureWorksheetLegacyDrawing = async (
   const worksheetXml = await zip.file(worksheetPath)?.async("text");
   if (!worksheetXml) return;
 
-  const legacyDrawing = `<legacyDrawing r:id="${vmlRelId}"/>`;
+  const legacyDrawing = `<legacyDrawing xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${vmlRelId}"/>`;
   const withoutLegacyDrawing = worksheetXml
     .replace(/<legacyDrawing\b[\s\S]*?(?:\/>|>[\s\S]*?<\/legacyDrawing>)/g, "");
 
-  zip.file(worksheetPath, withoutLegacyDrawing.replace("</worksheet>", `${legacyDrawing}</worksheet>`));
+  // legacyDrawing precede legacyDrawingHF, controles, tablas y extLst en OOXML.
+  // Agregarlo al final puede hacer que Excel repare y descarte contenido.
+  const successor = /<(?:legacyDrawingHF|picture|oleObjects|controls|webPublishItems|tableParts|extLst)\b/;
+  const insertion = successor.exec(withoutLegacyDrawing)?.index ?? withoutLegacyDrawing.lastIndexOf("</worksheet>");
+  zip.file(worksheetPath, withoutLegacyDrawing.slice(0, insertion) + legacyDrawing + withoutLegacyDrawing.slice(insertion));
 };
 
 const ensureContentTypeEntry = (
@@ -814,8 +818,11 @@ const upsertWorksheetComments = async (
     }
   });
 
-  commentsTarget = `../commentsMiro${commentIndex}.xml`;
-  vmlTarget = `../drawings/vmlDrawingMiro${commentIndex}.vml`;
+  // ExcelJS solo reconoce estos nombres al volver a cargar una descarga.
+  // Buscar un índice libre evita sobrescribir las notas de otra hoja.
+  while (zip.file(`xl/comments${commentIndex}.xml`) || zip.file(`xl/drawings/vmlDrawing${commentIndex}.vml`)) commentIndex += 1;
+  commentsTarget = `../comments${commentIndex}.xml`;
+  vmlTarget = `../drawings/vmlDrawing${commentIndex}.vml`;
 
   const commentsPath = resolveZipPath(worksheetPath, commentsTarget);
   const vmlPath = resolveZipPath(worksheetPath, vmlTarget);
@@ -823,13 +830,13 @@ const upsertWorksheetComments = async (
   const commentsRelId = getNextRelId(relsDoc);
   vmlRelId = `${commentsRelId}Vml`;
 
-  const commentsRel = relsDoc.createElement("Relationship");
+  const commentsRel = relsDoc.createElementNS("http://schemas.openxmlformats.org/package/2006/relationships", "Relationship");
   commentsRel.setAttribute("Id", commentsRelId);
   commentsRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments");
   commentsRel.setAttribute("Target", commentsTarget);
   relationshipsNode.appendChild(commentsRel);
 
-  const vmlRel = relsDoc.createElement("Relationship");
+  const vmlRel = relsDoc.createElementNS("http://schemas.openxmlformats.org/package/2006/relationships", "Relationship");
   vmlRel.setAttribute("Id", vmlRelId);
   vmlRel.setAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing");
   vmlRel.setAttribute("Target", vmlTarget);
@@ -894,7 +901,7 @@ export const injectWorkbookSheetHeaderComments = async (
           node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.vmlDrawing"
       ),
       (doc) => {
-        const node = doc.createElement("Default");
+        const node = doc.createElementNS("http://schemas.openxmlformats.org/package/2006/content-types", "Default");
         node.setAttribute("Extension", "vml");
         node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.vmlDrawing");
         return node;
@@ -910,7 +917,7 @@ export const injectWorkbookSheetHeaderComments = async (
             node.getAttribute("ContentType") === "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
         ),
         (doc) => {
-          const node = doc.createElement("Override");
+          const node = doc.createElementNS("http://schemas.openxmlformats.org/package/2006/content-types", "Override");
           node.setAttribute("PartName", partName);
           node.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml");
           return node;
@@ -925,133 +932,13 @@ export const injectWorkbookSheetHeaderComments = async (
 };
 
 /**
- * Appends VML comment shapes and comment entries for fields that don't yet have them
- * in the existing VML/comments files. Used for workbooks loaded from base64 where
- * ExcelJS preserves original VML but doesn't add shapes for newly set cell.note values.
+ * Repairs comments, including sheets with missing comment/VML relationships.
+ * Keep the same repair path for admin, producer and editor downloads.
  */
 export const appendMissingFieldComments = async (
   buffer: ArrayBuffer,
   workbookSheets: WorkbookSheetWithFields[]
-): Promise<ArrayBuffer> => {
-  if (!Array.isArray(workbookSheets) || workbookSheets.length === 0) return buffer;
-
-  const zip = await JSZip.loadAsync(buffer);
-  const worksheetPathByName = await getWorksheetPathMap(zip);
-
-  for (const sheet of workbookSheets) {
-    if (!sheet?.name || !Array.isArray(sheet.fields) || sheet.fields.length === 0) continue;
-    const worksheetPath = worksheetPathByName.get(sheet.name);
-    if (!worksheetPath || !zip.file(worksheetPath)) continue;
-
-    const relsXml = await zip.file(getWorksheetRelsPath(worksheetPath))?.async("text");
-    if (!relsXml) continue;
-
-    const sheetRels = getRelTargets(relsXml);
-    let commentsPath = "";
-    let vmlPath = "";
-
-    for (const rel of sheetRels.values()) {
-      const type = rel.type.toLowerCase();
-      if (type.includes("/comments") && !type.includes("threadedcomments")) {
-        commentsPath = resolveZipPath(worksheetPath, rel.target);
-      }
-      if (type.includes("vmldrawing")) {
-        vmlPath = resolveZipPath(worksheetPath, rel.target);
-      }
-    }
-
-    if (!commentsPath || !vmlPath) continue;
-
-    const vmlText = await zip.file(vmlPath)?.async("text");
-    if (!vmlText) continue;
-
-    // Find which cells already have VML shapes so we don't duplicate
-    const existingVmlRefs = new Set<string>();
-    const vmlCellRegex = /<x:Row>(\d+)<\/x:Row>[\s\S]*?<x:Column>(\d+)<\/x:Column>/g;
-    let vmlCellMatch: RegExpExecArray | null;
-    while ((vmlCellMatch = vmlCellRegex.exec(vmlText)) !== null) {
-      const row = parseInt(vmlCellMatch[1], 10) + 1;
-      const col = parseInt(vmlCellMatch[2], 10) + 1;
-      existingVmlRefs.add(getExcelCellAddress(row, col));
-    }
-
-    // Collect fields that are missing VML shapes
-    const fieldsToAdd: Array<{ ref: string; text: string; rowNumber: number; columnNumber: number }> = [];
-    sheet.fields.forEach((field, fieldIndex) => {
-      const comment = getFieldCommentForNote(field);
-      if (!comment) return;
-      const { col, headerRow } = getConfiguredFieldPosition(field, fieldIndex, sheet.fields);
-      const ref = getExcelCellAddress(headerRow, col);
-      if (!existingVmlRefs.has(ref)) {
-        fieldsToAdd.push({ ref, text: comment, rowNumber: headerRow, columnNumber: col });
-      }
-    });
-
-    if (fieldsToAdd.length === 0) continue;
-
-    // Find cells already in comments XML so we don't duplicate entries
-    const commentsXml = await zip.file(commentsPath)?.async("text");
-    const existingCommentRefs = new Set<string>();
-    if (commentsXml) {
-      const refRegex = /\bref="([^"]+)"/g;
-      let refMatch: RegExpExecArray | null;
-      while ((refMatch = refRegex.exec(commentsXml)) !== null) {
-        existingCommentRefs.add(refMatch[1].replace(/\$/g, ""));
-      }
-    }
-
-    // Append comment entries for cells not already in comments XML
-    const newCommentElements = fieldsToAdd
-      .filter((f) => !existingCommentRefs.has(f.ref))
-      .map(
-        (c) =>
-          `<comment ref="${c.ref}" authorId="0"><text><r><t xml:space="preserve">${escapeXmlText(c.text)}</t></r></text></comment>`
-      )
-      .join("");
-
-    if (commentsXml && newCommentElements) {
-      zip.file(commentsPath, commentsXml.replace("</commentList>", `${newCommentElements}</commentList>`));
-    }
-
-    // Find highest existing shape ID so new shapes don't conflict
-    const shapeIdRegex = /id="_x0000_s(\d+)"/g;
-    const shapeIds: number[] = [];
-    let shapeIdMatch: RegExpExecArray | null;
-    while ((shapeIdMatch = shapeIdRegex.exec(vmlText)) !== null) {
-      shapeIds.push(parseInt(shapeIdMatch[1], 10));
-    }
-    const maxId = shapeIds.length > 0 ? Math.max(...shapeIds) : 1024;
-
-    // Append VML shapes for missing cells
-    const newShapes = fieldsToAdd
-      .map((comment, idx) => {
-        const startColumn = Math.max(comment.columnNumber - 1, 0);
-        const startRow = Math.max(comment.rowNumber - 1, 0);
-        const endColumn = startColumn + 5;
-        const endRow = startRow + 20;
-        return (
-          `<v:shape id="_x0000_s${maxId + 1 + idx}" type="#_x0000_t202"` +
-          ` style="position:absolute;margin-left:59.25pt;margin-top:1.5pt;width:200pt;height:60pt;z-index:1;visibility:hidden"` +
-          ` fillcolor="#ffffe1" o:insetmode="auto">` +
-          `<v:fill color2="#ffffe1"/>` +
-          `<v:shadow on="t" color="black" obscured="t"/>` +
-          `<v:path o:connecttype="none"/>` +
-          `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left"></div></v:textbox>` +
-          `<x:ClientData ObjectType="Note">` +
-          `<x:MoveWithCells/><x:SizeWithCells/>` +
-          `<x:Anchor>${startColumn}, 0, ${startRow}, 0, ${endColumn}, 0, ${endRow}, 0</x:Anchor>` +
-          `<x:AutoFill>False</x:AutoFill>` +
-          `<x:Row>${startRow}</x:Row><x:Column>${startColumn}</x:Column>` +
-          `</x:ClientData></v:shape>`
-        );
-      })
-      .join("");
-
-    zip.file(vmlPath, vmlText.replace("</xml>", `${newShapes}</xml>`));
-  }
-
-  return zip.generateAsync({ type: "arraybuffer" });
-};
+): Promise<ArrayBuffer> => injectWorkbookSheetHeaderComments(buffer, workbookSheets);
 
 export const extractWorkbookCommentsFromBase64 = async (
   base64: string
@@ -1599,7 +1486,6 @@ export const applyValidatorDropdowns = ({
 }): void => {
   fields = fields.map(normalizeAgreementCodeField);
   fields.forEach((field, index) => {
-    if (normalizeCountryFieldName(field.name) !== 'CODIGO_CONVENIO') return;
     const { col, headerRow } = getConfiguredFieldPosition(field, index, fields);
     applyFieldCommentNote(worksheet.getCell(headerRow, col), field.comment, { preserveText: true });
   });
@@ -1634,7 +1520,7 @@ export const applyValidatorDropdowns = ({
 
   fields.forEach((field, fieldIndex) => {
     let options: string[] = isYesNoField(field) ? ['S', 'N'] : [];
-    if (field.datatype === 'Fecha' || ['FECHA_INICIO', 'FECHA_FINAL', 'DESCRIPCION_ACTIVIDAD'].includes(normalizeCountryFieldName(field.name))) {
+    if (['Fecha', 'Fecha Inicial / Fecha Final'].includes(field.datatype || '') || ['FECHA_INICIO', 'FECHA_FINAL', 'DESCRIPCION_ACTIVIDAD'].includes(normalizeCountryFieldName(field.name))) {
       applyBaseRules(field, fieldIndex);
       return;
     }
@@ -1788,8 +1674,8 @@ export const applyValidatorDropdowns = ({
     const dvModel = (worksheet as any).dataValidations?.model;
     if (dvModel && typeof dvModel === "object" && !Array.isArray(dvModel)) {
       Object.keys(dvModel).forEach((key) => {
-        const col = key.replace(/[0-9]/g, "");
-        if (col === toColumnLetter(templateCol)) delete dvModel[key];
+        const columns = key.replace(/\$/g, '').split(':').map((ref) => ref.replace(/[0-9]/g, ''));
+        if (columns.every((col) => col === toColumnLetter(templateCol))) delete dvModel[key];
       });
     }
 
@@ -2208,7 +2094,13 @@ export const patchNoteSize = async (buffer: ArrayBuffer): Promise<ArrayBuffer> =
             .replace(/width:\d+(?:\.\d+)?pt/, `width:${NOTE_WIDTH_PT}pt`)
             .replace(/height:\d+(?:\.\d+)?pt/, `height:${height}pt`);
 
-          return `<v:shape${beforeStyle}style=${quote}${newStyle}${quote}${afterTag}`;
+          // ExcelJS escribe un div vacío en VML. Algunos visores lo muestran
+          // vacío hasta que Excel guarda y reconstruye la nota desde comments.xml.
+          const textbox = `<v:textbox style="mso-direction-alt:auto"><div style="text-align:left;white-space:pre-wrap">${escapeXmlText(noteText)}</div></v:textbox>`;
+          const withText = noteText
+            ? afterTag.replace(/<v:textbox\b[^>]*(?:\/>|>[\s\S]*?<\/v:textbox>)/, textbox)
+            : afterTag;
+          return `<v:shape${beforeStyle}style=${quote}${newStyle}${quote}${withText}`;
         }
       );
 

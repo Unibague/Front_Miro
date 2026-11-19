@@ -826,7 +826,7 @@ export default function KpiPage() {
                     organizarlas.
                   </Alert>
                 )}
-                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+                <SimpleGrid cols={1} spacing="lg">
                   {plantillasVisibles.map((plantilla) => {
                     const resultado = resultados[plantilla._id];
                     const trayendo = trayendoId === plantilla._id;

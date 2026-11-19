@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
 const ExcelJS = require('exceljs');
+const JSZip = require('jszip');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
+global.DOMParser = DOMParser;
+global.XMLSerializer = XMLSerializer;
 
 require.extensions['.ts'] = (module, filename) => {
   const { outputText } = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
@@ -12,6 +16,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 
 const { applyValidatorDropdowns, applyDatatypeValidation } = require('../app/utils/templateUtils.ts');
+const { appendMissingFieldComments, patchNoteSize } = require('../app/utils/templateUtils.ts');
 const { extractDropdownOptionsFromComment, withNoApplyOption } = require('../app/utils/validatorOptions.ts');
 const { getForeignCountryErrors } = require('../app/utils/foreignCountryRules.ts');
 
@@ -478,4 +483,99 @@ test('CODIGO_CONVENIO Excel corrige notas antiguas y mantiene códigos como text
     assert.equal(validation.errorStyle, 'stop');
     assert.match(validation.prompt, /alfanumérico/);
   }
+});
+
+test('duplicación: Excel repara notas ausentes y conserva listas antes del primer guardado', async () => {
+  const book = new ExcelJS.Workbook();
+  const sheet = book.addWorksheet('Periodo B');
+  sheet.addRow(['PAIS', 'FECHA']);
+  const fields = [
+    { name: 'PAIS', comment: 'País & región <seleccionada>\nSeleccione una opción.', dropdown_options: ['01', '02'] },
+    { name: 'FECHA', datatype: 'Fecha', comment: 'Fecha válida DD/MM/AAAA' },
+  ];
+  applyValidatorDropdowns({ workbook: book, worksheet: sheet, fields, validators: [], endRow: 5 });
+  // Emular un archivo heredado sin notas ni relaciones de comentarios.
+  delete sheet.getCell('A1')._comment;
+  delete sheet.getCell('B1')._comment;
+  let buffer = await book.xlsx.writeBuffer();
+  const original = await JSZip.loadAsync(buffer);
+  assert.equal(original.file('xl/worksheets/_rels/sheet1.xml.rels'), null);
+  original.file('xl/worksheets/sheet1.xml', (await original.file('xl/worksheets/sheet1.xml').async('text'))
+    .replace('</worksheet>', '<extLst/></worksheet>'));
+  buffer = await original.generateAsync({ type: 'arraybuffer' });
+  const sheets = [{ name: 'Periodo B', fields }];
+  buffer = await appendMissingFieldComments(buffer, sheets);
+  // Una segunda descarga no debe duplicar notas ni relaciones.
+  buffer = await appendMissingFieldComments(buffer, sheets);
+  buffer = await patchNoteSize(buffer);
+  const zip = await JSZip.loadAsync(buffer);
+  const xml = await zip.file('xl/worksheets/sheet1.xml').async('text');
+  assert.ok(xml.indexOf('<legacyDrawing ') < xml.indexOf('<extLst'));
+  assert.equal((xml.match(/<legacyDrawing\b/g) || []).length, 1);
+  assert.match(xml, /type="list"/);
+  assert.match(xml, /type="date"/);
+  const rels = new DOMParser().parseFromString(await zip.file('xl/worksheets/_rels/sheet1.xml.rels').async('text'), 'application/xml');
+  const relationships = Array.from(rels.getElementsByTagName('Relationship'));
+  assert.equal(relationships.length, 2);
+  for (const rel of relationships) assert.equal(rel.namespaceURI, 'http://schemas.openxmlformats.org/package/2006/relationships');
+  const types = new DOMParser().parseFromString(await zip.file('[Content_Types].xml').async('text'), 'application/xml');
+  for (const tag of ['Default', 'Override']) {
+    for (const entry of Array.from(types.getElementsByTagName(tag))) {
+      assert.equal(entry.namespaceURI, 'http://schemas.openxmlformats.org/package/2006/content-types');
+    }
+  }
+  const commentsPath = Object.keys(zip.files).find(path => /comments\d+\.xml$/.test(path));
+  const comments = new DOMParser().parseFromString(await zip.file(commentsPath).async('text'), 'application/xml');
+  assert.equal(comments.getElementsByTagName('comment').length, 2);
+  const vmlPath = Object.keys(zip.files).find(path => /\.vml$/.test(path));
+  const vml = new DOMParser().parseFromString(await zip.file(vmlPath).async('text'), 'application/xml');
+  const textboxes = Array.from(vml.getElementsByTagName('v:textbox'));
+  assert.equal(textboxes.length, 2);
+  assert.equal(textboxes[0].textContent, fields[0].comment);
+  assert.equal(textboxes[1].textContent, fields[1].comment);
+  const reopened = new ExcelJS.Workbook();
+  await reopened.xlsx.load(buffer);
+  const result = reopened.getWorksheet('Periodo B');
+  assert.equal(result.getCell('A5').dataValidation.type, 'list');
+  assert.equal(result.getCell('B5').dataValidation.type, 'date');
+  const note = result.getCell('A1').note;
+  assert.equal(typeof note === 'string' ? note : note.texts.map(item => item.text).join(''), fields[0].comment);
+});
+
+test('duplicación: restaura notas en encabezados desplazados y no sustituye fechas por listas antiguas', async () => {
+  const book = new ExcelJS.Workbook();
+  const sheet = book.addWorksheet('Captura');
+  sheet.getCell('C3').value = 'FECHAS';
+  const fields = [{ name: 'FECHAS', datatype: 'Fecha Inicial / Fecha Final', column: 3, header_row: 3,
+    comment: 'Ingrese fechas válidas.', dropdown_options: ['31/02/2026'] }];
+  applyWorkbookSheetDropdowns({ workbook: book, workbookSheets: [{ name: 'Captura', fields }], validators: [], endRow: 5 });
+  const downloaded = new ExcelJS.Workbook();
+  await downloaded.xlsx.load(await book.xlsx.writeBuffer());
+  const result = downloaded.getWorksheet('Captura');
+  const note = result.getCell('C3').note;
+  assert.equal(typeof note === 'string' ? note : note.texts.map(item => item.text).join(''), fields[0].comment);
+  assert.equal(result.getCell('C4').dataValidation.type, 'date');
+  assert.equal(result.getCell('C5').dataValidation.type, 'date');
+  assert.equal(result.getCell('C4').dataValidation.errorStyle, 'stop');
+});
+
+test('duplicación: reparar una hoja con VML faltante no altera las notas de otras hojas', async () => {
+  const book = new ExcelJS.Workbook();
+  const first = book.addWorksheet('Primera');
+  const second = book.addWorksheet('Segunda');
+  first.getCell('A1').value = 'PAIS';
+  first.getCell('A1').note = 'Comentario anterior';
+  second.getCell('A1').value = 'CODIGO';
+  second.getCell('A1').note = 'Comentario que debe conservarse';
+  const zip = await JSZip.loadAsync(await book.xlsx.writeBuffer());
+  zip.remove('xl/drawings/vmlDrawing1.vml');
+  let buffer = await appendMissingFieldComments(await zip.generateAsync({ type: 'arraybuffer' }), [
+    { name: 'Primera', fields: [{ name: 'PAIS', comment: 'Comentario actualizado' }] },
+  ]);
+  buffer = await patchNoteSize(buffer);
+  const result = new ExcelJS.Workbook();
+  await result.xlsx.load(buffer);
+  const noteText = (cell) => typeof cell.note === 'string' ? cell.note : cell.note.texts.map(item => item.text).join('');
+  assert.equal(noteText(result.getWorksheet('Primera').getCell('A1')), 'Comentario actualizado');
+  assert.equal(noteText(result.getWorksheet('Segunda').getCell('A1')), 'Comentario que debe conservarse');
 });
