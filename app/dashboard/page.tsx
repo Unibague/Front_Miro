@@ -531,12 +531,13 @@ const DashboardPage = () => {
     description: string;
     route: string;
     buttonLabel: string;
+    span?: { base: number; md: number; lg: number };
   }) => {
     const effectiveKey = opts.roleKeyMap?.[userRole] ?? opts.permissionKey;
     if (!canSee(effectiveKey, opts.roles)) return null;
 
     return (
-      <Grid.Col span={{ base: 12, md: 5, lg: 4 }} key={opts.permissionKey}>
+      <Grid.Col span={opts.span ?? { base: 12, md: 5, lg: 4 }} key={opts.permissionKey}>
         <Card shadow="sm" padding="lg" radius="md" withBorder onClick={() => router.push(opts.route)} style={{ cursor: "pointer" }}>
           <Center>{opts.icon}</Center>
           <Group mt="md" mb="xs">
@@ -856,6 +857,9 @@ const DashboardPage = () => {
     </Grid.Col>
   );
 
+  // Configuración se muestra en una cuadrícula 2x2
+  const SPAN_2X2 = { base: 12, md: 6, lg: 5 };
+
   const renderConfigurationCards = () => {
     const cards = [
       renderActionCard({
@@ -866,6 +870,7 @@ const DashboardPage = () => {
         description: "Crea usuarios y administra sus roles y permisos de acceso.",
         route: "/admin/users",
         buttonLabel: "Ir a Gestión de Usuarios",
+        span: SPAN_2X2,
       }),
       renderActionCard({
         permissionKey: "profiles",
@@ -875,6 +880,7 @@ const DashboardPage = () => {
         description: "Define las vistas que puede consultar o administrar cada perfil.",
         route: "/configuracion/perfiles",
         buttonLabel: "Ir a Gestion de Perfiles",
+        span: SPAN_2X2,
       }),
       renderActionCard({
         permissionKey: "homeSettings",
@@ -884,6 +890,7 @@ const DashboardPage = () => {
         description: "Actualiza el contenido informativo de la página de inicio.",
         route: "/admin/homeSettings",
         buttonLabel: "Ir a los ajustes de inicio",
+        span: SPAN_2X2,
       }),
       renderActionCard({
         permissionKey: "organigrama",
@@ -893,6 +900,7 @@ const DashboardPage = () => {
         description: "Organiza la estructura institucional: unidades, facultades, escuelas, áreas y programas.",
         route: "/configuracion/organigrama",
         buttonLabel: "Ir al organigrama",
+        span: SPAN_2X2,
       }),
     ].filter(Boolean);
 

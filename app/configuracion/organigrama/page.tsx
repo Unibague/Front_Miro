@@ -8,7 +8,7 @@ import {
 import { showNotification } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import {
-  IconArrowDown, IconArrowLeft, IconArrowUp, IconChevronDown, IconChevronRight, IconEdit, IconLink,
+  IconArrowDown, IconArrowLeft, IconArrowUp, IconChevronDown, IconChevronRight, IconEdit, IconLink, IconMail,
   IconPlus, IconSearch, IconSitemap, IconTrash, IconZoomIn, IconZoomOut, IconZoomReset, IconFocus2,
 } from "@tabler/icons-react";
 import axios from "axios";
@@ -29,6 +29,7 @@ interface Unidad {
   orden: number;
   dep_code: string | null;
   descripcion: string;
+  correo?: string;
   hijos: Unidad[];
 }
 
@@ -48,12 +49,15 @@ type FormState = {
   orden: number;
   dep_code: string | null;
   descripcion: string;
+  correo: string;
 };
 
 const FORM_VACIO: FormState = {
   nombre: "", tipo: "Unidad administrativa", relacion: "linea", nivel: null,
-  parent: null, orden: 0, dep_code: null, descripcion: "",
+  parent: null, orden: 0, dep_code: null, descripcion: "", correo: "",
 };
+
+const CORREO_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Colores tomados del organigrama institucional
 const COLOR_STAFF = { bg: "#b8962e", fg: "#ffffff" };
@@ -393,6 +397,7 @@ export default function OrganigramaPage() {
     setForm({
       _id: u._id, nombre: u.nombre, tipo: u.tipo, relacion: u.relacion, nivel: u.nivel,
       parent: u.parent, orden: u.orden, dep_code: u.dep_code, descripcion: u.descripcion ?? "",
+      correo: u.correo ?? "",
     });
   };
 
@@ -402,9 +407,14 @@ export default function OrganigramaPage() {
       showNotification({ title: "Falta el nombre", message: "Escribe el nombre de la unidad", color: "red" });
       return;
     }
+    const correo = form.correo.trim().toLowerCase();
+    if (correo && !CORREO_VALIDO.test(correo)) {
+      showNotification({ title: "Correo inválido", message: "Revisa el correo electrónico de la unidad", color: "red" });
+      return;
+    }
     setGuardando(true);
     try {
-      const payload = { ...form, nombre: form.nombre.trim(), nivel: form.tipo === "Programa" ? form.nivel : null, email };
+      const payload = { ...form, correo, nombre: form.nombre.trim(), nivel: form.tipo === "Programa" ? form.nivel : null, email };
       if (form._id) await axios.put(`${API}/${form._id}`, payload);
       else await axios.post(API, payload);
       showNotification({ title: "Guardado", message: "El organigrama se actualizó", color: "teal" });
@@ -636,6 +646,12 @@ export default function OrganigramaPage() {
               <b>Dependencia vinculada:</b>{" "}
               {seleccionado.dep_code ? `${nombreDependencia(seleccionado.dep_code)} (${seleccionado.dep_code})` : "Sin vincular"}
             </Text>
+            <Text size="sm">
+              <b>Correo:</b>{" "}
+              {seleccionado.correo
+                ? <Anchor href={`mailto:${seleccionado.correo}`} size="sm">{seleccionado.correo}</Anchor>
+                : <Text span size="sm" c="dimmed">Sin registrar</Text>}
+            </Text>
             <Text size="sm"><b>Subunidades:</b> {contarDescendientes(seleccionado)}</Text>
             {seleccionado.descripcion && <Text size="sm" c="dimmed">{seleccionado.descripcion}</Text>}
             <Divider />
@@ -673,6 +689,10 @@ export default function OrganigramaPage() {
             <Select label="Dependencia vinculada" description="Dependencia del sistema a la que corresponde esta unidad (opcional)"
               placeholder="Buscar dependencia..." searchable clearable data={opcionesDependencias} limit={50}
               value={form.dep_code} onChange={(v) => setForm({ ...form, dep_code: v })} />
+            <TextInput label="Correo electrónico" description="Correo de contacto de la unidad (opcional)" type="email"
+              placeholder="unidad@unibague.edu.co" leftSection={<IconMail size={16} />} value={form.correo}
+              error={form.correo.trim() && !CORREO_VALIDO.test(form.correo.trim()) ? "Correo no válido" : null}
+              onChange={(e) => setForm({ ...form, correo: e.currentTarget.value })} />
             <NumberInput label="Orden" description="Posición entre las unidades del mismo padre" min={0} allowDecimal={false}
               value={form.orden} onChange={(v) => setForm({ ...form, orden: Number(v) || 0 })} />
             <Textarea label="Descripción" autosize minRows={2} value={form.descripcion}
