@@ -18,6 +18,8 @@ import {
   CopyButton,
   Stack,
   Divider,
+  Alert,
+  List,
 } from "@mantine/core";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -26,6 +28,7 @@ import {
   IconArrowBigUpFilled,
   IconArrowsTransferDown,
   IconArrowLeft,
+  IconAlertTriangle,
   IconChecks,
   IconDownload,
   IconEye,
@@ -69,6 +72,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/es";
 import PublishedTemplatesPage from "@/app/responsible/children-dependencies/reports/page";
 import { usePersistentSearch } from "@/app/hooks/usePersistentSearch";
+import { AVISO_PARTICIPANTE, requiereParticipante } from "@/app/utils/participanteRequirement";
 
 const UNCATEGORIZED_CATEGORY_FILTER = "__uncategorized__";
 
@@ -127,6 +131,7 @@ interface Template {
   fecha_final_productores?: string | Date;
   fecha_final_responsables?: string | Date;
   fecha_final?: string | Date;
+  is_snies?: boolean;
 }
 
 interface TemplateWorksheet {
@@ -1037,7 +1042,14 @@ if (field.multiple) {
         modals.openConfirmModal({
           title: "⚠️ Plantilla con información existente",
           centered: true,
+          size: requiereParticipante(publishedTemplate.template) ? "lg" : undefined,
           children: (
+            <Stack gap="md">
+            {requiereParticipante(publishedTemplate.template) && (
+              <Alert color="red" variant="outline" icon={<IconAlertTriangle size={28} />} title={AVISO_PARTICIPANTE.titulo} styles={{ root: { borderWidth: 2 }, title: { fontSize: 18, color: 'var(--mantine-color-text)' }, message: { color: 'var(--mantine-color-text)' } }}>
+                {AVISO_PARTICIPANTE.texto}
+              </Alert>
+            )}
             <Text size="sm">
               Esta plantilla ya contiene información cargada previamente.
               <br /><br />
@@ -1045,6 +1057,7 @@ if (field.multiple) {
               <br /><br />
               Esta acción <strong>eliminará todos los datos actuales</strong> y los reemplazará con la nueva información que subas.
             </Text>
+            </Stack>
           ),
           labels: { confirm: "Sí, reemplazar información", cancel: "Cancelar" },
           confirmProps: { color: "red" },
@@ -1058,12 +1071,20 @@ if (field.multiple) {
         modals.openConfirmModal({
           title: "Confirmar carga de información",
           centered: true,
+          size: requiereParticipante(publishedTemplate.template) ? "lg" : undefined,
           children: (
+            <Stack gap="md">
+            {requiereParticipante(publishedTemplate.template) && (
+              <Alert color="red" variant="outline" icon={<IconAlertTriangle size={28} />} title={AVISO_PARTICIPANTE.titulo} styles={{ root: { borderWidth: 2 }, title: { fontSize: 18, color: 'var(--mantine-color-text)' }, message: { color: 'var(--mantine-color-text)' } }}>
+                {AVISO_PARTICIPANTE.texto}
+              </Alert>
+            )}
             <Text size="sm">
               ¿Estás seguro de que deseas cargar información en la plantilla <strong>&quot;{publishedTemplate.name}&quot;</strong>?
               <br /><br />
               Asegúrate de que el archivo Excel tenga el formato correcto y contenga toda la información necesaria.
             </Text>
+            </Stack>
           ),
           labels: { confirm: "Sí, cargar información", cancel: "Cancelar" },
           confirmProps: { color: "blue" },
@@ -1390,6 +1411,10 @@ if (field.multiple) {
     return new Date() > getEffectiveDeadline(publishedTemplate);
   };
 
+  const plantillasConParticipante = sortedTemplates
+    .filter((publishedTemplate) => requiereParticipante(publishedTemplate.template))
+    .map((publishedTemplate) => publishedTemplate.name);
+
   const rows = sortedTemplates.map((publishedTemplate) => {
     //console.log("Published Template:", publishedTemplate); // Agregar el log aquí para inspeccionar los datos
     const uploadDisable = handleDisableUpload(publishedTemplate);
@@ -1414,7 +1439,18 @@ if (field.multiple) {
 </Table.Td>
 
         <Table.Td>{publishedTemplate.period.name}</Table.Td>
-        <Table.Td>{publishedTemplate.name}</Table.Td>
+        <Table.Td>
+          <Stack gap={4}>
+            <Text size="sm">{publishedTemplate.name}</Text>
+            {requiereParticipante(publishedTemplate.template) && (
+              <Tooltip label="Carga primero la plantilla Participante" withArrow>
+                <Badge size="sm" color="red" variant="filled" leftSection={<IconAlertTriangle size={12} />}>
+                  Requiere Participante
+                </Badge>
+              </Tooltip>
+            )}
+          </Stack>
+        </Table.Td>
         <Table.Td>
   <Text ta="justify">
     {publishedTemplate.template.file_description}
@@ -1610,6 +1646,29 @@ if (field.multiple) {
     {pendingCount === 1 ? "" : "s"} pendiente
     {pendingCount === 1 ? "" : "s"}.
   </Text>
+      {plantillasConParticipante.length > 0 && (
+        <Alert
+          color="red"
+          variant="outline"
+          radius="md"
+          mb="lg"
+          icon={<IconAlertTriangle size={40} />}
+          styles={{ root: { borderWidth: 2 }, title: { fontSize: 22, color: 'var(--mantine-color-text)' }, message: { fontSize: 16, color: 'var(--mantine-color-text)' } }}
+          title="¡Atención! Antes de diligenciar, carga primero la plantilla Participante"
+        >
+          <Text inherit mb="xs">
+            Estas plantillas del SNIES dependen de Participante: todas las personas que reportes
+            (estudiantes, docentes, personal administrativo, instructores, consultores,
+            investigadores, movilidades…) deben estar cargadas antes en Participante. Si no lo
+            están, el SNIES rechazará la información.
+          </Text>
+          <List size="sm" spacing={2}>
+            {plantillasConParticipante.map((nombre) => (
+              <List.Item key={nombre}>{nombre}</List.Item>
+            ))}
+          </List>
+        </Alert>
+      )}
       <Group mb="md">
         <TextInput
           placeholder="Buscar plantillas"

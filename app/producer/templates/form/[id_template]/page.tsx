@@ -26,7 +26,8 @@ import {
   Box,
   Divider
 } from "@mantine/core";
-import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend } from "@tabler/icons-react";
+import { IconPlus, IconTrash, IconEye, IconCancel, IconDeviceFloppy, IconLock, IconInfoCircle, IconSend, IconAlertTriangle } from "@tabler/icons-react";
+import { AVISO_PARTICIPANTE, requiereParticipante } from "@/app/utils/participanteRequirement";
 import { DateInput, DatePickerInput } from "@mantine/dates";
 import axios from "axios";
 import { showNotification } from "@mantine/notifications";
@@ -103,6 +104,7 @@ interface Template {
   workbook_sheets?: WorkbookSheet[];
   shared?: boolean;
   skip_comment_validation?: boolean;
+  is_snies?: boolean;
 }
 
 interface FilledFieldEntry {
@@ -2111,6 +2113,19 @@ const ProducerTemplateFormPage = ({ params }: { params: { id_template: string } 
   return (
     <Container size="xl">
       <Title ta="center" mb="md">{`Completar Plantilla: ${publishedTemplateName}`}</Title>
+      {!isFromPublicQr && requiereParticipante(template) && (
+        <Alert
+          color="red"
+          variant="outline"
+          radius="md"
+          mb="lg"
+          icon={<IconAlertTriangle size={40} />}
+          title={AVISO_PARTICIPANTE.titulo}
+          styles={{ root: { borderWidth: 2 }, title: { fontSize: 22, color: 'var(--mantine-color-text)' }, message: { fontSize: 16, color: 'var(--mantine-color-text)' } }}
+        >
+          {AVISO_PARTICIPANTE.texto}
+        </Alert>
+      )}
 
 
 
