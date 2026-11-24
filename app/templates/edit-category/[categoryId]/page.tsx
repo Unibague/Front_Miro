@@ -49,7 +49,9 @@ const EditCategoryPage = () => {
           );
           const category = response.data;
           setCategoryName(category.name);
-          const templateFields = category.templates.map((template: any) => ({
+          const templateFields = category.templates
+            .filter((template: any) => template.templateId)
+            .map((template: any) => ({
             templateId: template.templateId._id,
           }));
           setFields(templateFields);

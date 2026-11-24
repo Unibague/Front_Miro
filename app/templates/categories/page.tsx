@@ -121,9 +121,9 @@ const CategoryAdminPage = () => {
               <Table.Tr key={category._id}>
                 <Table.Td>{category.name}</Table.Td>
                 <Table.Td>
-  {category.templates.length > 0 ? (
+  {category.templates.some((t) => t.templateId) ? (
     <ul style={{ margin: 0, paddingLeft: 16 }}>
-      {category.templates.map((t) => (
+      {category.templates.filter((t) => t.templateId).map((t) => (
         <li key={t.templateId._id}>{t.templateId.name}</li>
       ))}
     </ul>

@@ -431,7 +431,7 @@ export default function CnaPlantillasPage() {
                     />
                     <Select
                       label="Dependencia de los profesores (opcional)"
-                      description="Filtra los profesores por su dependencia en Integra."
+                      description="Filtra los profesores por el programa o dependencia reportado en SNIES."
                       placeholder="Toda la institución"
                       data={dependencias}
                       value={dependencia}
