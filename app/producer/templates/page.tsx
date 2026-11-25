@@ -214,6 +214,11 @@ const ProducerTemplatesPage = () => {
 
   const [nextDeadline, setNextDeadline] = useState<Date | null>(null);
   const [pendingCount, setPendingCount] = useState<number>(0);
+  // Los avisos de "carga primero Participante" (alerta, etiqueta y modales)
+  // solo salen si aún la tiene pendiente
+  const [participantePendiente, setParticipantePendiente] = useState(false);
+  const mostrarAvisoParticipante = (publishedTemplate: PublishedTemplate) =>
+    participantePendiente && requiereParticipante(publishedTemplate.template);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null
   );
@@ -302,10 +307,12 @@ const ProducerTemplatesPage = () => {
         setTemplates(response.data.templates || []);
         setTotalPages(response.data.pages || 1);
         setPendingCount(response.data.total ?? response.data.templates?.length ?? 0);
+        setParticipantePendiente(response.data.participantePendiente === true);
       }
     } catch (error) {
       setTemplates([]);
       setPendingCount(0);
+      setParticipantePendiente(false);
     }
   };
 
@@ -1042,10 +1049,10 @@ if (field.multiple) {
         modals.openConfirmModal({
           title: "⚠️ Plantilla con información existente",
           centered: true,
-          size: requiereParticipante(publishedTemplate.template) ? "lg" : undefined,
+          size: mostrarAvisoParticipante(publishedTemplate) ? "lg" : undefined,
           children: (
             <Stack gap="md">
-            {requiereParticipante(publishedTemplate.template) && (
+            {mostrarAvisoParticipante(publishedTemplate) && (
               <Alert color="red" variant="outline" icon={<IconAlertTriangle size={28} />} title={AVISO_PARTICIPANTE.titulo} styles={{ root: { borderWidth: 2 }, title: { fontSize: 18, color: 'var(--mantine-color-text)' }, message: { color: 'var(--mantine-color-text)' } }}>
                 {AVISO_PARTICIPANTE.texto}
               </Alert>
@@ -1071,10 +1078,10 @@ if (field.multiple) {
         modals.openConfirmModal({
           title: "Confirmar carga de información",
           centered: true,
-          size: requiereParticipante(publishedTemplate.template) ? "lg" : undefined,
+          size: mostrarAvisoParticipante(publishedTemplate) ? "lg" : undefined,
           children: (
             <Stack gap="md">
-            {requiereParticipante(publishedTemplate.template) && (
+            {mostrarAvisoParticipante(publishedTemplate) && (
               <Alert color="red" variant="outline" icon={<IconAlertTriangle size={28} />} title={AVISO_PARTICIPANTE.titulo} styles={{ root: { borderWidth: 2 }, title: { fontSize: 18, color: 'var(--mantine-color-text)' }, message: { color: 'var(--mantine-color-text)' } }}>
                 {AVISO_PARTICIPANTE.texto}
               </Alert>
@@ -1412,7 +1419,7 @@ if (field.multiple) {
   };
 
   const plantillasConParticipante = sortedTemplates
-    .filter((publishedTemplate) => requiereParticipante(publishedTemplate.template))
+    .filter((publishedTemplate) => mostrarAvisoParticipante(publishedTemplate))
     .map((publishedTemplate) => publishedTemplate.name);
 
   const rows = sortedTemplates.map((publishedTemplate) => {
@@ -1442,7 +1449,7 @@ if (field.multiple) {
         <Table.Td>
           <Stack gap={4}>
             <Text size="sm">{publishedTemplate.name}</Text>
-            {requiereParticipante(publishedTemplate.template) && (
+            {mostrarAvisoParticipante(publishedTemplate) && (
               <Tooltip label="Carga primero la plantilla Participante" withArrow>
                 <Badge size="sm" color="red" variant="filled" leftSection={<IconAlertTriangle size={12} />}>
                   Requiere Participante
